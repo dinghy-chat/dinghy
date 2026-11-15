@@ -6,6 +6,7 @@ import type { Answer, Client, Waiting } from "./client.ts";
 import { emit } from "./page-events.ts";
 import { ChatLine, CloseButton, type Line } from "./panel.tsx";
 import {
+  chosenButton,
   OUTBOUND_ANSWERED_MAX,
   type OutboundButton,
   type ReceivedMessage,
@@ -41,8 +42,6 @@ const received = (one: Waiting): ReceivedMessage => ({
   sender: { name: one.authorName, pictureUrl: one.authorPictureUrl },
   outbound: { id: one.id, show: one.show, buttons: one.buttons },
 });
-
-const chosen = (button: OutboundButton) => ({ value: button.value ?? null, label: button.label });
 
 /** A message whose buttons the visitor can choose: one that waits, or one in the conversation. */
 export type Choosable = Pick<Waiting, "id" | "buttons">;
@@ -159,7 +158,7 @@ export function useOutbound(
   const readBy = (one: Choosable, button: OutboundButton) => {
     if (read.has(one.id)) return;
     markRead([one.id]);
-    emit(context, "outbound:read", { id: one.id, button: chosen(button) });
+    emit(context, "outbound:read", { id: one.id, button: chosenButton(button) });
   };
 
   /** A button that opens a page or dismisses. A value button answers, which the chat sends. */
@@ -173,7 +172,7 @@ export function useOutbound(
         if (!button.dismiss) return;
         setWaiting(without(one.id));
         setHidden(adding([one.id]));
-        emit(context, "outbound:dismissed", { id: one.id, button: chosen(button) });
+        emit(context, "outbound:dismissed", { id: one.id, button: chosenButton(button) });
       },
       () => {
         // The click is only recorded. A dismiss stays on screen, so the visitor can try again.

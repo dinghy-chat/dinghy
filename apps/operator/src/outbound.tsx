@@ -55,8 +55,12 @@ function senderLine(one: OutboundMessage): string {
     : t("outboundVia", { name: shown, via: one.author.name });
 }
 
-/** The statuses in which a message still waits for the visitor and a cancel ends it. */
-const CANCELLABLE = new Set(["scheduled", "pending", "delivered"]);
+/** The statuses in which the visitor has not read a message yet. */
+const UNREAD_STATUSES = new Set(["scheduled", "pending", "delivered"]);
+
+/** A message a cancel ends: unread, and outside a conversation, as the server decides. */
+const isCancellable = (one: OutboundMessage) =>
+  one.conversationId === null && UNREAD_STATUSES.has(one.status);
 
 /** A contact's outbound messages, newest first, each with what became of it. */
 export function OutboundList({
@@ -83,7 +87,7 @@ export function OutboundList({
           <span className="conversation-facts">
             {senderLine(one)} · {outboundState(one)}
           </span>
-          {one.conversationId === null && CANCELLABLE.has(one.status) && (
+          {isCancellable(one) && (
             <button type="button" className="text-button" onClick={() => onCancel(one.id)}>
               {t("outboundCancel")}
             </button>

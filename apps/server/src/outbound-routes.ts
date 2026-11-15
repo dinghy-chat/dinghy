@@ -13,14 +13,14 @@ import {
 } from "./errors.ts";
 import { OnceKey } from "./inputs.ts";
 import { WORKSPACE_PREFIX, workspaceParams } from "./member.ts";
+import type { Outbound } from "./outbound.ts";
 import {
   ListQuery,
-  type Outbound,
   OutboundMessageSchema,
   SEND_REFUSALS,
   SendSchema,
   VisitorRef,
-} from "./outbound.ts";
+} from "./outbound-schemas.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import { MINUTE_SECONDS } from "./time.ts";
 

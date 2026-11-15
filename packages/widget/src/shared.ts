@@ -110,10 +110,10 @@ export interface SavedAppearance extends WidgetSettings {
   hours: BusinessHours | null;
 }
 
-/** The longest title an owner can save. */
 /** The outbound messages one answer may name: the newest the visitor read and did not answer. */
 export const OUTBOUND_ANSWERED_MAX = 50;
 
+/** The longest title an owner can save. */
 export const TITLE_MAX = 40;
 /** The longest greeting or away text. */
 export const TEXT_MAX = 200;
@@ -223,6 +223,12 @@ export interface OutboundChange {
   id: string;
   button: { value: string | null; label: string } | null;
 }
+
+/** A button the visitor chose, as their message, the events and the API carry it. */
+export const chosenButton = (button: { label: string; value?: string | undefined }) => ({
+  value: button.value ?? null,
+  label: button.label,
+});
 
 /** Each event and what its callback receives. */
 export interface DinghyEvents {

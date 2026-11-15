@@ -8,7 +8,6 @@ import { firstName, LOCALES, OUTBOUND_ANSWERED_MAX } from "../../../packages/wid
 import { VISITOR_TOKEN } from "./api-security.ts";
 import type { App, AppEnv } from "./app.ts";
 import { chatLinkVisitor, chatLinkWorkspace, isChatLinkToken } from "./chat-link.ts";
-import { upsertContact } from "./contacts.ts";
 import {
   conversation,
   OUTBOUND_SHOWS,
@@ -72,15 +71,14 @@ import {
   WorkspaceClosedError,
 } from "./messages.ts";
 import { hashIp, isAddressBlocked, isBlocked, noteVisitorAddress } from "./moderation.ts";
+import type { Outbound } from "./outbound.ts";
 import {
   appendVisitorMessage,
-  ButtonSchema,
-  ChosenButtonSchema,
-  contactChanged,
-  type Outbound,
   readInConversation,
+  upsertContactAndRecheck,
   type WidgetOutbound,
-} from "./outbound.ts";
+} from "./outbound-delivery.ts";
+import { ButtonIndex, ButtonSchema, ChosenButtonSchema } from "./outbound-schemas.ts";
 import type { VisitorPresence } from "./presence.ts";
 import type { ImageUrls } from "./public-images.ts";
 import { type RateLimit, type Slots, tooManyRequests } from "./rate-limit.ts";
@@ -470,7 +468,7 @@ const sendMessageRoute = createRoute({
                 "The outbound messages the visitor read and this answers. They go in the conversation first, in the order read.",
             }),
             button: z
-              .object({ outboundMessageId: z.uuid(), index: z.number().int().min(0).max(3) })
+              .object({ outboundMessageId: z.uuid(), index: ButtonIndex })
               .optional()
               .openapi({
                 description:
@@ -767,11 +765,12 @@ function signedInVisitor(
     ...(email !== undefined && { email }),
     ...(attributes !== undefined && { attributes }),
   };
-  return withWorkspace(db, workspaceId, async (tx) => {
-    const written = await upsertContact(tx, workspaceId, userId, fields, issuedAt * 1000);
-    if (written.changed) await contactChanged(tx, workspaceId, written.visitorId);
-    return written.visitorId;
-  });
+  return withWorkspace(
+    db,
+    workspaceId,
+    async (tx) =>
+      (await upsertContactAndRecheck(tx, workspaceId, userId, fields, issuedAt * 1000)).visitorId,
+  );
 }
 
 interface Identified {
@@ -1097,7 +1096,7 @@ const outboundReadRoute = createRoute({
   },
 });
 
-const ButtonPress = z.object({ button: z.number().int().min(0).max(3) });
+const ButtonPress = z.object({ button: ButtonIndex });
 
 const pressRoute = (path: "dismiss" | "click", summary: string) =>
   createRoute({
@@ -1137,7 +1136,7 @@ const waitingView = (
   buttons: one.buttons,
   show: one.show,
   read: one.readAt !== null,
-  ...visitorSender(urls, workspaceId, senders, { ...one, outbound: { sender: one.sender } }),
+  ...visitorSender(urls, workspaceId, senders, one),
   createdAt: one.createdAt.toISOString(),
 });
 
@@ -1481,12 +1480,7 @@ export function registerWidgetRoutes(
     if (identified === null) return c.json(UNAUTHORIZED, 401);
     const waiting = await outbound.waiting(found.id, identified.visitorId);
     const senders = await withWorkspace(db, found.id, (tx) =>
-      sendersOf(
-        tx,
-        urls,
-        found.id,
-        waiting.map((one) => ({ ...one, outbound: { sender: one.sender } })),
-      ),
+      sendersOf(tx, urls, found.id, waiting),
     );
     return c.json(
       { outboundMessages: waiting.map((one) => waitingView(urls, found.id, senders, one)) },
@@ -1510,8 +1504,8 @@ export function registerWidgetRoutes(
       const identified = await identify(c);
       if (identified === null) return c.json(UNAUTHORIZED, 401);
       const { id } = c.req.valid("param");
-      const answer = { outboundMessageId: id, index: c.req.valid("json").button };
-      const done = await outbound.press(c.get("workspace").id, identified.visitorId, answer, kind);
+      const button = { outboundMessageId: id, index: c.req.valid("json").button };
+      const done = await outbound.press(c.get("workspace").id, identified.visitorId, button, kind);
       return done ? c.json({ ok: true as const }, 200) : c.json(NOT_FOUND, 404);
     });
   }
@@ -1601,7 +1595,7 @@ export function registerWidgetRoutes(
     });
     if (visitorId == null) return c.json(nothing, 200);
     return c.json(
-      { ok: true as const, waiting: await outbound.waitingCount(found.id, visitorId) },
+      { ok: true as const, waiting: await outbound.shownCount(found.id, visitorId) },
       200,
     );
   });

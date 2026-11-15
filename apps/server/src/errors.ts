@@ -147,6 +147,11 @@ type ErrorCode = (typeof ERROR_CODES)[number];
 export const failure = (code: ErrorCode, message: string) => ({ error: { code, message } });
 
 export const NOT_FOUND = failure("not_found", "This does not exist.");
+/** A key's reply or send while an owner or admin paused the bots. */
+export const BOTS_PAUSED = failure(
+  "bots_paused",
+  "An owner or admin paused every bot of this workspace. Only people write until they resume.",
+);
 export const FORBIDDEN = failure("forbidden", "Your role does not allow this.");
 export const CONVERSATION_CLOSED = failure(
   "conversation_closed",

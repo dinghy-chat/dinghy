@@ -49,7 +49,7 @@ import {
   markRead,
   setConversationStatus,
 } from "./messages.ts";
-import { materializeOutbound } from "./outbound.ts";
+import { materializeOutbound } from "./outbound-delivery.ts";
 import { createPush, isPushEndpoint } from "./push.ts";
 import { retryDelayMs } from "./retry.ts";
 import { queueTranscript, TRANSCRIPT_DELAY_MS } from "./transcripts.ts";

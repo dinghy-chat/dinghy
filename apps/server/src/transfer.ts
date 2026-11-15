@@ -51,7 +51,7 @@ import { ClientId, OnceKey } from "./inputs.ts";
 import { PAGE_PATH_MAX, PAGE_TITLE_MAX, PageContextSchema } from "./journey.ts";
 import { workspaceParams } from "./member.ts";
 import { markHistoryRead } from "./messages.ts";
-import { ButtonSchema, ChosenButtonSchema } from "./outbound.ts";
+import { ButtonSchema, ChosenButtonSchema } from "./outbound-schemas.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import type { ObjectStore } from "./storage.ts";
 import { PUBLIC_IMAGE_MAX_BYTES, processImage, processLogo } from "./uploads.ts";

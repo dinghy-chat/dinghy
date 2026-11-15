@@ -1,15 +1,15 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { type AnyColumn, and, desc, eq, inArray, isNotNull, or, type SQL, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
 import { SESSION, SESSION_OR_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
-import { type Condition, ConditionSchema, toSql } from "./conditions.ts";
 import {
-  CHAT_KINDS,
-  conversation,
-  type FieldTimes,
-  outboundMessage,
-  visitor,
-} from "./db/schema.ts";
+  type Condition,
+  ConditionSchema,
+  conversationCount,
+  hasChatted,
+  toSql,
+} from "./conditions.ts";
+import { CHAT_KINDS, conversation, outboundMessage, visitor } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import {
   errorAnswer,
@@ -23,13 +23,14 @@ import {
   okContent,
   ROLE_WRITE_ERRORS,
 } from "./errors.ts";
-import { type ContactFields, ContactFields as ContactFieldsSchema, UserId } from "./inputs.ts";
+import { ContactFields, UserId } from "./inputs.ts";
 import { forgetVisitor, PageContextSchema, visitorPages } from "./journey.ts";
 import { type Live, OPERATORS } from "./live.ts";
 import { WORKSPACE_PREFIX as PREFIX, workspaceParams } from "./member.ts";
 import { containing, isChat, previewBody } from "./messages.ts";
 import { deleteConversations } from "./moderation.ts";
-import type { Outbound } from "./outbound.ts";
+import { upsertContactAndRecheck } from "./outbound-delivery.ts";
+import { beforeCursor, cursorTime, TimeCursor } from "./pages.ts";
 import type { VisitorPresence } from "./presence.ts";
 import { allowed } from "./team.ts";
 
@@ -104,24 +105,13 @@ const ContactDetailSchema = ContactSchema.extend({
 const SORTS = ["lastSeen", "firstSeen"] as const;
 type Sort = (typeof SORTS)[number];
 
-// A page's position: the sort key's time, as CURSOR_TIME_FORMAT writes it, and the visitor's ID.
-const CURSOR =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z,[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/;
-
-/** The pattern lets through a day that does not exist, such as February 30, which Postgres refuses. */
-function isRealTime(cursor: string): boolean {
-  const second = cursor.slice(0, "YYYY-MM-DDTHH:MM:SS".length);
-  const time = new Date(`${second}Z`);
-  return !Number.isNaN(time.getTime()) && time.toISOString().startsWith(second);
-}
-
 /** A page of the contact list, as the route's query and MCP's `list_contacts` share it. */
 const ContactPage = z.object({
   q: z.string().trim().max(100).optional().openapi({
     description: "Matches the name, email or user ID, ignoring case.",
   }),
   sort: z.enum(SORTS).default("lastSeen"),
-  before: z.string().regex(CURSOR).refine(isRealTime).optional().openapi({
+  before: TimeCursor.optional().openapi({
     description: "The `next` of the page before.",
   }),
   limit: z.coerce.number().int().min(1).max(PAGE_SIZE_MAX).default(50),
@@ -261,7 +251,7 @@ const upsertRoute = createRoute({
     "Sets the name and email, and merges the attributes key by key. Each write carries its time, from this route or from a host token, and the later write wins for each field and each attribute. A change cancels the person's scheduled outbound messages whose `unless` now matches.",
   request: {
     params: workspaceParams.extend({ userId: UserId }),
-    body: { required: true, content: { "application/json": { schema: ContactFieldsSchema } } },
+    body: { required: true, content: { "application/json": { schema: ContactFields } } },
   },
   responses: {
     ...KEY_LIMITED,
@@ -299,10 +289,7 @@ const contactColumns = {
   lastSeenAt: visitor.lastSeenAt,
   createdAt: visitor.createdAt,
   blockedAt: visitor.blockedAt,
-  // Qualified by hand: in a select list, the builder writes a column without its table.
-  conversationCount: sql<number>`(
-    select count(*)::int from conversation as c
-    where c.workspace_id = "visitor"."workspace_id" and c.visitor_id = "visitor"."id")`,
+  conversationCount,
 };
 
 interface ContactRow {
@@ -329,23 +316,12 @@ const contactView = ({ blockedAt, lastSeenAt, createdAt, ...row }: ContactRow) =
   createdAt: createdAt.toISOString(),
 });
 
-// An ISO time in UTC to the microsecond, as the cursor carries it.
-const CURSOR_TIME_FORMAT = 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"';
-
-/**
- * A time as a page cursor carries it. As text, because Postgres keeps microseconds and a JavaScript
- * date only milliseconds, so a cursor from a date would skip the rows that share its millisecond.
- */
-export const cursorTime = (time: SQL | AnyColumn) =>
-  sql<string>`to_char(${time} at time zone 'UTC', ${CURSOR_TIME_FORMAT})`;
-
 /** The sort key, which an index of each sort holds in this exact form. */
 const sortKey = (sort: Sort) =>
   sort === "lastSeen"
     ? sql`coalesce(${visitor.lastSeenAt}, ${visitor.createdAt})`
     : sql`${visitor.createdAt}`;
 
-const hasChatted = sql`exists (select 1 from ${conversation} where ${conversation.workspaceId} = ${visitor.workspaceId} and ${conversation.visitorId} = ${visitor.id})`;
 const wasSentTo = sql`exists (select 1 from ${outboundMessage} where ${outboundMessage.workspaceId} = ${visitor.workspaceId} and ${outboundMessage.visitorId} = ${visitor.id})`;
 
 /**
@@ -365,7 +341,6 @@ export async function listContacts(
   },
 ) {
   const key = sortKey(options.sort);
-  const [time, id] = options.before?.split(",") ?? [];
   const pattern = options.q === undefined || options.q === "" ? null : containing(options.q);
   const rows = await tx
     .select({
@@ -383,9 +358,7 @@ export async function listContacts(
         pattern === null
           ? undefined
           : sql`(${visitor.name} ilike ${pattern} or ${visitor.email} ilike ${pattern} or ${visitor.userId} ilike ${pattern})`,
-        time === undefined
-          ? undefined
-          : sql`(${key}, ${visitor.id}) < (${time}::timestamptz, ${id}::uuid)`,
+        beforeCursor(options.before, key, visitor.id),
       ),
     )
     .orderBy(desc(key), desc(visitor.id))
@@ -520,118 +493,6 @@ const csvLine = (contact: ReturnType<typeof contactView>) =>
     .map(csvCell)
     .join(",")}\r\n`;
 
-/** A contact's fields that a server or a host token writes, with when each was written. */
-interface ContactState {
-  name: string | null;
-  email: string | null;
-  attributes: unknown;
-  fieldTimes: FieldTimes;
-}
-
-type ContactChange = Pick<ContactState, "name" | "email" | "fieldTimes"> & {
-  attributes: Record<string, unknown> | null;
-};
-
-const ATTRIBUTE_TIME = "attributes.";
-
-/**
- * A write at `at`, in milliseconds, applied to the contact: each field and each attribute changes
- * only when no later write set it. A null attribute removes the key. Null when nothing changes.
- */
-export function mergeContact(
-  current: ContactState,
-  fields: ContactFields,
-  at: number,
-): ContactChange | null {
-  const times = { ...current.fieldTimes };
-  const attributes = { ...((current.attributes as Record<string, unknown> | null) ?? {}) };
-  const next = { name: current.name, email: current.email };
-  let changed = false;
-  /** Writes one field when this write is not older than the last one, and says whether it did. */
-  const take = (field: string, value: unknown, previous: unknown) => {
-    const time = times[field] ?? Number.NEGATIVE_INFINITY;
-    if (at < time || (at === time && value === previous)) return false;
-    times[field] = at;
-    changed = true;
-    return true;
-  };
-  if (fields.name !== undefined && take("name", fields.name, current.name)) next.name = fields.name;
-  if (fields.email !== undefined && take("email", fields.email, current.email)) {
-    next.email = fields.email;
-  }
-  for (const [key, value] of Object.entries(fields.attributes ?? {})) {
-    const before = attributes[key];
-    if (!take(`${ATTRIBUTE_TIME}${key}`, JSON.stringify(value), JSON.stringify(before))) continue;
-    if (value === null) delete attributes[key];
-    else attributes[key] = value;
-  }
-  if (!changed) return null;
-  const kept = Object.keys(attributes).length > 0 ? attributes : null;
-  return { ...next, attributes: kept, fieldTimes: times };
-}
-
-const contactState = {
-  name: visitor.name,
-  email: visitor.email,
-  attributes: visitor.attributes,
-  fieldTimes: visitor.fieldTimes,
-};
-
-/**
- * Writes a server's or a host token's fields at `at`, in milliseconds. A read with no lock comes
- * first, so a write that changes nothing, such as the same host token on every request, takes no
- * lock. True when a value changed.
- */
-async function writeContact(
-  tx: Transaction,
-  workspaceId: string,
-  visitorId: string,
-  fields: ContactFields,
-  at: number,
-): Promise<boolean> {
-  const one = and(eq(visitor.workspaceId, workspaceId), eq(visitor.id, visitorId));
-  const [seen] = await tx.select(contactState).from(visitor).where(one);
-  if (seen === undefined || mergeContact(seen, fields, at) === null) return false;
-  const [current] = await tx.select(contactState).from(visitor).where(one).for("no key update");
-  const change = current === undefined ? null : mergeContact(current, fields, at);
-  if (current === undefined || change === null) return false;
-  await tx.update(visitor).set(change).where(one);
-  return (
-    change.name !== current.name ||
-    change.email !== current.email ||
-    JSON.stringify(change.attributes) !== JSON.stringify(current.attributes)
-  );
-}
-
-/**
- * Creates the signed-in contact with this user ID, or writes to the one that exists. `changed` is
- * true when a value changed, for the checks that read the contact.
- */
-export async function upsertContact(
-  tx: Transaction,
-  workspaceId: string,
-  userId: string,
-  fields: ContactFields,
-  at: number,
-): Promise<{ visitorId: string; created: boolean; changed: boolean }> {
-  const ofUser = and(eq(visitor.workspaceId, workspaceId), eq(visitor.userId, userId));
-  let [existing] = await tx.select({ id: visitor.id }).from(visitor).where(ofUser);
-  if (existing === undefined) {
-    const empty = { name: null, email: null, attributes: null, fieldTimes: {} };
-    const [created] = await tx
-      .insert(visitor)
-      .values({ workspaceId, userId, ...(mergeContact(empty, fields, at) ?? empty) })
-      .onConflictDoNothing()
-      .returning({ id: visitor.id });
-    if (created !== undefined) return { visitorId: created.id, created: true, changed: true };
-    // Two first requests arrived together, and the other one created the row.
-    [existing] = await tx.select({ id: visitor.id }).from(visitor).where(ofUser);
-    if (existing === undefined) throw new Error("The visitor row is missing");
-  }
-  const changed = await writeContact(tx, workspaceId, existing.id, fields, at);
-  return { visitorId: existing.id, created: false, changed };
-}
-
 /** Deletes visitors with their conversations, messages and images. Answers how many there were. */
 export async function deleteContacts(
   tx: Transaction,
@@ -656,12 +517,7 @@ export async function deleteContacts(
 
 export function registerContactRoutes(
   app: App,
-  {
-    db,
-    live,
-    visitorPresence,
-    outbound,
-  }: { db: Database; live: Live; visitorPresence: VisitorPresence; outbound: Outbound },
+  { db, live, visitorPresence }: { db: Database; live: Live; visitorPresence: VisitorPresence },
 ): void {
   /** The contact with whether they are on the site now, which Valkey knows, not Postgres. */
   const withPresence = async (
@@ -748,7 +604,9 @@ export function registerContactRoutes(
   app.openapi(upsertRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
     const { userId } = c.req.valid("param");
-    const { visitorId, created } = await outbound.upsertContact(id, userId, c.req.valid("json"));
+    const { visitorId, created } = await withWorkspace(db, id, (tx) =>
+      upsertContactAndRecheck(tx, id, userId, c.req.valid("json"), Date.now()),
+    );
     const found = await withWorkspace(db, id, (tx) => readContact(tx, id, visitorId));
     if (found === null) return c.json(NOT_FOUND, 404);
     live.wake(id, OPERATORS);

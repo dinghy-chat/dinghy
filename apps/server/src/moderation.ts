@@ -31,7 +31,7 @@ import {
   recordConversationChanges,
   recordTeamChange,
 } from "./messages.ts";
-import { conversationsDeleted } from "./outbound.ts";
+import { conversationsDeleted } from "./outbound-delivery.ts";
 import { allowed } from "./team.ts";
 
 // Long enough to stop someone who clears their browser, and short enough for an address that a

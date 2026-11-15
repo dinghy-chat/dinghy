@@ -19,7 +19,7 @@ import {
   type NewAttachment,
   WorkspaceClosedError,
 } from "./messages.ts";
-import { appendVisitorMessage } from "./outbound.ts";
+import { appendVisitorMessage } from "./outbound-delivery.ts";
 import { type RateLimit, TOO_MANY_REQUESTS } from "./rate-limit.ts";
 import { SIGNATURE_TOLERANCE_MINUTES, SIGNATURE_TOLERANCE_SECONDS } from "./setup-code.ts";
 import type { ShipmailInbound } from "./shipmail-inbound.ts";

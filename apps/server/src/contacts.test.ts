@@ -10,7 +10,8 @@ import { signedInOperator } from "../test/operators.ts";
 import { SITE, visitorStarts } from "../test/visitors.ts";
 import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
-import { csvCell, mergeContact } from "./contacts.ts";
+import { upsertContact } from "./contact-fields.ts";
+import { csvCell } from "./contacts.ts";
 import {
   apiKey,
   conversation,
@@ -20,7 +21,8 @@ import {
   outboundMessage,
   visitor,
 } from "./db/schema.ts";
-import type { Database } from "./db/tenant.ts";
+import { type Database, withWorkspace } from "./db/tenant.ts";
+import type { ContactFields } from "./inputs.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
 const ORIGIN = new URL(PUBLIC_URL).origin;
@@ -454,20 +456,32 @@ describe("the upsert by user ID", () => {
   });
 });
 
-describe("mergeContact", () => {
-  const empty = { name: null, email: null, attributes: null, fieldTimes: {} };
-
-  test("a later write wins for each field, and the same write again changes nothing", () => {
-    const first = mergeContact(empty, { name: "Ada", attributes: { plan: "pro" } }, 100);
-    expect(first).toEqual({
-      name: "Ada",
-      email: null,
-      attributes: { plan: "pro" },
-      fieldTimes: { name: 100, "attributes.plan": 100 },
+describe("upsertContact", () => {
+  test("a later write wins for each field, and the same write again changes nothing", async () => {
+    const userId = `merge-${randomUUID()}`;
+    const write = (fields: ContactFields, at: number) =>
+      withWorkspace(db, space.id, (tx) => upsertContact(tx, space.id, userId, fields, at));
+    expect(await write({ name: "Ada", attributes: { plan: "pro" } }, 100)).toMatchObject({
+      created: true,
+      changed: true,
     });
-    if (first === null) return;
-    expect(mergeContact(first, { name: "Ada", attributes: { plan: "pro" } }, 100)).toBeNull();
-    expect(mergeContact(first, { name: "Old" }, 50)).toBeNull();
-    expect(mergeContact(first, { attributes: { plan: null } }, 200)?.attributes).toBeNull();
+    expect(await write({ name: "Ada", attributes: { plan: "pro" } }, 100)).toMatchObject({
+      changed: false,
+    });
+    expect(await write({ name: "Old" }, 50)).toMatchObject({ changed: false });
+    expect(await write({ attributes: { plan: null } }, 200)).toMatchObject({ changed: true });
+    const [row] = await owner
+      .select({
+        name: visitor.name,
+        attributes: visitor.attributes,
+        fieldTimes: visitor.fieldTimes,
+      })
+      .from(visitor)
+      .where(eq(visitor.userId, userId));
+    expect(row).toEqual({
+      name: "Ada",
+      attributes: null,
+      fieldTimes: { name: 100, "attributes.plan": 200 },
+    });
   });
 });

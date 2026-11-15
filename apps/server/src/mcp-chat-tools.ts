@@ -43,7 +43,9 @@ import {
   parseCursor,
   stored,
 } from "./messages.ts";
-import { ListQuery, type Outbound, SEND_REFUSALS, SendSchema, VisitorRef } from "./outbound.ts";
+import type { Outbound } from "./outbound.ts";
+import { upsertContactAndRecheck } from "./outbound-delivery.ts";
+import { ListQuery, SEND_REFUSALS, SendSchema, VisitorRef } from "./outbound-schemas.ts";
 import type { Presence, VisitorPresence } from "./presence.ts";
 import { listSavedReplies } from "./saved-replies.ts";
 import { listMembers } from "./team.ts";
@@ -515,7 +517,9 @@ export function chatTools(options: ChatToolsOptions): Tool[] {
       input: ContactFields.extend({ userId: UserId }),
       idempotent: true,
       async run({ userId, ...fields }, { workspaceId }) {
-        const { visitorId, created } = await outbound.upsertContact(workspaceId, userId, fields);
+        const { visitorId, created } = await withWorkspace(db, workspaceId, (tx) =>
+          upsertContactAndRecheck(tx, workspaceId, userId, fields, Date.now()),
+        );
         live.wake(workspaceId, OPERATORS);
         return { data: { visitorId, created } };
       },

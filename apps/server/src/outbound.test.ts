@@ -25,13 +25,9 @@ import {
 } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { noLive } from "./live.ts";
-import {
-  decide,
-  expireOutbound,
-  materializeOutbound,
-  runDueOutbound,
-  type Situation,
-} from "./outbound.ts";
+import { expireOutbound, runDueOutbound } from "./outbound.ts";
+import { materializeOutbound } from "./outbound-delivery.ts";
+import { decide } from "./outbound-rules.ts";
 import { fanOutWebhooksOne, webhookData } from "./webhooks.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
@@ -876,7 +872,7 @@ describe("materializeOutbound", () => {
 });
 
 describe("decide", () => {
-  const calm: Situation = {
+  const calm: Parameters<typeof decide>[1] = {
     writable: true,
     blocked: false,
     botsPaused: false,

@@ -22,6 +22,7 @@ import {
 } from "./db/tenant.ts";
 import { createDraft, DraftSchema, type DraftView } from "./drafts.ts";
 import {
+  BOTS_PAUSED,
   CONVERSATION_CLOSED,
   errorAnswer,
   FORBIDDEN,
@@ -86,7 +87,7 @@ import {
   snoozeConversation,
   WorkspaceClosedError,
 } from "./messages.ts";
-import { ChosenButtonSchema } from "./outbound.ts";
+import { ChosenButtonSchema } from "./outbound-schemas.ts";
 import type { VisitorPresence } from "./presence.ts";
 import type { ImageUrls } from "./public-images.ts";
 import { CLOSE_REASONS_TEXT, openLiveStream, type StreamOptions, streamLeaseMs } from "./stream.ts";
@@ -114,10 +115,6 @@ const MESSAGE_SEEN = failure(
   "The visitor has read this reply, or an email carried it, so it can no longer change.",
 );
 const NOT_YOURS = failure("forbidden", "You can change only your own replies.");
-const BOTS_PAUSED = failure(
-  "bots_paused",
-  "An owner or admin paused every bot of this workspace. Only people reply until they resume.",
-);
 const HUMAN_HANDLING = failure(
   "human_handling",
   "A person handles this conversation now, so a bot may not send. Write a draft or a note instead.",

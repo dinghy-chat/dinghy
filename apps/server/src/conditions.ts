@@ -17,6 +17,11 @@ const column = (name: string) => sql.raw(`"visitor"."${name}"`);
 const conversationsOfVisitor = sql`from conversation as c
   where c.workspace_id = "visitor"."workspace_id" and c.visitor_id = "visitor"."id"`;
 
+/** Whether the visitor has a conversation, as SQL over the `visitor` row. */
+export const hasChatted = sql<boolean>`exists (select 1 ${conversationsOfVisitor})`;
+/** How many conversations the visitor has, as SQL over the `visitor` row. */
+export const conversationCount = sql<number>`(select count(*)::int ${conversationsOfVisitor})`;
+
 /** Each field the grammar knows, by its kind of value, and its SQL. */
 const FIELDS = {
   name: { kind: "text", sql: column("name") },
@@ -33,8 +38,8 @@ const FIELDS = {
   signedIn: { kind: "boolean", sql: sql`(${column("user_id")} is not null)` },
   firstSeenAt: { kind: "time", sql: column("created_at") },
   lastSeenAt: { kind: "time", sql: column("last_seen_at") },
-  hasChatted: { kind: "boolean", sql: sql`exists (select 1 ${conversationsOfVisitor})` },
-  conversationCount: { kind: "number", sql: sql`(select count(*)::int ${conversationsOfVisitor})` },
+  hasChatted: { kind: "boolean", sql: hasChatted },
+  conversationCount: { kind: "number", sql: conversationCount },
 } as const satisfies Record<string, { kind: string; sql: SQL }>;
 
 type FieldName = keyof typeof FIELDS;
@@ -64,19 +69,8 @@ const OPS_BY_KIND: Record<FieldKind, readonly Op[]> = {
   boolean: ["eq", "ne", "exists", "missing"],
   number: ["eq", "ne", "in", "not_in", "gt", "gte", "lt", "lte"],
   time: ["exists", "missing", "gt", "gte", "lt", "lte", "older_than"],
-  attribute: [
-    "eq",
-    "ne",
-    "in",
-    "not_in",
-    "exists",
-    "missing",
-    "gt",
-    "gte",
-    "lt",
-    "lte",
-    "contains",
-  ],
+  // An attribute may hold any JSON, but no time that `older_than` reads.
+  attribute: OPS.filter((op) => op !== "older_than"),
 };
 
 const Scalar = z.union([z.string().max(500), z.number(), z.boolean()]);
@@ -213,8 +207,7 @@ export const ConditionSchema = z
         additionalProperties: false,
       },
     ],
-    description:
-      "A rule `{ field, op, value }`, or a group `{ all: [...] }`, `{ any: [...] }` or `{ not: ... }`, which nest. Fields: name, firstName, email, userId, attributes.<key>, language, country, timeZone, signedIn, firstSeenAt, lastSeenAt, hasChatted and conversationCount. Ops: eq, ne, in, not_in, exists, missing, gt, gte, lt, lte, contains, and older_than with a duration such as 7d.",
+    description: `A rule \`{ field, op, value }\`, or a group \`{ all: [...] }\`, \`{ any: [...] }\` or \`{ not: ... }\`, which nest. Fields: ${[...Object.keys(FIELDS), `${ATTRIBUTE_PREFIX}<key>`].join(", ")}. Ops: ${OPS.join(", ")}; older_than takes a duration such as 7d.`,
     example: {
       all: [
         { field: "attributes.plan", op: "in", value: ["trial", "pro"] },
