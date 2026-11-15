@@ -20,6 +20,8 @@ const RECEIPTS: Record<Receipt, { text: TextId; icon: IconName }> = {
 /** How far the visitor has seen a stored reply at this position. */
 export function receiptOf(seq: bigint, receipts: ReplyReceipts): Receipt {
   if (seq <= BigInt(receipts.readSeq)) return "read";
+  // An outbound message sent with email off is inside an email's range, and no email carried it.
+  if (receipts.notEmailed.includes(seq.toString())) return "sent";
   const carried = receipts.emails.filter(
     (email) => BigInt(email.fromSeq) <= seq && seq <= BigInt(email.toSeq),
   );

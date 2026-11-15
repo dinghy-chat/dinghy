@@ -83,6 +83,8 @@ export interface Analytics {
   days: number;
   timeZone: string;
   started: number;
+  /** Of those, the ones an outbound message started. */
+  startedByTeam: number;
   /** Of those, the ones closed now. */
   closed: number;
   answered: number;
@@ -121,6 +123,8 @@ export interface Conversation {
   assigneeOperatorId: string | null;
   /** The page where the visitor started it, as origin and path. */
   startedPage: string | null;
+  /** `team` when an outbound message started it. */
+  startedBy: "visitor" | "team";
   visitor: Visitor;
   /** What the host page sent with setContext(). Nobody signed it, so it is not verified. */
   pageContext: PageContext | null;
@@ -232,6 +236,12 @@ interface MessageFields {
   handoff: { operatorId: string | null } | null;
   /** The members a note mentions. Empty for any other message. */
   mentions: string[];
+  /** The outbound message it came from, or null. */
+  outboundId: string | null;
+  /** Who the visitor saw when not the author: a member, or the workspace. */
+  sender: "team" | { operatorId: string; name: string | null } | null;
+  /** A visitor's answer with an outbound message's button. */
+  button: { value: string | null; label: string } | null;
   createdAt: string;
 }
 
@@ -325,6 +335,56 @@ export interface ContactDetail extends Contact {
 export interface ReplyReceipts {
   readSeq: string;
   emails: { fromSeq: string; toSeq: string; sent: boolean }[];
+  /** Outbound messages sent with email off, which no email carried. */
+  notEmailed: string[];
+}
+
+type OutboundStatus =
+  | "scheduled"
+  | "pending"
+  | "delivered"
+  | "read"
+  | "replied"
+  | "dismissed"
+  | "cancelled"
+  | "expired";
+
+/** Why an outbound message waits, or why it was cancelled. */
+export type OutboundStatusReason =
+  | "open_conversation"
+  | "open_conversation_skipped"
+  | "human_handling"
+  | "bots_paused"
+  | "blocked"
+  | "permission_revoked"
+  | "workspace_inactive"
+  | "unless_matched"
+  | "audience_unmatched"
+  | "frequency_capped"
+  | "goal_reached"
+  | "outside_business_hours"
+  | "campaign_paused"
+  | "campaign_ended"
+  | "opted_out"
+  | "cancelled_by_api";
+
+/** A message from the team to one visitor, which may wait outside any conversation. */
+export interface OutboundMessage {
+  id: string;
+  status: OutboundStatus;
+  statusReason: OutboundStatusReason | null;
+  visitorId: string;
+  /** Null 30 days after it ended. */
+  body: string | null;
+  sender: "team" | { operatorId: string; name: string } | null;
+  author: { kind: "operator" | "key"; id: string; name: string; via: "mcp" | null };
+  conversationId: string | null;
+  sendAt: string;
+  readAt: string | null;
+  repliedAt: string | null;
+  dismissedAt: string | null;
+  cancelledAt: string | null;
+  createdAt: string;
 }
 
 export interface Me {
@@ -437,6 +497,9 @@ export interface WorkspaceSettings {
   deletion: { conversations: number; uploads: number; members: number; onlyWorkspace: boolean };
 }
 
+/** `send_as_member`: the key may send outbound messages with a member's name and picture. */
+export type ApiKeyPermission = "send_as_member";
+
 /** A workspace API key. Its token is shown only when it is made. */
 export interface ApiKey {
   id: string;
@@ -447,6 +510,8 @@ export interface ApiKey {
   /** `static`, a key made in Settings, or `oauth`, an app that an owner or admin connected. */
   source: "static" | "oauth";
   replyMode: ReplyMode;
+  /** What it may do beyond its level, such as send as a member. */
+  permissions: ApiKeyPermission[];
   /** A connected app's origin. Null for a static key. */
   client: ClientOrigin | null;
   createdByName: string | null;
@@ -465,6 +530,13 @@ export const WEBHOOK_EVENTS = [
   "conversation.handoff",
   "conversation.given_back",
   "conversation.labeled",
+  "outbound_message.pending",
+  "outbound_message.delivered",
+  "outbound_message.read",
+  "outbound_message.replied",
+  "outbound_message.dismissed",
+  "outbound_message.cancelled",
+  "outbound_message.expired",
 ] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 
@@ -768,8 +840,16 @@ export function workspaceApi(workspaceId: string) {
     dismissGetStarted: () => post<{ ok: true }>(`${base}/get-started/dismiss`, {}),
     liveVisitors: () => call<{ visitors: LiveVisitor[] | null }>(`${base}/visitors/live`),
     liveCount: () => call<{ count: number | null }>(`${base}/visitors/live/count`),
-    contacts: (query: { q: string; sort: ContactSort; before: string | null }) => {
-      const search = new URLSearchParams({ sort: query.sort });
+    contacts: (query: {
+      q: string;
+      sort: ContactSort;
+      before: string | null;
+      hasChatted: boolean;
+    }) => {
+      const search = new URLSearchParams({
+        sort: query.sort,
+        hasChatted: String(query.hasChatted),
+      });
       if (query.q.trim() !== "") search.set("q", query.q.trim());
       if (query.before !== null) search.set("before", query.before);
       return call<{ contacts: Contact[]; next: string | null }>(`${base}/contacts?${search}`);
@@ -785,9 +865,37 @@ export function workspaceApi(workspaceId: string) {
       }),
     deleteContact: (visitorId: string) =>
       call<{ ok: true }>(`${base}/contacts/${visitorId}`, { method: "DELETE" }),
+    outboundMessages: (visitorId: string) =>
+      call<{ outboundMessages: OutboundMessage[] }>(
+        `${base}/outbound-messages?visitorId=${visitorId}&limit=20`,
+      ),
+    /** A message by hand, from the signed-in member, to a visitor who may have no conversation. */
+    sendOutbound: (visitorId: string, clientId: string, body: string) =>
+      post<{ outboundMessage: OutboundMessage }>(`${base}/outbound-messages`, {
+        clientId,
+        visitor: { id: visitorId },
+        body,
+      }),
+    cancelOutbound: (id: string) =>
+      post<{ outboundMessage: OutboundMessage }>(`${base}/outbound-messages/${id}/cancel`, {}),
     apiKeys: () => call<{ apiKeys: ApiKey[] }>(`${base}/api-keys`),
-    createApiKey: (name: string, level: ApiKeyLevel, replyMode: ReplyMode) =>
-      post<ApiKey & { token: string }>(`${base}/api-keys`, { name, level, replyMode }),
+    createApiKey: (
+      name: string,
+      level: ApiKeyLevel,
+      replyMode: ReplyMode,
+      permissions: ApiKeyPermission[],
+    ) =>
+      post<ApiKey & { token: string }>(`${base}/api-keys`, {
+        name,
+        level,
+        replyMode,
+        permissions,
+      }),
+    setPermissions: (id: string, permissions: ApiKeyPermission[]) =>
+      call<ApiKey>(`${base}/api-keys/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ permissions }),
+      }),
     setReplyMode: (id: string, replyMode: ReplyMode) =>
       call<ApiKey>(`${base}/api-keys/${id}`, {
         method: "PATCH",
@@ -885,6 +993,7 @@ export function workspaceApi(workspaceId: string) {
       status: "open" | "closed",
       assignee: Assignee | null,
       labelId: string | null,
+      startedByTeam: boolean,
       limit: number,
       cancelled: () => boolean,
     ) {
@@ -894,7 +1003,8 @@ export function workspaceApi(workspaceId: string) {
       let openBy: OpenCounts | null = null;
       const whose =
         (assignee === null ? "" : `&assignee=${assignee}`) +
-        (labelId === null ? "" : `&label=${labelId}`);
+        (labelId === null ? "" : `&label=${labelId}`) +
+        (startedByTeam ? "&startedBy=team" : "");
       for (;;) {
         const last = conversations.at(-1);
         const before =

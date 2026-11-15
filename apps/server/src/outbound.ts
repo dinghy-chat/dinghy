@@ -225,14 +225,14 @@ export const SEND_REFUSALS = {
     status: 403,
     body: failure(
       "send_mode_required",
-      "This key drafts replies. Set it to Send directly in Settings > API keys.",
+      "This key drafts replies. Set it to Send directly in Settings > API & webhooks.",
     ),
   },
   send_as_member_required: {
     status: 403,
     body: failure(
       "send_as_member_required",
-      "This key may not send as a member. Turn on May send as a member in Settings > API keys.",
+      "This key may not send as a member. Turn on May send as a member in Settings > API & webhooks.",
     ),
   },
   bots_paused: {

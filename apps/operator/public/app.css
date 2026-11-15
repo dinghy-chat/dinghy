@@ -5021,6 +5021,17 @@ button.quote:hover {
 .conversation-card:hover {
   background: var(--row-hover);
 }
+/* An outbound message on a contact: the same card, with no link, and Cancel under it. */
+.outbound-card {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.outbound-card .text-button {
+  justify-self: start;
+}
 .conversation-top {
   display: flex;
   align-items: center;

@@ -33,11 +33,24 @@ export const WHO_ASSIGNEE: Record<Who, Assignee | null> = {
 /** The Label choice that lists every conversation. A label's ID is a UUID, so it never clashes. */
 const ANY_LABEL = "any";
 
-/** What the Inbox lists: with a label's ID, only the conversations that have it. */
-export type Filter = { status: Status; who: Who; label: string | null };
+/** Who started the conversations listed: anyone, or the team with an outbound message. */
+type Started = "anyone" | "team";
+const STARTED_OPTIONS: Option<Started>[] = [
+  { value: "anyone", label: "startedAnyone" },
+  { value: "team", label: "startedByTeam" },
+];
+
+/**
+ * What the Inbox lists: with a label's ID, only the conversations that have it, and with `team`
+ * only those the team started that the visitor has not answered.
+ */
+export type Filter = { status: Status; who: Who; label: string | null; started: Started };
 
 export const sameFilter = (one: Filter, other: Filter) =>
-  one.status === other.status && one.who === other.who && one.label === other.label;
+  one.status === other.status &&
+  one.who === other.who &&
+  one.label === other.label &&
+  one.started === other.started;
 
 /**
  * What the Inbox shows, from the address: `?view=closed`, `&who=mine` or `&who=unassigned`, and
@@ -50,11 +63,15 @@ export function filterInAddress(): Filter {
     status: params.get("view") === "closed" ? "closed" : "open",
     who: who === "mine" || who === "unassigned" ? who : "all",
     label: params.get("label"),
+    started: params.get("started") === "team" ? "team" : "anyone",
   };
 }
 
 /** The Inbox's address with this choice, keeping the rest of `from`, such as a conversation. */
-export function filterAddress({ status, who, label }: Filter, from = location.href): string {
+export function filterAddress(
+  { status, who, label, started }: Filter,
+  from = location.href,
+): string {
   const url = new URL(from);
   if (status === "closed") url.searchParams.set("view", "closed");
   else url.searchParams.delete("view");
@@ -62,11 +79,17 @@ export function filterAddress({ status, who, label }: Filter, from = location.hr
   else url.searchParams.set("who", who);
   if (label === null) url.searchParams.delete("label");
   else url.searchParams.set("label", label);
+  if (started === "anyone") url.searchParams.delete("started");
+  else url.searchParams.set("started", started);
   return `${url.pathname}${url.search}`;
 }
 
 /** The empty list's words: a filter's own, or the status's. */
-export function emptyLook({ status, who, label }: Filter): { empty: TextId; hint: TextId | null } {
+export function emptyLook({ status, who, label, started }: Filter): {
+  empty: TextId;
+  hint: TextId | null;
+} {
+  if (started === "team") return { empty: "noStartedByTeam", hint: null };
   if (label !== null) return { empty: "noLabeled", hint: null };
   if (who === "mine") return { empty: "noMine", hint: null };
   if (who === "unassigned" && status === "open") return { empty: "noUnassigned", hint: null };
@@ -92,8 +115,8 @@ export function ListFilters({
   labels: Label[];
   onChange(filter: Filter): void;
 }) {
-  const { status, who, label } = filter;
-  const filtered = status !== "open" || who !== "all" || label !== null;
+  const { status, who, label, started } = filter;
+  const filtered = status !== "open" || who !== "all" || label !== null || started !== "anyone";
   return (
     <Popover
       label={t(filtered ? "listFiltered" : "listFilter")}
@@ -133,6 +156,17 @@ export function ListFilters({
           />
         </>
       )}
+      <p className="popover-label" aria-hidden="true">
+        {t("listStarted")}
+      </p>
+      <Choices
+        label={t("listStarted")}
+        variant="outlined"
+        full
+        value={started}
+        options={STARTED_OPTIONS}
+        onChange={(next) => onChange({ ...filter, started: next })}
+      />
       {(labels.length > 0 || label !== null) && (
         <>
           <p className="popover-label" aria-hidden="true">

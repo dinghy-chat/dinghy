@@ -168,6 +168,15 @@ export function ThreadLine({
         </div>
       )}
       {receipt !== null && <ReceiptLine receipt={receipt} />}
+      {line.outboundId !== null && (
+        <div className="meta">
+          {line.authorApiKeyId !== null && <span className="chip">{t("outboundAutomatic")}</span>}
+          {outboundSender(line)}
+        </div>
+      )}
+      {line.button !== null && (
+        <div className="meta visitor">{t("outboundChose", { label: line.button.label })}</div>
+      )}
       {line.via === "email" && (
         <div className="meta visitor">
           {line.fromAddress === null
@@ -183,6 +192,17 @@ export function ThreadLine({
       )}
     </>
   );
+}
+
+/**
+ * Who the visitor saw on a message that an outbound message became, and who sent it when that
+ * differs: "Julien, via Welcome bot". The visitor sees only the first name.
+ */
+function outboundSender(line: Line): string {
+  const author = line.authorName ?? t("aTeammate");
+  if (line.sender === null) return author;
+  const shown = line.sender === "team" ? t("outboundTeam") : (line.sender.name ?? t("aTeammate"));
+  return t("outboundVia", { name: shown, via: author });
 }
 
 /** Someone closed or reopened the conversation. */

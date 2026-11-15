@@ -17,6 +17,7 @@ import {
   Avatar,
   Choices,
   CopyField,
+  CopyId,
   DocLink,
   ErrorNote,
   Field,
@@ -195,6 +196,7 @@ function MemberRow({
               {self && <span className="you">{t("you")}</span>}
             </strong>
             <span className="phone-only">{member.email}</span>
+            <CopyId value={member.id} label="memberId" />
             {phoneTwoFactor !== null && <span className="phone-only">{t(phoneTwoFactor)}</span>}
           </span>
         </div>

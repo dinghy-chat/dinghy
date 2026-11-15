@@ -52,6 +52,10 @@ interface LineFields {
   handoff: Message["handoff"];
   /** The members a note mentions. */
   mentions: string[];
+  /** The outbound message it came from, who the visitor saw then, and a visitor's button. */
+  outboundId: Message["outboundId"];
+  sender: Message["sender"];
+  button: Message["button"];
 }
 
 export type Line = LineFields & MessageVia;
@@ -76,6 +80,9 @@ function merge(lines: Line[], message: Message): Line[] {
     ...viaOf(message),
     handoff: message.handoff,
     mentions: message.mentions,
+    outboundId: message.outboundId,
+    sender: message.sender,
+    button: message.button,
   };
   const others = lines.filter(
     (other) => other.id !== message.id && !(other.seq === null && other.id === message.clientId),
@@ -220,6 +227,9 @@ export function useThreadLines({
     via: null,
     handoff: null,
     mentions,
+    outboundId: null,
+    sender: null,
+    button: null,
   });
 
   /** Sends a reply, or a note that only the team sees, which alerts the members it mentions. */

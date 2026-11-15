@@ -20,7 +20,16 @@ import { Confirm, Select } from "./popup.tsx";
 import { ListSkeleton } from "./skeleton.tsx";
 import { plural, type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
-import { AddForm, CopyField, ErrorNote, Field, failureText, Page, StatusNote } from "./ui.tsx";
+import {
+  AddForm,
+  CopyField,
+  ErrorNote,
+  Field,
+  failureText,
+  Page,
+  StatusNote,
+  Switch,
+} from "./ui.tsx";
 import { ago, bare } from "./visitor.ts";
 
 const MAX_WEBHOOKS = 5;
@@ -39,6 +48,13 @@ const EVENT_TEXT: Record<WebhookEvent, TextId> = {
   "conversation.handoff": "webhookEventHandoff",
   "conversation.given_back": "webhookEventGivenBack",
   "conversation.labeled": "webhookEventLabeled",
+  "outbound_message.pending": "webhookEventOutboundPending",
+  "outbound_message.delivered": "webhookEventOutboundDelivered",
+  "outbound_message.read": "webhookEventOutboundRead",
+  "outbound_message.replied": "webhookEventOutboundReplied",
+  "outbound_message.dismissed": "webhookEventOutboundDismissed",
+  "outbound_message.cancelled": "webhookEventOutboundCancelled",
+  "outbound_message.expired": "webhookEventOutboundExpired",
 };
 
 const DELIVERY_TEXT: Record<WebhookDelivery["status"], TextId> = {
@@ -169,6 +185,41 @@ function ReplyModeSelect({
   );
 }
 
+const SENDERS: { value: "key" | "member"; label: TextId }[] = [
+  { value: "key", label: "apiKeySendsAsItself" },
+  { value: "member", label: "apiKeyMaySendAsMember" },
+];
+
+/** Whether a key's outbound messages may show a member, which saves as soon as it changes. */
+function SenderSelect({
+  api,
+  apiKey,
+  onSaved,
+  onFailed,
+}: {
+  api: WorkspaceApi;
+  apiKey: ApiKey;
+  onSaved(key: ApiKey): void;
+  onFailed(error: unknown): void;
+}) {
+  return (
+    <Select<"key" | "member">
+      label={t("apiKeySenderFor", { name: apiKey.name })}
+      value={apiKey.permissions.includes("send_as_member") ? "member" : "key"}
+      choices={SENDERS.map((one) => ({ value: one.value, label: t(one.label) }))}
+      side="end"
+      onChange={(sender) =>
+        void api
+          .setPermissions(apiKey.id, sender === "member" ? ["send_as_member"] : [])
+          .then((saved) => {
+            onSaved(saved);
+            toast("saved");
+          }, onFailed)
+      }
+    />
+  );
+}
+
 type LoadedKeys = Loaded<{ apiKeys: ApiKey[] }>;
 
 /** A key's or an app's reply mode and its Revoke or Disconnect, which asks first. */
@@ -189,6 +240,7 @@ function KeyTools({
   return (
     <>
       <ReplyModeSelect api={api} apiKey={apiKey} onSaved={onSaved} onFailed={onFailed} />
+      <SenderSelect api={api} apiKey={apiKey} onSaved={onSaved} onFailed={onFailed} />
       <button
         type="button"
         className="pill small danger-soft"
@@ -218,6 +270,7 @@ function KeysSection({
   const [name, setName] = useState("");
   const [level, setLevel] = useState<ApiKeyLevel>("conversations");
   const [replyMode, setReplyMode] = useState<ReplyMode>("draft");
+  const [asMember, setAsMember] = useState(false);
   // The new key's token, shown once in the key's own row.
   const [made, setMade] = useState<{ id: string; name: string; token: string } | null>(null);
   const { busy, failure, setFailure, run: act } = useAction(keys.reload);
@@ -230,10 +283,14 @@ function KeysSection({
     setName("");
     setLevel("conversations");
     setReplyMode("draft");
+    setAsMember(false);
   };
   const create = () =>
     act(async () => {
-      const { token, ...key } = await api.createApiKey(name.trim(), level, replyMode);
+      const permissions = asMember ? (["send_as_member"] as const) : [];
+      const { token, ...key } = await api.createApiKey(name.trim(), level, replyMode, [
+        ...permissions,
+      ]);
       setMade({ id: key.id, name: key.name, token });
       resetForm();
     });
@@ -324,6 +381,12 @@ function KeysSection({
           />
           <LevelChoice className="key-level" value={level} onChange={setLevel} />
           <ReplyModeChoice className="key-level" value={replyMode} onChange={setReplyMode} />
+          <Switch
+            label={t("apiKeyMaySendAsMember")}
+            hint={t("apiKeyMaySendAsMemberHint")}
+            checked={asMember}
+            onChange={setAsMember}
+          />
         </AddForm>
       )}
       <ErrorNote text={failure ?? keys.failure} />

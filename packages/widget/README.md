@@ -42,18 +42,18 @@ Set `--dinghy-font`, `--dinghy-radius` and `--dinghy-launcher-radius` on the `di
 
 ## Host page API
 
-| Call                                | What it does                                                                                                       |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `Dinghy.open({ message })`          | Opens the chat. `message` is optional and fills the message box without sending it                                 |
-| `Dinghy.close()`, `Dinghy.toggle()` | Closes the chat, or opens it if it is closed                                                                       |
-| `Dinghy.show()`, `Dinghy.hide()`    | Shows or hides the launcher                                                                                        |
-| `Dinghy.identify(token)`            | Signs in a user. `token` is a string, or a function that returns a promise of one, so a tab can renew a token      |
-| `Dinghy.reset()`                    | Ends the session in all tabs. Call this at sign-out                                                                |
-| `Dinghy.setContext(data)`           | Unsigned facts for operators, such as a plan. Up to 20 keys, each a short string, a number, a boolean or `null`    |
-| `Dinghy.configure(options)`         | Changes `primary`, `accent`, `position`, `offsetX`, `offsetY` and `zIndex` now, and `locale` before the chat opens |
-| `Dinghy.nudge()`, `Dinghy.nudge(false)` | Pulses the launcher until the next open, or stops it. A waiting outbound message starts it too                |
-| `Dinghy.on(event, callback)`        | Calls `callback` on each event, and returns a function that removes it                                             |
-| `Dinghy.state`                      | `{ ready, open, unread, conversation, visitorId, nudging }`. `visitorId` is null before the visitor exists         |
+| Call                                    | What it does                                                                                                       |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `Dinghy.open({ message })`              | Opens the chat. `message` is optional and fills the message box without sending it                                 |
+| `Dinghy.close()`, `Dinghy.toggle()`     | Closes the chat, or opens it if it is closed                                                                       |
+| `Dinghy.show()`, `Dinghy.hide()`        | Shows or hides the launcher                                                                                        |
+| `Dinghy.identify(token)`                | Signs in a user. `token` is a string, or a function that returns a promise of one, so a tab can renew a token      |
+| `Dinghy.reset()`                        | Ends the session in all tabs. Call this at sign-out                                                                |
+| `Dinghy.setContext(data)`               | Unsigned facts for operators, such as a plan. Up to 20 keys, each a short string, a number, a boolean or `null`    |
+| `Dinghy.configure(options)`             | Changes `primary`, `accent`, `position`, `offsetX`, `offsetY` and `zIndex` now, and `locale` before the chat opens |
+| `Dinghy.nudge()`, `Dinghy.nudge(false)` | Pulses the launcher until the next open, or stops it. A waiting outbound message starts it too                     |
+| `Dinghy.on(event, callback)`            | Calls `callback` on each event, and returns a function that removes it                                             |
+| `Dinghy.state`                          | `{ ready, open, unread, conversation, visitorId, nudging }`. `visitorId` is null before the visitor exists         |
 
 The events are `ready`, `open`, `close`, `unread` (the count, at once and on each change), `conversation`, `nudge` (at once and on each change), `visitor` (the visitor's ID, once it exists), `message:sent`, `message:received`, `conversation:started`, `outbound:read` and `outbound:dismissed`.
 

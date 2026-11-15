@@ -13,6 +13,7 @@ Connect Claude Code with OAuth: run `claude mcp add --transport http dinghy http
 ## Install the chat on a site
 
 - [Add the chat to your site](https://dinghy.chat/docs/add-to-your-site): the tag, colors, position, theming, the browser API, signed-in users and the CSP.
+- [Outbound messages](https://dinghy.chat/docs/outbound-messages): send a message to one visitor from your server, an AI agent or by hand, before any conversation.
 - [Self-hosting](https://dinghy.chat/docs/self-hosting): run your own Dinghy server.
 
 Add one tag before `</body>`, with the workspace's public key from Settings > Install:

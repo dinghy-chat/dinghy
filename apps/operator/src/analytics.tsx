@@ -257,6 +257,9 @@ function Stats({ numbers, days }: { numbers: Analytics; days: Period }) {
       <Stat title="statStarted">
         <p className="stat-value">{started}</p>
         <StartedChange numbers={numbers} days={days} />
+        {numbers.startedByTeam > 0 && (
+          <p className="stat-note">{t("statStartedByTeam", { count: numbers.startedByTeam })}</p>
+        )}
         <Sparkline days={numbers.perDay} />
       </Stat>
       <Stat title="statMedian" help="statMedianHelp">

@@ -47,6 +47,7 @@ describe("waiting", () => {
     updatedAt: "2026-11-07T10:00:00.000Z",
     assigneeOperatorId: null,
     startedPage: null,
+    startedBy: "visitor",
     pageContext: null,
     visitor: {
       id: "v",
