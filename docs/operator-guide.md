@@ -70,7 +70,7 @@ Press **?** anywhere in the app, or open **Help** at the bottom of the sidebar, 
 | **J** and **K** | Open the next or the previous conversation in the list |
 | **X** | Chooses the open conversation for a [bulk action](#answer-a-chat), or takes it out |
 | **R** and **N** | Put the cursor in the reply box, as a reply or as a note |
-| **E** | Closes the conversation and opens the next one in the list. On a closed conversation, reopens it |
+| **Shift+E** | Closes the conversation and opens the next one in the list. On a closed conversation, reopens it |
 | **A** and **I** | Open **Who answers**, or assign the conversation to you |
 | **L** | Opens the conversation's labels |
 | **.** | Opens the **…** menu |

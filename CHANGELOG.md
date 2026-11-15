@@ -4,6 +4,11 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- In the operator app, Shift+E closes a conversation. E alone did it before, so one stray key could close a chat.
+- A click on **Reply** or **Note** above the message box, or on **Reply** in a message's menu, puts the cursor in the box.
+
 ## [0.33.1] - 2026-11-14
 
 ### Fixed

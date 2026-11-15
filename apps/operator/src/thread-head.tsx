@@ -194,7 +194,7 @@ export function ThreadHead({
         <button
           type="button"
           className={closed ? "pill" : "pill dark"}
-          title={withKey(closed ? t("reopen") : t("close"), "e", keysOn)}
+          title={withKey(closed ? t("reopen") : t("close"), "E", keysOn)}
           onClick={() => onStatus(closed ? "open" : "closed")}
         >
           <Icon name={closed ? "inbox" : "done"} size={16} />

@@ -21,6 +21,12 @@ import { Keys } from "./shortcuts.tsx";
 import { type TextId, t } from "./text.ts";
 import { Choices, EmojiButton, type Option } from "./ui.tsx";
 
+/** Puts the caret in the message box after the next render, which may switch reply and note. */
+export const focusComposer = () =>
+  requestAnimationFrame(() =>
+    document.querySelector<HTMLElement>(".compose:not(.editing) .ProseMirror")?.focus(),
+  );
+
 /** A reply goes to the visitor, and a note stays with the team. */
 export type ComposeMode = "reply" | "note";
 
