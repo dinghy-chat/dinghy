@@ -13,7 +13,7 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Outbound messages: your server, an AI agent or a member can send a message to one visitor before any conversation, with `POST /outbound-messages`, the MCP tool `send_outbound_message` or the **Message** button on a contact and in Visitors. It waits on the contact and goes in a conversation only when the visitor answers, or at once with `startConversation: "now"`. It takes buttons, a sender (a member, the team or the key), `once`, `delay` or `sendAt`, `unless`, `expiresAt` and `email`. Its status and the reason it waits are on the contact page, in the API and in the new `outbound_message.*` webhooks.
 - `PUT /contacts/by-user/{userId}` creates or updates a contact by your own user ID, and the MCP tool `upsert_contact` does the same. Attributes merge key by key, and the later write wins, from this route or a host token.
 - Contacts lists the people your server created or sent a message to when **Has chatted** is off, and takes a filter on their fields.
-- An API key can get the permission **May send as a member**, in Settings > API & webhooks.
+- An API key can get the permissions **May send as a member** and **May email visitors**, in Settings > API & webhooks. A key needs the second to send an outbound message with `email: true`.
 - The widget shows outbound messages as a badge, a card above the launcher or the open chat, and has `Dinghy.nudge()`, `Dinghy.state.visitorId`, `Dinghy.state.nudging` and the events `visitor`, `nudge`, `outbound:read` and `outbound:dismissed`.
 - `@dinghy-chat/sdk`, a typed client for your server: the whole operator API, outbound messages, contacts, the event stream, host tokens and webhook checks.
 

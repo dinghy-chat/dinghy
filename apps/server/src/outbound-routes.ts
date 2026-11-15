@@ -48,7 +48,7 @@ const sendRoute = createRoute({
       "invalid_request: the request is not valid, the sender is not a member, or expiresAt comes before the send time",
     ),
     403: errorAnswer(
-      "send_mode_required: the key drafts replies. send_as_member_required: the key may not send as a member. blocked: the team blocked this visitor. suspended: the server's admin suspended the workspace",
+      "send_mode_required: the key drafts replies. send_as_member_required: the key may not send as a member. send_email_required: the key may not send with `email: true`. blocked: the team blocked this visitor. suspended: the server's admin suspended the workspace",
     ),
     404: errorAnswer("not_found: no visitor has this `id`"),
     409: errorAnswer("bots_paused: an owner or admin paused every bot"),

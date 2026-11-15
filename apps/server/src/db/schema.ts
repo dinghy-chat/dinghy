@@ -948,8 +948,11 @@ export type ApiKeyLevel = (typeof API_KEY_LEVELS)[number];
 export const API_KEY_SOURCES = ["static", "oauth"] as const;
 export type ApiKeySource = (typeof API_KEY_SOURCES)[number];
 
-/** What a key may do beyond its level: `send_as_member` sends outbound messages as a member. */
-export const API_KEY_PERMISSIONS = ["send_as_member"] as const;
+/**
+ * What a key may do beyond its level: `send_as_member` sends outbound messages as a member, and
+ * `send_email` sends outbound messages with `email: true`, which a reply email carries.
+ */
+export const API_KEY_PERMISSIONS = ["send_as_member", "send_email"] as const;
 export type ApiKeyPermission = (typeof API_KEY_PERMISSIONS)[number];
 
 /** What a key's reply does: `send` goes to the visitor, and `draft` waits for an operator. */

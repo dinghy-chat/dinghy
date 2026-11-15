@@ -188,7 +188,7 @@ At the send time, Dinghy checks the message again: a blocked visitor, the key's 
 | `human_handling` | Waits | A person handles the open conversation, so a key's message does not join it |
 | `bots_paused` | Waits | An owner or admin paused every bot, and the key's message waits for the resume |
 | `blocked` | Cancels | The team blocked the visitor |
-| `permission_revoked` | Waits or cancels | It cancels when the key was revoked or the member sender left the team. It waits when the key lost **May send as a member** or went back to **Drafts only** |
+| `permission_revoked` | Waits or cancels | It cancels when the key was revoked or the member sender left the team. It waits when the key lost **May send as a member** or **May email visitors**, or went back to **Drafts only** |
 | `workspace_inactive` | Waits | The workspace is read-only or suspended |
 | `unless_matched` | Cancels | `unless` matched the contact |
 | `cancelled_by_api` | Cancels | A cancel through the API, MCP or the operator app |
@@ -263,7 +263,7 @@ A message that the visitor has not read ends as `expired` at `expiresAt`, which 
 
 ## Email
 
-`email` is `false` by default. With `true`, `startConversation: "now"` and a visitor with an email, the reply email carries the message, with its usual link to stop these emails. With `false`, the reply email leaves it out, even when a member's later reply goes out by email. A message left out of an email never shows an email receipt.
+`email` is `false` by default. With `true`, `startConversation: "now"` and a visitor with an email, the reply email carries the message, with its usual link to stop these emails. A key needs **May email visitors** to send with `true`, or the send answers 403 `send_email_required`, because a key that sets the contact's email chooses where the email goes. A member who sends by hand needs no permission. With `false`, the reply email leaves it out, even when a member's later reply goes out by email. A message left out of an email never shows an email receipt.
 
 ## Buttons
 

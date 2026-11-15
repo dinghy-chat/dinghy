@@ -271,6 +271,22 @@ describe("a send", () => {
     expect(second.outboundMessages.map((one) => one.id)).toEqual([older.outboundMessage.id]);
   });
 
+  test("email needs the key's permission, and a member by hand needs none", async () => {
+    const email = { visitor: { userId: userId() }, body: "By email", email: true };
+    const refused = await send(email);
+    expect([refused.status, refused.error?.code]).toEqual([403, "send_email_required"]);
+    await owner
+      .update(apiKey)
+      .set({ permissions: ["send_email"] })
+      .where(eq(apiKey.id, bot.id));
+    expect((await send(email)).status).toBe(201);
+    const byHand = await asOperator(app, boss.cookie, "POST", inSpace("/outbound-messages"), {
+      clientId: randomUUID(),
+      ...email,
+    });
+    expect(byHand.status).toBe(201);
+  });
+
   test("a sixth waiting message for one visitor is refused", async () => {
     const user = userId();
     for (let index = 0; index < 5; index++) {
@@ -785,7 +801,7 @@ describe("decide", () => {
     writable: true,
     blocked: false,
     botsPaused: false,
-    key: { revoked: false, replyMode: "send", mayActAsMember: true },
+    key: { revoked: false, replyMode: "send", mayActAsMember: true, maySendEmail: true },
     senderActive: true,
     open: null,
     unlessMatched: false,
@@ -794,6 +810,7 @@ describe("decide", () => {
     authorApiKeyId: "k",
     senderKind: "author" as const,
     ifOpen: "join" as const,
+    email: false,
   };
 
   test("follows the reply gate for a key, and joins for a member", () => {
@@ -815,6 +832,15 @@ describe("decide", () => {
       kind: "wait",
       reason: "workspace_inactive",
     });
+  });
+
+  test("a key's email message waits while the key may not send email", () => {
+    const noEmail = { ...calm, key: calm.key && { ...calm.key, maySendEmail: false } };
+    expect(decide({ ...keyMessage, email: true }, noEmail)).toEqual({
+      kind: "wait",
+      reason: "permission_revoked",
+    });
+    expect(decide(keyMessage, noEmail)).toEqual({ kind: "go" });
   });
 });
 

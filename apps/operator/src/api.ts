@@ -498,8 +498,11 @@ export interface WorkspaceSettings {
   deletion: { conversations: number; uploads: number; members: number; onlyWorkspace: boolean };
 }
 
-/** `send_as_member`: the key may send outbound messages with a member's name and picture. */
-export type ApiKeyPermission = "send_as_member";
+/**
+ * `send_as_member`: the key may send outbound messages with a member's name and picture.
+ * `send_email`: it may send outbound messages that a reply email carries.
+ */
+export type ApiKeyPermission = "send_as_member" | "send_email";
 
 /** A workspace API key. Its token is shown only when it is made. */
 export interface ApiKey {

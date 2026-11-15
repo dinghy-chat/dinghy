@@ -115,6 +115,7 @@ export const ERROR_CODES = [
   "saved_reply_limit",
   "saved_reply_shortcut_taken",
   "send_as_member_required",
+  "send_email_required",
   "send_mode_required",
   "signed_in",
   "sign_in_again",

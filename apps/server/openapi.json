@@ -95,6 +95,7 @@
                   "saved_reply_limit",
                   "saved_reply_shortcut_taken",
                   "send_as_member_required",
+                  "send_email_required",
                   "send_mode_required",
                   "signed_in",
                   "sign_in_again",
@@ -1612,7 +1613,7 @@
             "type": "array",
             "items": {
               "type": "string",
-              "enum": ["send_as_member"]
+              "enum": ["send_as_member", "send_email"]
             }
           },
           "client": {
@@ -9194,9 +9195,9 @@
                     "type": "array",
                     "items": {
                       "type": "string",
-                      "enum": ["send_as_member"]
+                      "enum": ["send_as_member", "send_email"]
                     },
-                    "maxItems": 1,
+                    "maxItems": 2,
                     "default": []
                   }
                 },
@@ -9355,9 +9356,9 @@
                     "type": "array",
                     "items": {
                       "type": "string",
-                      "enum": ["send_as_member"]
+                      "enum": ["send_as_member", "send_email"]
                     },
-                    "maxItems": 1
+                    "maxItems": 2
                   }
                 }
               }
@@ -15357,7 +15358,7 @@
             }
           },
           "403": {
-            "description": "send_mode_required: the key drafts replies. send_as_member_required: the key may not send as a member. blocked: the team blocked this visitor. suspended: the server's admin suspended the workspace",
+            "description": "send_mode_required: the key drafts replies. send_as_member_required: the key may not send as a member. send_email_required: the key may not send with `email: true`. blocked: the team blocked this visitor. suspended: the server's admin suspended the workspace",
             "content": {
               "application/json": {
                 "schema": {

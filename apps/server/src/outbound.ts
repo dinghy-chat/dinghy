@@ -212,6 +212,7 @@ type Row = typeof outboundMessage.$inferSelect;
 export type SendRefusal =
   | "send_mode_required"
   | "send_as_member_required"
+  | "send_email_required"
   | "bots_paused"
   | "blocked"
   | "too_many_waiting"
@@ -232,6 +233,13 @@ export const SEND_REFUSALS = {
     body: failure(
       "send_as_member_required",
       "This key may not send as a member. Turn on May send as a member in Settings > API & webhooks.",
+    ),
+  },
+  send_email_required: {
+    status: 403,
+    body: failure(
+      "send_email_required",
+      "This key may not send email. Turn on May email visitors in Settings > API & webhooks.",
     ),
   },
   bots_paused: {
@@ -357,13 +365,21 @@ export interface Situation {
   blocked: boolean;
   botsPaused: boolean;
   /** The key that sent it, or null for a member's. */
-  key: { revoked: boolean; replyMode: "send" | "draft"; mayActAsMember: boolean } | null;
+  key: KeyState | null;
   /** Whether the member it shows as is still on the team. True for any other sender. */
   senderActive: boolean;
   /** The visitor's open conversation, or null. */
   open: { id: string; humanSince: Date | null } | null;
   /** The `unless` condition matches the contact now. */
   unlessMatched: boolean;
+}
+
+/** What the key that sent a message may do now. */
+interface KeyState {
+  revoked: boolean;
+  replyMode: "send" | "draft";
+  mayActAsMember: boolean;
+  maySendEmail: boolean;
 }
 
 export type Verdict =
@@ -378,7 +394,7 @@ export type Verdict =
  * message follows the reply gate: it never joins a conversation that a person handles.
  */
 export function decide(
-  message: Pick<Row, "authorApiKeyId" | "senderKind" | "ifOpen">,
+  message: Pick<Row, "authorApiKeyId" | "senderKind" | "ifOpen" | "email">,
   now: Situation,
 ): Verdict {
   if (now.blocked) return { kind: "cancel", reason: "blocked" };
@@ -388,6 +404,9 @@ export function decide(
   }
   if (!now.writable) return { kind: "wait", reason: "workspace_inactive" };
   if (message.senderKind === "member" && now.key !== null && !now.key.mayActAsMember) {
+    return { kind: "wait", reason: "permission_revoked" };
+  }
+  if (message.email && now.key !== null && !now.key.maySendEmail) {
     return { kind: "wait", reason: "permission_revoked" };
   }
   if (now.open !== null && message.ifOpen === "skip") {
@@ -461,7 +480,7 @@ async function situation(
   };
 }
 
-async function keyState(tx: Transaction, workspaceId: string, apiKeyId: string) {
+async function keyState(tx: Transaction, workspaceId: string, apiKeyId: string): Promise<KeyState> {
   const [key] = await tx
     .select({
       revokedAt: apiKey.revokedAt,
@@ -470,12 +489,14 @@ async function keyState(tx: Transaction, workspaceId: string, apiKeyId: string) 
     })
     .from(apiKey)
     .where(and(eq(apiKey.workspaceId, workspaceId), eq(apiKey.id, apiKeyId)));
-  if (key === undefined)
-    return { revoked: true, replyMode: "draft" as const, mayActAsMember: false };
+  if (key === undefined) {
+    return { revoked: true, replyMode: "draft", mayActAsMember: false, maySendEmail: false };
+  }
   return {
     revoked: key.revokedAt !== null,
     replyMode: key.replyMode,
     mayActAsMember: key.permissions.includes("send_as_member"),
+    maySendEmail: key.permissions.includes("send_email"),
   };
 }
 
@@ -992,11 +1013,12 @@ type SendOutcome =
   | { kind: "sent"; created: boolean; outboundMessage: OutboundView }
   | { kind: "refused"; refusal: SendRefusal };
 
-/** Where a send stands before its transaction: the key's mode and its permission. */
+/** Who the visitor sees on a send, after the key's permission to show a member. */
 async function sendsAs(
   tx: Transaction,
   workspaceId: string,
   actor: Actor,
+  key: KeyState | null,
   sender: SendInput["sender"],
 ): Promise<{ senderKind: Row["senderKind"]; senderOperatorId: string | null } | SendRefusal> {
   if (sender === "team") return { senderKind: "team", senderOperatorId: null };
@@ -1005,10 +1027,7 @@ async function sendsAs(
       ? { senderKind: "author", senderOperatorId: null }
       : { senderKind: "member", senderOperatorId: actor.operatorId };
   }
-  if (actor.kind === "key") {
-    const key = await keyState(tx, workspaceId, actor.apiKeyId);
-    if (!key.mayActAsMember) return "send_as_member_required";
-  }
+  if (key !== null && !key.mayActAsMember) return "send_as_member_required";
   const [member] = await tx
     .select({ id: workspaceMember.operatorId })
     .from(workspaceMember)
@@ -1120,13 +1139,11 @@ export function createOutbound({ db, live }: { db: Database; live: Signals }) {
       const outcome = await withWorkspace(db, workspaceId, async (tx) => {
         const first = await retried(tx, workspaceId, actor, input.clientId);
         if (first !== undefined) return { created: false, id: first, visitorId: null };
-        if (
-          actor.kind === "key" &&
-          (await keyState(tx, workspaceId, actor.apiKeyId)).replyMode === "draft"
-        ) {
-          return "send_mode_required" as const;
-        }
-        const as = await sendsAs(tx, workspaceId, actor, input.sender);
+        // A member by hand needs no permission for either.
+        const key = actor.kind === "key" ? await keyState(tx, workspaceId, actor.apiKeyId) : null;
+        if (key?.replyMode === "draft") return "send_mode_required" as const;
+        if (input.email && key !== null && !key.maySendEmail) return "send_email_required" as const;
+        const as = await sendsAs(tx, workspaceId, actor, key, input.sender);
         if (typeof as === "string") return as;
         const visitorId = await sendTarget(tx, workspaceId, input.visitor);
         if (visitorId === null) return "not_found" as const;

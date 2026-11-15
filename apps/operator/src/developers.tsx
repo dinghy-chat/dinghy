@@ -3,6 +3,7 @@ import { type ReactNode, useState } from "react";
 import {
   type ApiKey,
   type ApiKeyLevel,
+  type ApiKeyPermission,
   type ReplyMode,
   WEBHOOK_EVENTS,
   type Webhook,
@@ -185,32 +186,57 @@ function ReplyModeSelect({
   );
 }
 
-const SENDERS: { value: "key" | "member"; label: TextId }[] = [
-  { value: "key", label: "apiKeySendsAsItself" },
-  { value: "member", label: "apiKeyMaySendAsMember" },
+/** A key's permissions, each with its control's name and its two choices. */
+const PERMISSIONS: {
+  permission: ApiKeyPermission;
+  label: TextId;
+  off: TextId;
+  on: TextId;
+  hint: TextId;
+}[] = [
+  {
+    permission: "send_as_member",
+    label: "apiKeySenderFor",
+    off: "apiKeySendsAsItself",
+    on: "apiKeyMaySendAsMember",
+    hint: "apiKeyMaySendAsMemberHint",
+  },
+  {
+    permission: "send_email",
+    label: "apiKeyEmailFor",
+    off: "apiKeyChatOnly",
+    on: "apiKeyMaySendEmail",
+    hint: "apiKeyMaySendEmailHint",
+  },
 ];
 
-/** Whether a key's outbound messages may show a member, which saves as soon as it changes. */
-function SenderSelect({
+/** One permission of a key, which saves as soon as it changes and keeps the others. */
+function PermissionSelect({
   api,
   apiKey,
+  choice,
   onSaved,
   onFailed,
 }: {
   api: WorkspaceApi;
   apiKey: ApiKey;
+  choice: (typeof PERMISSIONS)[number];
   onSaved(key: ApiKey): void;
   onFailed(error: unknown): void;
 }) {
+  const others = apiKey.permissions.filter((one) => one !== choice.permission);
   return (
-    <Select<"key" | "member">
-      label={t("apiKeySenderFor", { name: apiKey.name })}
-      value={apiKey.permissions.includes("send_as_member") ? "member" : "key"}
-      choices={SENDERS.map((one) => ({ value: one.value, label: t(one.label) }))}
+    <Select<"off" | "on">
+      label={t(choice.label, { name: apiKey.name })}
+      value={apiKey.permissions.includes(choice.permission) ? "on" : "off"}
+      choices={[
+        { value: "off", label: t(choice.off) },
+        { value: "on", label: t(choice.on) },
+      ]}
       side="end"
-      onChange={(sender) =>
+      onChange={(value) =>
         void api
-          .setPermissions(apiKey.id, sender === "member" ? ["send_as_member"] : [])
+          .setPermissions(apiKey.id, value === "on" ? [...others, choice.permission] : others)
           .then((saved) => {
             onSaved(saved);
             toast("saved");
@@ -240,7 +266,16 @@ function KeyTools({
   return (
     <>
       <ReplyModeSelect api={api} apiKey={apiKey} onSaved={onSaved} onFailed={onFailed} />
-      <SenderSelect api={api} apiKey={apiKey} onSaved={onSaved} onFailed={onFailed} />
+      {PERMISSIONS.map((choice) => (
+        <PermissionSelect
+          key={choice.permission}
+          api={api}
+          apiKey={apiKey}
+          choice={choice}
+          onSaved={onSaved}
+          onFailed={onFailed}
+        />
+      ))}
       <button
         type="button"
         className="pill small danger-soft"
@@ -270,7 +305,7 @@ function KeysSection({
   const [name, setName] = useState("");
   const [level, setLevel] = useState<ApiKeyLevel>("conversations");
   const [replyMode, setReplyMode] = useState<ReplyMode>("draft");
-  const [asMember, setAsMember] = useState(false);
+  const [permissions, setPermissions] = useState<ApiKeyPermission[]>([]);
   // The new key's token, shown once in the key's own row.
   const [made, setMade] = useState<{ id: string; name: string; token: string } | null>(null);
   const { busy, failure, setFailure, run: act } = useAction(keys.reload);
@@ -283,14 +318,11 @@ function KeysSection({
     setName("");
     setLevel("conversations");
     setReplyMode("draft");
-    setAsMember(false);
+    setPermissions([]);
   };
   const create = () =>
     act(async () => {
-      const permissions = asMember ? (["send_as_member"] as const) : [];
-      const { token, ...key } = await api.createApiKey(name.trim(), level, replyMode, [
-        ...permissions,
-      ]);
+      const { token, ...key } = await api.createApiKey(name.trim(), level, replyMode, permissions);
       setMade({ id: key.id, name: key.name, token });
       resetForm();
     });
@@ -381,12 +413,20 @@ function KeysSection({
           />
           <LevelChoice className="key-level" value={level} onChange={setLevel} />
           <ReplyModeChoice className="key-level" value={replyMode} onChange={setReplyMode} />
-          <Switch
-            label={t("apiKeyMaySendAsMember")}
-            hint={t("apiKeyMaySendAsMemberHint")}
-            checked={asMember}
-            onChange={setAsMember}
-          />
+          {PERMISSIONS.map(({ permission, on, hint }) => (
+            <Switch
+              key={permission}
+              label={t(on)}
+              hint={t(hint)}
+              checked={permissions.includes(permission)}
+              onChange={(checked) =>
+                setPermissions((current) => [
+                  ...current.filter((one) => one !== permission),
+                  ...(checked ? [permission] : []),
+                ])
+              }
+            />
+          ))}
         </AddForm>
       )}
       <ErrorNote text={failure ?? keys.failure} />

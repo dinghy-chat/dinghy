@@ -218,7 +218,7 @@ const ApiKey = z
     // `send` replies go to the visitor. `draft` replies wait for an operator.
     replyMode: z.enum(REPLY_MODES),
     // What it may do beyond its level. `send_as_member`: send outbound messages with a member's
-    // name and picture.
+    // name and picture. `send_email`: send outbound messages that a reply email carries.
     permissions: z.array(z.enum(API_KEY_PERMISSIONS)),
     // A connected app's origin, from its client ID. Null for a static key. `cimd`: the host that
     // published it. `dcr`: the host or scheme it returns to, on this computer when `local`.

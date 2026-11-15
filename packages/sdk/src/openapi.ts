@@ -3758,7 +3758,7 @@ export interface paths {
             "application/json": components["schemas"]["Error"];
           };
         };
-        /** @description send_mode_required: the key drafts replies. send_as_member_required: the key may not send as a member. blocked: the team blocked this visitor. suspended: the server's admin suspended the workspace */
+        /** @description send_mode_required: the key drafts replies. send_as_member_required: the key may not send as a member. send_email_required: the key may not send with `email: true`. blocked: the team blocked this visitor. suspended: the server's admin suspended the workspace */
         403: {
           headers: {
             [name: string]: unknown;
@@ -5042,6 +5042,7 @@ export interface components {
           | "saved_reply_limit"
           | "saved_reply_shortcut_taken"
           | "send_as_member_required"
+          | "send_email_required"
           | "send_mode_required"
           | "signed_in"
           | "sign_in_again"
@@ -5522,7 +5523,7 @@ export interface components {
       source: "static" | "oauth";
       /** @enum {string} */
       replyMode: "send" | "draft";
-      permissions: "send_as_member"[];
+      permissions: ("send_as_member" | "send_email")[];
       client: {
         /** @enum {string} */
         kind: "dcr" | "cimd";

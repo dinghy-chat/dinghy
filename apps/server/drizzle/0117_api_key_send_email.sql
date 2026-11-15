@@ -1,0 +1,2 @@
+ALTER TABLE "api_key" DROP CONSTRAINT "api_key_permissions";--> statement-breakpoint
+ALTER TABLE "api_key" ADD CONSTRAINT "api_key_permissions" CHECK ("api_key"."permissions" <@ array['send_as_member', 'send_email']::text[]);

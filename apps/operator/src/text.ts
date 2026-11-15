@@ -154,6 +154,11 @@ const en = {
   apiKeyMaySendAsMemberHint:
     "Its outbound messages may show a member's name and picture, as the API call asks.",
   apiKeySenderFor: "Sender for {name}",
+  apiKeyChatOnly: "Chat only",
+  apiKeyMaySendEmail: "May email visitors",
+  apiKeyMaySendEmailHint:
+    "Its outbound messages may also go in the reply email to the contact's address, as the API call asks.",
+  apiKeyEmailFor: "Email for {name}",
   webhookEventOutboundPending: "An outbound message waits for the visitor",
   webhookEventOutboundDelivered: "The widget showed an outbound message",
   webhookEventOutboundRead: "The visitor read an outbound message",
