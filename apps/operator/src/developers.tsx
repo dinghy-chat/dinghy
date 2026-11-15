@@ -49,7 +49,7 @@ const EVENT_TEXT: Record<WebhookEvent, TextId> = {
   "conversation.handoff": "webhookEventHandoff",
   "conversation.given_back": "webhookEventGivenBack",
   "conversation.labeled": "webhookEventLabeled",
-  "outbound_message.pending": "webhookEventOutboundPending",
+  "outbound_message.sent": "webhookEventOutboundPending",
   "outbound_message.delivered": "webhookEventOutboundDelivered",
   "outbound_message.read": "webhookEventOutboundRead",
   "outbound_message.replied": "webhookEventOutboundReplied",

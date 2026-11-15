@@ -341,7 +341,7 @@ export interface ReplyReceipts {
 
 type OutboundStatus =
   | "scheduled"
-  | "pending"
+  | "sent"
   | "delivered"
   | "read"
   | "replied"
@@ -366,7 +366,7 @@ export type OutboundStatusReason =
   | "campaign_paused"
   | "campaign_ended"
   | "opted_out"
-  | "cancelled_by_api"
+  | "cancelled_by_request"
   | "conversation_deleted";
 
 /** A message from the team to one visitor, which may wait outside any conversation. */
@@ -534,7 +534,7 @@ export const WEBHOOK_EVENTS = [
   "conversation.handoff",
   "conversation.given_back",
   "conversation.labeled",
-  "outbound_message.pending",
+  "outbound_message.sent",
   "outbound_message.delivered",
   "outbound_message.read",
   "outbound_message.replied",

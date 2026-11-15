@@ -29,7 +29,7 @@ import {
   message,
   operator,
   outboundMessage,
-  outboundOnce,
+  outboundDedupe,
   pageView,
   savedReply,
   visitor,
@@ -207,7 +207,7 @@ async function makeSource(): Promise<Source> {
     token: string;
   };
   await setReplyMode(owner, key.id, "send");
-  // An outbound message that waits, with its `once` key.
+  // An outbound message that waits, with its `dedupeKey`.
   await app.request(`${inSpace}/outbound-messages`, {
     method: "POST",
     headers: { authorization: `Bearer ${key.token}`, "content-type": "application/json" },
@@ -217,7 +217,7 @@ async function makeSource(): Promise<Source> {
       body: "Need a hand with the setup?",
       buttons: [{ label: "Yes", value: "yes" }],
       delay: "1h",
-      once: "welcome",
+      dedupeKey: "welcome",
     }),
   });
   // The owner's reply took the conversation, so it goes back to the bot first.
@@ -737,7 +737,7 @@ describe("a round trip onto a fresh install", () => {
         for (const one of data.visitors) delete one.locale;
         for (const one of data.conversations) delete one.startedBy;
         delete data.outboundMessages;
-        delete data.outboundOnce;
+        delete data.outboundDedupe;
       }
       const bytes = data === null ? entry.bytes : Buffer.from(JSON.stringify(data));
       parts.push(...tarEntry(entry.name, bytes));
@@ -769,16 +769,16 @@ describe("a round trip onto a fresh install", () => {
     expect(read.status).toBe(401);
   });
 
-  test("the outbound messages, their once keys and who started the conversation come along", async () => {
+  test("the outbound messages, their dedupe keys and who started the conversation come along", async () => {
     const pick = async (from: Install) => ({
       outbound: await from.owner
         .select()
         .from(outboundMessage)
         .where(eq(outboundMessage.workspaceId, source.space.id)),
-      once: await from.owner
+      dedupe: await from.owner
         .select()
-        .from(outboundOnce)
-        .where(eq(outboundOnce.workspaceId, source.space.id)),
+        .from(outboundDedupe)
+        .where(eq(outboundDedupe.workspaceId, source.space.id)),
       startedBy: (
         await from.owner
           .select({ startedBy: conversation.startedBy })
@@ -788,7 +788,7 @@ describe("a round trip onto a fresh install", () => {
     });
     const before = await pick(source.install);
     expect(before.outbound).toHaveLength(1);
-    expect(before.once).toHaveLength(1);
+    expect(before.dedupe).toHaveLength(1);
     expect(before.startedBy).toBe("team");
     expect(await pick(target)).toEqual(before);
   });
@@ -1035,7 +1035,7 @@ describe("a bad file changes nothing", () => {
   test("a message whose handoff or outbound sender names an unknown operator", async () => {
     for (const metadata of [
       { handoff: { operatorId: randomUUID() } },
-      { outbound: { id: randomUUID(), email: false, sender: { operatorId: randomUUID() } } },
+      { outbound: { id: randomUUID(), sendEmail: false, sender: { operatorId: randomUUID() } } },
     ]) {
       await refuses(
         await edited((data) => {

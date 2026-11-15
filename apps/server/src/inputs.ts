@@ -115,7 +115,7 @@ export const VisitorSelector = z
 export type VisitorSelector = z.infer<typeof VisitorSelector>;
 
 /** A business dedupe key, such as `welcome` or `dns-unverified:42`, unique per visitor. */
-export const OnceKey = z
+export const DedupeKey = z
   .string()
   .min(1)
   .max(200)

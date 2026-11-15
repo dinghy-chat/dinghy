@@ -1307,7 +1307,7 @@ const ATTACKS: Record<string, Attack> = {
   "POST /v1/operator/workspaces/:workspaceId/outbound-messages/cancel": async (world) => {
     const { operator: as, anna, a, b, other, outboundB } = world;
     const before = await outboundRow(outboundB.id);
-    const body = { visitor: { id: other.id }, once: "secret" };
+    const body = { visitor: { id: other.id }, dedupeKey: "secret" };
     expect(
       (await as(anna, "POST", inWorkspace(b.id, "/outbound-messages/cancel"), body)).status,
     ).toBe(404);
@@ -2529,7 +2529,7 @@ async function buildWorld(db: Database): Promise<World> {
       clientId: randomUUID(),
       visitor: { id: visitorId },
       body: "An outbound secret",
-      once: "secret",
+      dedupeKey: "secret",
       buttons: [
         { label: "Not now", dismiss: true },
         { label: "Read more", url: "https://example.com/more" },

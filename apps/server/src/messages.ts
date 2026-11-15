@@ -69,7 +69,7 @@ export const isChat = (kind: SQLWrapper = message.kind) => inArray(kind, [...CHA
  * `email: false`.
  */
 export const mayGoByEmail = () =>
-  sql<boolean>`coalesce((${message.metadata} #>> '{outbound,email}')::boolean, true)`;
+  sql<boolean>`coalesce((${message.metadata} #>> '{outbound,sendEmail}')::boolean, true)`;
 
 /** What people wrote: the chat, and the notes only the team sees. */
 export const isWritten = () => inArray(message.kind, [...WRITTEN_KINDS]);
@@ -189,7 +189,7 @@ export type MessageSource =
  */
 export interface OutboundMark {
   id: string;
-  email: boolean;
+  sendEmail: boolean;
   sender: { operatorId: string } | "team" | null;
   buttons?: OutboundButton[];
 }

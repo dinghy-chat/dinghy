@@ -27,18 +27,18 @@ ALTER TABLE outbound_message ENABLE ROW LEVEL SECURITY;
 CREATE POLICY tenant_isolation ON outbound_message TO dinghy_app, dinghy_worker
   USING (workspace_id = current_workspace_id()) WITH CHECK (workspace_id = current_workspace_id());
 --> statement-breakpoint
-ALTER TABLE outbound_once ENABLE ROW LEVEL SECURITY;
+ALTER TABLE outbound_dedupe ENABLE ROW LEVEL SECURITY;
 --> statement-breakpoint
-CREATE POLICY tenant_isolation ON outbound_once TO dinghy_app, dinghy_worker
+CREATE POLICY tenant_isolation ON outbound_dedupe TO dinghy_app, dinghy_worker
   USING (workspace_id = current_workspace_id()) WITH CHECK (workspace_id = current_workspace_id());
 --> statement-breakpoint
 -- The app sends, cancels and updates outbound messages, and a block forgets them. The worker's due
 -- messages go through the app's role too, as they write messages.
-GRANT SELECT, INSERT, UPDATE, DELETE ON outbound_message, outbound_once TO dinghy_app;
+GRANT SELECT, INSERT, UPDATE, DELETE ON outbound_message, outbound_dedupe TO dinghy_app;
 --> statement-breakpoint
 -- A webhook's body names the outbound message. The worker finds the due ones across workspaces, and
 -- removes the bodies of old ones.
-GRANT SELECT ON outbound_message, outbound_once TO dinghy_worker;
+GRANT SELECT ON outbound_message, outbound_dedupe TO dinghy_worker;
 --> statement-breakpoint
 GRANT UPDATE (body) ON outbound_message TO dinghy_worker;
 --> statement-breakpoint

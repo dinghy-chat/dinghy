@@ -39,7 +39,7 @@ import { DAY_MS, MINUTE_MS } from "./time.ts";
 
 type Row = typeof outboundMessage.$inferSelect;
 
-/** How long a message waits for the visitor after it becomes pending, unless the send says. */
+/** How long a message waits for the visitor after it is sent, unless the send says. */
 const EXPIRES_AFTER_MS = 30 * DAY_MS;
 /** How soon the worker looks again at a message that waits for something that can change. */
 const RECHECK_MS = MINUTE_MS;
@@ -103,7 +103,7 @@ export async function materializeOutbound(
         via: "outbound",
         outbound: {
           id: row.id,
-          email: row.email,
+          sendEmail: row.sendEmail,
           sender: senderMark(row),
           ...(row.metadata.buttons !== undefined && { buttons: row.metadata.buttons }),
         },
@@ -121,7 +121,7 @@ export async function materializeOutbound(
 }
 
 /**
- * Moves a message on as far as it can go now: at its send time it becomes pending, and one with
+ * Moves a message on as far as it can go now: at its send time it is sent, and one with
  * `startConversation: now` goes in a conversation. One whose time ran out first expires. The caller
  * holds the workspace lock and the row.
  */
@@ -148,30 +148,30 @@ export async function advance(
       dueAt: new Date(Date.now() + RECHECK_MS),
     });
   }
-  const pending = scheduled ? await becomePending(tx, workspaceId, row) : row;
-  // An `on_reply` message is pending now and waits for the widget, with the reason it would not
+  const sent = scheduled ? await becomeSent(tx, workspaceId, row) : row;
+  // An `on_reply` message is sent now and waits for the widget, with the reason it would not
   // show yet.
   if (showsLater || verdict.kind === "wait") {
     const reason = verdict.kind === "wait" ? verdict.reason : null;
-    return change(tx, workspaceId, pending, { statusReason: reason, dueAt: null });
+    return change(tx, workspaceId, sent, { statusReason: reason, dueAt: null });
   }
   // A `now` message that may go: in the visitor's conversation at once.
   await materializeOutbound(tx, workspaceId, row.id, row.visitorId, { answer: false });
-  return (await findRow(tx, workspaceId, row.id)) ?? pending;
+  return (await findRow(tx, workspaceId, row.id)) ?? sent;
 }
 
-const becomePending = (tx: Transaction, workspaceId: string, row: Row) =>
+const becomeSent = (tx: Transaction, workspaceId: string, row: Row) =>
   change(
     tx,
     workspaceId,
     row,
     {
-      status: "pending",
+      status: "sent",
       statusReason: null,
       dueAt: null,
       expiresAt: row.expiresAt ?? new Date(Date.now() + EXPIRES_AFTER_MS),
     },
-    "outbound_message.pending",
+    "outbound_message.sent",
   );
 
 /**
@@ -297,7 +297,7 @@ async function markAnswered(
     );
   }
   const member =
-    answered.findLast((row) => row.assign && row.senderOperatorId !== null)?.senderOperatorId ??
+    answered.findLast((row) => row.assignOnReply && row.senderOperatorId !== null)?.senderOperatorId ??
     null;
   if (member === null || !(await isMember(tx, workspaceId, member))) return;
   const [current] = await tx
@@ -361,7 +361,7 @@ export async function readInConversation(
       {
         readAt: new Date(),
         deliveredAt: row.deliveredAt ?? new Date(),
-        ...(row.status === "pending" || row.status === "delivered" ? { status: "read" } : {}),
+        ...(row.status === "sent" || row.status === "delivered" ? { status: "read" } : {}),
       },
       "outbound_message.read",
     );
@@ -431,7 +431,7 @@ export async function conversationsDeleted(
   for (const row of rows) {
     const textless = await change(tx, workspaceId, row, { body: null });
     if (isOneOf(WAITING_STATUSES, row.status)) {
-      // Through `end`, so its `once` key is free again, as with any cancel.
+      // Through `end`, so its `dedupeKey` is free again, as with any cancel.
       await end(tx, workspaceId, textless, { status: "cancelled", reason: "conversation_deleted" });
     }
   }
@@ -463,7 +463,7 @@ export const shownRows = (tx: Transaction, workspaceId: string, visitorId: strin
 
 /** A message the widget fetched: delivered the first time, with its reason cleared. */
 export async function deliver(tx: Transaction, workspaceId: string, row: Row): Promise<Row> {
-  if (row.status !== "pending") {
+  if (row.status !== "sent") {
     return row.statusReason === null ? row : change(tx, workspaceId, row, { statusReason: null });
   }
   return change(

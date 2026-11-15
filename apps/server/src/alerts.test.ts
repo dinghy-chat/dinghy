@@ -1378,11 +1378,11 @@ describe("email", () => {
         body: "Not by email",
         startConversation: "now",
         show: "badge",
-        ifOpen: "join",
-        assign: false,
-        email: false,
+        ifConversationOpen: "join",
+        assignOnReply: false,
+        sendEmail: false,
         clientId: randomUUID(),
-        status: "pending",
+        status: "sent",
       })
       .returning({ id: outboundMessage.id });
     const put = await withWorkspace(app, space.id, (tx) =>

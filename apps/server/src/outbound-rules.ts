@@ -10,7 +10,7 @@ import {
   type OutboundStatus,
   type OutboundStatusReason,
   outboundMessage,
-  outboundOnce,
+  outboundDedupe,
   visitor,
   workspaceMember,
 } from "./db/schema.ts";
@@ -22,11 +22,11 @@ import { nextSeq, wantsWebhook } from "./messages.ts";
 type Row = typeof outboundMessage.$inferSelect;
 
 /** The statuses in which a message still waits for the visitor. */
-export const WAITING_STATUSES = ["scheduled", "pending", "delivered", "read"] as const;
+export const WAITING_STATUSES = ["scheduled", "sent", "delivered", "read"] as const;
 /** The statuses a cancel or an expiry may end: the visitor has not read it. */
-const UNREAD_STATUSES = ["scheduled", "pending", "delivered"] as const;
+const UNREAD_STATUSES = ["scheduled", "sent", "delivered"] as const;
 /** The statuses in which the widget shows a message. */
-export const SHOWN_STATUSES = ["pending", "delivered", "read"] as const;
+export const SHOWN_STATUSES = ["sent", "delivered", "read"] as const;
 
 export const isOneOf = (statuses: readonly OutboundStatus[], status: OutboundStatus) =>
   statuses.includes(status);
@@ -106,7 +106,7 @@ export async function change(
   return changed;
 }
 
-/** Ends a message that waited: cancelled, and its `once` key free again, or expired. */
+/** Ends a message that waited: cancelled, and its `dedupeKey` free again, or expired. */
 export async function end(
   tx: Transaction,
   workspaceId: string,
@@ -123,9 +123,9 @@ export async function end(
     );
   }
   await tx
-    .delete(outboundOnce)
+    .delete(outboundDedupe)
     .where(
-      and(eq(outboundOnce.workspaceId, workspaceId), eq(outboundOnce.outboundMessageId, row.id)),
+      and(eq(outboundDedupe.workspaceId, workspaceId), eq(outboundDedupe.outboundMessageId, row.id)),
     );
   return change(
     tx,
@@ -173,7 +173,7 @@ type Verdict =
  * message follows the reply gate: it never joins a conversation that a person handles.
  */
 export function decide(
-  message: Pick<Row, "authorApiKeyId" | "senderKind" | "ifOpen" | "email">,
+  message: Pick<Row, "authorApiKeyId" | "senderKind" | "ifConversationOpen" | "sendEmail">,
   state: Situation,
 ): Verdict {
   if (state.blocked) return { kind: "cancel", reason: "blocked" };
@@ -185,13 +185,13 @@ export function decide(
   if (message.senderKind === "member" && state.key !== null && !state.key.mayActAsMember) {
     return { kind: "wait", reason: "permission_revoked" };
   }
-  if (message.email && state.key !== null && !state.key.maySendEmail) {
+  if (message.sendEmail && state.key !== null && !state.key.maySendEmail) {
     return { kind: "wait", reason: "permission_revoked" };
   }
-  if (state.open !== null && message.ifOpen === "skip") {
+  if (state.open !== null && message.ifConversationOpen === "skip") {
     return { kind: "cancel", reason: "open_conversation_skipped" };
   }
-  if (state.open !== null && message.ifOpen === "hold") {
+  if (state.open !== null && message.ifConversationOpen === "hold") {
     return { kind: "wait", reason: "open_conversation" };
   }
   if (message.authorApiKeyId !== null) {

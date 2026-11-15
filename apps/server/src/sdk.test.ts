@@ -66,16 +66,16 @@ afterAll(async () => {
 });
 
 // The SDK against the real routes: its types and paths must match what the server answers.
-test("sends once, upserts a contact and cancels by the visitor and the once key", async () => {
+test("sends once, upserts a contact and cancels by the visitor and the dedupe key", async () => {
   const userId = `user-${randomUUID()}`;
   const welcome = {
     visitor: { userId },
     body: "Is your domain verified?",
     delay: "1h",
-    once: "dns:7",
+    dedupeKey: "dns:7",
   };
   const sent = await dinghy.outboundMessages.send(welcome);
-  expect(sent.outboundMessage).toMatchObject({ status: "scheduled", once: "dns:7" });
+  expect(sent.outboundMessage).toMatchObject({ status: "scheduled", dedupeKey: "dns:7" });
   const again = await dinghy.outboundMessages.send(welcome);
   expect(again.outboundMessage.id).toBe(sent.outboundMessage.id);
 
@@ -83,7 +83,7 @@ test("sends once, upserts a contact and cancels by the visitor and the once key"
   const [contact] = await owner.select().from(visitor).where(eq(visitor.userId, userId));
   expect(contact).toMatchObject({ name: "Ada Lovelace", attributes: { plan: "pro" } });
 
-  const cancelled = await dinghy.outboundMessages.cancel({ visitor: { userId }, once: "dns:7" });
+  const cancelled = await dinghy.outboundMessages.cancel({ visitor: { userId }, dedupeKey: "dns:7" });
   expect(cancelled.outboundMessage).toMatchObject({
     id: sent.outboundMessage.id,
     status: "cancelled",

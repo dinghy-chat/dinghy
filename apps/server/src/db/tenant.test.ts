@@ -12,7 +12,7 @@ import {
   message,
   operator,
   outboundMessage,
-  outboundOnce,
+  outboundDedupe,
   stripeEvent,
   subscription,
   visitor,
@@ -47,7 +47,7 @@ const TENANT_TABLES = [
   draftReply,
   widgetSiteSeen,
   outboundMessage,
-  outboundOnce,
+  outboundDedupe,
 ];
 
 let database: TestDatabase;
@@ -122,16 +122,16 @@ async function seed(workspaceId: string): Promise<void> {
     body: `outbound secret of ${workspaceId}`,
     startConversation: "on_reply",
     show: "badge",
-    ifOpen: "hold",
-    assign: false,
-    email: false,
-    onceKey: "welcome",
+    ifConversationOpen: "hold",
+    assignOnReply: false,
+    sendEmail: false,
+    dedupeKey: "welcome",
     clientId: "outbound",
-    status: "pending",
+    status: "sent",
   });
   await owner
-    .insert(outboundOnce)
-    .values({ workspaceId, visitorId, onceKey: "welcome", outboundMessageId });
+    .insert(outboundDedupe)
+    .values({ workspaceId, visitorId, dedupeKey: "welcome", outboundMessageId });
   const webhookId = uuidFor(workspaceId, 4);
   await owner.insert(webhook).values({
     workspaceId,

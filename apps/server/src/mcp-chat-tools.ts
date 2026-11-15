@@ -23,7 +23,7 @@ import {
   HandoffReason,
   HandoffSummary,
   Mentions,
-  OnceKey,
+  DedupeKey,
   replyToMessageId,
   UNTRUSTED_TEXT,
   UserId,
@@ -59,10 +59,10 @@ const WAIT_LEASE_MS = MINUTE_MS;
 /** Events read per pass of a long poll. */
 const WAIT_PAGE = 100;
 
-/** cancel_outbound_message takes an ID, or a visitor and a `once` key. */
+/** cancel_outbound_message takes an ID, or a visitor and a `dedupeKey`. */
 const ONE_OUTBOUND_TARGET = failure(
   "invalid_request",
-  "Pass outboundMessageId, or visitor and once.",
+  "Pass outboundMessageId, or visitor and dedupeKey.",
 );
 
 /** get_contact takes one of its two IDs. */
@@ -527,7 +527,7 @@ export function chatTools(options: ChatToolsOptions): Tool[] {
     tool({
       name: "send_outbound_message",
       title: "Send a message to a visitor",
-      description: `Sends a message to one visitor, who may have no conversation yet. \`visitor\` is \`{ userId, name?, email?, attributes? }\`, which creates or updates them, or \`{ id }\`. With \`startConversation: "on_reply"\` (the default) it waits on the contact and goes in a conversation only when they answer. With \`"now"\` it goes in one at once: the answer's \`conversationId\` is set, and wait_for_messages picks up their answer. \`once\` is a dedupe key per visitor, such as \`import-7781-done\`: a repeat answers the first message. \`delay\` (such as \`"1h"\`) or \`sendAt\` holds it, and \`unless\`, a condition on the contact, cancels it when it matches then. \`show\` is \`badge\`, \`preview\` or \`chat\`. \`ifOpen\` says what happens while they have an open conversation: \`hold\` (wait), \`join\` or \`skip\`. \`email: true\` needs the key's permission May email visitors. Errors: \`send_mode_required\` when this key drafts, \`send_as_member_required\`, \`send_email_required\`, \`bots_paused\`, \`blocked\`, \`too_many_waiting\`. Pass the same \`clientId\` on a retry.`,
+      description: `Sends a message to one visitor, who may have no conversation yet. \`visitor\` is \`{ userId, name?, email?, attributes? }\`, which creates or updates them, or \`{ id }\`. With \`startConversation: "on_reply"\` (the default) it waits on the contact and goes in a conversation only when they answer. With \`"now"\` it goes in one at once: the answer's \`conversationId\` is set, and wait_for_messages picks up their answer. \`dedupeKey\` is unique per visitor, such as \`order-1042-shipped\`: a repeat answers the first message. \`delay\` (such as \`"1h"\`) or \`sendAt\` holds it, and \`unless\`, a condition on the contact, cancels it when it matches then. \`show\` is \`badge\`, \`preview\` or \`chat\`. \`ifConversationOpen\` says what happens while they have an open conversation: \`hold\` (wait), \`join\` or \`skip\`. \`sendEmail: true\` needs the key's permission May email visitors. Errors: \`send_mode_required\` when this key drafts, \`send_as_member_required\`, \`send_email_required\`, \`bots_paused\`, \`blocked\`, \`too_many_waiting\`. Pass the same \`clientId\` on a retry.`,
       input: SendSchema,
       idempotent: true,
       async run(input, { workspaceId, actor }) {
@@ -540,19 +540,19 @@ export function chatTools(options: ChatToolsOptions): Tool[] {
       name: "cancel_outbound_message",
       title: "Cancel an outbound message",
       description:
-        "Cancels an outbound message that the visitor has not read, by `outboundMessageId`, or by `visitor` (`{ userId }` or `{ id }`) and the `once` key it was sent with. A cancel frees the `once` key. A message read, answered or ended stays as it is: the answer's `status` says. `outboundMessage` is null when nothing matched.",
+        "Cancels an outbound message that the visitor has not read, by `outboundMessageId`, or by `visitor` (`{ userId }` or `{ id }`) and the `dedupeKey` it was sent with. A cancel frees the `dedupeKey`. A message read, answered or ended stays as it is: the answer's `status` says. `outboundMessage` is null when nothing matched.",
       input: z.object({
         outboundMessageId: z.uuid().optional(),
         visitor: VisitorRef.optional(),
-        once: OnceKey.optional(),
+        dedupeKey: DedupeKey.optional(),
       }),
       destructive: true,
       async run(input, { workspaceId }) {
         const target =
           input.outboundMessageId !== undefined
             ? { id: input.outboundMessageId }
-            : input.visitor !== undefined && input.once !== undefined
-              ? { visitor: input.visitor, once: input.once }
+            : input.visitor !== undefined && input.dedupeKey !== undefined
+              ? { visitor: input.visitor, dedupeKey: input.dedupeKey }
               : null;
         if (target === null) return { error: ONE_OUTBOUND_TARGET };
         return { data: { outboundMessage: await outbound.cancel(workspaceId, target) } };

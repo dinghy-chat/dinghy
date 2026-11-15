@@ -21,7 +21,7 @@ import {
   conversation,
   conversationLabel,
   emailStop,
-  IF_OPEN,
+  IF_CONVERSATION_OPEN,
   LABEL_COLORS,
   label,
   MESSAGE_KINDS,
@@ -31,7 +31,7 @@ import {
   OUTBOUND_STATUSES,
   operator,
   outboundMessage,
-  outboundOnce,
+  outboundDedupe,
   pageView,
   SENDER_KINDS,
   START_CONVERSATION,
@@ -47,7 +47,7 @@ import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { errorAnswer, failure, MEMBER_ERRORS } from "./errors.ts";
 import { allowedFileName, FILE_TYPE, FILENAME_INPUT_MAX } from "./files.ts";
 import { sha256Hex } from "./identity.ts";
-import { ClientId, OnceKey } from "./inputs.ts";
+import { ClientId, DedupeKey } from "./inputs.ts";
 import { PAGE_PATH_MAX, PAGE_TITLE_MAX, PageContextSchema } from "./journey.ts";
 import { workspaceParams } from "./member.ts";
 import { markHistoryRead } from "./messages.ts";
@@ -254,10 +254,10 @@ const ExportFile = z.strictObject({
         }),
         startConversation: z.enum(START_CONVERSATION),
         show: z.enum(OUTBOUND_SHOWS),
-        ifOpen: z.enum(IF_OPEN),
-        assign: z.boolean(),
-        email: z.boolean(),
-        onceKey: OnceKey.nullable(),
+        ifConversationOpen: z.enum(IF_CONVERSATION_OPEN),
+        assignOnReply: z.boolean(),
+        sendEmail: z.boolean(),
+        dedupeKey: DedupeKey.nullable(),
         clientId: ClientId,
         status: z.enum(OUTBOUND_STATUSES),
         statusReason: z.enum(OUTBOUND_STATUS_REASONS).nullable(),
@@ -276,8 +276,8 @@ const ExportFile = z.strictObject({
       }),
     )
     .default([]),
-  outboundOnce: z
-    .array(z.strictObject({ visitorId: id, onceKey: OnceKey, outboundMessageId: id }))
+  outboundDedupe: z
+    .array(z.strictObject({ visitorId: id, dedupeKey: DedupeKey, outboundMessageId: id }))
     .default([]),
   pageViews: z.array(
     z.strictObject({
@@ -469,7 +469,7 @@ async function readWorkspace(
         | "labels"
         | "conversationLabels"
         | "outboundMessages"
-        | "outboundOnce"
+        | "outboundDedupe"
         | "pageViews"
       > = {
         version: VERSION,
@@ -538,10 +538,10 @@ async function readWorkspace(
         .select()
         .from(outboundMessage)
         .where(eq(outboundMessage.workspaceId, workspaceId));
-      const onceKeys = await tx
+      const dedupeKeys = await tx
         .select()
-        .from(outboundOnce)
-        .where(eq(outboundOnce.workspaceId, workspaceId));
+        .from(outboundDedupe)
+        .where(eq(outboundDedupe.workspaceId, workspaceId));
       const tail: Pick<
         ExportData,
         | "attachments"
@@ -550,7 +550,7 @@ async function readWorkspace(
         | "labels"
         | "conversationLabels"
         | "outboundMessages"
-        | "outboundOnce"
+        | "outboundDedupe"
       > = {
         attachments: attachments.map((row) => ({
           id: row.id,
@@ -593,7 +593,7 @@ async function readWorkspace(
           cancelledAt: isoOrNull(row.cancelledAt),
           createdAt: iso(row.createdAt),
         })),
-        outboundOnce: onceKeys.map(({ workspaceId: _workspace, ...row }) => row),
+        outboundDedupe: dedupeKeys.map(({ workspaceId: _workspace, ...row }) => row),
       };
       const json = [
         Buffer.from(`${JSON.stringify(head).slice(0, -1)},"messages":[`),
@@ -942,8 +942,8 @@ async function insertWorkspace(
       })),
     );
   }
-  for (const rows of batches(data.outboundOnce)) {
-    await tx.insert(outboundOnce).values(rows.map((row) => ({ workspaceId, ...row })));
+  for (const rows of batches(data.outboundDedupe)) {
+    await tx.insert(outboundDedupe).values(rows.map((row) => ({ workspaceId, ...row })));
   }
   for (const rows of batches(data.pageViews)) {
     await tx.insert(pageView).values(

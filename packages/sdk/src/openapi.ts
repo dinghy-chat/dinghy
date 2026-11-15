@@ -1052,7 +1052,7 @@ export interface paths {
               | "conversation.handoff"
               | "conversation.given_back"
               | "conversation.labeled"
-              | "outbound_message.pending"
+              | "outbound_message.sent"
               | "outbound_message.delivered"
               | "outbound_message.read"
               | "outbound_message.replied"
@@ -1303,7 +1303,7 @@ export interface paths {
               | "conversation.handoff"
               | "conversation.given_back"
               | "conversation.labeled"
-              | "outbound_message.pending"
+              | "outbound_message.sent"
               | "outbound_message.delivered"
               | "outbound_message.read"
               | "outbound_message.replied"
@@ -3032,7 +3032,7 @@ export interface paths {
     get: {
       parameters: {
         query?: {
-          /** @description A comma list of conversation.created, message.created, message.updated, message.deleted, conversation.closed, conversation.reopened, conversation.assigned, conversation.handoff, conversation.given_back, conversation.labeled, outbound_message.pending, outbound_message.delivered, outbound_message.read, outbound_message.replied, outbound_message.dismissed, outbound_message.cancelled, outbound_message.expired. All by default. */
+          /** @description A comma list of conversation.created, message.created, message.updated, message.deleted, conversation.closed, conversation.reopened, conversation.assigned, conversation.handoff, conversation.given_back, conversation.labeled, outbound_message.sent, outbound_message.delivered, outbound_message.read, outbound_message.replied, outbound_message.dismissed, outbound_message.cancelled, outbound_message.expired. All by default. */
           types?: string;
           after?: string;
         };
@@ -3572,7 +3572,7 @@ export interface paths {
           visitorId?: string;
           status?:
             | "scheduled"
-            | "pending"
+            | "sent"
             | "delivered"
             | "read"
             | "replied"
@@ -3654,7 +3654,7 @@ export interface paths {
     put?: never;
     /**
      * Send an outbound message to one visitor, who may have no conversation yet
-     * @description The message waits on the contact. With `startConversation: on_reply`, it goes in a conversation when the visitor answers it. With `now`, it goes in one at once. `sendAt` or `delay` holds it until then, and `unless` cancels it when the contact matches at that time. A retry with the same `clientId`, and a send with a `once` key that this visitor already has, answer 200 with the first outbound message.
+     * @description The message waits on the contact. With `startConversation: on_reply`, it goes in a conversation when the visitor answers it. With `now`, it goes in one at once. `sendAt` or `delay` holds it until then, and `unless` cancels it when the contact matches at that time. A retry with the same `clientId`, and a send with a `dedupeKey` that this visitor already has, answer 200 with the first outbound message.
      */
     post: {
       parameters: {
@@ -3675,7 +3675,7 @@ export interface paths {
             buttons?: components["schemas"]["OutboundButton"][];
             sender?: components["schemas"]["OutboundSender"];
             /** @description Assign the conversation to the member sender when the visitor answers. True by default with a member sender */
-            assign?: boolean;
+            assignOnReply?: boolean;
             /**
              * @default on_reply
              * @enum {string}
@@ -3690,9 +3690,9 @@ export interface paths {
              * @default hold
              * @enum {string}
              */
-            ifOpen?: "hold" | "join" | "skip";
+            ifConversationOpen?: "hold" | "join" | "skip";
             /** @description A dedupe key, unique per visitor. A repeat answers the first outbound message. A cancel frees it */
-            once?: string;
+            dedupeKey?: string;
             /** Format: date-time */
             sendAt?: string;
             /**
@@ -3704,12 +3704,12 @@ export interface paths {
             /** Format: date-time */
             expiresAt?: string;
             /** @default false */
-            email?: boolean;
+            sendEmail?: boolean;
           };
         };
       };
       responses: {
-        /** @description A retry, or a `once` key already used: the first outbound message */
+        /** @description A retry, or a `dedupeKey` already used: the first outbound message */
         200: {
           headers: {
             [name: string]: unknown;
@@ -3758,7 +3758,7 @@ export interface paths {
             "application/json": components["schemas"]["Error"];
           };
         };
-        /** @description send_mode_required: the key drafts replies. send_as_member_required: the key may not send as a member. send_email_required: the key may not send with `email: true`. blocked: the team blocked this visitor. suspended: the server's admin suspended the workspace */
+        /** @description send_mode_required: the key drafts replies. send_as_member_required: the key may not send as a member. send_email_required: the key may not send with `sendEmail: true`. blocked: the team blocked this visitor. suspended: the server's admin suspended the workspace */
         403: {
           headers: {
             [name: string]: unknown;
@@ -3908,7 +3908,7 @@ export interface paths {
     put?: never;
     /**
      * Cancel an outbound message
-     * @description A message that the visitor has not read ends as `cancelled`, with `statusReason: cancelled_by_api`, and its `once` key is free again. A message already read, answered or ended stays as it is: read its `status`.
+     * @description A message that the visitor has not read ends as `cancelled`, with `statusReason: cancelled_by_request`, and its `dedupeKey` is free again. A message already read, answered or ended stays as it is: read its `status`.
      */
     post: {
       parameters: {
@@ -4023,8 +4023,8 @@ export interface paths {
     get?: never;
     put?: never;
     /**
-     * Cancel the outbound message that a visitor's `once` key names
-     * @description A message that the visitor has not read ends as `cancelled`, with `statusReason: cancelled_by_api`, and its `once` key is free again. A message already read, answered or ended stays as it is: read its `status`. With no such message, `outboundMessage` is null.
+     * Cancel the outbound message that a visitor's `dedupeKey` names
+     * @description A message that the visitor has not read ends as `cancelled`, with `statusReason: cancelled_by_request`, and its `dedupeKey` is free again. A message already read, answered or ended stays as it is: read its `status`. With no such message, `outboundMessage` is null.
      */
     post: {
       parameters: {
@@ -4039,7 +4039,7 @@ export interface paths {
         content: {
           "application/json": {
             visitor: components["schemas"]["VisitorRef"];
-            once: string;
+            dedupeKey: string;
           };
         };
       };
@@ -5569,7 +5569,7 @@ export interface components {
         | "conversation.handoff"
         | "conversation.given_back"
         | "conversation.labeled"
-        | "outbound_message.pending"
+        | "outbound_message.sent"
         | "outbound_message.delivered"
         | "outbound_message.read"
         | "outbound_message.replied"
@@ -5600,7 +5600,7 @@ export interface components {
         | "conversation.handoff"
         | "conversation.given_back"
         | "conversation.labeled"
-        | "outbound_message.pending"
+        | "outbound_message.sent"
         | "outbound_message.delivered"
         | "outbound_message.read"
         | "outbound_message.replied"
@@ -5776,7 +5776,7 @@ export interface components {
       /** @enum {string} */
       status:
         | "scheduled"
-        | "pending"
+        | "sent"
         | "delivered"
         | "read"
         | "replied"
@@ -5800,7 +5800,7 @@ export interface components {
         | "campaign_paused"
         | "campaign_ended"
         | "opted_out"
-        | "cancelled_by_api"
+        | "cancelled_by_request"
         | "conversation_deleted"
         | null;
       visitorId: string;
@@ -5825,14 +5825,14 @@ export interface components {
       /** @enum {string} */
       show: "badge" | "preview" | "chat";
       /** @enum {string} */
-      ifOpen: "hold" | "join" | "skip";
+      ifConversationOpen: "hold" | "join" | "skip";
       /** @enum {string} */
       startConversation: "on_reply" | "now";
-      assign: boolean;
-      email: boolean;
+      assignOnReply: boolean;
+      sendEmail: boolean;
       conversationId: string | null;
       messageId: string | null;
-      once: string | null;
+      dedupeKey: string | null;
       sendAt: string;
       expiresAt: string | null;
       deliveredAt: string | null;
@@ -5876,7 +5876,7 @@ export interface components {
           email: string;
         };
     /**
-     * @description A rule `{ field, op, value }`, or a group `{ all: [...] }`, `{ any: [...] }` or `{ not: ... }`, which nest. Fields: name, firstName, email, userId, attributes.<key>, language, country, timeZone, signedIn, firstSeenAt, lastSeenAt, hasChatted and conversationCount. Ops: eq, ne, in, not_in, exists, missing, gt, gte, lt, lte, contains, and older_than with a duration such as 7d.
+     * @description A rule `{ field, op, value }`, or a group `{ all: [...] }`, `{ any: [...] }` or `{ not: ... }`, which nest. Fields: name, firstName, email, userId, language, country, timeZone, signedIn, firstSeenAt, lastSeenAt, hasChatted, conversationCount, attributes.<key>. Ops: eq, ne, in, not_in, exists, missing, gt, gte, lt, lte, contains, older_than; older_than takes a duration such as 7d.
      * @example {
      *       "all": [
      *         {

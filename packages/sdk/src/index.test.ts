@@ -103,7 +103,7 @@ describe("retries", () => {
     const answer = await client(fetch).outboundMessages.send({
       visitor: { userId: "42" },
       body: "Welcome",
-      once: "welcome",
+      dedupeKey: "welcome",
     });
     expect(answer).toEqual(OUTBOUND);
     const ids = sent.map((one) => (one.body as { clientId: string }).clientId);
@@ -141,14 +141,14 @@ describe("retries", () => {
 });
 
 describe("outbound messages", () => {
-  test("cancel by ID or by the visitor and the once key", async () => {
+  test("cancel by ID or by the visitor and the dedupe key", async () => {
     const { fetch, sent } = fakeFetch([json(200, OUTBOUND), json(200, OUTBOUND)]);
     const dinghy = client(fetch);
     await dinghy.outboundMessages.cancel({ id: "om_1" });
-    await dinghy.outboundMessages.cancel({ visitor: { userId: "42" }, once: "dns:7" });
+    await dinghy.outboundMessages.cancel({ visitor: { userId: "42" }, dedupeKey: "dns:7" });
     const base = `${URL_BASE}/v1/operator/workspaces/${WORKSPACE_ID}/outbound-messages`;
     expect(sent.map((one) => one.url)).toEqual([`${base}/om_1/cancel`, `${base}/cancel`]);
-    expect(sent[1]?.body).toEqual({ visitor: { userId: "42" }, once: "dns:7" });
+    expect(sent[1]?.body).toEqual({ visitor: { userId: "42" }, dedupeKey: "dns:7" });
   });
 });
 

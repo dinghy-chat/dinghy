@@ -1742,7 +1742,7 @@
                 "conversation.handoff",
                 "conversation.given_back",
                 "conversation.labeled",
-                "outbound_message.pending",
+                "outbound_message.sent",
                 "outbound_message.delivered",
                 "outbound_message.read",
                 "outbound_message.replied",
@@ -1796,7 +1796,7 @@
               "conversation.handoff",
               "conversation.given_back",
               "conversation.labeled",
-              "outbound_message.pending",
+              "outbound_message.sent",
               "outbound_message.delivered",
               "outbound_message.read",
               "outbound_message.replied",
@@ -2385,7 +2385,7 @@
             "type": "string",
             "enum": [
               "scheduled",
-              "pending",
+              "sent",
               "delivered",
               "read",
               "replied",
@@ -2412,7 +2412,7 @@
               "campaign_paused",
               "campaign_ended",
               "opted_out",
-              "cancelled_by_api",
+              "cancelled_by_request",
               "conversation_deleted",
               null
             ]
@@ -2479,7 +2479,7 @@
             "type": "string",
             "enum": ["badge", "preview", "chat"]
           },
-          "ifOpen": {
+          "ifConversationOpen": {
             "type": "string",
             "enum": ["hold", "join", "skip"]
           },
@@ -2487,10 +2487,10 @@
             "type": "string",
             "enum": ["on_reply", "now"]
           },
-          "assign": {
+          "assignOnReply": {
             "type": "boolean"
           },
-          "email": {
+          "sendEmail": {
             "type": "boolean"
           },
           "conversationId": {
@@ -2499,7 +2499,7 @@
           "messageId": {
             "type": ["string", "null"]
           },
-          "once": {
+          "dedupeKey": {
             "type": ["string", "null"]
           },
           "sendAt": {
@@ -2538,13 +2538,13 @@
           "sender",
           "author",
           "show",
-          "ifOpen",
+          "ifConversationOpen",
           "startConversation",
-          "assign",
-          "email",
+          "assignOnReply",
+          "sendEmail",
           "conversationId",
           "messageId",
-          "once",
+          "dedupeKey",
           "sendAt",
           "expiresAt",
           "deliveredAt",
@@ -2713,7 +2713,7 @@
             "additionalProperties": false
           }
         ],
-        "description": "A rule `{ field, op, value }`, or a group `{ all: [...] }`, `{ any: [...] }` or `{ not: ... }`, which nest. Fields: name, firstName, email, userId, attributes.<key>, language, country, timeZone, signedIn, firstSeenAt, lastSeenAt, hasChatted and conversationCount. Ops: eq, ne, in, not_in, exists, missing, gt, gte, lt, lte, contains, and older_than with a duration such as 7d.",
+        "description": "A rule `{ field, op, value }`, or a group `{ all: [...] }`, `{ any: [...] }` or `{ not: ... }`, which nest. Fields: name, firstName, email, userId, language, country, timeZone, signedIn, firstSeenAt, lastSeenAt, hasChatted, conversationCount, attributes.<key>. Ops: eq, ne, in, not_in, exists, missing, gt, gte, lt, lte, contains, older_than; older_than takes a duration such as 7d.",
         "example": {
           "all": [
             {
@@ -10473,7 +10473,7 @@
                         "conversation.handoff",
                         "conversation.given_back",
                         "conversation.labeled",
-                        "outbound_message.pending",
+                        "outbound_message.sent",
                         "outbound_message.delivered",
                         "outbound_message.read",
                         "outbound_message.replied",
@@ -10669,7 +10669,7 @@
                         "conversation.handoff",
                         "conversation.given_back",
                         "conversation.labeled",
-                        "outbound_message.pending",
+                        "outbound_message.sent",
                         "outbound_message.delivered",
                         "outbound_message.read",
                         "outbound_message.replied",
@@ -13458,10 +13458,10 @@
           {
             "schema": {
               "type": "string",
-              "description": "A comma list of conversation.created, message.created, message.updated, message.deleted, conversation.closed, conversation.reopened, conversation.assigned, conversation.handoff, conversation.given_back, conversation.labeled, outbound_message.pending, outbound_message.delivered, outbound_message.read, outbound_message.replied, outbound_message.dismissed, outbound_message.cancelled, outbound_message.expired. All by default."
+              "description": "A comma list of conversation.created, message.created, message.updated, message.deleted, conversation.closed, conversation.reopened, conversation.assigned, conversation.handoff, conversation.given_back, conversation.labeled, outbound_message.sent, outbound_message.delivered, outbound_message.read, outbound_message.replied, outbound_message.dismissed, outbound_message.cancelled, outbound_message.expired. All by default."
             },
             "required": false,
-            "description": "A comma list of conversation.created, message.created, message.updated, message.deleted, conversation.closed, conversation.reopened, conversation.assigned, conversation.handoff, conversation.given_back, conversation.labeled, outbound_message.pending, outbound_message.delivered, outbound_message.read, outbound_message.replied, outbound_message.dismissed, outbound_message.cancelled, outbound_message.expired. All by default.",
+            "description": "A comma list of conversation.created, message.created, message.updated, message.deleted, conversation.closed, conversation.reopened, conversation.assigned, conversation.handoff, conversation.given_back, conversation.labeled, outbound_message.sent, outbound_message.delivered, outbound_message.read, outbound_message.replied, outbound_message.dismissed, outbound_message.cancelled, outbound_message.expired. All by default.",
             "name": "types",
             "in": "query"
           },
@@ -15206,7 +15206,7 @@
           }
         ],
         "summary": "Send an outbound message to one visitor, who may have no conversation yet",
-        "description": "The message waits on the contact. With `startConversation: on_reply`, it goes in a conversation when the visitor answers it. With `now`, it goes in one at once. `sendAt` or `delay` holds it until then, and `unless` cancels it when the contact matches at that time. A retry with the same `clientId`, and a send with a `once` key that this visitor already has, answer 200 with the first outbound message.",
+        "description": "The message waits on the contact. With `startConversation: on_reply`, it goes in a conversation when the visitor answers it. With `now`, it goes in one at once. `sendAt` or `delay` holds it until then, and `unless` cancels it when the contact matches at that time. A retry with the same `clientId`, and a send with a `dedupeKey` that this visitor already has, answer 200 with the first outbound message.",
         "parameters": [
           {
             "schema": {
@@ -15249,7 +15249,7 @@
                   "sender": {
                     "$ref": "#/components/schemas/OutboundSender"
                   },
-                  "assign": {
+                  "assignOnReply": {
                     "type": "boolean",
                     "description": "Assign the conversation to the member sender when the visitor answers. True by default with a member sender"
                   },
@@ -15263,12 +15263,12 @@
                     "enum": ["badge", "preview", "chat"],
                     "default": "badge"
                   },
-                  "ifOpen": {
+                  "ifConversationOpen": {
                     "type": "string",
                     "enum": ["hold", "join", "skip"],
                     "default": "hold"
                   },
-                  "once": {
+                  "dedupeKey": {
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 200,
@@ -15291,7 +15291,7 @@
                     "type": "string",
                     "format": "date-time"
                   },
-                  "email": {
+                  "sendEmail": {
                     "type": "boolean",
                     "default": false
                   }
@@ -15303,7 +15303,7 @@
         },
         "responses": {
           "200": {
-            "description": "A retry, or a `once` key already used: the first outbound message",
+            "description": "A retry, or a `dedupeKey` already used: the first outbound message",
             "content": {
               "application/json": {
                 "schema": {
@@ -15365,7 +15365,7 @@
             }
           },
           "403": {
-            "description": "send_mode_required: the key drafts replies. send_as_member_required: the key may not send as a member. send_email_required: the key may not send with `email: true`. blocked: the team blocked this visitor. suspended: the server's admin suspended the workspace",
+            "description": "send_mode_required: the key drafts replies. send_as_member_required: the key may not send as a member. send_email_required: the key may not send with `sendEmail: true`. blocked: the team blocked this visitor. suspended: the server's admin suspended the workspace",
             "content": {
               "application/json": {
                 "schema": {
@@ -15460,7 +15460,7 @@
               "type": "string",
               "enum": [
                 "scheduled",
-                "pending",
+                "sent",
                 "delivered",
                 "read",
                 "replied",
@@ -15485,7 +15485,7 @@
           {
             "schema": {
               "type": "string",
-              "pattern": "^\\d{4}-\\d{2}-\\d{2}T[\\d:.]+Z,[0-9a-f-]{36}$",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z,[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$",
               "description": "The `next` of the page before"
             },
             "required": false,
@@ -15683,7 +15683,7 @@
           }
         ],
         "summary": "Cancel an outbound message",
-        "description": "A message that the visitor has not read ends as `cancelled`, with `statusReason: cancelled_by_api`, and its `once` key is free again. A message already read, answered or ended stays as it is: read its `status`.",
+        "description": "A message that the visitor has not read ends as `cancelled`, with `statusReason: cancelled_by_request`, and its `dedupeKey` is free again. A message already read, answered or ended stays as it is: read its `status`.",
         "parameters": [
           {
             "schema": {
@@ -15814,8 +15814,8 @@
             "apiKey": []
           }
         ],
-        "summary": "Cancel the outbound message that a visitor's `once` key names",
-        "description": "A message that the visitor has not read ends as `cancelled`, with `statusReason: cancelled_by_api`, and its `once` key is free again. A message already read, answered or ended stays as it is: read its `status`. With no such message, `outboundMessage` is null.",
+        "summary": "Cancel the outbound message that a visitor's `dedupeKey` names",
+        "description": "A message that the visitor has not read ends as `cancelled`, with `statusReason: cancelled_by_request`, and its `dedupeKey` is free again. A message already read, answered or ended stays as it is: read its `status`. With no such message, `outboundMessage` is null.",
         "parameters": [
           {
             "schema": {
@@ -15837,14 +15837,14 @@
                   "visitor": {
                     "$ref": "#/components/schemas/VisitorRef"
                   },
-                  "once": {
+                  "dedupeKey": {
                     "type": "string",
                     "minLength": 1,
                     "maxLength": 200,
                     "pattern": "^[^\\p{Cc}]*$/u"
                   }
                 },
-                "required": ["visitor", "once"]
+                "required": ["visitor", "dedupeKey"]
               }
             }
           }

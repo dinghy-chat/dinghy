@@ -397,16 +397,16 @@ An outbound message is a message from the team to one visitor, which may exist b
 
 | Route | What it does |
 |---|---|
-| `POST /outbound-messages` | Sends one to one visitor. It answers 201 with `{ outboundMessage }`, and 200 with the first one for a retry with the same `clientId` or a `once` key the visitor already has |
+| `POST /outbound-messages` | Sends one to one visitor. It answers 201 with `{ outboundMessage }`, and 200 with the first one for a retry with the same `clientId` or a `dedupeKey` the visitor already has |
 | `GET /outbound-messages` | Lists them, newest first, by `visitorId`, `status` and `apiKeyId`, with `limit` (1 to 100, 50 by default). It answers `{ outboundMessages, next }`, and `next` goes in `cursor` |
 | `GET /outbound-messages/{id}` | Reads one |
 | `POST /outbound-messages/{id}/cancel` | Cancels one that the visitor has not read, and answers it as it is now |
-| `POST /outbound-messages/cancel` | `{ "visitor": { "userId" } or { "id" }, "once" }` cancels the one that the visitor's `once` key names. `outboundMessage` is null when there is none |
+| `POST /outbound-messages/cancel` | `{ "visitor": { "userId" } or { "id" }, "once" }` cancels the one that the visitor's `dedupeKey` names. `outboundMessage` is null when there is none |
 | `PUT /contacts/by-user/{userId}` | Creates or updates a contact by your user ID, with `name`, `email` and `attributes`. It answers 201 with a new contact, 200 otherwise, as `GET /contacts/{visitorId}` does |
 
-A send's body has `clientId`, `visitor` (`{ userId, name?, email?, attributes? }`, which creates or updates the contact, or `{ id }`), `body`, and the optional `buttons`, `sender`, `assign`, `startConversation` (`on_reply` by default), `show` (`badge` by default), `ifOpen` (`hold` by default), `once`, `sendAt` or `delay`, `unless`, `expiresAt` and `email` (`false` by default). [Send one](outbound-messages.md#send-one) describes each field and the answer.
+A send's body has `clientId`, `visitor` (`{ userId, name?, email?, attributes? }`, which creates or updates the contact, or `{ id }`), `body`, and the optional `buttons`, `sender`, `assign`, `startConversation` (`on_reply` by default), `show` (`badge` by default), `ifConversationOpen` (`hold` by default), `dedupeKey`, `sendAt` or `delay`, `unless`, `expiresAt` and `email` (`false` by default). [Send one](outbound-messages.md#send-one) describes each field and the answer.
 
-`status` is `scheduled`, `pending`, `delivered`, `read`, `replied`, `dismissed`, `cancelled` or `expired`. `statusReason` says why a message waits or was cancelled, and is null otherwise: `open_conversation`, `open_conversation_skipped`, `human_handling`, `bots_paused`, `blocked`, `permission_revoked`, `workspace_inactive`, `unless_matched`, `cancelled_by_api` and `conversation_deleted` now, and `audience_unmatched`, `frequency_capped`, `goal_reached`, `outside_business_hours`, `campaign_paused`, `campaign_ended` and `opted_out` for campaigns in a later release.
+`status` is `scheduled`, `pending`, `delivered`, `read`, `replied`, `dismissed`, `cancelled` or `expired`. `statusReason` says why a message waits or was cancelled, and is null otherwise: `open_conversation`, `open_conversation_skipped`, `human_handling`, `bots_paused`, `blocked`, `permission_revoked`, `workspace_inactive`, `unless_matched`, `cancelled_by_request` and `conversation_deleted` now, and `audience_unmatched`, `frequency_capped`, `goal_reached`, `outside_business_hours`, `campaign_paused`, `campaign_ended` and `opted_out` for campaigns in a later release.
 
 A send answers 403 `send_mode_required` for a key in draft mode, 403 `send_as_member_required` for a member `sender` from a key without the `send_as_member` permission, 403 `send_email_required` for `email: true` from a key without the `send_email` permission, 403 `blocked`, 404 `not_found` for an unknown visitor `id`, 409 `bots_paused` for a key's send with no later send time while bots are paused, and 429 `too_many_waiting` when the visitor already has 5 that wait in no conversation. Each key may send 60 a minute, on top of its 300 requests a minute, and over that it gets 429 `too_many_requests` with `Retry-After`.
 
@@ -458,7 +458,7 @@ A webhook sends a signed `POST` to your server when something changes in a works
 | `conversation.handoff` | An API key's bot handed the conversation to people |
 | `conversation.given_back` | An operator gave the conversation back to the bots |
 | `conversation.labeled` | A label was put on a conversation or taken off. `data` also has `label`, `{ id, name, color }`, and `action`, `added` or `removed`. If the label is deleted before the send, Dinghy sends nothing. |
-| `outbound_message.pending` | An [outbound message](#outbound-messages-and-contacts) reached its send time and waits for the widget |
+| `outbound_message.sent` | An [outbound message](#outbound-messages-and-contacts) reached its send time and waits for the widget |
 | `outbound_message.delivered` | The widget fetched an outbound message |
 | `outbound_message.read` | The visitor read an outbound message |
 | `outbound_message.replied` | The visitor answered an outbound message |
@@ -633,7 +633,7 @@ Every key and connected app gets the Chats tools. A Full access one also gets th
 | `list_contacts`, `search_contacts` | Chats | Lists or finds the people who have a conversation. `list_contacts` with `hasChatted: false` adds those with none, and `filter` takes a [condition](outbound-messages.md#unless) |
 | `upsert_contact` | Chats | Creates or updates a contact by your `userId`: `name`, `email` and `attributes`, which merge key by key |
 | `send_outbound_message` | Chats | Sends an [outbound message](#outbound-messages-and-contacts) to one visitor, with the fields of the route. Pass the same `clientId` on a retry |
-| `cancel_outbound_message` | Chats | Cancels an outbound message that the visitor has not read, by `outboundMessageId`, or by `visitor` and `once`. Marked destructive |
+| `cancel_outbound_message` | Chats | Cancels an outbound message that the visitor has not read, by `outboundMessageId`, or by `visitor` and `dedupeKey`. Marked destructive |
 | `list_outbound_messages` | Chats | Lists outbound messages with their `status` and `statusReason`, by `visitorId`, `status` or `apiKeyId` |
 | `get_live_visitors` | Chats | Lists the tabs of the site open now |
 | `get_analytics` | Chats | The Analytics page's numbers for 7, 30 or 90 days |

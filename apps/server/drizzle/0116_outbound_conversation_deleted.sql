@@ -1,2 +1,0 @@
-ALTER TABLE "outbound_message" DROP CONSTRAINT "outbound_message_status_reason";--> statement-breakpoint
-ALTER TABLE "outbound_message" ADD CONSTRAINT "outbound_message_status_reason" CHECK ("outbound_message"."status_reason" in ('open_conversation', 'open_conversation_skipped', 'human_handling', 'bots_paused', 'blocked', 'permission_revoked', 'workspace_inactive', 'unless_matched', 'audience_unmatched', 'frequency_capped', 'goal_reached', 'outside_business_hours', 'campaign_paused', 'campaign_ended', 'opted_out', 'cancelled_by_api', 'conversation_deleted'));

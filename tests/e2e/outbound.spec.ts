@@ -94,11 +94,11 @@ test("recipe 1: a welcome waits on the contact until the visitor opens the chat 
     visitor: user,
     sender: { email: "julien@shipmail.example" },
     body: "Welcome to Shipmail! Stuck on DNS or an import? Ask me here.",
-    once: "welcome",
+    dedupeKey: "welcome",
   });
   expect(sent.status).toBe(201);
-  // Only once: the same `once` answers the first message.
-  const again = await send({ visitor: user, body: "Welcome again", once: "welcome" });
+  // Only once: the same `dedupeKey` answers the first message.
+  const again = await send({ visitor: user, body: "Welcome again", dedupeKey: "welcome" });
   expect([again.status, again.json.outboundMessage.id]).toEqual([
     200,
     sent.json.outboundMessage.id,
@@ -127,13 +127,13 @@ test("recipe 2: a message after an hour, cancelled when the domain verifies, or 
     visitor: owner,
     body: "example.com is not verified yet. Want me to check your DNS with you?",
     delay: "1h",
-    once: "dns-unverified:1",
+    dedupeKey: "dns-unverified:1",
   });
   expect(first.json.outboundMessage.status).toBe("scheduled");
   // The domain verified within the hour.
   const cancelled = await api("POST", "/outbound-messages/cancel", {
     visitor: owner,
-    once: "dns-unverified:1",
+    dedupeKey: "dns-unverified:1",
   });
   expect(cancelled.json.outboundMessage).toMatchObject({ status: "cancelled" });
 
@@ -141,7 +141,7 @@ test("recipe 2: a message after an hour, cancelled when the domain verifies, or 
     visitor: owner,
     body: "shipmail.example is not verified yet. Want me to check your DNS with you?",
     delay: "1h",
-    once: "dns-unverified:2",
+    dedupeKey: "dns-unverified:2",
     show: "preview",
     buttons: [
       { label: "Yes, please", value: "yes" },
@@ -171,7 +171,7 @@ test("recipe 4: an AI agent starts a conversation now, and wait_for_messages get
     visitor: { userId: "shipmail-4" },
     body: "Your import finished with 3 skipped messages. Want the list?",
     startConversation: "now",
-    once: "import-7781-done",
+    dedupeKey: "import-7781-done",
   });
   const { conversationId } = sent.outboundMessage as { conversationId: string | null };
   expect(conversationId).not.toBeNull();

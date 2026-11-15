@@ -81,10 +81,10 @@ async function emailCoverage(
 
 /**
  * The emails that carried this message. An email's range can hold an outbound message sent with
- * `email: false`, which it left out, so none carried that one.
+ * `sendEmail: false`, which it left out, so none carried that one.
  */
 const carrying = (coverage: EmailCoverage[], line: { seq: bigint; metadata: unknown }) =>
-  (line.metadata as { outbound?: { email: boolean } } | null)?.outbound?.email === false
+  (line.metadata as { outbound?: { sendEmail: boolean } } | null)?.outbound?.sendEmail === false
     ? []
     : coverage.filter((email) => email.fromSeq <= line.seq && line.seq <= email.toSeq);
 
@@ -122,7 +122,7 @@ export async function replyReceipts(
       and(
         eq(outboundMessage.workspaceId, workspaceId),
         eq(outboundMessage.conversationId, conversationId),
-        eq(outboundMessage.email, false),
+        eq(outboundMessage.sendEmail, false),
       ),
     );
   return {
@@ -363,7 +363,7 @@ export async function emailedAt(
   tx: Transaction,
   workspaceId: string,
   visitorId: string,
-  line: { conversationId: string; seq: bigint; outbound: { email: boolean } | null },
+  line: { conversationId: string; seq: bigint; outbound: { sendEmail: boolean } | null },
 ): Promise<Date | null> {
   const coverage = await emailCoverage(tx, workspaceId, line.conversationId, visitorId);
   const times = carrying(coverage, {

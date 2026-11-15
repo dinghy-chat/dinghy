@@ -180,7 +180,7 @@ const en = {
   outboundMessageLabel: "Your message",
   outboundSend: "Send",
   outboundSent: "Message sent",
-  outboundPending: "Waiting for the next visit",
+  outboundNextVisit: "Waiting for the next visit",
   outboundDelivered: "Shown, not read",
   outboundScheduled: "Scheduled for {time}",
   outboundRead: "Read {time}, not answered",

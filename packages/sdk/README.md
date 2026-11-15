@@ -46,11 +46,11 @@ await dinghy.outboundMessages.send({
   visitor: { userId: user.id, name: user.name, email: user.email },
   sender: { email: "julien@shipmail.to" },
   body: "Welcome to Shipmail! Stuck on DNS or an import? Ask me here.",
-  once: "welcome",
+  dedupeKey: "welcome",
 });
 ```
 
-The message waits until the user opens the chat. `once` sends it one time per user, however often the handler runs.
+The message waits until the user opens the chat. `dedupeKey` sends it one time per user, however often the handler runs.
 
 ## Send a message later, and cancel it
 
@@ -59,13 +59,13 @@ await dinghy.outboundMessages.send({
   visitor: { userId: owner.id },
   body: `${domain.name} is not verified yet. Want me to check your DNS with you?`,
   delay: "1h",
-  once: `dns-unverified:${domain.id}`,
+  dedupeKey: `dns-unverified:${domain.id}`,
 });
 
 // When the domain verifies:
 await dinghy.outboundMessages.cancel({
   visitor: { userId: owner.id },
-  once: `dns-unverified:${domain.id}`,
+  dedupeKey: `dns-unverified:${domain.id}`,
 });
 ```
 

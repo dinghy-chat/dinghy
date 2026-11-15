@@ -557,7 +557,7 @@ export const attachment = pgTable(
 
 /** What happened to an outbound message, as the change log and the webhooks name it. */
 export const OUTBOUND_EVENT_KINDS = [
-  "outbound_message.pending",
+  "outbound_message.sent",
   "outbound_message.delivered",
   "outbound_message.read",
   "outbound_message.replied",
@@ -951,7 +951,7 @@ export type ApiKeySource = (typeof API_KEY_SOURCES)[number];
 
 /**
  * What a key may do beyond its level: `send_as_member` sends outbound messages as a member, and
- * `send_email` sends outbound messages with `email: true`, which a reply email carries.
+ * `send_email` sends outbound messages with `sendEmail: true`, which a reply email carries.
  */
 export const API_KEY_PERMISSIONS = ["send_as_member", "send_email"] as const;
 export type ApiKeyPermission = (typeof API_KEY_PERMISSIONS)[number];
@@ -1725,12 +1725,12 @@ export const conversationLabel = pgTable(
 );
 
 /**
- * Where an outbound message stands. `scheduled` waits for `send_at`, `pending` waits for the widget,
+ * Where an outbound message stands. `scheduled` waits for `send_at`, `sent` waits for the widget,
  * and the last five are ends.
  */
 export const OUTBOUND_STATUSES = [
   "scheduled",
-  "pending",
+  "sent",
   "delivered",
   "read",
   "replied",
@@ -1760,7 +1760,7 @@ export const OUTBOUND_STATUS_REASONS = [
   "campaign_paused",
   "campaign_ended",
   "opted_out",
-  "cancelled_by_api",
+  "cancelled_by_request",
   "conversation_deleted",
 ] as const;
 export type OutboundStatusReason = (typeof OUTBOUND_STATUS_REASONS)[number];
@@ -1772,8 +1772,8 @@ export type StartConversation = (typeof START_CONVERSATION)[number];
 export const OUTBOUND_SHOWS = ["badge", "preview", "chat"] as const;
 export type OutboundShow = (typeof OUTBOUND_SHOWS)[number];
 /** What happens while the visitor has an open conversation: wait, go in it, or cancel. */
-export const IF_OPEN = ["hold", "join", "skip"] as const;
-export type IfOpen = (typeof IF_OPEN)[number];
+export const IF_CONVERSATION_OPEN = ["hold", "join", "skip"] as const;
+export type IfConversationOpen = (typeof IF_CONVERSATION_OPEN)[number];
 /** Who the visitor sees: a member, the workspace, or the message's author. */
 export const SENDER_KINDS = ["member", "team", "author"] as const;
 
@@ -1799,7 +1799,7 @@ export interface OutboundMetadata {
 /**
  * A message from the team to one visitor, which may exist before any conversation. The API, MCP and
  * a member by hand create them. Its body goes 30 days after it ends, and its row stays for
- * `outbound_once`.
+ * `outbound_dedupe`.
  */
 export const outboundMessage = pgTable(
   "outbound_message",
@@ -1819,12 +1819,12 @@ export const outboundMessage = pgTable(
     metadata: jsonb("metadata").$type<OutboundMetadata>().notNull().default({}),
     startConversation: text("start_conversation").$type<StartConversation>().notNull(),
     show: text("show").$type<OutboundShow>().notNull(),
-    ifOpen: text("if_open").$type<IfOpen>().notNull(),
+    ifConversationOpen: text("if_conversation_open").$type<IfConversationOpen>().notNull(),
     // Assign the conversation to the member sender when the visitor answers.
-    assign: boolean("assign").notNull(),
+    assignOnReply: boolean("assign_on_reply").notNull(),
     // Whether a reply email may carry it.
-    email: boolean("email").notNull(),
-    onceKey: text("once_key"),
+    sendEmail: boolean("send_email").notNull(),
+    dedupeKey: text("dedupe_key"),
     clientId: text("client_id").notNull(),
     status: text("status").$type<OutboundStatus>().notNull(),
     statusReason: text("status_reason").$type<OutboundStatusReason>(),
@@ -1881,7 +1881,7 @@ export const outboundMessage = pgTable(
     enumCheck("outbound_message_status_reason", table.statusReason, OUTBOUND_STATUS_REASONS),
     enumCheck("outbound_message_start_conversation", table.startConversation, START_CONVERSATION),
     enumCheck("outbound_message_show", table.show, OUTBOUND_SHOWS),
-    enumCheck("outbound_message_if_open", table.ifOpen, IF_OPEN),
+    enumCheck("outbound_message_if_conversation_open", table.ifConversationOpen, IF_CONVERSATION_OPEN),
     check("outbound_message_via", sql`${table.via} = 'mcp'`),
     check(
       "outbound_message_body_length",
@@ -1909,7 +1909,7 @@ export const outboundMessage = pgTable(
     index("outbound_message_waiting_idx")
       .on(table.workspaceId, table.visitorId)
       .where(
-        sql`${table.status} in ('scheduled', 'pending', 'delivered', 'read') and ${table.conversationId} is null`,
+        sql`${table.status} in ('scheduled', 'sent', 'delivered', 'read') and ${table.conversationId} is null`,
       ),
     // The worker's due messages, across workspaces.
     index("outbound_message_due_idx").on(table.dueAt).where(sql`${table.dueAt} is not null`),
@@ -1917,7 +1917,7 @@ export const outboundMessage = pgTable(
     index("outbound_message_expires_idx")
       .on(table.expiresAt)
       .where(
-        sql`${table.status} in ('scheduled', 'pending', 'delivered') and ${table.conversationId} is null`,
+        sql`${table.status} in ('scheduled', 'sent', 'delivered') and ${table.conversationId} is null`,
       ),
     // The prune of old bodies, across workspaces.
     index("outbound_message_body_idx").on(table.createdAt).where(sql`${table.body} is not null`),
@@ -1929,26 +1929,26 @@ export const outboundMessage = pgTable(
 );
 
 /** A business dedupe key, unique per visitor. A cancel deletes its row, and nothing prunes it. */
-export const outboundOnce = pgTable(
-  "outbound_once",
+export const outboundDedupe = pgTable(
+  "outbound_dedupe",
   {
     workspaceId: ownedByWorkspace(),
     visitorId: uuid("visitor_id").notNull(),
-    onceKey: text("once_key").notNull(),
+    dedupeKey: text("dedupe_key").notNull(),
     outboundMessageId: uuid("outbound_message_id").notNull(),
   },
   (table) => [
-    primaryKey({ columns: [table.workspaceId, table.visitorId, table.onceKey] }),
+    primaryKey({ columns: [table.workspaceId, table.visitorId, table.dedupeKey] }),
     foreignKey({
-      name: "outbound_once_visitor_fk",
+      name: "outbound_dedupe_visitor_fk",
       columns: [table.workspaceId, table.visitorId],
       foreignColumns: [visitor.workspaceId, visitor.id],
     }).onDelete("cascade"),
     foreignKey({
-      name: "outbound_once_outbound_message_fk",
+      name: "outbound_dedupe_outbound_message_fk",
       columns: [table.workspaceId, table.outboundMessageId],
       foreignColumns: [outboundMessage.workspaceId, outboundMessage.id],
     }).onDelete("cascade"),
-    index("outbound_once_outbound_message_idx").on(table.workspaceId, table.outboundMessageId),
+    index("outbound_dedupe_outbound_message_idx").on(table.workspaceId, table.outboundMessageId),
   ],
 );

@@ -1,14 +1,14 @@
 import { z } from "@hono/zod-openapi";
 import { ConditionSchema } from "./conditions.ts";
 import {
-  IF_OPEN,
+  IF_CONVERSATION_OPEN,
   OUTBOUND_SHOWS,
   OUTBOUND_STATUS_REASONS,
   OUTBOUND_STATUSES,
   START_CONVERSATION,
 } from "./db/schema.ts";
 import { BOTS_PAUSED, failure, NOT_FOUND } from "./errors.ts";
-import { Body, ClientId, Duration, OnceKey, UserId, VisitorSelector } from "./inputs.ts";
+import { Body, ClientId, Duration, DedupeKey, UserId, VisitorSelector } from "./inputs.ts";
 import { TimeCursor } from "./pages.ts";
 
 // What the outbound API takes and answers. The rules, the delivery and the service import these.
@@ -59,7 +59,7 @@ const SenderSchema = z
       "`\"team\"`: the workspace's name and logo. `{ operatorId }` or `{ email }`: a member, with their name and picture; a key needs the permission `send_as_member`. Left out: the key's name, or the member who sends it.",
   });
 
-/** Who a cancel by `once` is for, by user ID or visitor ID. It creates nobody. */
+/** Who a cancel by `dedupeKey` is for, by user ID or visitor ID. It creates nobody. */
 export const VisitorRef = z
   .union([z.strictObject({ userId: UserId }), z.strictObject({ id: z.uuid() })])
   .openapi("VisitorRef");
@@ -74,14 +74,14 @@ export const SendSchema = z
     body: Body,
     buttons: z.array(ButtonSchema).max(BUTTONS_MAX).optional(),
     sender: SenderSchema.optional(),
-    assign: z.boolean().optional().openapi({
+    assignOnReply: z.boolean().optional().openapi({
       description:
         "Assign the conversation to the member sender when the visitor answers. True by default with a member sender",
     }),
     startConversation: z.enum(START_CONVERSATION).default("on_reply"),
     show: z.enum(OUTBOUND_SHOWS).default("badge"),
-    ifOpen: z.enum(IF_OPEN).default("hold"),
-    once: OnceKey.optional().openapi({
+    ifConversationOpen: z.enum(IF_CONVERSATION_OPEN).default("hold"),
+    dedupeKey: DedupeKey.optional().openapi({
       description:
         "A dedupe key, unique per visitor. A repeat answers the first outbound message. A cancel frees it",
     }),
@@ -89,7 +89,7 @@ export const SendSchema = z
     delay: Duration.optional(),
     unless: ConditionSchema.optional(),
     expiresAt: z.iso.datetime().optional(),
-    email: z.boolean().default(false),
+    sendEmail: z.boolean().default(false),
   })
   .refine((input) => input.sendAt === undefined || input.delay === undefined, {
     message: "Give sendAt or delay, not both",
@@ -118,13 +118,13 @@ export const OutboundMessageSchema = z
       via: z.enum(["mcp"]).nullable(),
     }),
     show: z.enum(OUTBOUND_SHOWS),
-    ifOpen: z.enum(IF_OPEN),
+    ifConversationOpen: z.enum(IF_CONVERSATION_OPEN),
     startConversation: z.enum(START_CONVERSATION),
-    assign: z.boolean(),
-    email: z.boolean(),
+    assignOnReply: z.boolean(),
+    sendEmail: z.boolean(),
     conversationId: z.string().nullable(),
     messageId: z.string().nullable(),
-    once: z.string().nullable(),
+    dedupeKey: z.string().nullable(),
     sendAt: z.string(),
     expiresAt: z.string().nullable(),
     deliveredAt: z.string().nullable(),

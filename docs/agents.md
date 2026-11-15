@@ -86,9 +86,9 @@ Then:
 An agent can write first: leave a message that waits for a visitor, or start a conversation. [Outbound messages](outbound-messages.md) explains every field and status. Every key gets these tools, at both levels:
 
 - `upsert_contact` creates or updates a person by your own `userId`, before or after any chat: `name`, `email`, and `attributes`, which merge key by key. A `null` value removes a key.
-- `send_outbound_message` sends one message to one visitor, by `{ userId }`, which creates or updates them, or by `{ id }`. Pass a `clientId` that you make, as with `reply`, and a `once` key when it must go only once per visitor.
+- `send_outbound_message` sends one message to one visitor, by `{ userId }`, which creates or updates them, or by `{ id }`. Pass a `clientId` that you make, as with `reply`, and a `dedupeKey` when it must go only once per visitor.
 - `list_outbound_messages` lists them, newest first, with `status` and `statusReason`, which says why one waits or was cancelled.
-- `cancel_outbound_message` cancels one that the visitor has not read, by `outboundMessageId`, or by `visitor` and `once`. It is marked destructive.
+- `cancel_outbound_message` cancels one that the visitor has not read, by `outboundMessageId`, or by `visitor` and `dedupeKey`. It is marked destructive.
 
 The key must be in **Send directly**. To show a member's name and picture with `sender`, an owner or admin turns on **May send as a member** for the key in **Settings > API & webhooks**. To send with `email: true`, so that the reply email to the contact's address carries the message, they turn on **May email visitors**. Errors to expect:
 

@@ -7,7 +7,7 @@ import {
   apiKey,
   operator,
   outboundMessage,
-  outboundOnce,
+  outboundDedupe,
   visitor,
   workspaceMember,
 } from "./db/schema.ts";
@@ -58,7 +58,7 @@ import { DAY_MS } from "./time.ts";
 // An outbound message is a message from the team to one visitor, which may exist before any
 // conversation. The REST API, MCP, a member by hand and the worker all go through this service.
 
-/** How long an ended message keeps its text. Its row stays, for `once`. */
+/** How long an ended message keeps its text. Its row stays, for `dedupeKey`. */
 const BODY_KEPT_MS = 30 * DAY_MS;
 
 type Row = typeof outboundMessage.$inferSelect;
@@ -142,13 +142,13 @@ function viewOf(named: Named): OutboundView {
           : { operatorId: row.senderOperatorId, name: senderName ?? "" },
     author: authorView(named),
     show: row.show,
-    ifOpen: row.ifOpen,
+    ifConversationOpen: row.ifConversationOpen,
     startConversation: row.startConversation,
-    assign: row.assign,
-    email: row.email,
+    assignOnReply: row.assignOnReply,
+    sendEmail: row.sendEmail,
     conversationId: row.conversationId,
     messageId: row.messageId,
-    once: row.onceKey,
+    dedupeKey: row.dedupeKey,
     sendAt: row.sendAt.toISOString(),
     expiresAt: iso(row.expiresAt),
     deliveredAt: iso(row.deliveredAt),
@@ -253,28 +253,28 @@ async function retried(tx: Transaction, workspaceId: string, actor: Actor, clien
   return found?.id;
 }
 
-/** The message that holds this visitor's `once` key. */
-async function onceMessageId(
+/** The message that holds this visitor's `dedupeKey`. */
+async function dedupeMessageId(
   tx: Transaction,
   workspaceId: string,
   visitorId: string,
-  once: string,
+  dedupeKey: string,
 ) {
   const [found] = await tx
-    .select({ id: outboundOnce.outboundMessageId })
-    .from(outboundOnce)
+    .select({ id: outboundDedupe.outboundMessageId })
+    .from(outboundDedupe)
     .where(
       and(
-        eq(outboundOnce.workspaceId, workspaceId),
-        eq(outboundOnce.visitorId, visitorId),
-        eq(outboundOnce.onceKey, once),
+        eq(outboundDedupe.workspaceId, workspaceId),
+        eq(outboundDedupe.visitorId, visitorId),
+        eq(outboundDedupe.dedupeKey, dedupeKey),
       ),
     );
   return found?.id;
 }
 
 /**
- * The message a send answers instead of a new one: a retry's, or the one that holds its `once` key.
+ * The message a send answers instead of a new one: a retry's, or the one that holds its `dedupeKey`.
  * The caller holds the locks, so a retry that raced the first send past the first check sees it.
  */
 async function existingSend(
@@ -285,14 +285,14 @@ async function existingSend(
   visitorId: string,
 ) {
   const first = await retried(tx, workspaceId, actor, input.clientId);
-  if (first !== undefined || input.once === undefined) return first;
-  return onceMessageId(tx, workspaceId, visitorId, input.once);
+  if (first !== undefined || input.dedupeKey === undefined) return first;
+  return dedupeMessageId(tx, workspaceId, visitorId, input.dedupeKey);
 }
 
 /** What the sending key may not do. A member by hand needs no permission for either. */
 function keyRefusal(key: KeyState | null, input: SendInput): SendRefusal | null {
   if (key?.replyMode === "draft") return "send_mode_required";
-  if (input.email && key !== null && !key.maySendEmail) return "send_email_required";
+  if (input.sendEmail && key !== null && !key.maySendEmail) return "send_email_required";
   return null;
 }
 
@@ -322,18 +322,18 @@ async function refusal(
   return null;
 }
 
-/** Inserts a new scheduled message, and its `once` key. */
+/** Inserts a new scheduled message, and its `dedupeKey`. */
 async function insertOutbound(
   tx: Transaction,
   values: typeof outboundMessage.$inferInsert,
 ): Promise<Row> {
   const [row] = await tx.insert(outboundMessage).values(values).returning();
   if (row === undefined) throw new Error("The outbound insert returned no row");
-  if (row.onceKey !== null) {
-    await tx.insert(outboundOnce).values({
+  if (row.dedupeKey !== null) {
+    await tx.insert(outboundDedupe).values({
       workspaceId: row.workspaceId,
       visitorId: row.visitorId,
-      onceKey: row.onceKey,
+      dedupeKey: row.dedupeKey,
       outboundMessageId: row.id,
     });
   }
@@ -352,14 +352,14 @@ function timesOf(input: SendInput): { sendAt: Date; expiresAt: Date | null } | n
   return expiresAt !== null && expiresAt <= sendAt ? null : { sendAt, expiresAt };
 }
 
-async function onceTarget(
+async function dedupeTarget(
   tx: Transaction,
   workspaceId: string,
-  { visitor: ref, once }: { visitor: z.infer<typeof VisitorRef>; once: string },
+  { visitor: ref, dedupeKey }: { visitor: z.infer<typeof VisitorRef>; dedupeKey: string },
 ) {
   const visitorId = await findByVisitorRef(tx, workspaceId, ref);
   if (visitorId === null) return null;
-  return (await onceMessageId(tx, workspaceId, visitorId, once)) ?? null;
+  return (await dedupeMessageId(tx, workspaceId, visitorId, dedupeKey)) ?? null;
 }
 
 // The service --------------------------------------------------------------------------------------
@@ -389,7 +389,7 @@ export function createOutbound({ db, live }: { db: Database; live: Signals }) {
         const visitorId = await sendTarget(tx, workspaceId, input.visitor);
         if (visitorId === null) return "not_found" as const;
         // The visitor's lock before the workspace's, as every write takes them, so two sends with one
-        // `once` key take turns.
+        // `dedupeKey` take turns.
         await lockVisitors(tx, workspaceId, [visitorId]);
         const { botsPaused } = await lockWorkspace(tx, workspaceId);
         const existing = await existingSend(tx, workspaceId, actor, input, visitorId);
@@ -409,10 +409,10 @@ export function createOutbound({ db, live }: { db: Database; live: Signals }) {
           metadata: input.buttons === undefined ? {} : { buttons: input.buttons },
           startConversation: input.startConversation,
           show: input.show,
-          ifOpen: input.ifOpen,
-          assign: input.assign ?? as.senderKind === "member",
-          email: input.email,
-          onceKey: input.once ?? null,
+          ifConversationOpen: input.ifConversationOpen,
+          assignOnReply: input.assignOnReply ?? as.senderKind === "member",
+          sendEmail: input.sendEmail,
+          dedupeKey: input.dedupeKey ?? null,
           clientId: input.clientId,
           status: "scheduled",
           sendAt: times.sendAt,
@@ -433,10 +433,10 @@ export function createOutbound({ db, live }: { db: Database; live: Signals }) {
     /** Cancels a message that the visitor has not read. Answers it as it is, or null. */
     async cancel(
       workspaceId: string,
-      target: { id: string } | { visitor: z.infer<typeof VisitorRef>; once: string },
+      target: { id: string } | { visitor: z.infer<typeof VisitorRef>; dedupeKey: string },
     ) {
       const ended = await withWorkspace(db, workspaceId, async (tx) => {
-        const id = "id" in target ? target.id : await onceTarget(tx, workspaceId, target);
+        const id = "id" in target ? target.id : await dedupeTarget(tx, workspaceId, target);
         if (id === null) return null;
         await lockWorkspace(tx, workspaceId);
         const [row] = await tx
@@ -446,7 +446,7 @@ export function createOutbound({ db, live }: { db: Database; live: Signals }) {
           .for("update");
         if (row === undefined) return null;
         if (!isEndable(row)) return { id, visitorId: null };
-        await end(tx, workspaceId, row, { status: "cancelled", reason: "cancelled_by_api" });
+        await end(tx, workspaceId, row, { status: "cancelled", reason: "cancelled_by_request" });
         return { id, visitorId: row.visitorId };
       });
       if (ended === null) return null;
@@ -646,7 +646,7 @@ export async function expireOutbound(
 
 /**
  * Removes the text of messages that ended, or went in a conversation that keeps it, 30 days ago.
- * Their rows stay, for `once`. Answers how many it changed.
+ * Their rows stay, for `dedupeKey`. Answers how many it changed.
  */
 export async function pruneOutboundBodies(db: Database, limit: number): Promise<number> {
   const waiting = sql.join(

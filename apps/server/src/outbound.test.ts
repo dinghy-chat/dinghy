@@ -164,11 +164,11 @@ describe("a send", () => {
       visitor: { userId: user, name: "Ada Lovelace", email: "ada@example.com" },
       sender: { email: "julien@shipmail.example" },
       body: "Welcome to Shipmail!",
-      once: "welcome",
+      dedupeKey: "welcome",
     });
     expect(sent.status).toBe(201);
     expect(sent.outboundMessage).toMatchObject({
-      status: "pending",
+      status: "sent",
       statusReason: null,
       conversationId: null,
       sender: { operatorId: boss.id, name: "Julien Coulaud" },
@@ -176,8 +176,8 @@ describe("a send", () => {
     const [contact] = await owner.select().from(visitor).where(eq(visitor.userId, user));
     expect(contact).toMatchObject({ name: "Ada Lovelace", email: "ada@example.com" });
     expect(await conversationsOf(sent.outboundMessage.visitorId)).toEqual([]);
-    // The same `once` answers the first message, and makes no second one.
-    const again = await send({ visitor: { userId: user }, body: "Welcome again", once: "welcome" });
+    // The same `dedupeKey` answers the first message, and makes no second one.
+    const again = await send({ visitor: { userId: user }, body: "Welcome again", dedupeKey: "welcome" });
     expect(again.status).toBe(200);
     expect(again.outboundMessage.id).toBe(sent.outboundMessage.id);
   });
@@ -268,7 +268,7 @@ describe("a send", () => {
   });
 
   test("email needs the key's permission, and a member by hand needs none", async () => {
-    const email = { visitor: { userId: userId() }, body: "By email", email: true };
+    const email = { visitor: { userId: userId() }, body: "By email", sendEmail: true };
     const refused = await send(email);
     expect([refused.status, refused.error?.code]).toEqual([403, "send_email_required"]);
     await owner
@@ -522,7 +522,7 @@ describe("a change that commits while another waits for the lock", () => {
       (tx) =>
         tx
           .update(outboundMessage)
-          .set({ status: "cancelled", statusReason: "cancelled_by_api" })
+          .set({ status: "cancelled", statusReason: "cancelled_by_request" })
           .where(eq(outboundMessage.id, id)),
       () => waiting(token),
     );
@@ -537,8 +537,8 @@ describe("a delete", () => {
     const join = await send({
       visitor: { id: visitorId },
       body: "Joined",
-      ifOpen: "join",
-      once: "deleted-once",
+      ifConversationOpen: "join",
+      dedupeKey: "deleted-once",
     });
     await waiting(token);
     expect((await rowOf(join.outboundMessage.id))?.conversationId).toBe(conversationId);
@@ -555,8 +555,8 @@ describe("a delete", () => {
       statusReason: "conversation_deleted",
       body: null,
     });
-    // Its `once` key is free again, as after any cancel.
-    const again = await send({ visitor: { id: visitorId }, body: "Again", once: "deleted-once" });
+    // Its `dedupeKey` is free again, as after any cancel.
+    const again = await send({ visitor: { id: visitorId }, body: "Again", dedupeKey: "deleted-once" });
     expect(again.status).toBe(201);
   });
 
@@ -589,7 +589,7 @@ describe("an answer", () => {
     const byTeam = await send({
       visitor: { userId: user },
       sender: "team",
-      assign: true,
+      assignOnReply: true,
       body: "From the team",
     });
     const token = await hostToken(space, user);
@@ -687,11 +687,11 @@ describe("when a conversation is open", () => {
   test("hold waits, join goes in, skip cancels", async () => {
     const { visitorId, token, conversationId } = await visitorStarts(app, space.publicKey, "Hi");
     const hold = await send({ visitor: { id: visitorId }, body: "Held" });
-    const join = await send({ visitor: { id: visitorId }, body: "Joined", ifOpen: "join" });
-    const skip = await send({ visitor: { id: visitorId }, body: "Skipped", ifOpen: "skip" });
+    const join = await send({ visitor: { id: visitorId }, body: "Joined", ifConversationOpen: "join" });
+    const skip = await send({ visitor: { id: visitorId }, body: "Skipped", ifConversationOpen: "skip" });
     expect(await waiting(token)).toEqual([]);
     expect(await rowOf(hold.outboundMessage.id)).toMatchObject({
-      status: "pending",
+      status: "sent",
       statusReason: "open_conversation",
     });
     expect((await rowOf(join.outboundMessage.id))?.conversationId).toBe(conversationId);
@@ -717,7 +717,7 @@ describe("when a conversation is open", () => {
         body: "I am here",
       },
     );
-    const join = await send({ visitor: { id: visitorId }, body: "Bot", ifOpen: "join" });
+    const join = await send({ visitor: { id: visitorId }, body: "Bot", ifConversationOpen: "join" });
     await waiting(token);
     expect(await rowOf(join.outboundMessage.id)).toMatchObject({
       statusReason: "human_handling",
@@ -745,7 +745,7 @@ describe("the worker", () => {
     await due(sent.outboundMessage.id);
     expect(await runDueOutbound(workerDb, db, noLive, 10)).toBe(true);
     const row = await rowOf(sent.outboundMessage.id);
-    expect(row?.status).toBe("pending");
+    expect(row?.status).toBe("sent");
     const [started] = await conversationsOf(sent.outboundMessage.visitorId);
     expect(started).toMatchObject({ id: row?.conversationId, startedBy: "team", status: "open" });
     const listed = await asOperator(
@@ -760,7 +760,7 @@ describe("the worker", () => {
     expect(ids).toContain(started?.id);
   });
 
-  test("unless cancels at the change of the contact, and a cancel frees `once`", async () => {
+  test("unless cancels at the change of the contact, and a cancel frees `dedupeKey`", async () => {
     const user = userId();
     const unless = { field: "attributes.domainVerified", op: "eq", value: true };
     const sent = await send({
@@ -768,7 +768,7 @@ describe("the worker", () => {
       body: "Not verified yet?",
       delay: "1h",
       unless,
-      once: "dns:1",
+      dedupeKey: "dns:1",
     });
     const changed = await withKey(app, bot.token, "PUT", inSpace(`/contacts/by-user/${user}`), {
       attributes: { domainVerified: true },
@@ -782,18 +782,18 @@ describe("the worker", () => {
       visitor: { userId: user },
       body: "Again",
       delay: "1h",
-      once: "dns:2",
+      dedupeKey: "dns:2",
     });
     const cancel = await withKey(app, bot.token, "POST", inSpace("/outbound-messages/cancel"), {
       visitor: { userId: user },
-      once: "dns:2",
+      dedupeKey: "dns:2",
     });
     expect(((await cancel.json()) as { outboundMessage: View }).outboundMessage).toMatchObject({
       id: second.outboundMessage.id,
       status: "cancelled",
-      statusReason: "cancelled_by_api",
+      statusReason: "cancelled_by_request",
     });
-    const third = await send({ visitor: { userId: user }, body: "Free again", once: "dns:2" });
+    const third = await send({ visitor: { userId: user }, body: "Free again", dedupeKey: "dns:2" });
     expect(third.status).toBe(201);
   });
 
@@ -884,8 +884,8 @@ describe("decide", () => {
   const keyMessage = {
     authorApiKeyId: "k",
     senderKind: "author" as const,
-    ifOpen: "join" as const,
-    email: false,
+    ifConversationOpen: "join" as const,
+    sendEmail: false,
   };
 
   test("follows the reply gate for a key, and joins for a member", () => {
@@ -911,7 +911,7 @@ describe("decide", () => {
 
   test("a key's email message waits while the key may not send email", () => {
     const noEmail = { ...calm, key: calm.key && { ...calm.key, maySendEmail: false } };
-    expect(decide({ ...keyMessage, email: true }, noEmail)).toEqual({
+    expect(decide({ ...keyMessage, sendEmail: true }, noEmail)).toEqual({
       kind: "wait",
       reason: "permission_revoked",
     });
@@ -929,7 +929,7 @@ describe("an AI agent through MCP", () => {
       visitor: { userId: user },
       body: "Your import finished with 3 skipped messages. Want the list?",
       startConversation: "now",
-      once: "import-7781-done",
+      dedupeKey: "import-7781-done",
     });
     expect(sent.isError).toBe(false);
     const made = sent.structuredContent.outboundMessage as View;
@@ -938,7 +938,7 @@ describe("an AI agent through MCP", () => {
       clientId: randomUUID(),
       visitor: { userId: user },
       body: "A repeat",
-      once: "import-7781-done",
+      dedupeKey: "import-7781-done",
     });
     expect((again.structuredContent.outboundMessage as View).id).toBe(made.id);
     await answer(await hostToken(space, user), "Yes please", []);
@@ -961,7 +961,7 @@ describe("an AI agent through MCP", () => {
     ]);
   });
 
-  test("upserts a contact and cancels by `once`", async () => {
+  test("upserts a contact and cancels by `dedupeKey`", async () => {
     const user = userId();
     const upserted = await callTool(app, bot.token, "upsert_contact", {
       userId: user,
@@ -973,15 +973,15 @@ describe("an AI agent through MCP", () => {
       visitor: { userId: user },
       body: "Later",
       delay: "1h",
-      once: "trial-ends",
+      dedupeKey: "trial-ends",
     });
     const cancelled = await callTool(app, bot.token, "cancel_outbound_message", {
       visitor: { userId: user },
-      once: "trial-ends",
+      dedupeKey: "trial-ends",
     });
     expect(cancelled.structuredContent.outboundMessage).toMatchObject({ status: "cancelled" });
     const unclear = await callTool(app, bot.token, "cancel_outbound_message", {
-      once: "trial-ends",
+      dedupeKey: "trial-ends",
     });
     expect(unclear.isError).toBe(true);
   });
@@ -995,18 +995,18 @@ describe("the event stream and webhooks", () => {
       .where(eq(workspace.id, space.id));
     const sent = await send({ visitor: { userId: userId() }, body: "Watched" });
     const stream = await app.request(
-      `/v1/events?types=outbound_message.pending&after=${current?.generation}.${current?.seq}`,
+      `/v1/events?types=outbound_message.sent&after=${current?.generation}.${current?.seq}`,
       { headers: { authorization: `Bearer ${bot.token}` } },
     );
     const text = await readStream(stream);
-    expect(text).toContain("event: outbound_message.pending");
+    expect(text).toContain("event: outbound_message.sent");
     expect(text).toContain(sent.outboundMessage.id);
     expect(text).toContain('"body":"Watched"');
     await owner.insert(webhook).values({
       workspaceId: space.id,
       url: "https://hooks.example.com/dinghy",
       secret: "whsec_test",
-      events: ["outbound_message.pending"],
+      events: ["outbound_message.sent"],
     });
     await send({ visitor: { userId: userId() }, body: "Hooked" });
     while (await fanOutWebhooksOne(workerDb)) {}
@@ -1015,13 +1015,13 @@ describe("the event stream and webhooks", () => {
       .from(webhookDelivery)
       .where(eq(webhookDelivery.workspaceId, space.id));
     expect(deliveries.map((one) => [one.type, one.conversationId === null])).toEqual([
-      ["outbound_message.pending", true],
+      ["outbound_message.sent", true],
     ]);
     const data = await withWorkspace(db, space.id, (tx) =>
       webhookData(tx, undefined, space.id, [
         { outboundMessageId: deliveries[0]?.outboundMessageId ?? "" },
       ]),
     );
-    expect(data[0]).toMatchObject({ outboundMessage: { body: "Hooked", status: "pending" } });
+    expect(data[0]).toMatchObject({ outboundMessage: { body: "Hooked", status: "sent" } });
   });
 });

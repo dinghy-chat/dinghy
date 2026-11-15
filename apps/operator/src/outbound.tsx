@@ -27,7 +27,7 @@ const REASON_TEXT: Record<OutboundStatusReason, TextId> = {
   campaign_paused: "outboundReasonCampaignPaused",
   campaign_ended: "outboundReasonCampaignEnded",
   opted_out: "outboundReasonOptedOut",
-  cancelled_by_api: "outboundReasonCancelled",
+  cancelled_by_request: "outboundReasonCancelled",
   conversation_deleted: "outboundReasonConversationDeleted",
 };
 
@@ -44,7 +44,7 @@ function outboundState(one: OutboundMessage): string {
   if (one.status === "replied") return t("outboundReplied", { time: at(one.repliedAt) });
   if (one.status === "dismissed") return t("outboundDismissed", { time: at(one.dismissedAt) });
   if (one.status === "delivered") return t("outboundDelivered");
-  return t(one.status === "expired" ? "outboundExpired" : "outboundPending");
+  return t(one.status === "expired" ? "outboundExpired" : "outboundNextVisit");
 }
 
 /** Who the visitor saw, and who sent it when that differs: "Julien, via Welcome bot". */
@@ -56,7 +56,7 @@ function senderLine(one: OutboundMessage): string {
 }
 
 /** The statuses in which the visitor has not read a message yet. */
-const UNREAD_STATUSES = new Set(["scheduled", "pending", "delivered"]);
+const UNREAD_STATUSES = new Set(["scheduled", "sent", "delivered"]);
 
 /** A message a cancel ends: unread, and outside a conversation, as the server decides. */
 const isCancellable = (one: OutboundMessage) =>

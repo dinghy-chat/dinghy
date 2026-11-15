@@ -103,7 +103,7 @@ export function outboundMessages(request: Request) {
       request("post", OUTBOUND, { body: withClientId(input) }),
     get: (id: string) => request("get", `${OUTBOUND}/{id}`, { path: { id } }),
     list: (query: QueryOf<typeof OUTBOUND, "get"> = {}) => request("get", OUTBOUND, { query }),
-    /** Cancels by ID, or by the visitor and the `once` key it was sent with. */
+    /** Cancels by ID, or by the visitor and the `dedupeKey` it was sent with. */
     cancel: (input: Cancel) =>
       "id" in input
         ? request("post", `${OUTBOUND}/{id}/cancel`, { path: { id: input.id } })
