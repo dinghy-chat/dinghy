@@ -86,30 +86,30 @@ Then:
 An agent can write first: leave a message that waits for a visitor, or start a conversation. [Outbound messages](outbound-messages.md) explains every field and status. Every key gets these tools, at both levels:
 
 - `upsert_contact` creates or updates a person by your own `userId`, before or after any chat: `name`, `email`, and `attributes`, which merge key by key. A `null` value removes a key.
-- `send_outbound_message` sends one message to one visitor, by `{ userId }`, which creates or updates them, or by `{ id }`. Pass a `clientId` that you make, as with `reply`, and a `dedupeKey` when it must go only once per visitor.
+- `send_outbound_message` sends one message to one visitor, by `{ userId }`, which creates or updates them, or by `{ id }`. Pass a `clientId` that you make, as with `reply`, and a `dedupeKey`, one per order, invoice or job, when it must go only once per visitor. The same `dedupeKey` cancels it.
 - `list_outbound_messages` lists them, newest first, with `status` and `statusReason`, which says why one waits or was cancelled.
 - `cancel_outbound_message` cancels one that the visitor has not read, by `outboundMessageId`, or by `visitor` and `dedupeKey`. It is marked destructive.
 
-The key must be in **Send directly**. To show a member's name and picture with `sender`, an owner or admin turns on **May send as a member** for the key in **Settings > API & webhooks**. To send with `email: true`, so that the reply email to the contact's address carries the message, they turn on **May email visitors**. Errors to expect:
+The key must be in **Send directly**. To show a member's name and picture with `sender`, an owner or admin turns on **May send as a member** for the key in **Settings > API & webhooks**. To send with `sendEmail: true`, so that the reply email to the contact's address carries the message, they turn on **May email visitors**. Errors to expect:
 
 | Code | Meaning | What to do |
 |---|---|---|
 | `send_mode_required` | The key is in **Drafts only** | Ask a person to set it to **Send directly** |
 | `send_as_member_required` | The key may not send as a member | Leave `sender` out, or ask a person to turn on **May send as a member** |
-| `send_email_required` | The key may not send email | Leave `email` out, or ask a person to turn on **May email visitors** |
+| `send_email_required` | The key may not send email | Leave `sendEmail` out, or ask a person to turn on **May email visitors** |
 | `bots_paused` | An owner or admin paused every bot | Do not send now. A message with `delay` or `sendAt` waits for the resume instead |
 | `blocked` | The team blocked this visitor | Do nothing |
 | `too_many_waiting` | 5 outbound messages already wait for this visitor | Cancel one, or wait |
 
-For example, when an import ends, tell the user in a conversation that starts now:
+For example, when a job ends, tell the user in a conversation that starts now:
 
 ```json
 {
-  "clientId": "import-7781-done",
+  "clientId": "export-31-done",
   "visitor": { "userId": "42" },
-  "body": "Your import finished with 3 skipped messages. Want the list?",
+  "body": "Your export finished with 3 skipped rows. Want the list?",
   "startConversation": "now",
-  "once": "import-7781-done"
+  "dedupeKey": "export-31-done"
 }
 ```
 
@@ -166,7 +166,7 @@ With Full access, `send_test_message` sends a message as a test visitor, through
 - **Two connections for two jobs.** Give the coding agent that installs Dinghy a Full access connection. Give the bot that answers chats its own Chats connection, so text from a visitor cannot reach the webhook or site tools.
 - **Drafts first.** Start a new bot in **Drafts only**, read its drafts for a while, then switch it to **Send directly**.
 - **Ask before deleting.** `remove_allowed_site`, `delete_webhook`, `delete_test_visitors` and `close_conversation` are marked destructive, so a client asks you before it calls them.
-- **What no key can do.** No key or connection can manage keys, connected apps or members, see the signing secret, read billing, export or delete the workspace, send, edit or discard a draft, give a conversation back to bots, pause or resume bots, upload the logo, or edit or delete messages. A key reaches a visitor through the chat only: a reply in the conversation it answers, or an outbound message. An outbound message with `email: true` and `startConversation: "now"` also goes in the reply email to the visitor's address, and `upsert_contact` can set that address. So `email: true` needs the key's permission **May email visitors**, off by default: an agent that reads visitor text could be steered into emailing an address of an attacker's choice. The key has no other tool that sends email or calls an address of its choice.
+- **What no key can do.** No key or connection can manage keys, connected apps or members, see the signing secret, read billing, export or delete the workspace, send, edit or discard a draft, give a conversation back to bots, pause or resume bots, upload the logo, or edit or delete messages. A key reaches a visitor through the chat only: a reply in the conversation it answers, or an outbound message. An outbound message with `sendEmail: true` and `startConversation: "now"` also goes in the reply email to the visitor's address, and `upsert_contact` can set that address. So `sendEmail: true` needs the key's permission **May email visitors**, off by default: an agent that reads visitor text could be steered into emailing an address of an attacker's choice. The key has no other tool that sends email or calls an address of its choice.
 
 ## Tell your agent about Dinghy
 

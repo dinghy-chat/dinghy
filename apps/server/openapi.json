@@ -1745,6 +1745,7 @@
                 "outbound_message.sent",
                 "outbound_message.delivered",
                 "outbound_message.read",
+                "outbound_message.clicked",
                 "outbound_message.replied",
                 "outbound_message.dismissed",
                 "outbound_message.cancelled",
@@ -1799,6 +1800,7 @@
               "outbound_message.sent",
               "outbound_message.delivered",
               "outbound_message.read",
+              "outbound_message.clicked",
               "outbound_message.replied",
               "outbound_message.dismissed",
               "outbound_message.cancelled",
@@ -2432,6 +2434,9 @@
           "button": {
             "$ref": "#/components/schemas/ChosenButton"
           },
+          "metadata": {
+            "$ref": "#/components/schemas/OutboundMetadata"
+          },
           "sender": {
             "anyOf": [
               {
@@ -2535,6 +2540,7 @@
           "body",
           "buttons",
           "button",
+          "metadata",
           "sender",
           "author",
           "show",
@@ -2554,6 +2560,14 @@
           "cancelledAt",
           "createdAt"
         ]
+      },
+      "OutboundMetadata": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "description": "Up to 20 keys of up to 40 characters, each with text of up to 500 characters, such as `{ \"orderId\": \"1042\" }`. It comes back on the outbound message, its webhooks and the event stream. The visitor never sees it"
       },
       "VisitorSelector": {
         "anyOf": [
@@ -2722,7 +2736,7 @@
               "value": ["trial", "pro"]
             },
             {
-              "field": "attributes.domainVerified",
+              "field": "attributes.onboarded",
               "op": "ne",
               "value": true
             }
@@ -10476,6 +10490,7 @@
                         "outbound_message.sent",
                         "outbound_message.delivered",
                         "outbound_message.read",
+                        "outbound_message.clicked",
                         "outbound_message.replied",
                         "outbound_message.dismissed",
                         "outbound_message.cancelled",
@@ -10483,7 +10498,7 @@
                       ]
                     },
                     "minItems": 1,
-                    "maxItems": 17
+                    "maxItems": 18
                   },
                   "enabled": {
                     "type": "boolean",
@@ -10672,6 +10687,7 @@
                         "outbound_message.sent",
                         "outbound_message.delivered",
                         "outbound_message.read",
+                        "outbound_message.clicked",
                         "outbound_message.replied",
                         "outbound_message.dismissed",
                         "outbound_message.cancelled",
@@ -10679,7 +10695,7 @@
                       ]
                     },
                     "minItems": 1,
-                    "maxItems": 17
+                    "maxItems": 18
                   },
                   "enabled": {
                     "type": "boolean"
@@ -13458,10 +13474,10 @@
           {
             "schema": {
               "type": "string",
-              "description": "A comma list of conversation.created, message.created, message.updated, message.deleted, conversation.closed, conversation.reopened, conversation.assigned, conversation.handoff, conversation.given_back, conversation.labeled, outbound_message.sent, outbound_message.delivered, outbound_message.read, outbound_message.replied, outbound_message.dismissed, outbound_message.cancelled, outbound_message.expired. All by default."
+              "description": "A comma list of conversation.created, message.created, message.updated, message.deleted, conversation.closed, conversation.reopened, conversation.assigned, conversation.handoff, conversation.given_back, conversation.labeled, outbound_message.sent, outbound_message.delivered, outbound_message.read, outbound_message.clicked, outbound_message.replied, outbound_message.dismissed, outbound_message.cancelled, outbound_message.expired. All by default."
             },
             "required": false,
-            "description": "A comma list of conversation.created, message.created, message.updated, message.deleted, conversation.closed, conversation.reopened, conversation.assigned, conversation.handoff, conversation.given_back, conversation.labeled, outbound_message.sent, outbound_message.delivered, outbound_message.read, outbound_message.replied, outbound_message.dismissed, outbound_message.cancelled, outbound_message.expired. All by default.",
+            "description": "A comma list of conversation.created, message.created, message.updated, message.deleted, conversation.closed, conversation.reopened, conversation.assigned, conversation.handoff, conversation.given_back, conversation.labeled, outbound_message.sent, outbound_message.delivered, outbound_message.read, outbound_message.clicked, outbound_message.replied, outbound_message.dismissed, outbound_message.cancelled, outbound_message.expired. All by default.",
             "name": "types",
             "in": "query"
           },
@@ -15228,7 +15244,7 @@
                   "clientId": {
                     "type": "string",
                     "pattern": "^[A-Za-z0-9_-]{1,64}$",
-                    "description": "Your own ID for this send. A retry with the same one answers the first result"
+                    "description": "Your own ID for this send, unique per author. It never expires: a retry with the same one answers the first result"
                   },
                   "visitor": {
                     "$ref": "#/components/schemas/VisitorSelector"
@@ -15273,7 +15289,10 @@
                     "minLength": 1,
                     "maxLength": 200,
                     "pattern": "^[^\\p{Cc}]*$/u",
-                    "description": "A dedupe key, unique per visitor. A repeat answers the first outbound message. A cancel frees it"
+                    "description": "A key of your own, unique per visitor. A repeat answers the first outbound message. It also names the message for a cancel, which frees it"
+                  },
+                  "metadata": {
+                    "$ref": "#/components/schemas/OutboundMetadata"
                   },
                   "sendAt": {
                     "type": "string",
@@ -15290,6 +15309,11 @@
                   "expiresAt": {
                     "type": "string",
                     "format": "date-time"
+                  },
+                  "expiresIn": {
+                    "type": "string",
+                    "example": "1h",
+                    "description": "How long after the send time it stops waiting, as `expiresAt` says it as a time"
                   },
                   "sendEmail": {
                     "type": "boolean",
@@ -15453,6 +15477,29 @@
             },
             "required": false,
             "name": "visitorId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "description": "The messages of the contact with your user ID"
+            },
+            "required": false,
+            "description": "The messages of the contact with your user ID",
+            "name": "userId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "pattern": "^[^\\p{Cc}]*$/u"
+            },
+            "required": false,
+            "name": "dedupeKey",
             "in": "query"
           },
           {

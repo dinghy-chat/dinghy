@@ -16,6 +16,8 @@ CREATE TABLE "outbound_message" (
 	"sender_kind" text NOT NULL,
 	"sender_operator_id" uuid,
 	"body" text,
+	"buttons" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"chosen_button" jsonb,
 	"metadata" jsonb DEFAULT '{}'::jsonb NOT NULL,
 	"start_conversation" text NOT NULL,
 	"show" text NOT NULL,
@@ -73,6 +75,7 @@ CREATE INDEX "outbound_message_waiting_idx" ON "outbound_message" USING btree ("
 CREATE INDEX "outbound_message_due_idx" ON "outbound_message" USING btree ("due_at") WHERE "outbound_message"."due_at" is not null;--> statement-breakpoint
 CREATE INDEX "outbound_message_expires_idx" ON "outbound_message" USING btree ("expires_at") WHERE "outbound_message"."status" in ('scheduled', 'sent', 'delivered') and "outbound_message"."conversation_id" is null;--> statement-breakpoint
 CREATE INDEX "outbound_message_body_idx" ON "outbound_message" USING btree ("created_at") WHERE "outbound_message"."body" is not null;--> statement-breakpoint
+CREATE INDEX "outbound_message_dedupe_key_idx" ON "outbound_message" USING btree ("workspace_id","dedupe_key") WHERE "outbound_message"."dedupe_key" is not null;--> statement-breakpoint
 CREATE INDEX "outbound_message_api_key_idx" ON "outbound_message" USING btree ("workspace_id","author_api_key_id");--> statement-breakpoint
 CREATE INDEX "outbound_message_conversation_idx" ON "outbound_message" USING btree ("workspace_id","conversation_id");--> statement-breakpoint
 CREATE INDEX "outbound_message_message_idx" ON "outbound_message" USING btree ("workspace_id","message_id");--> statement-breakpoint

@@ -105,7 +105,7 @@ export async function materializeOutbound(
           id: row.id,
           sendEmail: row.sendEmail,
           sender: senderMark(row),
-          ...(row.metadata.buttons !== undefined && { buttons: row.metadata.buttons }),
+          ...(row.buttons.length > 0 && { buttons: row.buttons }),
         },
         mcp: row.via === "mcp",
       },
@@ -198,7 +198,7 @@ export async function buttonOf(
   { outboundMessageId, index }: ButtonRef,
 ): Promise<{ row: Row; button: OutboundButton } | null> {
   const row = await findRow(tx, workspaceId, outboundMessageId);
-  const button = row?.metadata.buttons?.[index];
+  const button = row?.buttons[index];
   if (row === undefined || row.visitorId !== visitorId || button === undefined) return null;
   return { row, button };
 }
@@ -288,17 +288,14 @@ async function markAnswered(
       {
         status: "replied",
         repliedAt: new Date(),
-        ...(row.id === pressedId &&
-          button !== undefined && {
-            metadata: { ...row.metadata, chosen: button },
-          }),
+        ...(row.id === pressedId && button !== undefined && { chosenButton: button }),
       },
       "outbound_message.replied",
     );
   }
   const member =
-    answered.findLast((row) => row.assignOnReply && row.senderOperatorId !== null)?.senderOperatorId ??
-    null;
+    answered.findLast((row) => row.assignOnReply && row.senderOperatorId !== null)
+      ?.senderOperatorId ?? null;
   if (member === null || !(await isMember(tx, workspaceId, member))) return;
   const [current] = await tx
     .select({ assignee: conversation.assigneeOperatorId })
@@ -483,6 +480,6 @@ export const widgetOutbound = (row: Row): WidgetOutbound => ({
   authorApiKeyId: row.authorApiKeyId,
   createdAt: row.createdAt,
   readAt: row.readAt,
-  buttons: row.metadata.buttons ?? [],
+  buttons: row.buttons,
   outbound: { sender: senderMark(row) },
 });

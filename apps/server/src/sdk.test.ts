@@ -83,7 +83,10 @@ test("sends once, upserts a contact and cancels by the visitor and the dedupe ke
   const [contact] = await owner.select().from(visitor).where(eq(visitor.userId, userId));
   expect(contact).toMatchObject({ name: "Ada Lovelace", attributes: { plan: "pro" } });
 
-  const cancelled = await dinghy.outboundMessages.cancel({ visitor: { userId }, dedupeKey: "dns:7" });
+  const cancelled = await dinghy.outboundMessages.cancel({
+    visitor: { userId },
+    dedupeKey: "dns:7",
+  });
   expect(cancelled.outboundMessage).toMatchObject({
     id: sent.outboundMessage.id,
     status: "cancelled",

@@ -9,8 +9,8 @@ import {
   type OutboundPayload,
   type OutboundStatus,
   type OutboundStatusReason,
-  outboundMessage,
   outboundDedupe,
+  outboundMessage,
   visitor,
   workspaceMember,
 } from "./db/schema.ts";
@@ -125,7 +125,10 @@ export async function end(
   await tx
     .delete(outboundDedupe)
     .where(
-      and(eq(outboundDedupe.workspaceId, workspaceId), eq(outboundDedupe.outboundMessageId, row.id)),
+      and(
+        eq(outboundDedupe.workspaceId, workspaceId),
+        eq(outboundDedupe.outboundMessageId, row.id),
+      ),
     );
   return change(
     tx,

@@ -159,9 +159,10 @@ const en = {
   apiKeyMaySendEmailHint:
     "Its outbound messages may also go in the reply email to the contact's address, as the API call asks.",
   apiKeyEmailFor: "Email for {name}",
-  webhookEventOutboundPending: "An outbound message waits for the visitor",
+  webhookEventOutboundSent: "An outbound message waits for the visitor",
   webhookEventOutboundDelivered: "The widget showed an outbound message",
   webhookEventOutboundRead: "The visitor read an outbound message",
+  webhookEventOutboundClicked: "The visitor opened a link of an outbound message",
   webhookEventOutboundReplied: "The visitor answered an outbound message",
   webhookEventOutboundDismissed: "The visitor dismissed an outbound message",
   webhookEventOutboundCancelled: "An outbound message was cancelled",

@@ -8,7 +8,7 @@ import {
   START_CONVERSATION,
 } from "./db/schema.ts";
 import { BOTS_PAUSED, failure, NOT_FOUND } from "./errors.ts";
-import { Body, ClientId, Duration, DedupeKey, UserId, VisitorSelector } from "./inputs.ts";
+import { Body, ClientId, DedupeKey, Duration, UserId, VisitorSelector } from "./inputs.ts";
 import { TimeCursor } from "./pages.ts";
 
 // What the outbound API takes and answers. The rules, the delivery and the service import these.
@@ -17,6 +17,19 @@ import { TimeCursor } from "./pages.ts";
 export const WAITING_PER_VISITOR = 5;
 const BUTTONS_MAX = 4;
 const PAGE_SIZE_MAX = 100;
+const METADATA_KEYS_MAX = 20;
+const METADATA_KEY_LENGTH_MAX = 40;
+const METADATA_VALUE_LENGTH_MAX = 500;
+
+/** The sender's own keys and values on a message. Dinghy never shows them to the visitor. */
+export const OutboundMetadataSchema = z
+  .record(z.string().min(1).max(METADATA_KEY_LENGTH_MAX), z.string().max(METADATA_VALUE_LENGTH_MAX))
+  .refine((metadata) => Object.keys(metadata).length <= METADATA_KEYS_MAX, {
+    message: `At most ${METADATA_KEYS_MAX} keys`,
+  })
+  .openapi("OutboundMetadata", {
+    description: `Up to ${METADATA_KEYS_MAX} keys of up to ${METADATA_KEY_LENGTH_MAX} characters, each with text of up to ${METADATA_VALUE_LENGTH_MAX} characters, such as \`{ "orderId": "1042" }\`. It comes back on the outbound message, its webhooks and the event stream. The visitor never sees it`,
+  });
 
 const ButtonLabel = z.string().trim().min(1).max(40);
 const ButtonValue = z.string().min(1).max(100);
@@ -68,7 +81,8 @@ export const VisitorRef = z
 export const SendSchema = z
   .object({
     clientId: ClientId.openapi({
-      description: "Your own ID for this send. A retry with the same one answers the first result",
+      description:
+        "Your own ID for this send, unique per author. It never expires: a retry with the same one answers the first result",
     }),
     visitor: VisitorSelector,
     body: Body,
@@ -83,16 +97,24 @@ export const SendSchema = z
     ifConversationOpen: z.enum(IF_CONVERSATION_OPEN).default("hold"),
     dedupeKey: DedupeKey.optional().openapi({
       description:
-        "A dedupe key, unique per visitor. A repeat answers the first outbound message. A cancel frees it",
+        "A key of your own, unique per visitor. A repeat answers the first outbound message. It also names the message for a cancel, which frees it",
     }),
+    metadata: OutboundMetadataSchema.optional(),
     sendAt: z.iso.datetime().optional(),
     delay: Duration.optional(),
     unless: ConditionSchema.optional(),
     expiresAt: z.iso.datetime().optional(),
+    expiresIn: Duration.optional().openapi({
+      description:
+        "How long after the send time it stops waiting, as `expiresAt` says it as a time",
+    }),
     sendEmail: z.boolean().default(false),
   })
   .refine((input) => input.sendAt === undefined || input.delay === undefined, {
     message: "Give sendAt or delay, not both",
+  })
+  .refine((input) => input.expiresAt === undefined || input.expiresIn === undefined, {
+    message: "Give expiresAt or expiresIn, not both",
   });
 
 export const OutboundMessageSchema = z
@@ -107,6 +129,7 @@ export const OutboundMessageSchema = z
     buttons: z.array(ButtonSchema),
     // The button the visitor chose, when they answered, dismissed or opened a page with one.
     button: ChosenButtonSchema.nullable(),
+    metadata: OutboundMetadataSchema,
     sender: z
       .union([z.literal("team"), z.object({ operatorId: z.string(), name: z.string() })])
       .nullable(),
@@ -139,6 +162,10 @@ export const OutboundMessageSchema = z
 /** A list's filters and its page. */
 export const ListQuery = z.object({
   visitorId: z.uuid().optional(),
+  userId: UserId.optional().openapi({
+    description: "The messages of the contact with your user ID",
+  }),
+  dedupeKey: DedupeKey.optional(),
   status: z.enum(OUTBOUND_STATUSES).optional(),
   apiKeyId: z.uuid().optional(),
   cursor: TimeCursor.optional().openapi({ description: "The `next` of the page before" }),

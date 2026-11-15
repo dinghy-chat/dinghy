@@ -1,13 +1,13 @@
 import type { z } from "@hono/zod-openapi";
-import { and, asc, desc, eq, inArray, isNull, lte, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, lte, type SQL, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { chosenButton } from "../../../packages/widget/src/shared.ts";
 import type { Actor } from "./api-keys.ts";
 import {
   apiKey,
   operator,
-  outboundMessage,
   outboundDedupe,
+  outboundMessage,
   visitor,
   workspaceMember,
 } from "./db/schema.ts";
@@ -132,8 +132,9 @@ function viewOf(named: Named): OutboundView {
     statusReason: row.statusReason,
     visitorId: row.visitorId,
     body: row.body,
-    buttons: row.metadata.buttons ?? [],
-    button: row.metadata.chosen ?? null,
+    buttons: row.buttons,
+    button: row.chosenButton,
+    metadata: row.metadata,
     sender:
       row.senderKind === "team"
         ? "team"
@@ -348,7 +349,12 @@ function timesOf(input: SendInput): { sendAt: Date; expiresAt: Date | null } | n
       ? now + input.delay
       : Math.max(now, input.sendAt === undefined ? now : Date.parse(input.sendAt)),
   );
-  const expiresAt = input.expiresAt === undefined ? null : new Date(input.expiresAt);
+  const expiresAt =
+    input.expiresIn !== undefined
+      ? new Date(sendAt.getTime() + input.expiresIn)
+      : input.expiresAt === undefined
+        ? null
+        : new Date(input.expiresAt);
   return expiresAt !== null && expiresAt <= sendAt ? null : { sendAt, expiresAt };
 }
 
@@ -360,6 +366,27 @@ async function dedupeTarget(
   const visitorId = await findByVisitorRef(tx, workspaceId, ref);
   if (visitorId === null) return null;
   return (await dedupeMessageId(tx, workspaceId, visitorId, dedupeKey)) ?? null;
+}
+
+/** Applies a filter only when the list was given its value. */
+const given = <T>(value: T | undefined, condition: (value: T) => SQL) =>
+  value === undefined ? undefined : condition(value);
+
+/** A list's filters and its cursor, as one condition. */
+function listFilter(tx: Transaction, workspaceId: string, filter: z.infer<typeof ListQuery>) {
+  const ofUser = (userId: string) =>
+    tx
+      .select({ id: visitor.id })
+      .from(visitor)
+      .where(and(eq(visitor.workspaceId, workspaceId), eq(visitor.userId, userId)));
+  return and(
+    given(filter.visitorId, (id) => eq(outboundMessage.visitorId, id)),
+    given(filter.userId, (userId) => inArray(outboundMessage.visitorId, ofUser(userId))),
+    given(filter.dedupeKey, (key) => eq(outboundMessage.dedupeKey, key)),
+    given(filter.status, (status) => eq(outboundMessage.status, status)),
+    given(filter.apiKeyId, (id) => eq(outboundMessage.authorApiKeyId, id)),
+    beforeCursor(filter.cursor, outboundMessage.createdAt, outboundMessage.id),
+  );
 }
 
 // The service --------------------------------------------------------------------------------------
@@ -406,7 +433,8 @@ export function createOutbound({ db, live }: { db: Database; live: Signals }) {
           via,
           ...as,
           body: input.body,
-          metadata: input.buttons === undefined ? {} : { buttons: input.buttons },
+          buttons: input.buttons ?? [],
+          metadata: input.metadata ?? {},
           startConversation: input.startConversation,
           show: input.show,
           ifConversationOpen: input.ifConversationOpen,
@@ -459,21 +487,7 @@ export function createOutbound({ db, live }: { db: Database; live: Signals }) {
     /** A page of messages, newest first. */
     async list(workspaceId: string, filter: z.infer<typeof ListQuery>) {
       const rows = await withWorkspace(db, workspaceId, (tx) =>
-        withNames(
-          tx,
-          workspaceId,
-          and(
-            filter.visitorId === undefined
-              ? undefined
-              : eq(outboundMessage.visitorId, filter.visitorId),
-            filter.status === undefined ? undefined : eq(outboundMessage.status, filter.status),
-            filter.apiKeyId === undefined
-              ? undefined
-              : eq(outboundMessage.authorApiKeyId, filter.apiKeyId),
-            beforeCursor(filter.cursor, outboundMessage.createdAt, outboundMessage.id),
-          ),
-          filter.limit + 1,
-        ),
+        withNames(tx, workspaceId, listFilter(tx, workspaceId, filter), filter.limit + 1),
       );
       const page = rows.slice(0, filter.limit);
       const last = page.at(-1);
@@ -559,18 +573,18 @@ export function createOutbound({ db, live }: { db: Database; live: Signals }) {
         if (pressed === null || !(kind in pressed.button)) return false;
         const row = await readOutbound(tx, workspaceId, visitorId, pressed.row.id);
         if (row === null) return false;
-        const metadata = { ...row.metadata, chosen: chosenButton(pressed.button) };
+        const chosen = chosenButton(pressed.button);
         if ("dismiss" in pressed.button) {
           await change(
             tx,
             workspaceId,
             row,
-            { status: "dismissed", dismissedAt: new Date(), metadata, dueAt: null },
+            { status: "dismissed", dismissedAt: new Date(), chosenButton: chosen, dueAt: null },
             "outbound_message.dismissed",
           );
           if (row.messageId !== null) await dropButtons(tx, workspaceId, row.messageId);
         } else {
-          await change(tx, workspaceId, row, { metadata });
+          await change(tx, workspaceId, row, { chosenButton: chosen }, "outbound_message.clicked");
         }
         return true;
       });

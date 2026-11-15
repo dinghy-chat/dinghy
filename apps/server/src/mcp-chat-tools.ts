@@ -20,10 +20,10 @@ import {
   ContactFields,
   clientId,
   conversationId,
+  DedupeKey,
   HandoffReason,
   HandoffSummary,
   Mentions,
-  DedupeKey,
   replyToMessageId,
   UNTRUSTED_TEXT,
   UserId,
@@ -527,7 +527,7 @@ export function chatTools(options: ChatToolsOptions): Tool[] {
     tool({
       name: "send_outbound_message",
       title: "Send a message to a visitor",
-      description: `Sends a message to one visitor, who may have no conversation yet. \`visitor\` is \`{ userId, name?, email?, attributes? }\`, which creates or updates them, or \`{ id }\`. With \`startConversation: "on_reply"\` (the default) it waits on the contact and goes in a conversation only when they answer. With \`"now"\` it goes in one at once: the answer's \`conversationId\` is set, and wait_for_messages picks up their answer. \`dedupeKey\` is unique per visitor, such as \`order-1042-shipped\`: a repeat answers the first message. \`delay\` (such as \`"1h"\`) or \`sendAt\` holds it, and \`unless\`, a condition on the contact, cancels it when it matches then. \`show\` is \`badge\`, \`preview\` or \`chat\`. \`ifConversationOpen\` says what happens while they have an open conversation: \`hold\` (wait), \`join\` or \`skip\`. \`sendEmail: true\` needs the key's permission May email visitors. Errors: \`send_mode_required\` when this key drafts, \`send_as_member_required\`, \`send_email_required\`, \`bots_paused\`, \`blocked\`, \`too_many_waiting\`. Pass the same \`clientId\` on a retry.`,
+      description: `Sends a message to one visitor, who may have no conversation yet. \`visitor\` is \`{ userId, name?, email?, attributes? }\`, which creates or updates them, or \`{ id }\`. With \`startConversation: "on_reply"\` (the default) it waits on the contact and goes in a conversation only when they answer. With \`"now"\` it goes in one at once: the answer's \`conversationId\` is set, and wait_for_messages picks up their answer. \`dedupeKey\` is a key of your own, unique per visitor, such as \`order-1042-shipped\`: a repeat answers the first message, and cancel_outbound_message takes it. \`metadata\` holds up to 20 string keys and values of your own, which come back on the message and its events, and never reach the visitor. \`delay\` (such as \`"1h"\`) or \`sendAt\` holds it, and \`unless\`, a condition on the contact, cancels it when it matches then. \`expiresIn\` (such as \`"7d"\` after the send time) or \`expiresAt\` ends it unread. \`show\` is \`badge\`, \`preview\` or \`chat\`. \`ifConversationOpen\` says what happens while they have an open conversation: \`hold\` (wait), \`join\` or \`skip\`. \`sendEmail: true\` needs the key's permission May email visitors. Errors: \`send_mode_required\` when this key drafts, \`send_as_member_required\`, \`send_email_required\`, \`bots_paused\`, \`blocked\`, \`too_many_waiting\`. Pass the same \`clientId\` on a retry: it never expires, and a retry answers the first result.`,
       input: SendSchema,
       idempotent: true,
       async run(input, { workspaceId, actor }) {
@@ -562,7 +562,7 @@ export function chatTools(options: ChatToolsOptions): Tool[] {
       name: "list_outbound_messages",
       title: "List outbound messages",
       description:
-        "Lists outbound messages, newest first, with their `status` (`scheduled`, `pending`, `delivered`, `read`, `replied`, `dismissed`, `cancelled` or `expired`) and `statusReason`, which says why one waits or was cancelled. Filter by `visitorId`, `status` or `apiKeyId`. Pass `next` back as `cursor` for the next page.",
+        "Lists outbound messages, newest first, with their `status` (`scheduled`, `sent`, `delivered`, `read`, `replied`, `dismissed`, `cancelled` or `expired`) and `statusReason`, which says why one waits or was cancelled. Filter by `visitorId`, `userId`, `dedupeKey`, `status` or `apiKeyId`. Pass `next` back as `cursor` for the next page.",
       input: ListQuery,
       readOnly: true,
       run: async (input, { workspaceId }) => ({ data: await outbound.list(workspaceId, input) }),

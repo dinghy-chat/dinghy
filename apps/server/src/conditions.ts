@@ -211,7 +211,7 @@ export const ConditionSchema = z
     example: {
       all: [
         { field: "attributes.plan", op: "in", value: ["trial", "pro"] },
-        { field: "attributes.domainVerified", op: "ne", value: true },
+        { field: "attributes.onboarded", op: "ne", value: true },
       ],
     },
   });

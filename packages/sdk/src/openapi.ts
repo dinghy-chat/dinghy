@@ -1055,6 +1055,7 @@ export interface paths {
               | "outbound_message.sent"
               | "outbound_message.delivered"
               | "outbound_message.read"
+              | "outbound_message.clicked"
               | "outbound_message.replied"
               | "outbound_message.dismissed"
               | "outbound_message.cancelled"
@@ -1306,6 +1307,7 @@ export interface paths {
               | "outbound_message.sent"
               | "outbound_message.delivered"
               | "outbound_message.read"
+              | "outbound_message.clicked"
               | "outbound_message.replied"
               | "outbound_message.dismissed"
               | "outbound_message.cancelled"
@@ -3032,7 +3034,7 @@ export interface paths {
     get: {
       parameters: {
         query?: {
-          /** @description A comma list of conversation.created, message.created, message.updated, message.deleted, conversation.closed, conversation.reopened, conversation.assigned, conversation.handoff, conversation.given_back, conversation.labeled, outbound_message.sent, outbound_message.delivered, outbound_message.read, outbound_message.replied, outbound_message.dismissed, outbound_message.cancelled, outbound_message.expired. All by default. */
+          /** @description A comma list of conversation.created, message.created, message.updated, message.deleted, conversation.closed, conversation.reopened, conversation.assigned, conversation.handoff, conversation.given_back, conversation.labeled, outbound_message.sent, outbound_message.delivered, outbound_message.read, outbound_message.clicked, outbound_message.replied, outbound_message.dismissed, outbound_message.cancelled, outbound_message.expired. All by default. */
           types?: string;
           after?: string;
         };
@@ -3570,6 +3572,9 @@ export interface paths {
       parameters: {
         query?: {
           visitorId?: string;
+          /** @description The messages of the contact with your user ID */
+          userId?: string;
+          dedupeKey?: string;
           status?:
             | "scheduled"
             | "sent"
@@ -3668,7 +3673,7 @@ export interface paths {
       requestBody: {
         content: {
           "application/json": {
-            /** @description Your own ID for this send. A retry with the same one answers the first result */
+            /** @description Your own ID for this send, unique per author. It never expires: a retry with the same one answers the first result */
             clientId: string;
             visitor: components["schemas"]["VisitorSelector"];
             body: string;
@@ -3691,8 +3696,9 @@ export interface paths {
              * @enum {string}
              */
             ifConversationOpen?: "hold" | "join" | "skip";
-            /** @description A dedupe key, unique per visitor. A repeat answers the first outbound message. A cancel frees it */
+            /** @description A key of your own, unique per visitor. A repeat answers the first outbound message. It also names the message for a cancel, which frees it */
             dedupeKey?: string;
+            metadata?: components["schemas"]["OutboundMetadata"];
             /** Format: date-time */
             sendAt?: string;
             /**
@@ -3703,6 +3709,11 @@ export interface paths {
             unless?: components["schemas"]["Condition"];
             /** Format: date-time */
             expiresAt?: string;
+            /**
+             * @description How long after the send time it stops waiting, as `expiresAt` says it as a time
+             * @example 1h
+             */
+            expiresIn?: string;
             /** @default false */
             sendEmail?: boolean;
           };
@@ -5572,6 +5583,7 @@ export interface components {
         | "outbound_message.sent"
         | "outbound_message.delivered"
         | "outbound_message.read"
+        | "outbound_message.clicked"
         | "outbound_message.replied"
         | "outbound_message.dismissed"
         | "outbound_message.cancelled"
@@ -5603,6 +5615,7 @@ export interface components {
         | "outbound_message.sent"
         | "outbound_message.delivered"
         | "outbound_message.read"
+        | "outbound_message.clicked"
         | "outbound_message.replied"
         | "outbound_message.dismissed"
         | "outbound_message.cancelled"
@@ -5807,6 +5820,7 @@ export interface components {
       body: string | null;
       buttons: components["schemas"]["OutboundButton"][];
       button: components["schemas"]["ChosenButton"];
+      metadata: components["schemas"]["OutboundMetadata"];
       sender:
         | "team"
         | {
@@ -5841,6 +5855,10 @@ export interface components {
       dismissedAt: string | null;
       cancelledAt: string | null;
       createdAt: string;
+    };
+    /** @description Up to 20 keys of up to 40 characters, each with text of up to 500 characters, such as `{ "orderId": "1042" }`. It comes back on the outbound message, its webhooks and the event stream. The visitor never sees it */
+    OutboundMetadata: {
+      [key: string]: string;
     };
     /**
      * @example {
@@ -5888,7 +5906,7 @@ export interface components {
      *           ]
      *         },
      *         {
-     *           "field": "attributes.domainVerified",
+     *           "field": "attributes.onboarded",
      *           "op": "ne",
      *           "value": true
      *         }

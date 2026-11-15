@@ -44,8 +44,8 @@ Create a key with "Send directly" and "May send as a member" first. Then, in the
 ```ts
 await dinghy.outboundMessages.send({
   visitor: { userId: user.id, name: user.name, email: user.email },
-  sender: { email: "julien@shipmail.to" },
-  body: "Welcome to Shipmail! Stuck on DNS or an import? Ask me here.",
+  sender: { email: "julien@example.com" },
+  body: "Welcome! Any question about getting started? Ask me here.",
   dedupeKey: "welcome",
 });
 ```
@@ -56,20 +56,21 @@ The message waits until the user opens the chat. `dedupeKey` sends it one time p
 
 ```ts
 await dinghy.outboundMessages.send({
-  visitor: { userId: owner.id },
-  body: `${domain.name} is not verified yet. Want me to check your DNS with you?`,
-  delay: "1h",
-  dedupeKey: `dns-unverified:${domain.id}`,
+  visitor: { userId: customer.id },
+  body: `Invoice ${invoice.number} is still open. Any question about it?`,
+  delay: "3d",
+  dedupeKey: `invoice-${invoice.id}-unpaid`,
+  metadata: { invoiceId: invoice.id },
 });
 
-// When the domain verifies:
+// When the invoice is paid:
 await dinghy.outboundMessages.cancel({
-  visitor: { userId: owner.id },
-  dedupeKey: `dns-unverified:${domain.id}`,
+  visitor: { userId: customer.id },
+  dedupeKey: `invoice-${invoice.id}-unpaid`,
 });
 ```
 
-`cancel` also takes `{ id }`. `get(id)` and `list({ visitorId, status })` read sent messages.
+The `dedupeKey` names the message, so the cancel needs no stored ID. `cancel` also takes `{ id }`. `get(id)` and `list({ visitorId, userId, dedupeKey, status })` read sent messages. `metadata` comes back on the message and its webhooks, and the visitor never sees it.
 
 ## Sign users in to the chat
 

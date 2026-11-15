@@ -537,6 +537,7 @@ export const WEBHOOK_EVENTS = [
   "outbound_message.sent",
   "outbound_message.delivered",
   "outbound_message.read",
+  "outbound_message.clicked",
   "outbound_message.replied",
   "outbound_message.dismissed",
   "outbound_message.cancelled",

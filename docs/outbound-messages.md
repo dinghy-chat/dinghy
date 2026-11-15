@@ -2,7 +2,7 @@
 
 An outbound message is a message from your team to one visitor, which can exist before any conversation. Your server, your AI agent or a member of the team sends it, and the visitor sees it in the chat on your site. When the visitor answers, it becomes the first message of a conversation. When they never answer, it stays on their contact, and the inbox, alerts and analytics never see it.
 
-Dinghy does not track what visitors do on your site. Your own code knows when something happened, such as a signup or a finished import, and it calls the API to send the message. It can also store facts about a person on their contact, such as `plan` or `domainVerified`, and a message can check them before it goes.
+Dinghy does not track what visitors do on your site. Your own code knows when something happened, such as a signup or a finished import, and it calls the API to send the message. It can also store facts about a person on their contact, such as `plan` or `onboarded`, and a message can check them before it goes.
 
 The examples use `https://chat.example.com` and `WORKSPACE_ID`. Put your own Dinghy address and workspace ID there. Code marked `// server` runs in your backend, and code marked `// page` runs in your site's pages.
 
@@ -39,7 +39,7 @@ const dinghy = new Dinghy({
 | Call | What it does | HTTP |
 |---|---|---|
 | `dinghy.outboundMessages.send({ ... })` | Sends one outbound message | `POST .../outbound-messages` |
-| `dinghy.outboundMessages.cancel({ visitor, once })` | Cancels the message that a `dedupeKey` names | `POST .../outbound-messages/cancel` |
+| `dinghy.outboundMessages.cancel({ visitor, dedupeKey })` | Cancels the message that a `dedupeKey` names | `POST .../outbound-messages/cancel` |
 | `dinghy.contacts.upsert({ ... })` | Creates or updates a contact by your user ID | `PUT .../contacts/by-user/{userId}` |
 | `dinghy.events.stream({ types })` | An async iterator over the workspace's events | `GET /v1/events` |
 | `dinghy.identity.sign(user)` | Signs the host token for `Dinghy.identify()` | None, it signs locally |
@@ -53,7 +53,7 @@ The library makes a `clientId` when you give none, and keeps it across its own r
 // server
 await dinghy.outboundMessages.send({
   visitor: { userId: "42", name: "Ada Lovelace", email: "ada@example.com" },
-  body: "Your import finished. Want me to walk you through the results?",
+  body: "Your order shipped. Want the tracking link?",
 });
 ```
 
@@ -63,13 +63,13 @@ curl -X POST https://chat.example.com/v1/operator/workspaces/WORKSPACE_ID/outbou
   -H "Authorization: Bearer dk_..." \
   -H "Content-Type: application/json" \
   -d '{
-    "clientId": "import-7781-done",
+    "clientId": "order-1042-shipped",
     "visitor": { "userId": "42", "name": "Ada Lovelace", "email": "ada@example.com" },
-    "body": "Your import finished. Want me to walk you through the results?"
+    "body": "Your order shipped. Want the tracking link?"
   }'
 ```
 
-It answers 201 with `{ "outboundMessage": { ... } }`. A retry with the same `clientId` answers 200 with the first outbound message and creates nothing.
+It answers 201 with `{ "outboundMessage": { ... } }`. A retry with the same `clientId` answers 200 with the first outbound message and creates nothing. A `clientId` is unique per author, the key or the member who sends, and it never expires: a retry months later still answers the first result.
 
 The body takes these fields:
 
@@ -80,15 +80,16 @@ The body takes these fields:
 | `body` | Required. Text with the same formatting and limit as a reply |
 | `buttons` | Up to 4. See [Buttons](#buttons) |
 | `sender` | Who the visitor sees. See [Who it comes from](#who-it-comes-from) |
-| `assign` | Whether the visitor's answer assigns the conversation to the member sender. `true` by default when `sender` is a member |
+| `assignOnReply` | Whether the visitor's answer assigns the conversation to the member sender. `true` by default when `sender` is a member |
 | `startConversation` | `on_reply` (the default) or `now`. See [When it becomes a conversation](#when-it-becomes-a-conversation) |
 | `show` | `badge` (the default), `preview` or `chat`. See [How it shows](#how-it-shows) |
 | `ifConversationOpen` | `hold` (the default), `join` or `skip`. See [When a conversation is already open](#when-a-conversation-is-already-open) |
-| `dedupeKey` | A dedupe key, unique per visitor, such as `welcome`. See [Send it once](#send-it-once) |
+| `dedupeKey` | A key of your own, unique per visitor, such as `order-1042-shipped`. It stops a second send and names the message for a cancel. See [Send it once](#send-it-once) |
+| `metadata` | Your own keys and values, which the visitor never sees. See [Metadata](#metadata) |
 | `sendAt` or `delay` | A later time, such as `2026-11-16T09:00:00Z`, or a duration, such as `"1h"`. Not both. See [Send it later](#send-it-later) |
 | `unless` | A condition on the contact. When it matches at the send time, the message is cancelled. See [Unless](#unless) |
-| `expiresAt` | When it stops waiting. 30 days after it becomes `pending` by default. See [Expiry](#expiry) |
-| `email` | `false` by default. See [Email](#email) |
+| `expiresAt` or `expiresIn` | When it stops waiting, as a time or as a duration after the send time. Not both. 30 days after it is sent by default. See [Expiry](#expiry) |
+| `sendEmail` | `false` by default. See [Email](#email) |
 
 The answer's `outboundMessage` has:
 
@@ -99,11 +100,12 @@ The answer's `outboundMessage` has:
 | `body` | Its text. Null 30 days after it ended, and as soon as a member deletes its message or its conversation |
 | `buttons` | Its buttons, as sent |
 | `button` | The button the visitor chose, `{ value, label }`, or null. `value` is null for a button sent without one |
+| `metadata` | Your keys and values, as sent, or `{}` |
 | `sender` | `"team"`, `{ operatorId, name }` for a member, or null for the key's own name |
 | `author` | Who sent it: `{ kind, id, name, via }`, with `kind` `operator` or `key`, and `via` `mcp` for a send through MCP, else null |
-| `show`, `ifConversationOpen`, `startConversation`, `assign`, `email`, `dedupeKey` | As sent, with their defaults |
+| `show`, `ifConversationOpen`, `startConversation`, `assignOnReply`, `sendEmail`, `dedupeKey` | As sent, with their defaults |
 | `conversationId`, `messageId` | The conversation and the message it became, or null before that |
-| `sendAt`, `expiresAt` | When it goes out, and when it stops waiting. `expiresAt` is null until it becomes `pending`, unless you set it |
+| `sendAt`, `expiresAt` | When it goes out, and when it stops waiting. `expiresAt` is null until it is sent, unless you set it |
 | `deliveredAt`, `readAt`, `repliedAt`, `dismissedAt`, `cancelledAt` | When each happened, or null |
 | `createdAt` | When Dinghy took the send |
 
@@ -112,7 +114,7 @@ The answer's `outboundMessage` has:
 `startConversation` decides.
 
 - `on_reply`, the default: the message waits on the contact. The widget shows it, and when the visitor answers, Dinghy puts it in a conversation, then their answer. When nobody answers, the inbox, alerts, analytics and the `message.created` webhook never see it.
-- `now`: Dinghy puts it in a conversation as soon as it becomes `pending`. The answer's `conversationId` is set. The conversation is open, and it does not count as waiting for the team. The visitor sees it on their next visit, or by email with `email: true`.
+- `now`: Dinghy puts it in a conversation as soon as it is sent. The answer's `conversationId` is set. The conversation is open, and it does not count as waiting for the team. The visitor sees it on their next visit, or by email with `sendEmail: true`.
 
 A message goes in the visitor's open conversation, or in their newest closed one, which it reopens, or in a new one. A conversation that an outbound message started has `startedBy: "team"`. In the inbox it sits under the **Started by the team** filter until the visitor answers. Analytics counts it in `startedByTeam`, and its first reply time starts at the visitor's first message.
 
@@ -152,7 +154,7 @@ With `data-launcher="hidden"` and your own button, `badge` raises the unread cou
 - `"team"`: the workspace's name and logo.
 - Left out: the key's name, as on the key's replies, or the member who sends it by hand.
 
-When the visitor answers a message sent as a member, the conversation is assigned to that member, and a person handles it from then on, so a bot's next reply cannot change the name in the middle of the chat. `assign: false` turns this off.
+When the visitor answers a message sent as a member, the conversation is assigned to that member, and a person handles it from then on, so a bot's next reply cannot change the name in the middle of the chat. `assignOnReply: false` turns this off.
 
 In the operator app, the message shows "Julien, via Welcome bot" and an **Automatic** tag. The visitor sees only Julien.
 
@@ -160,16 +162,16 @@ In the operator app, the message shows "Julien, via Welcome bot" and an **Automa
 
 ```text
             sendAt reached, checks pass
- scheduled ----------------------------> pending --(widget fetched it)--> delivered --(seen in the chat)--> read --(visitor answers)--> replied
-                                                                                                             |
-                                                                                                             +--(dismiss button)--> dismissed
+ scheduled ----------------------------> sent --(widget fetched it)--> delivered --(seen in the chat)--> read --(visitor answers)--> replied
+                                                                                                          |
+                                                                                                          +--(dismiss button)--> dismissed
  Before it is read: a cancel or `unless` ends it as cancelled, and expiresAt ends it as expired.
 ```
 
 | `status` | Meaning |
 |---|---|
 | `scheduled` | It waits for `sendAt`. Nothing reaches a conversation, an email or the widget, whatever `startConversation` says |
-| `pending` | It waits for the widget to fetch it |
+| `sent` | It waits for the widget to fetch it |
 | `delivered` | The widget fetched it and showed it |
 | `read` | The visitor saw it in the open chat, or chose one of its buttons on a card |
 | `replied` | The visitor answered, in the chat or with a button |
@@ -200,11 +202,15 @@ The contact page in the operator app lists the person's outbound messages with t
 
 ## Send it once
 
-`dedupeKey` is a dedupe key for your own logic, such as `welcome` or `dns-unverified:7781`, up to 200 characters. It is unique per visitor. The first send with it answers 201, and every later send with it answers 200 with the first outbound message, whatever became of it, so your signup handler can send `welcome` on every login.
+`dedupeKey` is a key of your own, up to 200 characters, unique per visitor: one per order, per invoice or per job, such as `order-1042-shipped`, `invoice-77-unpaid` or `export-31-done`. The first send with it answers 201, and every later send with it answers 200 with the first outbound message, whatever became of it, so a handler that runs twice sends one message. A key such as `welcome` sends one message per person.
 
-A cancel frees the key, so the next send with it creates a new message. An expiry does not free it.
+The key is also how you cancel: `cancel({ visitor, dedupeKey })` ends the message that it names, so your code stores no message ID. A cancel frees the key, so the next send with it creates a new message. An expiry does not free it. `GET .../outbound-messages?dedupeKey=` lists every message sent with a key, cancelled ones too.
 
-`dedupeKey` is not `clientId`. `clientId` makes a retry of the same request safe. `dedupeKey` stops a second message for the same reason, from any request.
+`dedupeKey` is not `clientId`. `clientId` makes a retry of the same request safe: it is unique per author and never expires. `dedupeKey` stops a second message for the same reason, from any request.
+
+## Metadata
+
+`metadata` holds your own keys and values, such as `{ "orderId": "1042" }`: up to 20 keys of up to 40 characters, each with text of up to 500 characters. Dinghy stores it on the message and answers it on the outbound message, its webhooks, the event stream, MCP and the library, so your handler can act on an answer without a lookup. The visitor never sees it, and the widget never receives it.
 
 ## Send it later
 
@@ -219,7 +225,7 @@ Until then the message is `scheduled`, and the worker sends it at that time. You
 ```json
 { "all": [
   { "field": "attributes.plan", "op": "in", "value": ["trial", "pro"] },
-  { "field": "attributes.domainVerified", "op": "ne", "value": true },
+  { "field": "attributes.onboarded", "op": "ne", "value": true },
   { "any": [
     { "field": "country", "op": "eq", "value": "FR" },
     { "field": "language", "op": "eq", "value": "fr" }
@@ -252,18 +258,18 @@ A condition is a rule, `{ field, op, value }`, or a group, `{ all: [...] }`, `{ 
 - `in` and `not_in` take a list. `exists` and `missing` take no value. The others take one value.
 - A time takes a value such as `2026-11-15T09:00:00Z`. `older_than` takes a duration: `{ "field": "lastSeenAt", "op": "older_than", "value": "7d" }`.
 - `contains` matches text, ignoring case, and an attribute that holds a list matches when the list holds the value.
-- `ne` and `not_in` match a missing value, so `{ "field": "attributes.domainVerified", "op": "ne", "value": true }` matches a contact with no such attribute.
+- `ne` and `not_in` match a missing value, so `{ "field": "attributes.onboarded", "op": "ne", "value": true }` matches a contact with no such attribute.
 - A comparison on an attribute reads only a value of the same type: `gt` with a number matches only a number.
 
 A condition that names an unknown field, or an `op` its field does not take, answers 400 `invalid_request`.
 
 ## Expiry
 
-A message that the visitor has not read ends as `expired` at `expiresAt`, which is 30 days after it becomes `pending`, unless you set it. An `expiresAt` that is not after the send time answers 400 `invalid_request`. A message that the visitor read stays in their chat, and one already in a conversation never expires.
+A message that the visitor has not read ends as `expired` at `expiresAt`, which is 30 days after it is sent, unless you set it. `expiresIn` sets it as a duration after the send time, such as `"7d"`, as `delay` does for `sendAt`. A send with both, or an `expiresAt` that is not after the send time, answers 400 `invalid_request`. A message that the visitor read stays in their chat, and one already in a conversation never expires.
 
 ## Email
 
-`email` is `false` by default. With `true`, `startConversation: "now"` and a visitor with an email, the reply email carries the message, with its usual link to stop these emails. A key needs **May email visitors** to send with `true`, or the send answers 403 `send_email_required`, because a key that sets the contact's email chooses where the email goes. A member who sends by hand needs no permission. With `false`, the reply email leaves it out, even when a member's later reply goes out by email. A message left out of an email never shows an email receipt.
+`sendEmail` is `false` by default. With `true`, `startConversation: "now"` and a visitor with an email, the reply email carries the message, with its usual link to stop these emails. A key needs **May email visitors** to send with `true`, or the send answers 403 `send_email_required`, because a key that sets the contact's email chooses where the email goes. A member who sends by hand needs no permission. With `false`, the reply email leaves it out, even when a member's later reply goes out by email. A message left out of an email never shows an email receipt.
 
 ## Buttons
 
@@ -272,10 +278,10 @@ A message can carry up to 4 buttons, each in one of three shapes, with a `label`
 | Shape | What a click does |
 |---|---|
 | `{ "label": "Yes, please", "value": "yes" }` | Answers with the label. The visitor's message carries `button: { value, label }`, so a bot reads the value, not a label in some language |
-| `{ "label": "Read the guide", "url": "https://example.com/guide" }` | Opens the page. `url` is `http` or `https` |
+| `{ "label": "Read the guide", "url": "https://example.com/guide" }` | Opens the page, and sends `outbound_message.clicked`. `url` is `http` or `https` |
 | `{ "label": "I'm fine", "dismiss": true }` | Ends the message as `dismissed`, and opens no conversation |
 
-The last two take an optional `value` too, up to 100 characters. A card shows the buttons, so a click there records the read first. The chosen button is on the outbound message's `button`, and on the `replied` and `dismissed` events.
+The last two take an optional `value` too, up to 100 characters. A card shows the buttons, so a click there records the read first. The chosen button is on the outbound message's `button`, and on the `replied`, `clicked` and `dismissed` events.
 
 A message that goes in a conversation before the visitor answers, with `startConversation: "now"` or `ifConversationOpen: "join"`, keeps its buttons there. The chat shows them under the message until the visitor writes after it or dismisses it, and the widget API's messages carry them as `buttons`.
 
@@ -291,22 +297,22 @@ await dinghy.outboundMessages.cancel({ visitor: { userId: "42" }, dedupeKey: "we
 curl -X POST https://chat.example.com/v1/operator/workspaces/WORKSPACE_ID/outbound-messages/cancel \
   -H "Authorization: Bearer dk_..." \
   -H "Content-Type: application/json" \
-  -d '{ "visitor": { "userId": "42" }, "once": "welcome" }'
+  -d '{ "visitor": { "userId": "42" }, "dedupeKey": "welcome" }'
 ```
 
 `visitor` is `{ "userId" }` or `{ "id" }`, and a cancel creates nobody. `POST .../outbound-messages/{id}/cancel` cancels one by its ID.
 
-A cancel ends only a message that the visitor has not read and that is in no conversation: `scheduled`, `pending` or `delivered`. It ends as `cancelled`, with `statusReason: "cancelled_by_request"`, and its `dedupeKey` is free again. A message already read, answered or ended stays as it is. Either way the answer is `{ outboundMessage }` as it is now, so read its `status`. With no message for that `dedupeKey`, `outboundMessage` is null. With no message of that ID, the route answers 404.
+A cancel ends only a message that the visitor has not read and that is in no conversation: `scheduled`, `sent` or `delivered`. It ends as `cancelled`, with `statusReason: "cancelled_by_request"`, and its `dedupeKey` is free again. A message already read, answered or ended stays as it is. Either way the answer is `{ outboundMessage }` as it is now, so read its `status`. With no message for that `dedupeKey`, `outboundMessage` is null. With no message of that ID, the route answers 404.
 
 ## List and read
 
-`GET .../outbound-messages` lists them, newest first. It takes `visitorId`, `status` and `apiKeyId` as filters, and `limit`, 1 to 100, 50 by default. It answers `{ outboundMessages, next }`. Pass `next` as `cursor` for the next page. `GET .../outbound-messages/{id}` reads one.
+`GET .../outbound-messages` lists them, newest first. It takes `visitorId`, `userId`, `dedupeKey`, `status` and `apiKeyId` as filters, and `limit`, 1 to 100, 50 by default. It answers `{ outboundMessages, next }`. Pass `next` as `cursor` for the next page. `GET .../outbound-messages/{id}` reads one.
 
 ## Limits and errors
 
 | Status | Code | When |
 |---|---|---|
-| 400 | `invalid_request` | The body does not match the schema, the sender is not a member, `sendAt` and `delay` both came, or `expiresAt` is not after the send time |
+| 400 | `invalid_request` | The body does not match the schema, the sender is not a member, `sendAt` and `delay` or `expiresAt` and `expiresIn` both came, `metadata` is over its limits, or `expiresAt` is not after the send time |
 | 403 | `send_mode_required` | The key drafts replies. Set it to **Send directly** in **Settings > API & webhooks** |
 | 403 | `send_as_member_required` | The key may not send as a member. Turn on **May send as a member** |
 | 403 | `blocked` | The team blocked this visitor |
@@ -327,7 +333,7 @@ await dinghy.contacts.upsert({
   userId: "42",
   name: "Ada Lovelace",
   email: "ada@example.com",
-  attributes: { plan: "pro", domainVerified: false },
+  attributes: { plan: "pro", onboarded: false },
 });
 ```
 
@@ -336,7 +342,7 @@ await dinghy.contacts.upsert({
 curl -X PUT https://chat.example.com/v1/operator/workspaces/WORKSPACE_ID/contacts/by-user/42 \
   -H "Authorization: Bearer dk_..." \
   -H "Content-Type: application/json" \
-  -d '{ "name": "Ada Lovelace", "email": "ada@example.com", "attributes": { "plan": "pro", "domainVerified": false } }'
+  -d '{ "name": "Ada Lovelace", "email": "ada@example.com", "attributes": { "plan": "pro", "onboarded": false } }'
 ```
 
 It answers 201 with the new contact, or 200 with the contact after the change. Each write carries its time, and the later write wins for each field and each attribute. A host token's write counts at its `iat`, so a token signed before your upsert does not undo it. A change cancels the person's scheduled messages whose `unless` now matches.
@@ -352,6 +358,7 @@ Each change of an outbound message is an event, for [webhooks](api.md#webhooks) 
 | `outbound_message.sent` | It reached its send time and waits for the widget |
 | `outbound_message.delivered` | The widget fetched it |
 | `outbound_message.read` | The visitor read it |
+| `outbound_message.clicked` | The visitor opened a page with one of its `url` buttons. `button` says which |
 | `outbound_message.replied` | The visitor answered it. `button` says which button, if any |
 | `outbound_message.dismissed` | The visitor chose a dismiss button |
 | `outbound_message.cancelled` | It was cancelled. `statusReason` says why |
@@ -408,7 +415,7 @@ After signup, the launcher pulses. When the user opens the chat, a welcome from 
 await dinghy.outboundMessages.send({
   visitor: { userId: user.id, name: user.name, email: user.email },
   sender: { email: "julien@example.com" },
-  body: "Welcome! Stuck on DNS or an import? Ask me here.",
+  body: "Welcome! Any question about getting started? Ask me here.",
   dedupeKey: "welcome",
 });
 ```
@@ -422,85 +429,88 @@ curl -X POST https://chat.example.com/v1/operator/workspaces/WORKSPACE_ID/outbou
     "clientId": "welcome-42",
     "visitor": { "userId": "42", "name": "Ada Lovelace", "email": "ada@example.com" },
     "sender": { "email": "julien@example.com" },
-    "body": "Welcome! Stuck on DNS or an import? Ask me here.",
-    "once": "welcome"
+    "body": "Welcome! Any question about getting started? Ask me here.",
+    "dedupeKey": "welcome"
   }'
 ```
 
 The page already calls `Dinghy.identify()`, and it needs no other change. `GET .../outbound-messages?status=replied` counts the answers.
 
-### Domain not verified after an hour
+### An invoice still unpaid after three days
 
-An hour after a domain is added, if it is still not verified, offer help. With no cron:
+Three days after an invoice goes out, if it is still unpaid, offer help. With no cron, and no message ID to store:
 
 ```ts
-// server, when the domain is added
+// server, when the invoice goes out
 await dinghy.outboundMessages.send({
-  visitor: { userId: owner.id },
-  body: `${domain.name} is not verified yet. Want me to check your DNS with you?`,
-  delay: "1h",
-  dedupeKey: `dns-unverified:${domain.id}`,
+  visitor: { userId: customer.id },
+  body: `Invoice ${invoice.number} is still open. Any question about it?`,
+  delay: "3d",
+  dedupeKey: `invoice-${invoice.id}-unpaid`,
+  metadata: { invoiceId: invoice.id },
 });
 
-// server, when the domain verifies
+// server, when the invoice is paid
 await dinghy.outboundMessages.cancel({
-  visitor: { userId: owner.id },
-  dedupeKey: `dns-unverified:${domain.id}`,
+  visitor: { userId: customer.id },
+  dedupeKey: `invoice-${invoice.id}-unpaid`,
 });
 ```
 
 ```sh
-# server, when the domain is added
+# server, when the invoice goes out
 curl -X POST https://chat.example.com/v1/operator/workspaces/WORKSPACE_ID/outbound-messages \
   -H "Authorization: Bearer dk_..." \
   -H "Content-Type: application/json" \
   -d '{
-    "clientId": "dns-unverified-7781",
+    "clientId": "invoice-77-unpaid",
     "visitor": { "userId": "42" },
-    "body": "example.com is not verified yet. Want me to check your DNS with you?",
-    "delay": "1h",
-    "once": "dns-unverified:7781"
+    "body": "Invoice 2026-077 is still open. Any question about it?",
+    "delay": "3d",
+    "dedupeKey": "invoice-77-unpaid",
+    "metadata": { "invoiceId": "77" }
   }'
 
-# server, when the domain verifies
+# server, when the invoice is paid
 curl -X POST https://chat.example.com/v1/operator/workspaces/WORKSPACE_ID/outbound-messages/cancel \
   -H "Authorization: Bearer dk_..." \
   -H "Content-Type: application/json" \
-  -d '{ "visitor": { "userId": "42" }, "once": "dns-unverified:7781" }'
+  -d '{ "visitor": { "userId": "42" }, "dedupeKey": "invoice-77-unpaid" }'
 ```
 
 A cancel after the visitor read the message changes nothing, and its answer says so in `status`. To skip the cancel call, store the fact on the contact instead and send with `unless`:
 
 ```ts
-// server, when the domain is added
+// server, when the invoice goes out
 await dinghy.outboundMessages.send({
-  visitor: { userId: owner.id },
-  body: `${domain.name} is not verified yet. Want me to check your DNS with you?`,
-  delay: "1h",
-  dedupeKey: `dns-unverified:${domain.id}`,
-  unless: { field: `attributes.domainVerified_${domain.id}`, op: "eq", value: true },
+  visitor: { userId: customer.id },
+  body: `Invoice ${invoice.number} is still open. Any question about it?`,
+  delay: "3d",
+  dedupeKey: `invoice-${invoice.id}-unpaid`,
+  unless: { field: `attributes.invoicePaid_${invoice.id}`, op: "eq", value: true },
 });
 
-// server, when the domain verifies
+// server, when the invoice is paid
 await dinghy.contacts.upsert({
-  userId: owner.id,
-  attributes: { [`domainVerified_${domain.id}`]: true },
+  userId: customer.id,
+  attributes: { [`invoicePaid_${invoice.id}`]: true },
 });
 ```
 
 ### An AI agent through MCP
 
-When an import ends, the agent tells the user in a conversation that starts now:
+When a job ends, the agent tells the user in a conversation that starts now:
 
 ```json
 {
   "name": "send_outbound_message",
   "arguments": {
-    "clientId": "import-7781-done",
+    "clientId": "export-31-done",
     "visitor": { "userId": "42" },
-    "body": "Your import finished with 3 skipped messages. Want the list?",
+    "body": "Your export finished with 3 skipped rows. Want the list?",
     "startConversation": "now",
-    "once": "import-7781-done"
+    "dedupeKey": "export-31-done",
+    "metadata": { "jobId": "31" }
   }
 }
 ```

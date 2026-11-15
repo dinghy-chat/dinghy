@@ -560,6 +560,7 @@ export const OUTBOUND_EVENT_KINDS = [
   "outbound_message.sent",
   "outbound_message.delivered",
   "outbound_message.read",
+  "outbound_message.clicked",
   "outbound_message.replied",
   "outbound_message.dismissed",
   "outbound_message.cancelled",
@@ -1789,13 +1790,6 @@ export interface ChosenButton {
   label: string;
 }
 
-/** What an outbound message keeps beside its text. */
-export interface OutboundMetadata {
-  buttons?: OutboundButton[] | undefined;
-  /** The button the visitor chose last. */
-  chosen?: ChosenButton | undefined;
-}
-
 /**
  * A message from the team to one visitor, which may exist before any conversation. The API, MCP and
  * a member by hand create them. Its body goes 30 days after it ends, and its row stays for
@@ -1816,7 +1810,11 @@ export const outboundMessage = pgTable(
     // The member the visitor sees, for a `member` sender.
     senderOperatorId: uuid("sender_operator_id"),
     body: text("body"),
-    metadata: jsonb("metadata").$type<OutboundMetadata>().notNull().default({}),
+    buttons: jsonb("buttons").$type<OutboundButton[]>().notNull().default([]),
+    // The button the visitor chose last.
+    chosenButton: jsonb("chosen_button").$type<ChosenButton>(),
+    // The sender's own keys and values, for its webhooks and lists. The visitor never sees them.
+    metadata: jsonb("metadata").$type<Record<string, string>>().notNull().default({}),
     startConversation: text("start_conversation").$type<StartConversation>().notNull(),
     show: text("show").$type<OutboundShow>().notNull(),
     ifConversationOpen: text("if_conversation_open").$type<IfConversationOpen>().notNull(),
@@ -1881,7 +1879,11 @@ export const outboundMessage = pgTable(
     enumCheck("outbound_message_status_reason", table.statusReason, OUTBOUND_STATUS_REASONS),
     enumCheck("outbound_message_start_conversation", table.startConversation, START_CONVERSATION),
     enumCheck("outbound_message_show", table.show, OUTBOUND_SHOWS),
-    enumCheck("outbound_message_if_conversation_open", table.ifConversationOpen, IF_CONVERSATION_OPEN),
+    enumCheck(
+      "outbound_message_if_conversation_open",
+      table.ifConversationOpen,
+      IF_CONVERSATION_OPEN,
+    ),
     check("outbound_message_via", sql`${table.via} = 'mcp'`),
     check(
       "outbound_message_body_length",
@@ -1921,6 +1923,10 @@ export const outboundMessage = pgTable(
       ),
     // The prune of old bodies, across workspaces.
     index("outbound_message_body_idx").on(table.createdAt).where(sql`${table.body} is not null`),
+    // The list's filter by dedupe key.
+    index("outbound_message_dedupe_key_idx")
+      .on(table.workspaceId, table.dedupeKey)
+      .where(sql`${table.dedupeKey} is not null`),
     // A key's, a conversation's and a message's delete check these foreign keys.
     index("outbound_message_api_key_idx").on(table.workspaceId, table.authorApiKeyId),
     index("outbound_message_conversation_idx").on(table.workspaceId, table.conversationId),

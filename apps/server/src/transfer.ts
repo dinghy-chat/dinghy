@@ -30,8 +30,8 @@ import {
   OUTBOUND_STATUS_REASONS,
   OUTBOUND_STATUSES,
   operator,
-  outboundMessage,
   outboundDedupe,
+  outboundMessage,
   pageView,
   SENDER_KINDS,
   START_CONVERSATION,
@@ -51,7 +51,7 @@ import { ClientId, DedupeKey } from "./inputs.ts";
 import { PAGE_PATH_MAX, PAGE_TITLE_MAX, PageContextSchema } from "./journey.ts";
 import { workspaceParams } from "./member.ts";
 import { markHistoryRead } from "./messages.ts";
-import { ButtonSchema, ChosenButtonSchema } from "./outbound-schemas.ts";
+import { ButtonSchema, ChosenButtonSchema, OutboundMetadataSchema } from "./outbound-schemas.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import type { ObjectStore } from "./storage.ts";
 import { PUBLIC_IMAGE_MAX_BYTES, processImage, processLogo } from "./uploads.ts";
@@ -248,10 +248,9 @@ const ExportFile = z.strictObject({
         senderKind: z.enum(SENDER_KINDS),
         senderOperatorId: id.nullable(),
         body: z.string().max(100_000).nullable(),
-        metadata: z.strictObject({
-          buttons: z.array(ButtonSchema).optional(),
-          chosen: ChosenButtonSchema.optional(),
-        }),
+        buttons: z.array(ButtonSchema),
+        chosenButton: ChosenButtonSchema.nullable(),
+        metadata: OutboundMetadataSchema,
         startConversation: z.enum(START_CONVERSATION),
         show: z.enum(OUTBOUND_SHOWS),
         ifConversationOpen: z.enum(IF_CONVERSATION_OPEN),

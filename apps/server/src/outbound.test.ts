@@ -177,7 +177,11 @@ describe("a send", () => {
     expect(contact).toMatchObject({ name: "Ada Lovelace", email: "ada@example.com" });
     expect(await conversationsOf(sent.outboundMessage.visitorId)).toEqual([]);
     // The same `dedupeKey` answers the first message, and makes no second one.
-    const again = await send({ visitor: { userId: user }, body: "Welcome again", dedupeKey: "welcome" });
+    const again = await send({
+      visitor: { userId: user },
+      body: "Welcome again",
+      dedupeKey: "welcome",
+    });
     expect(again.status).toBe(200);
     expect(again.outboundMessage.id).toBe(sent.outboundMessage.id);
   });
@@ -508,7 +512,64 @@ describe("the widget", () => {
     });
     const after = await rowOf(asked.outboundMessage.id);
     expect(after?.status).toBe("replied");
-    expect(after?.metadata.chosen).toEqual({ value: "yes", label: "Yes, please" });
+    expect(after?.chosenButton).toEqual({ value: "yes", label: "Yes, please" });
+    const clicks = await owner
+      .select({ payload: event.payload })
+      .from(event)
+      .where(and(eq(event.workspaceId, space.id), eq(event.kind, "outbound_message.clicked")));
+    expect(
+      clicks.filter((one) => JSON.stringify(one.payload).includes(asked.outboundMessage.id)),
+    ).toHaveLength(1);
+  });
+});
+
+describe("a send's metadata and expiresIn, and the list's filters", () => {
+  const list = async (query: string) => {
+    const response = await withKey(app, bot.token, "GET", inSpace(`/outbound-messages?${query}`));
+    const { outboundMessages } = (await response.json()) as { outboundMessages: View[] };
+    return outboundMessages.map((one) => one.id);
+  };
+
+  test("metadata comes back on the message and never reaches the visitor", async () => {
+    const user = userId();
+    const sent = await send({
+      visitor: { userId: user },
+      body: "Your order shipped",
+      metadata: { orderId: "order-1042" },
+    });
+    expect(sent.outboundMessage).toMatchObject({ metadata: { orderId: "order-1042" } });
+    const shown = await waiting(await hostToken(space, user));
+    expect(shown.map((one) => one.id)).toEqual([sent.outboundMessage.id]);
+    expect(JSON.stringify(shown)).not.toContain("order-1042");
+    const keys = Object.fromEntries(Array.from({ length: 21 }, (_, index) => [`k${index}`, "v"]));
+    expect(
+      (await send({ visitor: { userId: user }, body: "Too many", metadata: keys })).status,
+    ).toBe(400);
+  });
+
+  test("expiresIn counts from the send time, and does not go with expiresAt", async () => {
+    const visitor = { userId: userId() };
+    const sent = await send({ visitor, body: "Soon", delay: "1h", expiresIn: "2h" });
+    const row = await rowOf(sent.outboundMessage.id);
+    expect((row?.expiresAt?.getTime() ?? 0) - (row?.sendAt.getTime() ?? 0)).toBe(2 * 3_600_000);
+    const expiresAt = new Date(Date.now() + 3_600_000).toISOString();
+    expect((await send({ visitor, body: "Both", expiresAt, expiresIn: "2h" })).status).toBe(400);
+  });
+
+  test("the list filters by user ID and by dedupe key", async () => {
+    const user = userId();
+    const mine = await send({ visitor: { userId: user }, body: "Mine", dedupeKey: "invoice-7" });
+    const other = await send({
+      visitor: { userId: userId() },
+      body: "Other",
+      dedupeKey: "invoice-7",
+    });
+    expect(await list(`userId=${user}`)).toEqual([mine.outboundMessage.id]);
+    expect(await list("dedupeKey=invoice-7")).toEqual([
+      other.outboundMessage.id,
+      mine.outboundMessage.id,
+    ]);
+    expect(await list(`userId=${user}&dedupeKey=invoice-8`)).toEqual([]);
   });
 });
 
@@ -556,7 +617,11 @@ describe("a delete", () => {
       body: null,
     });
     // Its `dedupeKey` is free again, as after any cancel.
-    const again = await send({ visitor: { id: visitorId }, body: "Again", dedupeKey: "deleted-once" });
+    const again = await send({
+      visitor: { id: visitorId },
+      body: "Again",
+      dedupeKey: "deleted-once",
+    });
     expect(again.status).toBe(201);
   });
 
@@ -687,8 +752,16 @@ describe("when a conversation is open", () => {
   test("hold waits, join goes in, skip cancels", async () => {
     const { visitorId, token, conversationId } = await visitorStarts(app, space.publicKey, "Hi");
     const hold = await send({ visitor: { id: visitorId }, body: "Held" });
-    const join = await send({ visitor: { id: visitorId }, body: "Joined", ifConversationOpen: "join" });
-    const skip = await send({ visitor: { id: visitorId }, body: "Skipped", ifConversationOpen: "skip" });
+    const join = await send({
+      visitor: { id: visitorId },
+      body: "Joined",
+      ifConversationOpen: "join",
+    });
+    const skip = await send({
+      visitor: { id: visitorId },
+      body: "Skipped",
+      ifConversationOpen: "skip",
+    });
     expect(await waiting(token)).toEqual([]);
     expect(await rowOf(hold.outboundMessage.id)).toMatchObject({
       status: "sent",
@@ -717,7 +790,11 @@ describe("when a conversation is open", () => {
         body: "I am here",
       },
     );
-    const join = await send({ visitor: { id: visitorId }, body: "Bot", ifConversationOpen: "join" });
+    const join = await send({
+      visitor: { id: visitorId },
+      body: "Bot",
+      ifConversationOpen: "join",
+    });
     await waiting(token);
     expect(await rowOf(join.outboundMessage.id)).toMatchObject({
       statusReason: "human_handling",
