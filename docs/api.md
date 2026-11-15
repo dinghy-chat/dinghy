@@ -448,7 +448,7 @@ A webhook sends a signed `POST` to your server when something changes in a works
 
 | Event | When |
 |---|---|
-| `conversation.created` | A visitor starts a conversation. Its first message also sends `message.created` |
+| `conversation.created` | A visitor starts a conversation, or an outbound message starts one. Its first message also sends `message.created` |
 | `message.created` | A visitor, an operator or an API key writes a message or a note |
 | `message.updated` | An operator edits a reply or a note |
 | `message.deleted` | An operator deletes a message. `data.message` has `deleted: true` and no body |
