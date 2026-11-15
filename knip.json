@@ -15,6 +15,9 @@
     },
     "packages/widget": {
       "entry": ["build.ts", "src/{index,loader,page,chat}.ts{,x}"]
+    },
+    "packages/sdk": {
+      "entry": ["scripts/*.ts"]
     }
   }
 }

@@ -46,7 +46,7 @@ VERSION="$version" TODAY="$(date -u +%F)" perl -0pi -e '
 
 # The same files every release changes. perl, not sed -i, which differs between macOS and Linux.
 for file in package.json apps/server/package.json apps/operator/package.json packages/widget/package.json \
-  ee/package.json apps/server/openapi.json; do
+  packages/sdk/package.json ee/package.json apps/server/openapi.json; do
   perl -pi -e "s/\"version\": \"\Q$old\E\"/\"version\": \"$version\"/" "$file"
 done
 perl -pi -e "s|dinghy-chat/dinghy:\Q$old\E\}|dinghy-chat/dinghy:$version}|" compose.yaml

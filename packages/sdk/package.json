@@ -1,0 +1,34 @@
+{
+  "name": "@dinghy-chat/sdk",
+  "version": "0.34.0",
+  "description": "Call the Dinghy API from your server, with typed methods, webhook checks and host tokens.",
+  "type": "module",
+  "license": "MIT",
+  "homepage": "https://dinghy.chat/docs/api",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dinghy-chat/dinghy.git",
+    "directory": "packages/sdk"
+  },
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "prepack": "esbuild src/index.ts --bundle --format=esm --target=es2022 --outfile=dist/index.js && tsc -p tsconfig.npm.json"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "openapi-typescript": "^7.13.0",
+    "typescript": "^5.9.3"
+  }
+}
