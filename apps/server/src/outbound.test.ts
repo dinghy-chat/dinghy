@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { pino } from "pino";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
@@ -23,7 +23,7 @@ import {
   webhookDelivery,
   workspace,
 } from "./db/schema.ts";
-import { type Database, withWorkspace } from "./db/tenant.ts";
+import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { noLive } from "./live.ts";
 import {
   decide,
@@ -103,6 +103,24 @@ const conversationsOf = (visitorId: string) =>
 
 /** A signed-in user's ID, new for each test. */
 const userId = () => `user-${randomUUID()}`;
+
+/**
+ * Runs `waiter` while another transaction holds the workspace lock and has made `change`, which
+ * commits after `waiter` read its rows and waits for the lock.
+ */
+async function whileLocked<T>(
+  change: (tx: Transaction) => Promise<unknown>,
+  waiter: () => Promise<T>,
+) {
+  const { started } = await owner.transaction(async (tx) => {
+    await tx.execute(sql`select id from workspace where id = ${space.id} for no key update`);
+    await change(tx);
+    const started = waiter();
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    return { started };
+  });
+  return started;
+}
 
 beforeAll(async () => {
   database = await createTestDatabase();
@@ -391,6 +409,64 @@ describe("the widget", () => {
     const after = await rowOf(asked.outboundMessage.id);
     expect(after?.status).toBe("replied");
     expect(after?.metadata.chosen).toEqual({ value: "yes", label: "Yes, please" });
+  });
+});
+
+describe("a change that commits while another waits for the lock", () => {
+  test("a fetch that waited sees the cancel, and shows nothing", async () => {
+    const user = userId();
+    const sent = await send({ visitor: { userId: user }, body: "Cancelled meanwhile" });
+    const { id } = sent.outboundMessage;
+    const token = await hostToken(space, user);
+    const shown = await whileLocked(
+      (tx) =>
+        tx
+          .update(outboundMessage)
+          .set({ status: "cancelled", statusReason: "cancelled_by_api" })
+          .where(eq(outboundMessage.id, id)),
+      () => waiting(token),
+    );
+    expect(shown).toEqual([]);
+    expect((await rowOf(id))?.status).toBe("cancelled");
+  });
+});
+
+describe("a delete", () => {
+  test("of a conversation ends its waiting messages, so they never show again", async () => {
+    const { visitorId, token, conversationId } = await visitorStarts(app, space.publicKey, "Hi");
+    const join = await send({ visitor: { id: visitorId }, body: "Joined", ifOpen: "join" });
+    await waiting(token);
+    expect((await rowOf(join.outboundMessage.id))?.conversationId).toBe(conversationId);
+    const deleted = await asOperator(
+      app,
+      boss.cookie,
+      "DELETE",
+      inSpace(`/conversations/${conversationId}`),
+    );
+    expect(deleted.status).toBe(200);
+    expect(await waiting(token)).toEqual([]);
+    expect(await rowOf(join.outboundMessage.id)).toMatchObject({
+      status: "cancelled",
+      statusReason: "conversation_deleted",
+      body: null,
+    });
+  });
+
+  test("of its message removes the outbound message's text", async () => {
+    const sent = await send({
+      visitor: { userId: userId() },
+      body: "Deleted later",
+      startConversation: "now",
+    });
+    const row = await rowOf(sent.outboundMessage.id);
+    const deleted = await asOperator(
+      app,
+      boss.cookie,
+      "DELETE",
+      inSpace(`/conversations/${row?.conversationId}/messages/${row?.messageId}`),
+    );
+    expect(deleted.status).toBe(200);
+    expect((await rowOf(sent.outboundMessage.id))?.body).toBeNull();
   });
 });
 

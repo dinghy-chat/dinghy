@@ -200,6 +200,7 @@ const en = {
   outboundReasonCampaignEnded: "the campaign ended",
   outboundReasonOptedOut: "the visitor turned these off",
   outboundReasonCancelled: "by the API or a member",
+  outboundReasonConversationDeleted: "its conversation was deleted",
   listFilter: "Filter conversations",
   listFiltered: "Filter conversations, filtered",
   listStatus: "Status",

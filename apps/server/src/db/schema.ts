@@ -1757,6 +1757,7 @@ export const OUTBOUND_STATUS_REASONS = [
   "campaign_ended",
   "opted_out",
   "cancelled_by_api",
+  "conversation_deleted",
 ] as const;
 export type OutboundStatusReason = (typeof OUTBOUND_STATUS_REASONS)[number];
 

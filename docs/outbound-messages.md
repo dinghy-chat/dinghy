@@ -96,7 +96,7 @@ The answer's `outboundMessage` has:
 |---|---|
 | `id`, `visitorId` | The outbound message and its visitor |
 | `status`, `statusReason` | Where it stands, and why it waits or was cancelled. See [Its life](#its-life) |
-| `body` | Its text. Null 30 days after it ended |
+| `body` | Its text. Null 30 days after it ended, and as soon as a member deletes its message or its conversation |
 | `buttons` | Its buttons, as sent |
 | `button` | The button the visitor chose, `{ value, label }`, or null. `value` is null for a button sent without one |
 | `sender` | `"team"`, `{ operatorId, name }` for a member, or null for the key's own name |
@@ -192,6 +192,7 @@ At the send time, Dinghy checks the message again: a blocked visitor, the key's 
 | `workspace_inactive` | Waits | The workspace is read-only or suspended |
 | `unless_matched` | Cancels | `unless` matched the contact |
 | `cancelled_by_api` | Cancels | A cancel through the API, MCP or the operator app |
+| `conversation_deleted` | Cancels | A member deleted the conversation it was in before the visitor answered. Its text goes with it |
 
 Campaigns will set `audience_unmatched`, `frequency_capped`, `goal_reached`, `outside_business_hours`, `campaign_paused`, `campaign_ended` and `opted_out`. Dinghy does not set them yet.
 

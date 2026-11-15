@@ -158,7 +158,7 @@ export const OutboundMessageSchema = z
     // Why it waits, or why it was cancelled. Null otherwise.
     statusReason: z.enum(OUTBOUND_STATUS_REASONS).nullable(),
     visitorId: z.string(),
-    // Its text. Null 30 days after it ended.
+    // Its text. Null 30 days after it ended, or once its conversation or its message was deleted.
     body: z.string().nullable(),
     buttons: z.array(ButtonSchema),
     // The button the visitor chose, when they answered, dismissed or opened a page with one.
@@ -283,7 +283,11 @@ async function record(
 const ofRow = (workspaceId: string, id: string) =>
   and(eq(outboundMessage.workspaceId, workspaceId), eq(outboundMessage.id, id));
 
-/** Updates one row and answers it as it is now. */
+/**
+ * Updates one row and answers it as it is now. It changes the row only while its status and its
+ * conversation are still those the caller read, so a stale row never overwrites a cancel, a reply or
+ * a conversation.
+ */
 async function change(
   tx: Transaction,
   workspaceId: string,
@@ -294,9 +298,17 @@ async function change(
   const [changed] = await tx
     .update(outboundMessage)
     .set(values)
-    .where(ofRow(workspaceId, row.id))
+    .where(
+      and(
+        ofRow(workspaceId, row.id),
+        eq(outboundMessage.status, row.status),
+        row.conversationId === null
+          ? isNull(outboundMessage.conversationId)
+          : eq(outboundMessage.conversationId, row.conversationId),
+      ),
+    )
     .returning();
-  if (changed === undefined) throw new Error("The outbound message is missing");
+  if (changed === undefined) throw new Error("The outbound message changed since it was read");
   if (kind !== undefined) await record(tx, workspaceId, changed, kind);
   return changed;
 }
@@ -596,6 +608,16 @@ async function findRow(tx: Transaction, workspaceId: string, id: string) {
   return row;
 }
 
+/**
+ * The rows a write will change, read again under the workspace lock when there are any, so a change
+ * that committed while this waited for the lock is seen. A visitor with none takes no lock.
+ */
+async function underLock(tx: Transaction, workspaceId: string, read: () => Promise<Row[]>) {
+  if ((await read()).length === 0) return { rows: [], botsPaused: false };
+  const { botsPaused } = await lockWorkspace(tx, workspaceId);
+  return { rows: await read(), botsPaused };
+}
+
 /** A value button of one of this visitor's messages, which a visitor's answer carries. */
 export interface ButtonAnswer {
   outboundMessageId: string;
@@ -757,16 +779,18 @@ export async function readInConversation(
   messageIds: string[],
 ): Promise<void> {
   if (messageIds.length === 0) return;
-  const rows = await tx
-    .select()
-    .from(outboundMessage)
-    .where(
-      and(
-        eq(outboundMessage.workspaceId, workspaceId),
-        inArray(outboundMessage.messageId, messageIds),
-        isNull(outboundMessage.readAt),
+  const { rows } = await underLock(tx, workspaceId, () =>
+    tx
+      .select()
+      .from(outboundMessage)
+      .where(
+        and(
+          eq(outboundMessage.workspaceId, workspaceId),
+          inArray(outboundMessage.messageId, messageIds),
+          isNull(outboundMessage.readAt),
+        ),
       ),
-    );
+  );
   for (const row of rows) {
     await change(
       tx,
@@ -791,24 +815,77 @@ export async function contactChanged(
   workspaceId: string,
   visitorId: string,
 ): Promise<void> {
+  const { rows } = await underLock(tx, workspaceId, () =>
+    tx
+      .select()
+      .from(outboundMessage)
+      .where(
+        and(
+          eq(outboundMessage.workspaceId, workspaceId),
+          eq(outboundMessage.visitorId, visitorId),
+          eq(outboundMessage.status, "scheduled"),
+          sql`${outboundMessage.unless} is not null`,
+        ),
+      ),
+  );
+  for (const row of rows) {
+    if (await matches(tx, workspaceId, visitorId, row.unless)) {
+      await end(tx, workspaceId, row, { status: "cancelled", reason: "unless_matched" });
+    }
+  }
+}
+
+/**
+ * Conversations are being deleted: their outbound messages lose their text, and those that waited
+ * for the visitor end, so none shows again. The caller holds the workspace lock.
+ */
+export async function conversationsDeleted(
+  tx: Transaction,
+  workspaceId: string,
+  conversationIds: string[],
+): Promise<void> {
   const rows = await tx
     .select()
     .from(outboundMessage)
     .where(
       and(
         eq(outboundMessage.workspaceId, workspaceId),
-        eq(outboundMessage.visitorId, visitorId),
-        eq(outboundMessage.status, "scheduled"),
-        sql`${outboundMessage.unless} is not null`,
+        inArray(outboundMessage.conversationId, conversationIds),
       ),
-    );
-  if (rows.length === 0) return;
-  await lockWorkspace(tx, workspaceId);
+    )
+    .for("update");
   for (const row of rows) {
-    if (await matches(tx, workspaceId, visitorId, row.unless)) {
-      await end(tx, workspaceId, row, { status: "cancelled", reason: "unless_matched" });
-    }
+    const waits = WAITING_STATUSES.some((status) => status === row.status);
+    await change(
+      tx,
+      workspaceId,
+      row,
+      {
+        body: null,
+        ...(waits && {
+          status: "cancelled",
+          statusReason: "conversation_deleted",
+          cancelledAt: new Date(),
+          dueAt: null,
+        }),
+      },
+      waits ? "outbound_message.cancelled" : undefined,
+    );
   }
+}
+
+/** A message was deleted: the outbound message it came from loses its text too. */
+export async function messageDeleted(
+  tx: Transaction,
+  workspaceId: string,
+  messageId: string,
+): Promise<void> {
+  await tx
+    .update(outboundMessage)
+    .set({ body: null })
+    .where(
+      and(eq(outboundMessage.workspaceId, workspaceId), eq(outboundMessage.messageId, messageId)),
+    );
 }
 
 // Views ------------------------------------------------------------------------------------------
@@ -1196,9 +1273,9 @@ export function createOutbound({ db, live }: { db: Database; live: Signals }) {
      */
     async waiting(workspaceId: string, visitorId: string): Promise<WidgetOutbound[]> {
       const result = await withWorkspace(db, workspaceId, async (tx) => {
-        const rows = await shownRows(tx, workspaceId, visitorId);
-        if (rows.length === 0) return { shown: [], joined: false };
-        const { botsPaused } = await lockWorkspace(tx, workspaceId);
+        const { rows, botsPaused } = await underLock(tx, workspaceId, () =>
+          shownRows(tx, workspaceId, visitorId),
+        );
         const shown: WidgetOutbound[] = [];
         let joined = false;
         for (const row of rows) {

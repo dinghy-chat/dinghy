@@ -366,7 +366,8 @@ export type OutboundStatusReason =
   | "campaign_paused"
   | "campaign_ended"
   | "opted_out"
-  | "cancelled_by_api";
+  | "cancelled_by_api"
+  | "conversation_deleted";
 
 /** A message from the team to one visitor, which may wait outside any conversation. */
 export interface OutboundMessage {

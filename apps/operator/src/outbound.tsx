@@ -28,6 +28,7 @@ const REASON_TEXT: Record<OutboundStatusReason, TextId> = {
   campaign_ended: "outboundReasonCampaignEnded",
   opted_out: "outboundReasonOptedOut",
   cancelled_by_api: "outboundReasonCancelled",
+  conversation_deleted: "outboundReasonConversationDeleted",
 };
 
 const reasonOf = (one: OutboundMessage) =>

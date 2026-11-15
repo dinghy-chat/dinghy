@@ -31,6 +31,7 @@ import {
   recordConversationChanges,
   recordTeamChange,
 } from "./messages.ts";
+import { conversationsDeleted } from "./outbound.ts";
 import { allowed } from "./team.ts";
 
 // Long enough to stop someone who clears their browser, and short enough for an address that a
@@ -144,6 +145,7 @@ export async function deleteConversations(
   // conversation with a foreign key would deadlock with a delete that took the conversation first.
   // One that waits here finds the conversation gone, and goes to another of the visitor's, or a new one.
   await recordConversationChanges(tx, workspaceId, ids, "conversation.deleted");
+  await conversationsDeleted(tx, workspaceId, ids);
   // A draft names the messages it quotes or became, so it goes before them.
   await tx
     .delete(draftReply)
