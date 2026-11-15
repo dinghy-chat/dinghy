@@ -124,6 +124,14 @@ const shortcutLabel = (name: TextId, key: string | undefined) =>
         keys: `${ON_MAC ? "⌘" : "Ctrl+"}${key.toUpperCase()}`,
       });
 
+/** A line in a code block, a list item in a list, and a line break anywhere else. */
+const newLine = (editor: Editor) =>
+  editor.commands.first(({ commands }) => [
+    () => commands.newlineInCode(),
+    () => commands.splitListItem("listItem"),
+    () => commands.setHardBreak(),
+  ]);
+
 /**
  * The composer's keys: Enter sends (on a phone it starts a line), Shift+Enter starts a line or a
  * list item, Escape cancels, and each format's key does what its button does. While the picker is
@@ -145,10 +153,10 @@ const composerExtension = (latest: RefObject<Latest>) =>
           },
         ]),
       ),
-      // On a phone, Enter keeps the editor's own new line, and the Send button sends.
-      Enter() {
+      // On a phone, the return key starts a line, and the Send button sends.
+      Enter({ editor }) {
         if (latest.current.pick("Enter")) return true;
-        if (!enterSends()) return false;
+        if (!enterSends()) return newLine(editor);
         latest.current.send();
         return true;
       },
@@ -161,12 +169,7 @@ const composerExtension = (latest: RefObject<Latest>) =>
       ArrowDown() {
         return latest.current.pick("ArrowDown");
       },
-      "Shift-Enter": ({ editor }) =>
-        editor.commands.first(({ commands }) => [
-          () => commands.newlineInCode(),
-          () => commands.splitListItem("listItem"),
-          () => commands.setHardBreak(),
-        ]),
+      "Shift-Enter": ({ editor }) => newLine(editor),
       // With nothing to cancel, Escape leaves the box, so the app's single keys work again.
       Escape({ editor }) {
         const { onEscape } = latest.current;
