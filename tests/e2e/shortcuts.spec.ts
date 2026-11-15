@@ -51,18 +51,32 @@ test("the keyboard moves through the Inbox, replies, and closes a chat to open t
   await operator.keyboard.press("Escape");
   await expect(reply).not.toBeFocused();
 
-  // E closes this chat and opens the one left.
-  await operator.keyboard.press("e");
+  // A click on Note or Reply puts the caret in the box, as N and R do.
+  const box = operator.locator(".compose .ProseMirror");
+  await operator.getByRole("radio", { name: "Note" }).check();
+  await expect(box).toBeFocused();
+  await operator.getByRole("radio", { name: "Reply" }).check();
+  await expect(reply).toBeFocused();
+  // The option already chosen too.
+  await operator.keyboard.press("Escape");
+  await expect(reply).not.toBeFocused();
+  await operator.getByText("Reply", { exact: true }).click();
+  await expect(reply).toBeFocused();
+  await operator.keyboard.press("Escape");
+  await expect(reply).not.toBeFocused();
+
+  // Shift+E closes this chat and opens the one left.
+  await operator.keyboard.press("Shift+E");
   await expect(rows).toHaveCount(1);
   await expect(current(operator)).toHaveCount(1);
   await expect(current(operator)).not.toHaveText(first);
 
-  // A second E while the first saves does not skip past the chat the first opened.
+  // A second Shift+E while the first saves does not skip past the chat the first opened.
   await visitor(browser, server, "/", "Third question");
   await expect(rows).toHaveCount(2);
   const left = (await current(operator).textContent()) ?? "";
-  await operator.keyboard.press("e");
-  await operator.keyboard.press("e");
+  await operator.keyboard.press("Shift+E");
+  await operator.keyboard.press("Shift+E");
   await expect(rows).toHaveCount(1);
   await expect(current(operator)).toHaveCount(1);
   await expect(current(operator)).not.toHaveText(left);

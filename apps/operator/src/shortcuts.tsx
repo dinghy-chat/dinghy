@@ -61,6 +61,8 @@ let first: { key: string; at: number } | null = null;
 function onKey(event: KeyboardEvent) {
   if (!isOn || event.defaultPrevented || !isShortcut(event)) return;
   const { key } = event;
+  // Caps Lock types a capital without Shift, and a capital key such as E promises Shift.
+  if (/^[A-Z]$/.test(key) && !event.shiftKey) return;
   const pair = first !== null && Date.now() - first.at < SEQUENCE_MS ? `${first.key} ${key}` : null;
   first = null;
   const maps = [...registered].map((keys) => keys.current);
@@ -95,9 +97,12 @@ export function useShortcuts(keys: Keys): void {
 }
 
 const KEY_NAMES: Record<string, string> = { Escape: "Esc", ArrowDown: "↓", ArrowUp: "↑" };
-const keyName = (key: string) => KEY_NAMES[key] ?? (key.length === 1 ? key.toUpperCase() : key);
+/** "e" is E, and "E", which takes Shift, is Shift+E. */
+const keyName = (key: string) =>
+  KEY_NAMES[key] ??
+  (/^[A-Z]$/.test(key) ? `Shift+${key}` : key.length === 1 ? key.toUpperCase() : key);
 
-/** "Close (E)", for a button's tooltip, while the keys are on. */
+/** "Close (Shift+E)", for a button's tooltip, while the keys are on. */
 export function withKey(name: string, key: string, on: boolean): string {
   return on ? t("withShortcut", { name, keys: key.split(" ").map(keyName).join(" ") }) : name;
 }
@@ -144,7 +149,7 @@ const GROUPS: { title: TextId; rows: [keys: string, text: TextId][] }[] = [
     rows: [
       ["r", "keysReply"],
       ["n", "keysNote"],
-      ["e", "keysClose"],
+      ["E", "keysClose"],
       ["a", "keysAssign"],
       ["i", "keysAssignMe"],
       ["l", "keysLabels"],

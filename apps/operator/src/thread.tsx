@@ -9,7 +9,7 @@ import type {
   SuggestedReply,
   WorkspaceApi,
 } from "./api.ts";
-import { type ComposeMode, Composer } from "./composer.tsx";
+import { type ComposeMode, Composer, focusComposer } from "./composer.tsx";
 import { useConversationActions } from "./conversation-actions.ts";
 import type { Draft } from "./drafts.ts";
 import { Icon } from "./icons.tsx";
@@ -197,6 +197,10 @@ export function Thread({
     keep: thread.keep,
   });
   const { quoting, setQuoting, info, setInfo, deleting, setDeleting } = actions;
+  // A reply to a message goes in the box, so the caret goes there.
+  useEffect(() => {
+    if (quoting !== null) focusComposer();
+  }, [quoting]);
   const change = useConversationActions({
     api,
     conversationId,
@@ -234,10 +238,7 @@ export function Thread({
       setEditingDraft(null);
       setDraft({ ...draft, isNote: next === "note" });
     }
-    // After the render, which may switch the composer between reply and note.
-    requestAnimationFrame(() =>
-      document.querySelector<HTMLElement>(".compose:not(.editing) .ProseMirror")?.focus(),
-    );
+    focusComposer();
   };
   useShortcuts(
     conversation === null || !inView
@@ -245,8 +246,10 @@ export function Thread({
       : {
           r: () => write("reply"),
           n: () => write("note"),
-          // A close moves on to the next chat, so the keyboard can clear a queue.
-          e: () => {
+          // A close moves on to the next chat, so the keyboard can clear a queue. It takes Shift,
+          // so a stray E does not close a chat.
+          // biome-ignore lint/correctness/noComponentHookFactories: a key name, not a component.
+          E: () => {
             const next = closed ? null : nextAfterClose(conversationId);
             void change.setStatus(closed ? "open" : "closed").then((saved) => {
               if (saved) next?.();
