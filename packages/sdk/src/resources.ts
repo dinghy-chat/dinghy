@@ -12,17 +12,20 @@ type JsonOf<T> = T extends { content: { "application/json": infer B } } ? B : ne
 type Body<P extends WorkspacePath, M extends MethodOf<P>> = JsonOf<
   NonNullable<NonNullable<paths[P][M]>["requestBody"]>
 >;
-type Query<P extends WorkspacePath, M extends MethodOf<P>> = NonNullable<
+type QueryOf<P extends WorkspacePath, M extends MethodOf<P>> = NonNullable<
   NonNullable<paths[P][M]>["parameters"]["query"]
 >;
 /** A send's body, where `clientId` is optional: the SDK makes one. */
 type Send<T> = Omit<T, "clientId"> & { clientId?: string };
 
 const IN_WORKSPACE = "/v1/operator/workspaces/{workspaceId}";
-const CONVERSATION = "/v1/operator/workspaces/{workspaceId}/conversations/{conversationId}";
+const CONVERSATIONS = `${IN_WORKSPACE}/conversations` as const;
+const CONVERSATION = `${CONVERSATIONS}/{conversationId}` as const;
 const MESSAGES = `${CONVERSATION}/messages` as const;
-const OUTBOUND = "/v1/operator/workspaces/{workspaceId}/outbound-messages";
-const WEBHOOK = "/v1/operator/workspaces/{workspaceId}/webhooks/{webhookId}";
+const CONTACT_BY_USER = `${IN_WORKSPACE}/contacts/by-user/{userId}` as const;
+const OUTBOUND = `${IN_WORKSPACE}/outbound-messages` as const;
+const WEBHOOKS = `${IN_WORKSPACE}/webhooks` as const;
+const WEBHOOK = `${WEBHOOKS}/{webhookId}` as const;
 
 const withClientId = <T extends { clientId?: string }>(input: T) => ({
   ...input,
@@ -32,20 +35,17 @@ const withClientId = <T extends { clientId?: string }>(input: T) => ({
 type Reply = Send<Omit<Body<typeof MESSAGES, "post">, "note" | "mentions">>;
 type Note = Send<Omit<Body<typeof MESSAGES, "post">, "note">>;
 type Upload = { file: Blob | Uint8Array<ArrayBuffer> } & Send<
-  Query<`${typeof CONVERSATION}/uploads`, "post">
+  QueryOf<`${typeof CONVERSATION}/uploads`, "post">
 >;
 type Handoff = Send<Body<`${typeof CONVERSATION}/handoff`, "post">>;
 
 export function conversations(request: Request) {
   const at = (conversationId: string) => ({ path: { conversationId } });
   return {
-    list: (query: Query<"/v1/operator/workspaces/{workspaceId}/conversations", "get"> = {}) =>
-      request("get", "/v1/operator/workspaces/{workspaceId}/conversations", { query }),
-    search: (q: string) =>
-      request("get", "/v1/operator/workspaces/{workspaceId}/conversations/search", {
-        query: { q },
-      }),
-    messages: (conversationId: string, query: Query<typeof MESSAGES, "get"> = {}) =>
+    list: (query: QueryOf<typeof CONVERSATIONS, "get"> = {}) =>
+      request("get", CONVERSATIONS, { query }),
+    search: (q: string) => request("get", `${CONVERSATIONS}/search`, { query: { q } }),
+    messages: (conversationId: string, query: QueryOf<typeof MESSAGES, "get"> = {}) =>
       request("get", MESSAGES, { ...at(conversationId), query }),
     reply: (conversationId: string, input: Reply) =>
       request("post", MESSAGES, { ...at(conversationId), body: withClientId(input) }),
@@ -85,19 +85,13 @@ export function conversations(request: Request) {
   };
 }
 
-type Upsert = { userId: string } & Body<
-  "/v1/operator/workspaces/{workspaceId}/contacts/by-user/{userId}",
-  "put"
->;
+type Upsert = { userId: string } & Body<typeof CONTACT_BY_USER, "put">;
 
 export function contacts(request: Request) {
   return {
     /** Creates or updates the contact with this user ID, as a host token would. */
     upsert: ({ userId, ...body }: Upsert) =>
-      request("put", "/v1/operator/workspaces/{workspaceId}/contacts/by-user/{userId}", {
-        path: { userId },
-        body,
-      }),
+      request("put", CONTACT_BY_USER, { path: { userId }, body }),
   };
 }
 
@@ -108,7 +102,7 @@ export function outboundMessages(request: Request) {
     send: (input: Send<Body<typeof OUTBOUND, "post">>) =>
       request("post", OUTBOUND, { body: withClientId(input) }),
     get: (id: string) => request("get", `${OUTBOUND}/{id}`, { path: { id } }),
-    list: (query: Query<typeof OUTBOUND, "get"> = {}) => request("get", OUTBOUND, { query }),
+    list: (query: QueryOf<typeof OUTBOUND, "get"> = {}) => request("get", OUTBOUND, { query }),
     /** Cancels by ID, or by the visitor and the `once` key it was sent with. */
     cancel: (input: Cancel) =>
       "id" in input
@@ -117,15 +111,14 @@ export function outboundMessages(request: Request) {
   };
 }
 
-type NewWebhook = Body<"/v1/operator/workspaces/{workspaceId}/webhooks", "post">;
+type NewWebhook = Body<typeof WEBHOOKS, "post">;
 
 /** The webhook routes, which need a Full access (setup) key. */
 export function webhookRoutes(request: Request) {
   const at = (webhookId: string) => ({ path: { webhookId } });
   return {
-    list: () => request("get", "/v1/operator/workspaces/{workspaceId}/webhooks"),
-    create: (body: NewWebhook) =>
-      request("post", "/v1/operator/workspaces/{workspaceId}/webhooks", { body }),
+    list: () => request("get", WEBHOOKS),
+    create: (body: NewWebhook) => request("post", WEBHOOKS, { body }),
     update: (webhookId: string, body: Body<typeof WEBHOOK, "patch">) =>
       request("patch", WEBHOOK, { ...at(webhookId), body }),
     delete: (webhookId: string) => request("delete", WEBHOOK, at(webhookId)),
@@ -142,11 +135,11 @@ export function webhookRoutes(request: Request) {
 /** The install, sites, widget, business hours and test visitor routes, for a setup key. */
 export function setup(request: Request) {
   return {
-    snippet: (query: Query<`${typeof IN_WORKSPACE}/install/snippet`, "get">) =>
+    snippet: (query: QueryOf<`${typeof IN_WORKSPACE}/install/snippet`, "get">) =>
       request("get", `${IN_WORKSPACE}/install/snippet`, { query }),
-    checkInstall: (query: Query<`${typeof IN_WORKSPACE}/install/check`, "get">) =>
+    checkInstall: (query: QueryOf<`${typeof IN_WORKSPACE}/install/check`, "get">) =>
       request("get", `${IN_WORKSPACE}/install/check`, { query }),
-    identitySetup: (query: Query<`${typeof IN_WORKSPACE}/install/identity`, "get">) =>
+    identitySetup: (query: QueryOf<`${typeof IN_WORKSPACE}/install/identity`, "get">) =>
       request("get", `${IN_WORKSPACE}/install/identity`, { query }),
     sites: () => request("get", `${IN_WORKSPACE}/sites`),
     addSite: (origin: string) => request("post", `${IN_WORKSPACE}/sites`, { body: { origin } }),
@@ -164,19 +157,21 @@ export function setup(request: Request) {
   };
 }
 
-export const workspace = (request: Request) => ({
-  get: () => request("get", IN_WORKSPACE),
-});
+export function workspace(request: Request) {
+  return { get: () => request("get", IN_WORKSPACE) };
+}
 
-export const labels = (request: Request) => ({
-  list: () => request("get", `${IN_WORKSPACE}/labels`),
-});
+export function labels(request: Request) {
+  return { list: () => request("get", `${IN_WORKSPACE}/labels`) };
+}
 
-export const savedReplies = (request: Request) => ({
-  list: () => request("get", `${IN_WORKSPACE}/saved-replies`),
-});
+export function savedReplies(request: Request) {
+  return { list: () => request("get", `${IN_WORKSPACE}/saved-replies`) };
+}
 
-export const analytics = (request: Request) => ({
-  get: (query: Query<`${typeof IN_WORKSPACE}/analytics`, "get"> = {}) =>
-    request("get", `${IN_WORKSPACE}/analytics`, { query }),
-});
+export function analytics(request: Request) {
+  return {
+    get: (query: QueryOf<`${typeof IN_WORKSPACE}/analytics`, "get"> = {}) =>
+      request("get", `${IN_WORKSPACE}/analytics`, { query }),
+  };
+}
