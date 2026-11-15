@@ -8,6 +8,7 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 - In the operator app, Shift+E closes a conversation. E alone did it before, so one stray key could close a chat.
 - A click on **Reply** or **Note** above the message box, or on **Reply** in a message's menu, puts the cursor in the box.
+- With Shipmail set, the worker reads the mailbox when it starts and once an hour, not each minute, and at once when a workspace whose replies it kept opens again. Shipmail gets about 24 calls a day, not 1,440. A reply whose webhook delivery failed for good comes in within about 70 minutes.
 
 ## [0.33.1] - 2026-11-14
 
