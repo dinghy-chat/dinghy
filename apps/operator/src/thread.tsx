@@ -197,6 +197,10 @@ export function Thread({
     keep: thread.keep,
   });
   const { quoting, setQuoting, info, setInfo, deleting, setDeleting } = actions;
+  // A reply to a message goes in the box, so the caret goes there.
+  useEffect(() => {
+    if (quoting !== null) focusComposer();
+  }, [quoting]);
   const change = useConversationActions({
     api,
     conversationId,

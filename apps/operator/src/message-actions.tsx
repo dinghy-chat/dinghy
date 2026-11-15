@@ -2,7 +2,6 @@
 import { useState } from "react";
 import { plainText } from "../../../packages/widget/src/markdown.ts";
 import type { Message, Quote, ReplyReceipts, WorkspaceApi } from "./api.ts";
-import { focusComposer } from "./composer.tsx";
 import { Icon, type IconName } from "./icons.tsx";
 import type { MenuItem } from "./popup.tsx";
 import { seenReason } from "./receipts.tsx";
@@ -154,7 +153,6 @@ export function useMessageActions({
     reply: () => {
       setEditing(null);
       setQuoting(line);
-      focusComposer();
     },
     copyText: () => void copy(line.body, "copied"),
     edit: () => {
