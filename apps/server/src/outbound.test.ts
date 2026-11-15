@@ -607,6 +607,38 @@ describe("the worker", () => {
   });
 });
 
+describe("an expired message", () => {
+  const expire = (id: string) =>
+    owner
+      .update(outboundMessage)
+      .set({ expiresAt: new Date(Date.now() - 1000), dueAt: new Date(Date.now() - 1000) })
+      .where(eq(outboundMessage.id, id));
+
+  test("that the worker reaches late never goes in a conversation", async () => {
+    const sent = await send({
+      visitor: { userId: userId() },
+      body: "Too late",
+      delay: "1h",
+      startConversation: "now",
+    });
+    await expire(sent.outboundMessage.id);
+    await runDueOutbound(workerDb, db, noLive, 10);
+    expect(await rowOf(sent.outboundMessage.id)).toMatchObject({
+      status: "expired",
+      conversationId: null,
+    });
+    expect(await conversationsOf(sent.outboundMessage.visitorId)).toEqual([]);
+  });
+
+  test("that the worker has not ended yet never shows", async () => {
+    const user = userId();
+    const sent = await send({ visitor: { userId: user }, body: "Stale" });
+    await expire(sent.outboundMessage.id);
+    expect(await waiting(await hostToken(space, user))).toEqual([]);
+    expect((await rowOf(sent.outboundMessage.id))?.status).toBe("expired");
+  });
+});
+
 describe("materializeOutbound", () => {
   test("checks the visitor, and a second call adds nothing", async () => {
     const sent = await send({

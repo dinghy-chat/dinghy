@@ -372,8 +372,10 @@ export function startWorker({
 
   const outboundStep = async () => {
     if (appDb === undefined) return false;
-    const due = await runDueOutbound(db, appDb, signals, BATCH);
-    return (await expireOutbound(db, appDb, signals, BATCH)) || due;
+    // Expiry first, so a message whose send time and expiry both passed while the worker was down
+    // never goes.
+    const expired = await expireOutbound(db, appDb, signals, BATCH);
+    return (await runDueOutbound(db, appDb, signals, BATCH)) || expired;
   };
 
   let beatAt = 0;

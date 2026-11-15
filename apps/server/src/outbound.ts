@@ -343,6 +343,13 @@ async function end(
   );
 }
 
+/** A message whose time ran out before the visitor read it: it ends as expired, and goes nowhere. */
+const hasExpired = (row: Row) =>
+  row.conversationId === null &&
+  UNREAD_STATUSES.some((status) => status === row.status) &&
+  row.expiresAt !== null &&
+  row.expiresAt.getTime() <= Date.now();
+
 // The rule ---------------------------------------------------------------------------------------
 
 /** What a message may do now, from everything that can stop it. */
@@ -533,6 +540,10 @@ export async function materializeOutbound(
   if (row === undefined || row.visitorId !== visitorId || row.conversationId !== null) return null;
   if (!WAITING_STATUSES.some((status) => status === row.status) || row.body === null) return null;
   if (answer && row.startConversation === "on_reply" && row.readAt === null) return null;
+  if (hasExpired(row)) {
+    await end(tx, workspaceId, row, { status: "expired" });
+    return null;
+  }
   const reopenedBy: StatusActor = answer ? { kind: "visitor", visitorId } : opener(row);
   const target = await visitorConversation(tx, workspaceId, { kind: "visitor", visitorId }, null, {
     reopenedBy,
@@ -557,7 +568,8 @@ export async function materializeOutbound(
 
 /**
  * Moves a message on as far as it can go now: at its send time it becomes pending, and one with
- * `startConversation: now` goes in a conversation. The caller holds the workspace lock and the row.
+ * `startConversation: now` goes in a conversation. One whose time ran out first expires. The caller
+ * holds the workspace lock and the row.
  */
 async function advance(
   tx: Transaction,
@@ -565,6 +577,7 @@ async function advance(
   row: Row,
   botsPaused: boolean,
 ): Promise<Row> {
+  if (hasExpired(row)) return end(tx, workspaceId, row, { status: "expired" });
   const scheduled = row.status === "scheduled";
   const now = await situation(tx, workspaceId, row, botsPaused, scheduled);
   // An `on_reply` message waits for the widget, which decides about an open conversation when it
@@ -1279,8 +1292,12 @@ export function createOutbound({ db, live }: { db: Database; live: Signals }) {
         const shown: WidgetOutbound[] = [];
         let joined = false;
         for (const row of rows) {
-          const verdict = decide(row, await situation(tx, workspaceId, row, botsPaused, false));
-          if (verdict.kind === "cancel") {
+          const verdict = hasExpired(row)
+            ? null
+            : decide(row, await situation(tx, workspaceId, row, botsPaused, false));
+          if (verdict === null) {
+            await end(tx, workspaceId, row, { status: "expired" });
+          } else if (verdict.kind === "cancel") {
             await end(tx, workspaceId, row, { status: "cancelled", reason: verdict.reason });
           } else if (verdict.kind === "wait") {
             if (row.statusReason !== verdict.reason)
