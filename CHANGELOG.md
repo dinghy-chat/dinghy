@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.34.0] - 2026-11-15
+
 ### Changed
 
 - In the operator app, Shift+E closes a conversation. E alone did it before, so one stray key could close a chat.
@@ -589,7 +591,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.33.1...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.34.0...HEAD
+[0.34.0]: https://github.com/dinghy-chat/dinghy/compare/v0.33.1...v0.34.0
 [0.33.1]: https://github.com/dinghy-chat/dinghy/compare/v0.33.0...v0.33.1
 [0.33.0]: https://github.com/dinghy-chat/dinghy/compare/v0.32.0...v0.33.0
 [0.32.0]: https://github.com/dinghy-chat/dinghy/compare/v0.31.1...v0.32.0
