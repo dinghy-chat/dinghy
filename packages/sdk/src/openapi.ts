@@ -5799,6 +5799,7 @@ export interface components {
         | "campaign_ended"
         | "opted_out"
         | "cancelled_by_api"
+        | "conversation_deleted"
         | null;
       visitorId: string;
       body: string | null;
