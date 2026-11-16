@@ -1,13 +1,7 @@
 /** @jsxImportSource react */
 import type { CampaignDefinition, CampaignEstimate, Member, WorkspaceApi } from "./api.ts";
-import { withPart } from "./campaign-draft.ts";
-import {
-  type Language,
-  LOCALE_TEXT,
-  MessageFields,
-  missingLocales,
-  withTranslation,
-} from "./campaign-message.tsx";
+import { missingLocales, withLanguage, withPart } from "./campaign-draft.ts";
+import { AddTranslation, type Language, MessageFields } from "./campaign-message.tsx";
 import { DeliveryFields, GoalFields, RulesFields, ShowCards } from "./campaign-rules.tsx";
 import { Fold, Step } from "./campaign-steps.tsx";
 import { deliveryWords, goalWords, peopleWords, rulesWords } from "./campaign-summary.ts";
@@ -16,7 +10,6 @@ import { newVariants, VariantsFields } from "./campaign-variants.tsx";
 import { ConditionBuilder } from "./condition-builder.tsx";
 import { Icon } from "./icons.tsx";
 import { type Loaded, useLoad, useSettled } from "./load.ts";
-import { Menu } from "./popup.tsx";
 import { t } from "./text.ts";
 
 type Estimate = Loaded<CampaignEstimate>;
@@ -64,31 +57,21 @@ function MessageAdds({
   onLanguage(language: Language): void;
   onChange(definition: CampaignDefinition): void;
 }) {
-  const { message } = definition;
-  const missing = missingLocales(message);
   return (
     <>
-      {missing.length > 0 && (
-        <Menu
-          label={t("campaignAddTranslation")}
-          buttonClass="text-button"
-          items={missing.map((locale) => ({
-            label: t(LOCALE_TEXT[locale]),
-            onSelect: () => {
-              onChange({ ...definition, message: withTranslation(message, locale) });
-              onLanguage(locale);
-            },
-          }))}
-        >
-          <Icon name="plus" size={14} />
-          {t("campaignAddTranslation")}
-        </Menu>
-      )}
+      <AddTranslation
+        label={t("campaignAddTranslation")}
+        missing={missingLocales(definition)}
+        onAdd={(locale) => {
+          onChange(withLanguage(definition, locale));
+          onLanguage(locale);
+        }}
+      />
       {definition.variants === undefined && (
         <button
           type="button"
           className="text-button"
-          onClick={() => onChange({ ...definition, variants: newVariants(message) })}
+          onClick={() => onChange({ ...definition, variants: newVariants(definition.message) })}
         >
           <Icon name="plus" size={14} />
           {t("campaignAddVariant")}

@@ -1,6 +1,10 @@
 /** @jsxImportSource react */
 import { type FormEvent, type ReactNode, useId, useState } from "react";
-import type { TeamFace } from "../../../packages/widget/src/shared.ts";
+import {
+  CAMPAIGN_KEY_PATTERN,
+  CAMPAIGN_NAME_MAX,
+  type TeamFace,
+} from "../../../packages/widget/src/shared.ts";
 import {
   ApiError,
   type Campaign,
@@ -17,6 +21,7 @@ import { CampaignSteps } from "./campaign-form.tsx";
 import type { Language } from "./campaign-message.tsx";
 import { CampaignPreview } from "./campaign-preview.tsx";
 import { CampaignResultsView } from "./campaign-results.tsx";
+import { StatusChip } from "./campaign-tile.tsx";
 import { Icon } from "./icons.tsx";
 import { useLoad } from "./load.ts";
 import { Confirm, Menu, type MenuItem } from "./popup.tsx";
@@ -24,30 +29,6 @@ import { type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
 import { Choices, ErrorNote, failureText, Loading } from "./ui.tsx";
 import { ago } from "./visitor.ts";
-
-/** The longest name, as the server takes it. */
-const NAME_MAX = 100;
-/** A key as the server takes it: lowercase letters, digits, - and _. */
-const KEY_PATTERN = "[a-z0-9][a-z0-9_\\-]{0,63}";
-
-export const STATUS_TEXT: Record<Campaign["status"], TextId> = {
-  draft: "campaignDraft",
-  live: "campaignLive",
-  paused: "campaignPaused",
-  ended: "campaignEnded",
-};
-
-const STATUS_TONE: Record<Campaign["status"], string> = {
-  draft: "chip warn",
-  live: "chip campaign-live",
-  paused: "chip",
-  ended: "chip",
-};
-
-/** A status as a chip: live in green with its dot, a draft in cream. */
-export function StatusChip({ status }: { status: Campaign["status"] }) {
-  return <span className={STATUS_TONE[status]}>{t(STATUS_TEXT[status])}</span>;
-}
 
 /**
  * Why a save or an action failed. The editor checks the text's variables itself, so a definition
@@ -65,8 +46,8 @@ function campaignFailure(error: unknown): TextId {
 type Action = "save" | "live" | "pause" | "resume" | "end";
 
 /**
- * The page's buttons: a test, a save while there are changes, the code and the end in a menu, and
- * the one step the status allows next, go live, pause or resume.
+ * The page's buttons: a test, a save, the code and the end in a menu, and the one step the status
+ * allows next, go live, pause or resume.
  */
 function EditorActions({
   campaign,
@@ -88,13 +69,19 @@ function EditorActions({
   onCode(): void;
 }) {
   const status = campaign?.status ?? "draft";
-  const submit = (action: Action, label: TextId, dark = false): ReactNode => (
+  // Save is the form's first submit button, so Enter in a field saves. With nothing to save it is
+  // disabled, which stops Enter there, so Enter never reaches Go live or Resume.
+  const submit = (
+    action: Action,
+    label: TextId,
+    { isDark = false, isIdle = false }: { isDark?: boolean; isIdle?: boolean } = {},
+  ): ReactNode => (
     <button
       type="submit"
       form={formId}
       value={action}
-      className={dark ? "pill dark" : "pill"}
-      disabled={busy}
+      className={isDark ? "pill dark" : "pill"}
+      disabled={busy || isIdle}
     >
       {t(label)}
     </button>
@@ -126,13 +113,14 @@ function EditorActions({
         </button>
       )}
       {editable &&
-        (unsaved || campaign === null) &&
-        submit("save", status === "draft" ? "campaignSaveDraft" : "save")}
+        submit("save", status === "draft" ? "campaignSaveDraft" : "save", {
+          isIdle: !unsaved && campaign !== null,
+        })}
       <Menu label={t("moreActions")} buttonClass="round" items={items}>
         <Icon name="dots" />
       </Menu>
-      {editable && status === "draft" && submit("live", "campaignGoLive", true)}
-      {editable && status === "paused" && submit("resume", "campaignResume", true)}
+      {editable && status === "draft" && submit("live", "campaignGoLive", { isDark: true })}
+      {editable && status === "paused" && submit("resume", "campaignResume", { isDark: true })}
       {editable && status === "live" && (
         <button
           type="button"
@@ -324,7 +312,7 @@ function CampaignHead({
   actions: ReactNode;
   onChange(definition: CampaignDefinition): void;
 }) {
-  const [isKeyTyped, setKeyTyped] = useState(campaign !== null);
+  const [isKeyTyped, setKeyTyped] = useState(false);
   return (
     <header className="page-head campaign-head">
       <div className="page-title">
@@ -334,12 +322,13 @@ function CampaignHead({
             aria-label={t("campaignName")}
             placeholder={t("campaignNew")}
             required
-            maxLength={NAME_MAX}
+            maxLength={CAMPAIGN_NAME_MAX}
             disabled={!editable}
             value={definition.name}
             onChange={(event) => {
               const name = event.target.value;
-              onChange({ ...definition, name, ...(!isKeyTyped && { key: keyFromName(name) }) });
+              const followsName = campaign === null && !isKeyTyped;
+              onChange({ ...definition, name, ...(followsName && { key: keyFromName(name) }) });
             }}
           />
           <StatusChip status={campaign?.status ?? "draft"} />
@@ -353,7 +342,7 @@ function CampaignHead({
               title={t("campaignKeyHelp")}
               required
               disabled={!editable}
-              pattern={KEY_PATTERN}
+              pattern={CAMPAIGN_KEY_PATTERN}
               value={definition.key}
               onChange={(event) => {
                 setKeyTyped(true);

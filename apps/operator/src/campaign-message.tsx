@@ -2,6 +2,8 @@
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { insertEmoji } from "../../../packages/widget/src/emoji.ts";
 import {
+  BUTTON_LABEL_MAX,
+  BUTTON_VALUE_MAX,
   BUTTONS_MAX,
   CONTACT_VARIABLES,
   LOCALES,
@@ -14,7 +16,7 @@ import {
   templateProblems,
 } from "../../../packages/widget/src/template.ts";
 import type { CampaignDefinition, CampaignTrigger, Member } from "./api.ts";
-import { keyFromName, withPart } from "./campaign-draft.ts";
+import { keyFromName, replaceAt, withPart } from "./campaign-draft.ts";
 import { Icon } from "./icons.tsx";
 import { Menu, Select } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
@@ -202,7 +204,7 @@ function ButtonRow({
         aria-label={t("buttonLabel")}
         placeholder={t("buttonLabel")}
         required
-        maxLength={40}
+        maxLength={BUTTON_LABEL_MAX}
         value={button.label}
         onChange={(event) => {
           const label = event.target.value;
@@ -223,7 +225,7 @@ function ButtonRow({
         placeholder={t("buttonValue")}
         className="mono"
         required
-        maxLength={100}
+        maxLength={BUTTON_VALUE_MAX}
         value={value}
         onChange={(event) => set({ value: event.target.value })}
       />
@@ -298,9 +300,7 @@ function ButtonsField({
         <ButtonRow
           button={shown}
           onChange={(next) => {
-            set(
-              buttons.flatMap((one, at) => (at !== editing ? [one] : next === null ? [] : [next])),
-            );
+            set(replaceAt(buttons, editing, next));
             if (next === null) setEditing(null);
           }}
         />
@@ -359,15 +359,31 @@ function SenderField({
   );
 }
 
-/** The languages a message lacks, which "Translation" offers. */
-export const missingLocales = (message: CampaignMessage) =>
-  LOCALES.filter((one) => message.translations?.[one] === undefined);
-
-/** The message with a translation in `locale`, which starts as its own text. */
-export const withTranslation = (message: CampaignMessage, locale: Locale): CampaignMessage => {
-  const translation: Translation = { body: message.body };
-  return { ...message, translations: { ...message.translations, [locale]: translation } };
-};
+/** "+ Translation": a menu of the languages that `missing` lists, or nothing when it is empty. */
+export function AddTranslation({
+  label,
+  missing,
+  onAdd,
+}: {
+  label: string;
+  missing: Locale[];
+  onAdd(locale: Locale): void;
+}) {
+  if (missing.length === 0) return null;
+  return (
+    <Menu
+      label={label}
+      buttonClass="text-button"
+      items={missing.map((locale) => ({
+        label: t(LOCALE_TEXT[locale]),
+        onSelect: () => onAdd(locale),
+      }))}
+    >
+      <Icon name="plus" size={14} />
+      {t("campaignAddTranslation")}
+    </Menu>
+  );
+}
 
 /** The languages the message has, as a small segmented control, once it has a translation. */
 function LanguageTabs({

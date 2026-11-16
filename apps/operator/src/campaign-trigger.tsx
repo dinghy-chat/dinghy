@@ -1,12 +1,17 @@
 /** @jsxImportSource react */
 import { useMemo } from "react";
-import { PAGE_SECONDS_MAX, WEEKDAYS, type Weekday } from "../../../packages/widget/src/shared.ts";
+import {
+  PAGE_SECONDS_DEFAULT,
+  PAGE_SECONDS_MAX,
+  WEEKDAYS,
+  type Weekday,
+} from "../../../packages/widget/src/shared.ts";
 import type { CampaignTrigger } from "./api.ts";
 import { zoneChoices } from "./business-hours.tsx";
-import { withPart } from "./campaign-draft.ts";
-import { durationWords } from "./campaign-summary.ts";
+import { dateInput, withPart } from "./campaign-draft.ts";
+import { DAY_NAMES, durationWords } from "./campaign-summary.ts";
 import { TINT, Tile, type Tint } from "./campaign-tile.tsx";
-import { browserTimeZone, weekdayNames } from "./format.ts";
+import { browserTimeZone } from "./format.ts";
 import { Icon, type IconName } from "./icons.tsx";
 import { CodeBlock } from "./install.tsx";
 import { Select } from "./popup.tsx";
@@ -54,11 +59,6 @@ const REPEATS: Option<Schedule["repeat"]>[] = [
   { value: "monthly", label: "repeatMonthly" },
 ];
 
-/** How long a page campaign waits on the page by default. */
-const PAGE_SECONDS = 20;
-const DAY_NAMES = weekdayNames("short");
-const today = () => new Date().toLocaleDateString("en-CA");
-
 /** A trigger of a new type, with what it needs filled in. */
 function triggerOf(type: TriggerType): CampaignTrigger {
   if (type === "schedule") {
@@ -66,12 +66,12 @@ function triggerOf(type: TriggerType): CampaignTrigger {
       type,
       repeat: "once",
       time: "09:00",
-      startDate: today(),
+      startDate: dateInput(new Date()),
       timeZone: browserTimeZone(),
     };
   }
   if (type === "event") return { type, name: "" };
-  if (type === "page") return { type, url: "", seconds: PAGE_SECONDS };
+  if (type === "page") return { type, url: "", seconds: PAGE_SECONDS_DEFAULT };
   return { type };
 }
 

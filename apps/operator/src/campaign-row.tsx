@@ -1,9 +1,8 @@
 /** @jsxImportSource react */
-import { goalCondition } from "../../server/src/campaign-parts.ts";
 import { percent, shareOf } from "./analytics.tsx";
 import type { Campaign } from "./api.ts";
-import { StatusChip } from "./campaign-editor.tsx";
-import { campaignSentence, conditionWords } from "./campaign-summary.ts";
+import { campaignSentence } from "./campaign-summary.ts";
+import { StatusChip } from "./campaign-tile.tsx";
 import { TriggerTile } from "./campaign-trigger.tsx";
 import { Icon } from "./icons.tsx";
 import { type TextId, t } from "./text.ts";
@@ -34,12 +33,12 @@ function RowStat({
 }
 
 /** A share of the messages sent, as a percent with its bar. */
-function RateStat({ count, sent, label }: { count: number; sent: number; label: TextId }) {
+function RowRate({ count, sent, label }: { count: number; sent: number; label: TextId }) {
   const share = shareOf(count, sent);
   return <RowStat value={percent(share)} label={t(label)} share={share} />;
 }
 
-/** A campaign that went live: sent, read, replied, and its goal by the goal's own words. */
+/** A campaign that went live: sent, read, replied, and its goal. */
 function RowStats({ campaign }: { campaign: Campaign }) {
   const { totals } = campaign;
   const { goal } = campaign.definition.rules;
@@ -50,13 +49,14 @@ function RowStats({ campaign }: { campaign: Campaign }) {
         label={t("resultSentLower")}
         share={totals.sent > 0 ? 1 : 0}
       />
-      <RateStat count={totals.read} sent={totals.sent} label="resultReadLower" />
-      <RateStat count={totals.replied} sent={totals.sent} label="resultRepliedLower" />
+      <RowRate count={totals.read} sent={totals.sent} label="resultReadLower" />
+      <RowRate count={totals.replied} sent={totals.sent} label="resultRepliedLower" />
       {goal !== undefined && (
+        // The goal counts the control group too, so its share is of everyone who entered.
         <RowStat
           value={String(totals.goalReached)}
-          label={conditionWords(goalCondition(goal))}
-          share={shareOf(totals.goalReached, totals.sent)}
+          label={t("resultGoalLower")}
+          share={shareOf(totals.goalReached, totals.entered)}
           isGoal
         />
       )}

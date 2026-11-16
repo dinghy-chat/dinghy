@@ -1720,8 +1720,8 @@ button.workspace[aria-expanded="true"],
   gap: 10px;
 }
 @media (max-width: 560px) {
-  /* A segmented control in a page's head, such as the period, or three buttons, take their own
-     full row under the line of context, as they would not fit beside the title. */
+  /* A segmented control in a page's head, such as the period, or three or more controls, take
+     their own full row under the line of context, as they would not fit beside the title. */
   .page-actions:has(> .choices.outlined),
   .page-actions:has(> :nth-child(3)) {
     grid-row: 3;
@@ -4556,6 +4556,16 @@ button.quote:hover {
   color: var(--mute);
   font-variant-numeric: tabular-nums;
 }
+/* Tabs as filled pills: the chosen one in the strong fill, as on the Campaigns list. */
+.choices.pills label:has(:checked) {
+  background: var(--fill);
+  box-shadow: none;
+  color: var(--on-fill);
+}
+.choices.pills label:has(:checked) .choice-count {
+  color: inherit;
+  opacity: 0.7;
+}
 /* Appearance: the form, and the preview beside it, which stays in view. In the markup the
    preview comes first, so on a narrow screen it sits above the form. */
 .appearance {
@@ -6652,6 +6662,13 @@ button.quote:hover {
   border-radius: 50%;
   background: currentColor;
 }
+/* A live campaign's dot sits in a soft ring, with room for it. */
+.chip.campaign-live {
+  gap: 8px;
+}
+.chip.campaign-live::before {
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 25%, transparent);
+}
 .live-page {
   margin-top: 2px;
   overflow: hidden;
@@ -7820,16 +7837,6 @@ button.quote:hover {
   display: grid;
   gap: 16px;
 }
-/* Tabs as filled pills: the chosen one in the strong fill, as on the Campaigns list. */
-.choices.pills label:has(:checked) {
-  background: var(--fill);
-  box-shadow: none;
-  color: var(--on-fill);
-}
-.choices.pills label:has(:checked) .choice-count {
-  color: inherit;
-  opacity: 0.7;
-}
 .campaign-rows {
   margin: 0;
   padding: 0;
@@ -7938,7 +7945,7 @@ button.quote:hover {
 }
 .template-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
   margin-top: 10px;
 }
@@ -7980,6 +7987,9 @@ button.quote:hover {
   }
   .row-sentence {
     white-space: normal;
+  }
+  .template-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
@@ -8562,10 +8572,7 @@ button.quote:hover {
     grid-column: 1 / -1;
   }
   .campaign-head .page-actions {
-    grid-row: 3;
-    grid-column: 1 / -1;
     width: 100%;
-    margin-top: 12px;
   }
 }
 @media (max-width: 760px) {

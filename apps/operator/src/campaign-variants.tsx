@@ -1,7 +1,13 @@
 /** @jsxImportSource react */
-import { CAMPAIGN_VARIANTS_MAX } from "../../../packages/widget/src/shared.ts";
+import {
+  CAMPAIGN_VARIANTS_MAX,
+  VARIANT_WEIGHT_MAX,
+  VARIANT_WEIGHT_MIN,
+} from "../../../packages/widget/src/shared.ts";
+import { variantMessage } from "../../server/src/campaign-parts.ts";
 import type { CampaignDefinition, Member } from "./api.ts";
-import { type Language, MessageFields } from "./campaign-message.tsx";
+import { missingLocales, replaceAt, withTranslation } from "./campaign-draft.ts";
+import { AddTranslation, type Language, MessageFields } from "./campaign-message.tsx";
 import { Icon } from "./icons.tsx";
 import { Select } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
@@ -55,6 +61,7 @@ function VariantRow({
   onChange(variant: Variant | null): void;
 }) {
   const kind = kindOfVariant(variant);
+  const own = variantMessage(variant);
   const kinds = VARIANT_KINDS.filter((one) => canControl || one.value !== "control");
   return (
     <li className="variant">
@@ -72,8 +79,8 @@ function VariantRow({
           {t("variantWeight")}
           <input
             type="number"
-            min={1}
-            max={100}
+            min={VARIANT_WEIGHT_MIN}
+            max={VARIANT_WEIGHT_MAX}
             required
             value={variant.weight}
             onChange={(event) => onChange({ ...variant, weight: Number(event.target.value) })}
@@ -85,6 +92,16 @@ function VariantRow({
           choices={kinds.map((one) => ({ value: one.value, label: t(one.label) }))}
           onChange={(next) => onChange(variantOfKind(next, variant, definition.message))}
         />
+        {own !== undefined && (
+          <AddTranslation
+            label={t("variantAddTranslation", { key: variant.key })}
+            missing={missingLocales({ message: own })}
+            onAdd={(locale) => {
+              onChange({ ...variant, message: withTranslation(own, locale) });
+              onLanguage(locale);
+            }}
+          />
+        )}
         {canRemove && (
           <button
             type="button"
@@ -96,9 +113,9 @@ function VariantRow({
           </button>
         )}
       </div>
-      {"message" in variant && variant.message !== undefined && (
+      {own !== undefined && (
         <MessageFields
-          message={variant.message}
+          message={own}
           trigger={definition.trigger.type}
           members={members}
           language={language}
@@ -135,8 +152,6 @@ export function VariantsFields({
 }) {
   const variants = definition.variants ?? [];
   const hasControl = variants.some((one) => "control" in one);
-  const replace = (index: number, next: Variant | null) =>
-    onChange(variants.flatMap((one, at) => (at !== index ? [one] : next === null ? [] : [next])));
   return (
     <div className="variants-test">
       <div className="variants-head">
@@ -158,7 +173,7 @@ export function VariantsFields({
             canRemove={variants.length > VARIANTS_MIN}
             canControl={!hasControl || "control" in variant}
             onLanguage={onLanguage}
-            onChange={(next) => replace(index, next)}
+            onChange={(next) => onChange(replaceAt(variants, index, next))}
           />
         ))}
       </ul>

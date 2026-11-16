@@ -19,6 +19,7 @@ import {
   takesList,
   takesValue,
 } from "./campaign-conditions.ts";
+import { replaceAt } from "./campaign-draft.ts";
 import { FIELD_TEXT, opText } from "./campaign-summary.ts";
 import { Icon } from "./icons.tsx";
 import { Select } from "./popup.tsx";
@@ -201,7 +202,11 @@ function GroupBox({
   const setItems = (items: GroupDraft["items"]) => onChange({ ...group, items });
   const replace = (id: number, next: RuleDraft | GroupDraft | null) =>
     setItems(
-      group.items.flatMap((item) => (item.id !== id ? [item] : next === null ? [] : [next])),
+      replaceAt(
+        group.items,
+        group.items.findIndex((item) => item.id === id),
+        next,
+      ),
     );
   const add = (item: RuleDraft | GroupDraft) => setItems([...group.items, item]);
   return (

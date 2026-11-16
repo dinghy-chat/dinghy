@@ -893,7 +893,7 @@ export type Option<T> = {
   label: TextId;
   icon?: IconName;
   /** A number after the words, such as the open conversations. */
-  count?: number;
+  count?: number | undefined;
 };
 
 /**

@@ -1,5 +1,7 @@
+import { PAGE_SECONDS_DEFAULT } from "../../../packages/widget/src/shared.ts";
+import { DAY_MS } from "../../server/src/time.ts";
 import type { CampaignDefinition } from "./api.ts";
-import { newDefinition } from "./campaign-draft.ts";
+import { dateInput, newDefinition } from "./campaign-draft.ts";
 import { TINT, type Tint } from "./campaign-tile.tsx";
 import { browserTimeZone } from "./format.ts";
 import type { IconName } from "./icons.tsx";
@@ -8,7 +10,7 @@ import { type TextId, t } from "./text.ts";
 // The campaigns a new workspace starts from. Each makes a draft that opens in the editor, so every
 // part of it can change before it goes live.
 
-export interface CampaignTemplate {
+interface CampaignTemplate {
   title: TextId;
   text: TextId;
   icon: IconName;
@@ -18,8 +20,6 @@ export interface CampaignTemplate {
 
 /** When the announcement goes, the day after it is made. */
 const ANNOUNCE_TIME = "10:00";
-const DAY_MS = 86_400_000;
-const PAGE_SECONDS = 20;
 
 type Buttons = NonNullable<CampaignDefinition["message"]["buttons"]>;
 
@@ -87,7 +87,7 @@ export const TEMPLATES: CampaignTemplate[] = [
         "page-help",
         { name: "templatePage", body: "templatePageBody" },
         {
-          trigger: { type: "page", url: "/pricing*", seconds: PAGE_SECONDS },
+          trigger: { type: "page", url: "/pricing*", seconds: PAGE_SECONDS_DEFAULT },
         },
       ),
   },
@@ -105,7 +105,7 @@ export const TEMPLATES: CampaignTemplate[] = [
             type: "schedule",
             repeat: "once",
             time: ANNOUNCE_TIME,
-            startDate: new Date(Date.now() + DAY_MS).toLocaleDateString("en-CA"),
+            startDate: dateInput(new Date(Date.now() + DAY_MS)),
             timeZone: browserTimeZone(),
           },
           presentation: { ...newDefinition().presentation, show: "badge" },

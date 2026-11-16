@@ -123,7 +123,8 @@ const REPEAT_TEXT: Record<Extract<CampaignTrigger, { type: "schedule" }>["repeat
   weekly: "summaryScheduleWeekly",
   monthly: "summaryScheduleMonthly",
 };
-const DAY_NAMES = weekdayNames("short");
+/** The days' short names, Monday first, as WEEKDAYS orders them. */
+export const DAY_NAMES = weekdayNames("short");
 
 /** When it goes, after who gets it: "1 hour after they match". */
 function triggerWords(trigger: CampaignTrigger): string {

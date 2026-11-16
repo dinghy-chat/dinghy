@@ -5,7 +5,7 @@ import { useState } from "react";
 import { CAMPAIGN_GAP_HOURS_MAX, type TeamFace } from "../../../packages/widget/src/shared.ts";
 import type {
   Campaign,
-  CampaignSettings,
+  CampaignSettingsView,
   CampaignStatus,
   Me,
   Member,
@@ -13,7 +13,7 @@ import type {
   WorkspaceApi,
 } from "./api.ts";
 import { PausedBanner, type PausedTexts } from "./bots.tsx";
-import { CampaignEditor, STATUS_TEXT } from "./campaign-editor.tsx";
+import { CampaignEditor } from "./campaign-editor.tsx";
 import { CampaignRow } from "./campaign-row.tsx";
 import { freeKey, TEMPLATES } from "./campaign-templates.ts";
 import { Tile } from "./campaign-tile.tsx";
@@ -38,7 +38,13 @@ import {
 const NEW_CAMPAIGN = "new";
 
 type Filter = "all" | CampaignStatus;
-const STATUSES: CampaignStatus[] = ["live", "draft", "paused", "ended"];
+/** The status tabs, in order, each named for its campaigns. */
+const STATUS_TABS: { value: CampaignStatus; label: TextId }[] = [
+  { value: "live", label: "campaignLive" },
+  { value: "draft", label: "campaignsDrafts" },
+  { value: "paused", label: "campaignPaused" },
+  { value: "ended", label: "campaignEnded" },
+];
 
 const CAMPAIGNS_PAUSED: PausedTexts = {
   banner: "campaignsPausedBanner",
@@ -148,7 +154,7 @@ function ListActions({
   onGap,
   onNew,
 }: {
-  settings: CampaignSettings | null;
+  settings: CampaignSettingsView | null;
   canEdit: boolean;
   onPause(paused: boolean): void;
   onGap(): void;
@@ -193,12 +199,13 @@ function listContext(campaigns: Campaign[] | null, sentLastWeek: number): string
 /** The campaigns by status, one row each. */
 function CampaignRows({ campaigns, onOpen }: { campaigns: Campaign[]; onOpen(id: string): void }) {
   const [filter, setFilter] = useState<Filter>("all");
+  // A tab with no campaign shows no count.
+  const countOf = (count: number) => (count === 0 ? undefined : count);
   const filters: Option<Filter>[] = [
-    { value: "all", label: "campaignsAll", count: campaigns.length },
-    ...STATUSES.map((status) => ({
-      value: status,
-      label: STATUS_TEXT[status],
-      count: campaigns.filter((one) => one.status === status).length,
+    { value: "all", label: "campaignsAll", count: countOf(campaigns.length) },
+    ...STATUS_TABS.map((tab) => ({
+      ...tab,
+      count: countOf(campaigns.filter((one) => one.status === tab.value).length),
     })),
   ];
   const shown = campaigns.filter((one) => filter === "all" || one.status === filter);
@@ -245,7 +252,7 @@ function CampaignList({
   const settings = loadedSettings.data;
   const campaigns = list.data?.campaigns ?? null;
   /** Saves a change of the settings, and answers why it failed, or null. */
-  const saveSettings = async (change: Partial<CampaignSettings>, done: TextId) => {
+  const saveSettings = async (change: Partial<CampaignSettingsView>, done: TextId) => {
     if (settings === null) return null;
     try {
       loadedSettings.setData(await api.setCampaignSettings({ ...settings, ...change }));
