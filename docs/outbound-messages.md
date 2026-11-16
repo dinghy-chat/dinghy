@@ -107,6 +107,7 @@ The answer's `outboundMessage` has:
 | `author` | Who sent it: `{ kind, id, name, via }`, with `kind` `operator` or `key`, and `via` `mcp` for a send through MCP, else null |
 | `show`, `ifConversationOpen`, `startConversation`, `assignOnReply`, `sendEmail`, `dedupeKey` | As sent, with their defaults |
 | `conversationId`, `messageId` | The conversation and the message it became, or null before that |
+| `campaignId`, `campaignRunId`, `variant` | The [campaign](campaigns.md) that made it, the schedule's run, and its A/B variant, or null |
 | `sendAt`, `expiresAt` | When it goes out, and when it stops waiting. `expiresAt` is null until it is sent, unless you set it |
 | `deliveredAt`, `readAt`, `repliedAt`, `dismissedAt`, `cancelledAt` | When each happened, or null |
 | `createdAt` | When Dinghy took the send |
@@ -312,7 +313,7 @@ A cancel ends only a message that the visitor has not read and that is in no con
 
 ## List and read
 
-`GET .../outbound-messages` lists them, newest first. It takes `visitorId`, `userId`, `dedupeKey`, `status` and `apiKeyId` as filters, and `limit`, 1 to 100, 50 by default. It answers `{ outboundMessages, next }`. Pass `next` as `cursor` for the next page. `GET .../outbound-messages/{id}` reads one.
+`GET .../outbound-messages` lists them, newest first. It takes `visitorId`, `userId`, `dedupeKey`, `status`, `apiKeyId` and `campaignId` as filters, and `limit`, 1 to 100, 50 by default. It answers `{ outboundMessages, next }`. Pass `next` as `cursor` for the next page. `GET .../outbound-messages/{id}` reads one.
 
 ## Limits and errors
 

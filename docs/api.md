@@ -401,7 +401,7 @@ An outbound message is a message from the team to one visitor, which may exist b
 | Route | What it does |
 |---|---|
 | `POST /outbound-messages` | Sends one to one visitor. It answers 201 with `{ outboundMessage }`, and 200 with the first one for a retry with the same `clientId` or a `dedupeKey` the visitor already has |
-| `GET /outbound-messages` | Lists them, newest first, by `visitorId`, `userId`, `dedupeKey`, `status` and `apiKeyId`, with `limit` (1 to 100, 50 by default). It answers `{ outboundMessages, next }`, and `next` goes in `cursor` |
+| `GET /outbound-messages` | Lists them, newest first, by `visitorId`, `userId`, `dedupeKey`, `status`, `apiKeyId` and `campaignId`, with `limit` (1 to 100, 50 by default). It answers `{ outboundMessages, next }`, and `next` goes in `cursor` |
 | `GET /outbound-messages/{id}` | Reads one |
 | `POST /outbound-messages/{id}/cancel` | Cancels one that the visitor has not read, and answers it as it is now |
 | `POST /outbound-messages/cancel` | `{ "visitor": { "userId" } or { "id" }, "dedupeKey" }` cancels the one that the visitor's `dedupeKey` names. `outboundMessage` is null when there is none |
@@ -679,7 +679,7 @@ Every key and connected app gets the Chats tools. A Full access one also gets th
 | `upsert_contact` | Chats | Creates or updates a contact by your `userId`: `name`, `email` and `attributes`, which merge key by key |
 | `send_outbound_message` | Chats | Sends an [outbound message](#outbound-messages-and-contacts) to one visitor, with the fields of the route. Pass the same `clientId` on a retry |
 | `cancel_outbound_message` | Chats | Cancels an outbound message that the visitor has not read, by `outboundMessageId`, or by `visitor` and `dedupeKey`. Marked destructive |
-| `list_outbound_messages` | Chats | Lists outbound messages with their `status` and `statusReason`, by `visitorId`, `status` or `apiKeyId` |
+| `list_outbound_messages` | Chats | Lists outbound messages with their `status` and `statusReason`, by `visitorId`, `status`, `apiKeyId` or `campaignId` |
 | `list_campaigns`, `get_campaign` | Chats | Lists the [campaigns](#campaigns), with `status`, or reads one by `id` or `key`, with its definition and totals |
 | `get_campaign_results` | Chats | A campaign's results per day and per variant, between `from` and `to` |
 | `send_campaign` | Chats | Runs a live campaign for one person, by `id` or `key`, with `visitor`, `clientId` and `data`. Pass the same `clientId` on a retry |
