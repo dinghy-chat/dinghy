@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.38.0] - 2026-11-16
+
 ### Added
 
 - Delete a campaign that never sent a message, such as a draft or a trial run, from its ⋯ menu or its row in the list. Test messages do not count. One that sent keeps its results, so it can only end. API: `DELETE /campaigns/{id}`, `dinghy.campaigns.delete()` and the MCP tool `delete_campaign`.
@@ -657,7 +659,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.37.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.38.0...HEAD
+[0.38.0]: https://github.com/dinghy-chat/dinghy/compare/v0.37.0...v0.38.0
 [0.37.0]: https://github.com/dinghy-chat/dinghy/compare/v0.36.0...v0.37.0
 [0.36.0]: https://github.com/dinghy-chat/dinghy/compare/v0.35.0...v0.36.0
 [0.35.0]: https://github.com/dinghy-chat/dinghy/compare/v0.34.0...v0.35.0
