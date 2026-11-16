@@ -130,6 +130,7 @@ describe("the transcript", () => {
     replyTo: null,
     createdAt: at,
   };
+  const whole = { since: false, leftOut: 0 };
 
   test("names each author as the visitor knows them, with the time in UTC", () => {
     const authors = new Map([
@@ -146,6 +147,7 @@ describe("the transcript", () => {
       authors,
       links,
       english,
+      whole,
     );
     expect(letter.subject).toBe("Your conversation with Acme");
     const when = english.time(at);
@@ -166,6 +168,7 @@ describe("the transcript", () => {
       new Map(),
       links,
       english,
+      whole,
     );
     const said = "Sent the file notes.txt. Open the chat to download it.";
     expect(letter.text).toContain(`You, ${english.time(at)}:\n${said}`);
@@ -173,7 +176,7 @@ describe("the transcript", () => {
   });
 
   test("shares the reply email's header and footer", () => {
-    const letter = transcriptLetter(acme, [line], new Map(), links, english);
+    const letter = transcriptLetter(acme, [line], new Map(), links, english, whole);
     expect(letter.html).toContain(">Continue the chat</a>");
     expect(letter.html).toContain(">Stop these emails</a>");
     const shown = visibleText(letter.html);
@@ -187,7 +190,7 @@ describe("the transcript", () => {
       leftOut: 3,
     });
     expect(letter.text).toContain(
-      "Here is your conversation with Acme since our last email, for your records.\n\n3 earlier messages are not in this email. Open the chat to read them.",
+      "Here is your conversation with Acme since the last transcript we sent you, for your records.\n\n3 earlier messages are not in this email. Open the chat to read them.",
     );
     expect(visibleText(letter.html)).toContain("3 earlier messages are not in this email.");
     const one = transcriptLetter(acme, [line], new Map(), links, french, {
@@ -199,16 +202,19 @@ describe("the transcript", () => {
     );
   });
 
-  test("keeps the newest messages within 100 messages and 40,000 characters", () => {
-    const many = Array.from({ length: 150 }, (_, index) => ({ body: String(index) }));
-    const kept = newestThatFit(many);
-    expect(kept).toHaveLength(100);
-    expect(kept[0]?.body).toBe("99");
-    expect(kept.at(-1)?.body).toBe("0");
+  test("keeps the newest messages within 40,000 bytes", () => {
     const long = "x".repeat(15_000);
     expect(newestThatFit([{ body: long }, { body: long }, { body: long }])).toHaveLength(2);
-    // The newest message goes even when it alone is over the limit.
-    expect(newestThatFit([{ body: "x".repeat(50_000) }, { body: "older" }])).toHaveLength(1);
+    // Cyrillic takes two bytes a character, so fewer messages fit.
+    const cyrillic = "ж".repeat(15_000);
+    expect(newestThatFit([{ body: cyrillic }, { body: cyrillic }])).toHaveLength(1);
+    // The newest message goes even when it alone is over the limit, and the oldest comes first.
+    const kept = newestThatFit([{ body: "x".repeat(50_000) }, { body: "older" }]);
+    expect(kept).toHaveLength(1);
+    expect(newestThatFit([{ body: "new" }, { body: "old" }]).map((one) => one.body)).toEqual([
+      "old",
+      "new",
+    ]);
   });
 
   test("a team reply whose author is gone is the team's, never a visitor's", () => {
@@ -218,6 +224,7 @@ describe("the transcript", () => {
       new Map(),
       links,
       english,
+      whole,
     );
     expect(letter.text).not.toContain("A visitor");
     expect(letter.text).toContain(`The Acme team, ${english.time(at)}:\nHello`);
@@ -291,6 +298,7 @@ describe("in the visitor's language", () => {
       new Map(),
       links,
       french,
+      { since: false, leftOut: 0 },
     );
     expect(letter.subject).toBe("Votre conversation avec Acme");
     expect(french.time(at)).toBe("11 nov. 2026, 20:20 UTC");

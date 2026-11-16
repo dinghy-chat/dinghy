@@ -2060,10 +2060,27 @@ describe("transcripts", () => {
     await fanOutAll();
     await untilDue(() => transcriptMails().length === 2, "the second transcript");
     const second = transcriptMails()[1]?.text ?? "";
-    expect(second).toContain("Here is your conversation with Acme since our last email");
+    expect(second).toContain("Here is your conversation with Acme since the last transcript");
     expect(second).toContain("And my invoices?");
     expect(second).toContain("Open Billing, then Invoices.");
     expect(second).not.toContain("How do I export my data?");
+    // The anchor outlives the deliveries, which are deleted after 30 days.
+    await owner.delete(alertDelivery);
+    await setStatus(conversationId, anna, "open");
+    await operatorWrites(anna, conversationId, "Anything else?");
+    await setStatus(conversationId, anna, "closed");
+    await fanOutAll();
+    await untilDue(() => transcriptMails().length === 3, "the third transcript");
+    const third = transcriptMails()[2]?.text ?? "";
+    expect(third).toContain("Anything else?");
+    expect(third).not.toContain("Open Billing, then Invoices.");
+    // An operator still sends the whole conversation after a close sent part of it.
+    expect(await queueTranscript(app, space.id, conversationId)).toBe("queued");
+    await untilDue(() => transcriptMails().length === 4, "the whole conversation");
+    const whole = transcriptMails()[3]?.text ?? "";
+    expect(whole).toContain("Here is your conversation with Acme, for your records.");
+    expect(whole).toContain("How do I export my data?");
+    expect(whole).toContain("Anything else?");
   });
 
   test("none goes with the setting off, with no email, with no reply or with no mail server", async () => {

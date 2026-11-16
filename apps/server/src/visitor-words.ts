@@ -41,7 +41,7 @@ const en = {
   transcriptSubject: (name: string) => `Your conversation with ${name}`,
   transcriptIntro: (name: string) => `Here is your conversation with ${name}, for your records.`,
   transcriptSince: (name: string) =>
-    `Here is your conversation with ${name} since our last email, for your records.`,
+    `Here is your conversation with ${name} since the last transcript we sent you, for your records.`,
   transcriptLeftOut: (count: number) =>
     count === 1
       ? "1 earlier message is not in this email. Open the chat to read it."
@@ -86,7 +86,7 @@ const fr: VisitorWords = {
   transcriptSubject: (name) => `Votre conversation avec ${name}`,
   transcriptIntro: (name) => `Voici votre conversation avec ${name}, pour vos archives.`,
   transcriptSince: (name) =>
-    `Voici votre conversation avec ${name} depuis notre dernier e-mail, pour vos archives.`,
+    `Voici votre conversation avec ${name} depuis la dernière transcription envoyée, pour vos archives.`,
   transcriptLeftOut: (count) =>
     count === 1
       ? "1 message précédent n'est pas dans cet e-mail. Ouvrez le chat pour le lire."
@@ -125,7 +125,7 @@ const es: VisitorWords = {
   transcriptSubject: (name) => `Tu conversación con ${name}`,
   transcriptIntro: (name) => `Esta es tu conversación con ${name}, para que la guardes.`,
   transcriptSince: (name) =>
-    `Esta es tu conversación con ${name} desde nuestro último correo, para que la guardes.`,
+    `Esta es tu conversación con ${name} desde la última transcripción que te enviamos, para que la guardes.`,
   transcriptLeftOut: (count) =>
     count === 1
       ? "1 mensaje anterior no está en este correo. Abre el chat para leerlo."

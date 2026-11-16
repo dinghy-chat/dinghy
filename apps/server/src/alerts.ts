@@ -493,15 +493,37 @@ const held = (row: ClaimedDelivery) =>
     isNull(alertDelivery.finishedAt),
   );
 
+/**
+ * Ends a delivery. A sent transcript also moves its conversation's anchor, in the same transaction,
+ * so the next close's transcript starts after what this one carried.
+ */
 export async function finishDelivery(
   db: Database,
   row: ClaimedDelivery,
   outcome: "sent" | "skipped" | "failed",
 ): Promise<void> {
-  await db
-    .update(alertDelivery)
-    .set({ outcome, finishedAt: new Date(), claimedUntil: null })
-    .where(held(row));
+  const finish = (tx: Database | Transaction) =>
+    tx
+      .update(alertDelivery)
+      .set({ outcome, finishedAt: new Date(), claimedUntil: null })
+      .where(held(row))
+      .returning({ toSeq: alertDelivery.coveredToSeq });
+  if (outcome !== "sent" || row.channel !== "transcript") {
+    await finish(db);
+    return;
+  }
+  await withWorkspace(db, row.workspaceId, async (tx) => {
+    const [done] = await finish(tx);
+    if (done?.toSeq == null) return;
+    await tx
+      .update(conversation)
+      .set({
+        transcriptSentSeq: sql`greatest(${conversation.transcriptSentSeq}, ${done.toSeq.toString()}::bigint)`,
+      })
+      .where(
+        and(eq(conversation.workspaceId, row.workspaceId), eq(conversation.id, row.conversationId)),
+      );
+  });
 }
 
 export async function retryDelivery(

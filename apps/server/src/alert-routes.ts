@@ -129,7 +129,7 @@ const sendTranscript = createRoute({
   path: "/v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/transcript",
   security: SESSION,
   summary:
-    "Email the visitor the whole conversation now, through the worker. A second request before a new message sends nothing more",
+    "Email the visitor the whole conversation now, up to its newest 100 messages, through the worker. A second request before a new message sends nothing more",
   request: { params: conversationParams },
   responses: {
     200: { description: "Queued", content: okContent },

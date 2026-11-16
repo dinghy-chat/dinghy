@@ -1,6 +1,7 @@
-// The whole conversation by email: at a close, after a delay, or when an operator asks for it.
+// The conversation by email: at a close, after a delay, what came since the last sent transcript,
+// and the whole conversation when an operator asks for it.
 
-import { and, desc, eq, gt, gte, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, or, type SQL, sql } from "drizzle-orm";
 import { escapeHtml, markdownHtml } from "../../../packages/widget/src/markdown.ts";
 import type {
   AlertPlan,
@@ -53,40 +54,41 @@ import { type VisitorWords, visitorWords } from "./visitor-words.ts";
 // The transcript waits, so a quick reopen cancels it.
 export const TRANSCRIPT_DELAY_MS = 5 * MINUTE_MS;
 // A transcript holds the newest messages up to both limits, so Gmail does not clip it at 102 KB
-// and hide the footer with the stop link. The chat link has the rest.
+// and hide the footer with the stop link. Bytes, not characters, as most scripts take two or three
+// bytes a character. The chat link has the rest.
 const TRANSCRIPT_MESSAGES = 100;
-const TRANSCRIPT_CHARACTERS = 40_000;
+const TRANSCRIPT_BYTES = 40_000;
 
-/**
- * The last message a sent transcript of the conversation carried, or -1 with none. A close's
- * transcript starts after it, so the visitor gets each message once, even when a close sent nothing.
- */
-async function lastSentSeq(
-  tx: Transaction,
-  workspaceId: string,
-  conversationId: string,
-): Promise<bigint> {
-  const [row] = await tx
-    .select({ seq: sql<string | null>`max(${alertDelivery.coveredToSeq})` })
-    .from(alertDelivery)
-    .where(
-      and(
-        eq(alertDelivery.workspaceId, workspaceId),
-        eq(alertDelivery.conversationId, conversationId),
-        eq(alertDelivery.channel, "transcript"),
-        eq(alertDelivery.outcome, "sent"),
-      ),
-    );
-  return row?.seq == null ? -1n : BigInt(row.seq);
+/** The chat messages of a conversation after a position, as a transcript holds them. */
+const transcriptRange = (workspaceId: string, conversationId: string, after: bigint | null) =>
+  and(
+    eq(message.workspaceId, workspaceId),
+    eq(message.conversationId, conversationId),
+    after === null ? undefined : gt(message.seq, after),
+    isChat(),
+    isNull(message.deletedAt),
+  );
+
+/** How many messages a range has, its last one, and whether someone on the team wrote in it. */
+async function rangeStats(tx: Transaction, range: SQL | undefined) {
+  const [stats] = await tx
+    .select({
+      total: sql<number>`count(*)::int`,
+      lastSeq: sql<string | null>`max(${message.seq})`,
+      replied: sql<boolean>`coalesce(bool_or(${message.authorVisitorId} is null), false)`,
+    })
+    .from(message)
+    .where(range);
+  return stats ?? { total: 0, lastSeq: null, replied: false };
 }
 
-/** The newest messages that fit both limits, oldest first. The newest one always fits. */
+/** The newest messages within the byte limit, oldest first. The newest one always fits. */
 export function newestThatFit<T extends { body: string | null }>(newestFirst: T[]): T[] {
   const kept: T[] = [];
-  let characters = 0;
-  for (const line of newestFirst.slice(0, TRANSCRIPT_MESSAGES)) {
-    characters += line.body?.length ?? 0;
-    if (kept.length > 0 && characters > TRANSCRIPT_CHARACTERS) break;
+  let bytes = 0;
+  for (const line of newestFirst) {
+    bytes += Buffer.byteLength(line.body ?? "");
+    if (kept.length > 0 && bytes > TRANSCRIPT_BYTES) break;
     kept.push(line);
   }
   return kept.reverse();
@@ -107,14 +109,15 @@ export async function transcriptRows(tx: Transaction, base: DeliveryBase): Promi
     .where(eq(widgetSettings.workspaceId, workspaceId));
   if (settings?.wanted !== true) return [];
   if (await emailStopped(tx, workspaceId, target.email)) return [];
-  const after = await lastSentSeq(tx, workspaceId, conversationId);
-  const result = await tx.execute<{ last_seq: string | null; replied: boolean }>(sql`
-    select max(seq) as last_seq, coalesce(bool_or(author_visitor_id is null), false) as replied
-    from ${message}
-    where workspace_id = ${workspaceId} and conversation_id = ${conversationId}
-      and seq > ${after.toString()}::bigint and ${isChat()}`);
-  const stats = result.rows[0];
-  if (stats === undefined || !stats.replied || stats.last_seq === null) return [];
+  const [anchor] = await tx
+    .select({ sentSeq: conversation.transcriptSentSeq })
+    .from(conversation)
+    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)));
+  const stats = await rangeStats(
+    tx,
+    transcriptRange(workspaceId, conversationId, anchor?.sentSeq ?? null),
+  );
+  if (!stats.replied || stats.lastSeq === null) return [];
   // A sent or waiting transcript from a later close holds every message already.
   const [covered] = await tx
     .select({ id: alertDelivery.id })
@@ -124,7 +127,7 @@ export async function transcriptRows(tx: Transaction, base: DeliveryBase): Promi
         eq(alertDelivery.workspaceId, workspaceId),
         eq(alertDelivery.conversationId, conversationId),
         eq(alertDelivery.channel, "transcript"),
-        gt(alertDelivery.eventSeq, BigInt(stats.last_seq)),
+        gt(alertDelivery.eventSeq, BigInt(stats.lastSeq)),
         or(isNull(alertDelivery.outcome), eq(alertDelivery.outcome, "sent")),
       ),
     )
@@ -155,8 +158,9 @@ export async function queueTranscript(
 }
 
 /**
- * A transcript an operator asked for: now, unless one asked for the same newest message still waits,
- * or a sent one carried that message already. A failed one does not stop a retry.
+ * A transcript an operator asked for: now, unless one asked for the same newest message waits or
+ * was sent. A failed one does not stop a retry, and a close's transcript, which may hold only part
+ * of the conversation, never stops it.
  */
 export async function requestedTranscriptRows(
   tx: Transaction,
@@ -165,7 +169,6 @@ export async function requestedTranscriptRows(
   const { workspaceId, conversationId, messageId } = base;
   const target = await conversationVisitor(tx, workspaceId, conversationId);
   if (target === undefined || target.email === null) return [];
-  const newest = sql`(select ${message.seq} from ${message} where ${message.workspaceId} = ${workspaceId} and ${message.id} = ${messageId})`;
   const [covered] = await tx
     .select({ id: alertDelivery.id })
     .from(alertDelivery)
@@ -174,10 +177,8 @@ export async function requestedTranscriptRows(
         eq(alertDelivery.workspaceId, workspaceId),
         eq(alertDelivery.conversationId, conversationId),
         eq(alertDelivery.channel, "transcript"),
-        or(
-          and(isNull(alertDelivery.finishedAt), eq(alertDelivery.messageId, messageId)),
-          and(eq(alertDelivery.outcome, "sent"), gte(alertDelivery.coveredToSeq, newest)),
-        ),
+        eq(alertDelivery.messageId, messageId),
+        or(isNull(alertDelivery.finishedAt), eq(alertDelivery.outcome, "sent")),
       ),
     )
     .limit(1);
@@ -203,6 +204,7 @@ export async function transcriptPlan(
   const [state] = await tx
     .select({
       status: conversation.status,
+      sentSeq: conversation.transcriptSentSeq,
       email: visitor.email,
       locale: visitor.locale,
       fromClose: sql<boolean>`exists (select 1 from ${message} where ${message.workspaceId} = ${workspaceId} and ${message.id} = ${messageId} and ${message.kind} = 'closed')`,
@@ -215,22 +217,10 @@ export async function transcriptPlan(
   if (state.fromClose && (state.status !== "closed" || state.later)) return null;
   if (await emailStopped(tx, workspaceId, state.email)) return null;
   if ((await sentToday(tx, workspaceId, visitorId)).length >= VISITOR_EMAILS_PER_DAY) return null;
-  const after = state.fromClose ? await lastSentSeq(tx, workspaceId, conversationId) : -1n;
-  const range = and(
-    eq(message.workspaceId, workspaceId),
-    eq(message.conversationId, conversationId),
-    gt(message.seq, after),
-    isChat(),
-    isNull(message.deletedAt),
-  );
-  const [counted] = await tx
-    .select({
-      total: sql<number>`count(*)::int`,
-      replied: sql<boolean>`coalesce(bool_or(${message.authorVisitorId} is null), false)`,
-    })
-    .from(message)
-    .where(range);
-  if (counted === undefined || (state.fromClose && !counted.replied)) return null;
+  const after = state.fromClose ? state.sentSeq : null;
+  const range = transcriptRange(workspaceId, conversationId, after);
+  const stats = await rangeStats(tx, range);
+  if (state.fromClose && !stats.replied) return null;
   // The key share lock makes an edit wait until this transcript's range is recorded, as for a reply
   // email.
   const lines = newestThatFit(
@@ -253,7 +243,7 @@ export async function transcriptPlan(
       .for("key share", { of: message }),
   );
   if (lines.length === 0) return null;
-  const part = { since: after >= 0n, leftOut: counted.total - lines.length };
+  const part = { since: after !== null, leftOut: stats.total - lines.length };
   const authors = await messageAuthors(tx, workspaceId, lines);
   const chatUrl = chatLinkUrl(
     publicUrl,
@@ -324,7 +314,7 @@ export function transcriptLetter(
   authors: Map<string, MessageAuthor>,
   links: VisitorLinks,
   words: VisitorWords,
-  part: TranscriptPart = { since: false, leftOut: 0 },
+  part: TranscriptPart,
 ): { subject: string; text: string; html: string } {
   const { chatUrl } = links;
   const intro = [

@@ -4,6 +4,11 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- When a conversation closes again, its transcript email holds only the messages since the last transcript the visitor got, in place of the whole conversation. **Email transcript** still sends the whole conversation.
+- A transcript email holds at most the newest 100 messages and 40 KB of text, so Gmail does not cut it, and says how many earlier messages are in the chat.
+
 ## [0.36.0] - 2026-11-16
 
 ### Changed
