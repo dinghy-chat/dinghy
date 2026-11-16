@@ -1,20 +1,13 @@
 import { and, eq, inArray, isNull, type SQL, sql } from "drizzle-orm";
-import {
-  type CampaignRow,
-  campaignRows,
-  hasExited,
-  inAudience,
-  reachedContact,
-} from "./campaign-checks.ts";
-import { enterCampaign, frequencyBlocker } from "./campaign-entry.ts";
+import { type CampaignRow, campaignRows, hasExited, reachedContact } from "./campaign-checks.ts";
+import { enterCampaign, mayEnter } from "./campaign-entry.ts";
 import { goalCondition } from "./campaign-parts.ts";
 import { matchesContact } from "./conditions.ts";
 import { upsertContact } from "./contact-fields.ts";
 import { campaign, campaignTrigger, outboundMessage } from "./db/schema.ts";
 import type { Transaction } from "./db/tenant.ts";
 import { type ContactFields, toMs } from "./inputs.ts";
-import { lockVisitors } from "./journey.ts";
-import { lockWorkspace } from "./messages.ts";
+import { lockForSend, lockVisitors } from "./journey.ts";
 import { appendVisitorMessage, recheckUnless } from "./outbound-delivery.ts";
 import { cancelWhere, change, endable } from "./outbound-rules.ts";
 
@@ -107,19 +100,6 @@ async function hasEndable(tx: Transaction, workspaceId: string, which: SQL) {
   return found.length > 0;
 }
 
-/** Whether the campaign takes the contact in now, read with no lock. */
-async function entersNow(
-  tx: Transaction,
-  workspaceId: string,
-  found: CampaignRow,
-  visitorId: string,
-) {
-  return (
-    (await inAudience(tx, workspaceId, visitorId, found.definition)) &&
-    (await frequencyBlocker(tx, workspaceId, found, visitorId)) === null
-  );
-}
-
 /**
  * Checks the contact against one campaign: a goal, then an exit, ends their waiting messages from
  * it, and a `match` campaign takes them in when they match its audience. A goal counts even when
@@ -145,7 +125,7 @@ async function recheckCampaign(
     return;
   }
   const { trigger } = found.definition;
-  if (trigger.type !== "match" || !(await entersNow(tx, workspaceId, found, visitorId))) return;
+  if (trigger.type !== "match" || !(await mayEnter(tx, workspaceId, found, visitorId))) return;
   const { botsPaused } = await lock();
   await enterCampaign(tx, workspaceId, found, visitorId, {
     botsPaused,
@@ -162,11 +142,8 @@ export async function recheckCampaigns(
 ): Promise<void> {
   const found = await campaignsReading(tx, workspaceId, fields);
   let locked: ReturnType<Lock> | undefined;
-  // The visitor's lock before the workspace's, as every write takes them.
   const lock = () => {
-    locked ??= lockVisitors(tx, workspaceId, [visitorId]).then(() =>
-      lockWorkspace(tx, workspaceId),
-    );
+    locked ??= lockForSend(tx, workspaceId, [visitorId]);
     return locked;
   };
   for (const one of found) await recheckCampaign(tx, workspaceId, one, visitorId, lock);

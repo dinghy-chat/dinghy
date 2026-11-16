@@ -1021,6 +1021,46 @@ describe("a page campaign", () => {
   const end = (campaignId: string) =>
     withKey(app, admin.token, "POST", inSpace(`/campaigns/${campaignId}/end`));
 
+  test("the beat reads every campaign's audience and frequency at once, as each decides", async () => {
+    const listed = async (token: string) =>
+      ((await beat(token)).json.pages as { id: string }[]).map((one) => one.id);
+    const pro = await live(keyOf("page-pro"), {
+      ...page,
+      audience: { field: "attributes.plan", op: "eq", value: "pro" },
+    });
+    const trial = await live(keyOf("page-trial"), {
+      ...page,
+      audience: { field: "attributes.plan", op: "eq", value: "trial" },
+    });
+    const hourly = await live(keyOf("page-hourly"), {
+      ...page,
+      rules: { frequency: { every: "1h" } },
+    });
+    const { token, visitorId } = await newVisitor(app, space.publicKey);
+    await owner
+      .update(visitor)
+      .set({ attributes: { plan: "pro" } })
+      .where(eq(visitor.id, visitorId));
+    expect(await listed(token)).toEqual(expect.arrayContaining([pro.id, hourly.id]));
+    expect(await listed(token)).not.toContain(trial.id);
+
+    // `every` keeps them out within its time, and a goal reached keeps them out for good.
+    await answerCard(hourly.id, token);
+    expect(await listed(token)).not.toContain(hourly.id);
+    const twoHoursAgo = new Date(Date.now() - 2 * 3_600_000);
+    await owner
+      .update(outboundMessage)
+      .set({ createdAt: twoHoursAgo })
+      .where(eq(outboundMessage.campaignId, hourly.id));
+    expect(await listed(token)).toContain(hourly.id);
+    await owner
+      .update(outboundMessage)
+      .set({ goalReachedAt: twoHoursAgo })
+      .where(eq(outboundMessage.campaignId, hourly.id));
+    expect(await listed(token)).not.toContain(hourly.id);
+    for (const one of [pro, trial, hourly]) await end(one.id);
+  });
+
   test("with `join`, shows to a visitor in a conversation, and the answer goes in it", async () => {
     const made = await live(keyOf("page-join"), {
       ...page,
@@ -1441,7 +1481,7 @@ describe("campaign operations that cross", () => {
     const { visitorId } = await newVisitor(app, space.publicKey);
     // The contact's change holds the visitor and the workspace, then inserts the campaign's message.
     const change = holdWorkspace(async (tx) => {
-      const found = await campaignRow(tx, space.id, made.id);
+      const found = await campaignRow(tx, space.id, eq(campaign.id, made.id));
       if (found === undefined) throw new Error("The campaign is missing");
       await enterCampaign(tx, space.id, found, visitorId, { botsPaused: false, options: {} });
     }, visitorId);

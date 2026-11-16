@@ -1,6 +1,6 @@
 import { and, desc, eq, inArray, isNull, type SQL } from "drizzle-orm";
 import { gateOf } from "./bots.ts";
-import { type CampaignCheck, campaignCheck } from "./campaign-checks.ts";
+import { type CampaignCheck, type CampaignRow, campaignCheck } from "./campaign-checks.ts";
 import { tallyChange } from "./campaign-results.ts";
 import { matchesContact } from "./conditions.ts";
 import {
@@ -47,13 +47,13 @@ export const endable = and(
 export const hasExpired = (row: Row) =>
   isEndable(row) && row.expiresAt !== null && row.expiresAt.getTime() <= Date.now();
 
-/** Who made a message, as a message author or a status actor names them. */
+/** Who made a message or saved a campaign last, as a message author or a status actor names them. */
 export function authorRef(row: Pick<Row, "authorApiKeyId" | "authorOperatorId">) {
   if (row.authorApiKeyId !== null) return { kind: "key" as const, apiKeyId: row.authorApiKeyId };
   if (row.authorOperatorId !== null) {
     return { kind: "operator" as const, operatorId: row.authorOperatorId };
   }
-  throw new Error("An outbound message has no author");
+  throw new Error("The row has no author");
 }
 
 // Changes ------------------------------------------------------------------------------------------
@@ -309,13 +309,18 @@ const NOBODY = { blocked: false, optedOut: false, isTest: false };
 
 /**
  * Reads what decides a message now. `atSendTime` also checks its `unless` and its campaign, as it
- * is about to become sent. The caller holds the workspace lock.
+ * is about to become sent, which `found` holds when the caller read it. The caller holds the
+ * workspace lock.
  */
 export async function situation(
   tx: Transaction,
   workspaceId: string,
   draft: Draft,
-  { botsPaused, atSendTime }: { botsPaused: boolean; atSendTime: boolean },
+  {
+    botsPaused,
+    atSendTime,
+    found,
+  }: { botsPaused: boolean; atSendTime: boolean; found?: CampaignRow | undefined },
 ): Promise<Situation> {
   const { campaignId, visitorId } = draft;
   const { blocked, optedOut, isTest } =
@@ -338,7 +343,7 @@ export async function situation(
     // A test visitor sees a campaign's message whatever its rules say, as "Send a test" shows it.
     campaign:
       atSendTime && campaignId !== null && !isTest
-        ? await campaignCheck(tx, workspaceId, { ...draft, campaignId })
+        ? await campaignCheck(tx, workspaceId, { ...draft, campaignId }, found)
         : null,
   };
 }

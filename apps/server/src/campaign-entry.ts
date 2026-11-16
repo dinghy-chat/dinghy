@@ -1,15 +1,15 @@
 import { createHash } from "node:crypto";
-import { and, eq, gt, isNotNull, or } from "drizzle-orm";
+import { and, eq, gt, inArray, isNotNull, or, sql } from "drizzle-orm";
 import { LOCALES, type Locale, MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
-import { renderTemplate } from "../../../packages/widget/src/template.ts";
-import { type CampaignRow, newestMessage, reachedContact } from "./campaign-checks.ts";
+import { renderTemplate, VARIABLE_PREFIXES } from "../../../packages/widget/src/template.ts";
+import { type CampaignRow, inAudience, newestMessage, reachedContact } from "./campaign-checks.ts";
 import { sendsEmail, variantMessage } from "./campaign-parts.ts";
 import type { CampaignDefinition, CampaignMessage } from "./campaign-schemas.ts";
 import { outboundMessage, visitor } from "./db/schema.ts";
 import type { Transaction } from "./db/tenant.ts";
 import { toMs } from "./inputs.ts";
-import { type Author, placeOutbound, type SendRefusal, sendsAs } from "./outbound-place.ts";
-import { keyState } from "./outbound-rules.ts";
+import { placeOutbound, type SendRefusal, sendsAs } from "./outbound-place.ts";
+import { authorRef, keyState } from "./outbound-rules.ts";
 
 // A contact entering a campaign: its frequency, its A/B variant, its text in the contact's
 // language with the variables filled, and then the one way any outbound message is made.
@@ -42,6 +42,10 @@ export type Entry =
 export const campaignClientId = (campaignId: string, clientId: string) =>
   `campaign:${campaignId}:${clientId}`;
 
+/** Since when a message that reached the contact keeps them out: for ever, as null, for `once`. */
+const frequencySince = ({ rules: { frequency } }: CampaignDefinition) =>
+  frequency === "once" ? null : new Date(Date.now() - toMs(frequency.every));
+
 /**
  * The campaign's message that keeps the contact from another one: any for `once`, one within the
  * time for `every`, or one that reached the goal, which ends the campaign for them. A cancelled
@@ -53,19 +57,64 @@ export async function frequencyBlocker(
   found: Pick<CampaignRow, "id" | "definition">,
   visitorId: string,
 ): Promise<string | null> {
-  const { frequency } = found.definition.rules;
+  const since = frequencySince(found.definition);
   const recent =
-    frequency === "once"
-      ? reachedContact
-      : and(
-          reachedContact,
-          gt(outboundMessage.createdAt, new Date(Date.now() - toMs(frequency.every))),
-        );
+    since === null ? reachedContact : and(reachedContact, gt(outboundMessage.createdAt, since));
   return newestMessage(
     tx,
     workspaceId,
     { campaignId: found.id, visitorId },
     or(recent, isNotNull(outboundMessage.goalReachedAt)),
+  );
+}
+
+/** The IDs of the campaigns whose frequency keeps the contact out, as `frequencyBlocker` decides. */
+export async function frequencyBlocked(
+  tx: Transaction,
+  workspaceId: string,
+  found: Pick<CampaignRow, "id" | "definition">[],
+  visitorId: string,
+): Promise<Set<string>> {
+  if (found.length === 0) return new Set();
+  const rows = await tx
+    .select({
+      campaignId: outboundMessage.campaignId,
+      reachedAt: sql`max(${outboundMessage.createdAt}) filter (where ${reachedContact})`.mapWith(
+        outboundMessage.createdAt,
+      ),
+      goalReached: sql<boolean>`bool_or(${outboundMessage.goalReachedAt} is not null)`,
+    })
+    .from(outboundMessage)
+    .where(
+      and(
+        eq(outboundMessage.workspaceId, workspaceId),
+        eq(outboundMessage.visitorId, visitorId),
+        inArray(
+          outboundMessage.campaignId,
+          found.map((one) => one.id),
+        ),
+      ),
+    )
+    .groupBy(outboundMessage.campaignId);
+  const blocked = found.filter((one) => {
+    const row = rows.find((each) => each.campaignId === one.id);
+    if (row === undefined) return false;
+    const since = frequencySince(one.definition);
+    return row.goalReached || (row.reachedAt !== null && (since === null || row.reachedAt > since));
+  });
+  return new Set(blocked.map((one) => one.id));
+}
+
+/** Whether the campaign takes the contact in now: its audience matches, its frequency lets them. */
+export async function mayEnter(
+  tx: Transaction,
+  workspaceId: string,
+  found: CampaignRow,
+  visitorId: string,
+) {
+  return (
+    (await inAudience(tx, workspaceId, visitorId, found.definition)) &&
+    (await frequencyBlocker(tx, workspaceId, found, visitorId)) === null
   );
 }
 
@@ -114,9 +163,9 @@ type Contact = Awaited<ReturnType<typeof contactOf>>;
 function lookupIn(contact: Contact, options: EntryOptions) {
   const { attributes, ...fields } = contact;
   const scopes: [string, unknown][] = [
-    ["attributes.", attributes],
-    ["data.", options.data],
-    ["event.properties.", options.event?.properties],
+    [VARIABLE_PREFIXES.attributes, attributes],
+    [VARIABLE_PREFIXES.data, options.data],
+    [VARIABLE_PREFIXES.eventProperties, options.event?.properties],
   ];
   return (path: string): unknown => {
     if (path === "firstName") return firstWord(contact.name);
@@ -127,29 +176,35 @@ function lookupIn(contact: Contact, options: EntryOptions) {
   };
 }
 
-/** The message in the contact's language, with its variables filled. */
-function localized(
-  message: CampaignMessage,
-  language: string | null,
-  lookup: (path: string) => unknown,
-) {
+/** The message's version in the language, and its buttons, which a translation may leave out. */
+function inLanguage(message: CampaignMessage, language: string | null) {
   const known = LOCALES.find((one) => one === language);
   const version = (known === undefined ? undefined : message.translations?.[known]) ?? message;
-  const body = renderTemplate(version.body, lookup).trim().slice(0, MESSAGE_MAX);
-  return {
-    // A text whose variables were all empty still says something.
-    body: body === "" ? version.body : body,
-    buttons: version.buttons ?? message.buttons ?? [],
-  };
+  return { version, buttons: version.buttons ?? message.buttons ?? [] };
 }
 
-/** The member or key that saved the campaign last, who makes its messages. */
-function authorOf(found: Pick<CampaignRow, "authorOperatorId" | "authorApiKeyId">): Author {
-  if (found.authorApiKeyId !== null) return { kind: "key", apiKeyId: found.authorApiKeyId };
-  if (found.authorOperatorId !== null) {
-    return { kind: "operator", operatorId: found.authorOperatorId };
-  }
-  throw new Error("A campaign has no author");
+/** The viewer's A/B variant and its message, or the campaign's own message with no variants. */
+function variantOf(found: CampaignRow, visitorId: string | null) {
+  const variant = visitorId === null ? null : variantFor(found.definition, found.id, visitorId);
+  return { variant, chosen: variantMessage(variant) ?? found.definition.message };
+}
+
+/**
+ * The viewer's A/B variant and the buttons they see, without the text and the sender that a count
+ * of a page card's read or press does not need.
+ */
+export async function variantAndButtons(
+  tx: Transaction,
+  workspaceId: string,
+  found: CampaignRow,
+  visitorId: string | null,
+  language: Locale | null,
+) {
+  const { variant, chosen } = variantOf(found, visitorId);
+  const contact =
+    language === null && visitorId !== null ? await contactOf(tx, workspaceId, visitorId) : null;
+  const { buttons } = inLanguage(chosen, language ?? contact?.language ?? null);
+  return { variant: variant?.key ?? null, buttons };
 }
 
 /**
@@ -164,20 +219,22 @@ export async function composeMessage(
   visitorId: string | null,
   options: EntryOptions,
 ) {
-  const { definition } = found;
-  const variant = visitorId === null ? null : variantFor(definition, found.id, visitorId);
-  const chosen = variantMessage(variant) ?? definition.message;
+  const { variant, chosen } = variantOf(found, visitorId);
   const contact = visitorId === null ? null : await contactOf(tx, workspaceId, visitorId);
-  const language = options.language ?? contact?.language ?? null;
+  const { version, buttons } = inLanguage(chosen, options.language ?? contact?.language ?? null);
   const lookup = contact === null ? () => undefined : lookupIn(contact, options);
-  const actor = authorOf(found);
+  const body = renderTemplate(version.body, lookup).trim().slice(0, MESSAGE_MAX);
+  // The member or key that saved the campaign last makes its messages.
+  const actor = authorRef(found);
   const key = actor.kind === "key" ? await keyState(tx, workspaceId, actor.apiKeyId) : null;
   const as = await sendsAs(tx, workspaceId, actor, key, chosen.sender);
   if (typeof as === "string") return as;
   return {
     variant: variant?.key ?? null,
     control: variant !== null && "control" in variant,
-    ...localized(chosen, language, lookup),
+    // A text whose variables were all empty still says something.
+    body: body === "" ? version.body : body,
+    buttons,
     actor,
     as,
   };

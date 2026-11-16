@@ -4,7 +4,7 @@ import { type BusinessHours, WEEKDAYS } from "../../../packages/widget/src/share
 import { readBusinessHours } from "./business-hours.ts";
 import { goalCondition } from "./campaign-parts.ts";
 import type { CampaignDefinition } from "./campaign-schemas.ts";
-import { matchesContact } from "./conditions.ts";
+import { matchesContact, toSql } from "./conditions.ts";
 import {
   type CampaignStatus,
   campaign,
@@ -61,8 +61,13 @@ export function campaignRows(tx: Transaction, workspaceId: string, which: SQL | 
 }
 export type CampaignRow = Awaited<ReturnType<typeof campaignRows>>[number];
 
-export const campaignRow = async (tx: Transaction, workspaceId: string, campaignId: string) =>
-  (await campaignRows(tx, workspaceId, eq(campaign.id, campaignId)))[0];
+/** The one campaign that `which` names, with the workspace's settings. */
+export const campaignRow = async (tx: Transaction, workspaceId: string, which: SQL) =>
+  (await campaignRows(tx, workspaceId, which))[0];
+
+/** The campaigns whose trigger is of this type. */
+export const triggerIs = (type: CampaignDefinition["trigger"]["type"]) =>
+  sql`${campaign.definition} #>> '{trigger,type}' = ${type}`;
 
 /** A message that reached its contact for the campaign's sake: not cancelled, or a control's place. */
 export const reachedContact = or(
@@ -198,6 +203,24 @@ export async function inAudience(
   return audience === undefined || matchesContact(tx, workspaceId, visitorId, audience);
 }
 
+/** Whether the contact matches each campaign's audience, in one read, as `inAudience` decides. */
+export async function audiencesMatched(
+  tx: Transaction,
+  workspaceId: string,
+  visitorId: string,
+  definitions: CampaignDefinition[],
+): Promise<boolean[]> {
+  if (definitions.length === 0) return [];
+  const each = definitions.map(({ audience }) =>
+    audience === undefined ? sql`true` : toSql(audience),
+  );
+  const [row] = await tx
+    .select({ matched: sql<(boolean | null)[]>`array[${sql.join(each, sql`, `)}]` })
+    .from(visitor)
+    .where(and(eq(visitor.workspaceId, workspaceId), eq(visitor.id, visitorId)));
+  return definitions.map((_, index) => row?.matched[index] === true);
+}
+
 /** Whether the contact matches the campaign's exit condition. */
 export async function hasExited(
   tx: Transaction,
@@ -223,13 +246,17 @@ export interface CampaignDraft {
   fromCode: boolean;
 }
 
-/** What the message's campaign says now. The caller holds the workspace lock. */
+/**
+ * What the message's campaign says now, read again unless the caller passes the row it read. The
+ * caller holds the workspace lock.
+ */
 export async function campaignCheck(
   tx: Transaction,
   workspaceId: string,
   draft: CampaignDraft,
+  read: CampaignRow | undefined,
 ): Promise<CampaignCheck> {
-  const found = await campaignRow(tx, workspaceId, draft.campaignId);
+  const found = read ?? (await campaignRow(tx, workspaceId, eq(campaign.id, draft.campaignId)));
   if (found === undefined) throw new Error("The message's campaign is missing");
   const { definition, allPaused, gapHours } = found;
   const { id, visitorId } = draft;

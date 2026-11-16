@@ -15,7 +15,7 @@ import {
   CampaignSchema,
   CampaignSendSchema,
   CampaignSettingsSchema,
-  CampaignSettingsView,
+  CampaignSettingsViewSchema,
   EstimateSchema,
   ResultsQuery,
 } from "./campaign-schemas.ts";
@@ -155,7 +155,7 @@ const estimateRoute = createRoute({
 });
 
 const SETTINGS_PATH = `${WORKSPACE_PREFIX}/{workspaceId}/campaign-settings`;
-const settingsAnswer = jsonAnswer("The settings for every campaign", CampaignSettingsView);
+const settingsAnswer = jsonAnswer("The settings for every campaign", CampaignSettingsViewSchema);
 
 const readSettingsRoute = createRoute({
   method: "get",

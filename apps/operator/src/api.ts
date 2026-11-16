@@ -10,14 +10,14 @@ import { readStream, retryAfterMs } from "../../../packages/widget/src/stream.ts
 import type {
   CampaignDefinition,
   CampaignResults,
-  CampaignSettings,
+  CampaignSettingsView,
   CampaignView,
 } from "../../server/src/campaign-schemas.ts";
 import type { Condition } from "../../server/src/conditions.ts";
 import type { EventKind, LABEL_COLORS } from "../../server/src/db/schema.ts";
 import type { OperatorNotice } from "../../server/src/live.ts";
 
-export type { CampaignDefinition, CampaignResults, CampaignSettings, Condition, Quote };
+export type { CampaignDefinition, CampaignResults, CampaignSettingsView, Condition, Quote };
 export type Campaign = CampaignView;
 export type CampaignStatus = Campaign["status"];
 export type CampaignTrigger = CampaignDefinition["trigger"];
@@ -935,9 +935,9 @@ export function workspaceApi(workspaceId: string) {
       ),
     estimateCampaign: (choice: { audience?: Condition; trigger?: CampaignTrigger }) =>
       post<CampaignEstimate>(`${base}/campaigns/estimate`, choice),
-    campaignSettings: () => call<CampaignSettings>(`${base}/campaign-settings`),
+    campaignSettings: () => call<CampaignSettingsView>(`${base}/campaign-settings`),
     setCampaignSettings: (settings: { paused: boolean; gapHours: number }) =>
-      call<CampaignSettings>(`${base}/campaign-settings`, {
+      call<CampaignSettingsView>(`${base}/campaign-settings`, {
         method: "PUT",
         body: JSON.stringify(settings),
       }),

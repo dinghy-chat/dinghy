@@ -3,6 +3,7 @@ import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import type { Locale } from "../../../packages/widget/src/shared.ts";
 import { conversation, outboundMessage, pageView, visitor } from "./db/schema.ts";
 import type { Database, Transaction } from "./db/tenant.ts";
+import { lockWorkspace } from "./messages.ts";
 
 /** The newest rows a visitor keeps, so a long visit cannot grow without end. */
 const PAGES_KEPT = 100;
@@ -138,6 +139,15 @@ export async function lockVisitors(tx: Transaction, workspaceId: string, visitor
     .where(and(eq(visitor.workspaceId, workspaceId), inArray(visitor.id, visitorIds)))
     .orderBy(visitor.id)
     .for("no key update");
+}
+
+/**
+ * The visitors' locks, then the workspace's, in the one order every send takes them. Answers
+ * whether bots are paused, which the workspace's lock holds.
+ */
+export async function lockForSend(tx: Transaction, workspaceId: string, visitorIds: string[]) {
+  if (visitorIds.length > 0) await lockVisitors(tx, workspaceId, visitorIds);
+  return lockWorkspace(tx, workspaceId);
 }
 
 /** A visitor's newest pages, newest first. */

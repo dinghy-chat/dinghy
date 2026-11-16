@@ -409,11 +409,31 @@ export const CAMPAIGN_VARIANTS_MAX = 5;
 
 /** The longest a page campaign waits on a page before it shows, in seconds. */
 export const PAGE_SECONDS_MAX = 3600;
+/** The wait a new page campaign starts with, in seconds. */
+export const PAGE_SECONDS_DEFAULT = 20;
+
+/**
+ * A campaign's key, as a pattern without anchors: lowercase letters, digits, - and _. The `-` is
+ * escaped, as an input's `pattern` attribute reads it with the `v` flag.
+ */
+export const CAMPAIGN_KEY_PATTERN = "[a-z0-9][a-z0-9_\\-]{0,63}";
+/** The longest campaign name, in characters. */
+export const CAMPAIGN_NAME_MAX = 100;
+/** The range of an A/B variant's weight, its share of the contacts against the others'. */
+export const VARIANT_WEIGHT_MIN = 1;
+export const VARIANT_WEIGHT_MAX = 100;
+
+/** The longest label and value of a message's button, in characters. */
+export const BUTTON_LABEL_MAX = 40;
+export const BUTTON_VALUE_MAX = 100;
 
 /** The gap a workspace starts with between two campaign messages to one visitor, in hours. */
 export const CAMPAIGN_GAP_HOURS_DEFAULT = 24;
 /** The longest gap a workspace sets between two campaign messages to one visitor, in hours. */
 export const CAMPAIGN_GAP_HOURS_MAX = 720;
+
+/** What sets a campaign off, as its definition's `trigger.type` names it. */
+export type CampaignTriggerType = "match" | "schedule" | "event" | "page" | "api";
 
 /** The contact's fields that a campaign's text may read, beside `attributes.<key>`. */
 export const CONTACT_VARIABLES = [

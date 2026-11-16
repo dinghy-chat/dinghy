@@ -1,4 +1,4 @@
-import { CONTACT_VARIABLES } from "./shared.ts";
+import { type CampaignTriggerType, CONTACT_VARIABLES } from "./shared.ts";
 
 // Liquid-style variables in a campaign's text, such as `{{ firstName | default: "there" }}`. The
 // server renders a message with it and checks a saved one, and the operator app's editor checks
@@ -83,12 +83,22 @@ export function templateProblems(text: string, knows: (path: string) => boolean)
 
 const CONTACT = new Set<string>(CONTACT_VARIABLES);
 
+/** The prefixes of the variables that read a contact's attribute, a send's data or an event's. */
+export const VARIABLE_PREFIXES = {
+  attributes: "attributes.",
+  data: "data.",
+  eventProperties: "event.properties.",
+} as const;
+
+const scoped = (prefix: string, path: string) =>
+  path.startsWith(prefix) && /^\w/.test(path.slice(prefix.length));
+
 /**
  * Whether a campaign's text may read the variable, for its trigger: the contact's fields and
  * attributes, a send's `data` from code, and a tracked event's properties.
  */
-export const knownVariable = (trigger: string) => (path: string) =>
+export const knownVariable = (trigger: CampaignTriggerType) => (path: string) =>
   CONTACT.has(path) ||
-  /^attributes\.\w/.test(path) ||
-  (trigger === "api" && /^data\.\w/.test(path)) ||
-  (trigger === "event" && /^event\.properties\.\w/.test(path));
+  scoped(VARIABLE_PREFIXES.attributes, path) ||
+  (trigger === "api" && scoped(VARIABLE_PREFIXES.data, path)) ||
+  (trigger === "event" && scoped(VARIABLE_PREFIXES.eventProperties, path));

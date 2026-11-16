@@ -1,14 +1,19 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import type { Locale } from "../../../packages/widget/src/shared.ts";
-import { type CampaignRow, campaignRows, inAudience } from "./campaign-checks.ts";
-import { composeMessage, enterCampaign, frequencyBlocker } from "./campaign-entry.ts";
+import { audiencesMatched, type CampaignRow, campaignRows, triggerIs } from "./campaign-checks.ts";
+import {
+  composeMessage,
+  enterCampaign,
+  frequencyBlocked,
+  frequencyBlocker,
+  variantAndButtons,
+} from "./campaign-entry.ts";
 import type { CampaignCount } from "./campaign-parts.ts";
 import { sendsEmail } from "./campaign-parts.ts";
 import { tally } from "./campaign-results.ts";
 import { campaign } from "./db/schema.ts";
 import type { Transaction } from "./db/tenant.ts";
-import { lockVisitors } from "./journey.ts";
-import { lockWorkspace } from "./messages.ts";
+import { lockForSend } from "./journey.ts";
 import { senderMark, type WidgetOutbound } from "./outbound-delivery.ts";
 import { decide, isMember, keyState, situation, visitorFlags } from "./outbound-rules.ts";
 
@@ -31,7 +36,7 @@ const livePageCampaigns = (tx: Transaction, workspaceId: string, campaignId?: st
     workspaceId,
     and(
       eq(campaign.status, "live"),
-      sql`${campaign.definition} #>> '{trigger,type}' = 'page'`,
+      triggerIs("page"),
       campaignId === undefined ? undefined : eq(campaign.id, campaignId),
     ),
   );
@@ -60,33 +65,26 @@ async function mayGo(
     ifConversationOpen: found.definition.presentation.ifConversationOpen,
     sendEmail: sendsEmail(found.definition.delivery),
   };
-  const state = await situation(tx, workspaceId, draft, { botsPaused: false, atSendTime: true });
+  const state = await situation(tx, workspaceId, draft, {
+    botsPaused: false,
+    atSendTime: true,
+    found,
+  });
   const { kind } = decide(message, state);
   return kind === "go" || kind === "join";
 }
 
 /**
- * Whether the campaign's audience and frequency let the viewer in. A visitor who does not exist yet
- * sees only a campaign for everyone with no A/B variants, as an answer picks the variant from the
- * ID they get then.
+ * A visitor who does not exist yet sees only a campaign for everyone with no A/B variants, as an
+ * answer picks the variant from the ID they get then.
  */
-async function letsIn(
-  tx: Transaction,
-  workspaceId: string,
-  found: CampaignRow,
-  visitorId: string | null,
-) {
-  const { definition } = found;
-  if (visitorId === null) {
-    return definition.audience === undefined && definition.variants === undefined;
-  }
-  return (
-    (await inAudience(tx, workspaceId, visitorId, definition)) &&
-    (await frequencyBlocker(tx, workspaceId, found, visitorId)) === null
-  );
-}
+const forAnyone = ({ definition }: CampaignRow) =>
+  definition.audience === undefined && definition.variants === undefined;
 
-/** The card for this viewer, when the campaign lets them in and the send's decision lets it go. */
+/**
+ * The card for this viewer, when the campaign's frequency lets them in and the send's decision,
+ * which checks the audience, lets it go.
+ */
 async function cardFor(
   tx: Transaction,
   workspaceId: string,
@@ -94,31 +92,49 @@ async function cardFor(
   viewer: Viewer,
 ): Promise<Card | null> {
   const { visitorId, language } = viewer;
-  if (!(await letsIn(tx, workspaceId, found, visitorId))) return null;
+  const isKeptOut =
+    visitorId === null
+      ? !forAnyone(found)
+      : (await frequencyBlocker(tx, workspaceId, found, visitorId)) !== null;
+  if (isKeptOut) return null;
   const card = await composeMessage(tx, workspaceId, found, visitorId, { language });
   if (typeof card === "string" || card.control) return null;
   return (await mayGo(tx, workspaceId, found, viewer, card)) ? card : null;
 }
 
+/** The live page campaigns whose audience and frequency let the visitor in. */
+async function lettingIn(tx: Transaction, workspaceId: string, visitorId: string | null) {
+  const live = (await livePageCampaigns(tx, workspaceId)).filter((one) => !one.allPaused);
+  if (visitorId === null) return live.filter(forAnyone);
+  const matched = await audiencesMatched(
+    tx,
+    workspaceId,
+    visitorId,
+    live.map((one) => one.definition),
+  );
+  const blocked = await frequencyBlocked(tx, workspaceId, live, visitorId);
+  return live.filter((one, index) => matched[index] === true && !blocked.has(one.id));
+}
+
 /**
  * The page campaigns the loader watches for this visitor, from its beat: only those that let them
- * in, as the show runs the send's whole decision.
+ * in, as the show runs the send's whole decision. A few reads in all, whatever their number, as
+ * every open tab beats.
  */
 export async function pageCampaigns(
   tx: Transaction,
   workspaceId: string,
   visitorId: string | null,
 ) {
-  const pages = [];
-  for (const found of await livePageCampaigns(tx, workspaceId)) {
-    const { trigger } = found.definition;
-    if (trigger.type !== "page" || found.allPaused) continue;
-    if (!(await letsIn(tx, workspaceId, found, visitorId))) continue;
-    pages.push({ id: found.id, url: trigger.url, seconds: trigger.seconds });
+  if (visitorId !== null) {
+    const { blocked, optedOut } = await visitorFlags(tx, workspaceId, visitorId);
+    if (blocked || optedOut) return [];
   }
-  if (pages.length === 0 || visitorId === null) return pages;
-  const { blocked, optedOut } = await visitorFlags(tx, workspaceId, visitorId);
-  return blocked || optedOut ? [] : pages;
+  return (await lettingIn(tx, workspaceId, visitorId)).flatMap(({ id, definition }) =>
+    definition.trigger.type === "page"
+      ? [{ id, url: definition.trigger.url, seconds: definition.trigger.seconds }]
+      : [],
+  );
 }
 
 /**
@@ -169,14 +185,13 @@ export async function countPageCampaign(
   const [found] = await livePageCampaigns(tx, workspaceId, campaignId);
   if (found === undefined) return false;
   const { visitorId, language } = viewer;
-  const card = await composeMessage(tx, workspaceId, found, visitorId, { language });
-  if (typeof card === "string") return false;
-  const counted = { campaignId, variant: card.variant, visitorId };
+  const { variant, buttons } = await variantAndButtons(tx, workspaceId, found, visitorId, language);
+  const counted = { campaignId, variant, visitorId };
   if ("read" in action) {
     await tally(tx, workspaceId, counted, ["read"]);
     return true;
   }
-  const button = card.buttons[action.button];
+  const button = buttons[action.button];
   // A value button answers, which counts with the visitor's message.
   if (button === undefined || !("url" in button || "dismiss" in button)) return false;
   const counts: CampaignCount[] = "dismiss" in button ? ["dismissed"] : [];
@@ -206,8 +221,7 @@ export async function answerPageCampaign(
   viewer: Viewer & { visitorId: string },
 ): Promise<string | null> {
   const { visitorId, language } = viewer;
-  await lockVisitors(tx, workspaceId, [visitorId]);
-  const { botsPaused } = await lockWorkspace(tx, workspaceId);
+  const { botsPaused } = await lockForSend(tx, workspaceId, [visitorId]);
   // Under the workspace's lock, which an end or a pause takes first, so its status holds.
   const [found] = await livePageCampaigns(tx, workspaceId, campaignId);
   if (found === undefined || found.allPaused) return null;

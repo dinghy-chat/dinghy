@@ -1,5 +1,9 @@
 import { z } from "@hono/zod-openapi";
-import { BUTTONS_MAX } from "../../../packages/widget/src/shared.ts";
+import {
+  BUTTON_LABEL_MAX,
+  BUTTON_VALUE_MAX,
+  BUTTONS_MAX,
+} from "../../../packages/widget/src/shared.ts";
 import { ConditionSchema } from "./conditions.ts";
 import {
   IF_CONVERSATION_OPEN,
@@ -31,8 +35,8 @@ export const OutboundMetadataSchema = z
     description: `Up to ${METADATA_KEYS_MAX} keys of up to ${METADATA_KEY_LENGTH_MAX} characters, each with text of up to ${METADATA_VALUE_LENGTH_MAX} characters, such as \`{ "orderId": "1042" }\`. It comes back on the outbound message, its webhooks and the event stream. The visitor never sees it`,
   });
 
-const ButtonLabel = z.string().trim().min(1).max(40);
-const ButtonValue = z.string().min(1).max(100);
+const ButtonLabel = z.string().trim().min(1).max(BUTTON_LABEL_MAX);
+const ButtonValue = z.string().min(1).max(BUTTON_VALUE_MAX);
 
 export const ButtonSchema = z
   .union([

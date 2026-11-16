@@ -1,16 +1,15 @@
 import { type AnyColumn, and, asc, eq, gt, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import { zonedDay, zonedTime } from "../../../packages/widget/src/hours.ts";
 import { WEEKDAYS } from "../../../packages/widget/src/shared.ts";
-import { type CampaignRow, campaignRow } from "./campaign-checks.ts";
+import { type CampaignRow, campaignRow, triggerIs } from "./campaign-checks.ts";
 import { enterCampaign } from "./campaign-entry.ts";
 import type { CampaignTrigger } from "./campaign-schemas.ts";
 import { toSql } from "./conditions.ts";
 import { TIME_FIELD } from "./contact-checks.ts";
 import { campaign, campaignRun, campaignTrigger, visitor } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
-import { lockVisitors } from "./journey.ts";
+import { lockForSend } from "./journey.ts";
 import type { Signals } from "./live.ts";
-import { lockWorkspace } from "./messages.ts";
 import { tellOutbound } from "./outbound.ts";
 import { DAY_MS } from "./time.ts";
 
@@ -96,9 +95,10 @@ export async function openRuns(finder: Database, writer: Database): Promise<void
       and(
         eq(campaign.status, "live"),
         notPaused(campaign.workspaceId),
-        sql`(${campaign.definition} #>> '{trigger,type}' = 'schedule'
-          or (${campaign.definition} #>> '{delivery,sendEmail}' = 'true'
-            and exists ${readsTime}))`,
+        or(
+          triggerIs("schedule"),
+          sql`${campaign.definition} #>> '{delivery,sendEmail}' = 'true' and exists ${readsTime}`,
+        ),
       ),
     );
   const now = Date.now();
@@ -163,7 +163,7 @@ async function runBatch(tx: Transaction, workspaceId: string, runId: string) {
     )
     .for("update", { skipLocked: true });
   if (run === undefined) return null;
-  const found = await campaignRow(tx, workspaceId, run.campaignId);
+  const found = await campaignRow(tx, workspaceId, eq(campaign.id, run.campaignId));
   const save = (cursor: string | null, finished: boolean) =>
     tx
       .update(campaignRun)
@@ -178,9 +178,7 @@ async function runBatch(tx: Transaction, workspaceId: string, runId: string) {
   if (found.status !== "live" || found.allPaused) return null;
   const contacts = await nextContacts(tx, workspaceId, found, run.cursor);
   const ids = contacts.map((one) => one.id);
-  // The visitors' locks before the workspace's, as every write takes them.
-  if (ids.length > 0) await lockVisitors(tx, workspaceId, ids);
-  const { botsPaused } = await lockWorkspace(tx, workspaceId);
+  const { botsPaused } = await lockForSend(tx, workspaceId, ids);
   const { trigger } = found.definition;
   const delay = trigger.type === "match" ? trigger.delay : undefined;
   for (const visitorId of ids) {

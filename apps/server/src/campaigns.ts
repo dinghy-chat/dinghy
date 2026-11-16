@@ -1,7 +1,7 @@
 import type { z } from "@hono/zod-openapi";
 import { and, eq, gt, inArray, or, type SQL, sql } from "drizzle-orm";
 import type { Actor } from "./api-keys.ts";
-import { type CampaignRow, campaignRows, closedNow } from "./campaign-checks.ts";
+import { type CampaignRow, campaignRow, closedNow } from "./campaign-checks.ts";
 import { campaignClientId, enterCampaign } from "./campaign-entry.ts";
 import { emptyCounts, goalCondition, messagesOf, sendsEmail } from "./campaign-parts.ts";
 import { campaignResults, campaignTotals, sentLastWeek } from "./campaign-results.ts";
@@ -30,7 +30,7 @@ import {
   workspace,
 } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
-import { lockVisitors } from "./journey.ts";
+import { lockForSend } from "./journey.ts";
 import { type Live, OPERATORS, type Signals } from "./live.ts";
 import { lockWorkspace, nextSeq, wantsWebhook } from "./messages.ts";
 import { outboundView, sendTarget, tellOutbound } from "./outbound.ts";
@@ -60,11 +60,14 @@ type Row = typeof campaign.$inferSelect;
 const whereRef = (ref: CampaignRef) =>
   "id" in ref ? eq(campaign.id, ref.id) : eq(campaign.key, ref.key);
 
-async function readCampaign(tx: Transaction, workspaceId: string, ref: CampaignRef) {
-  const [found] = await tx
+const selectCampaign = (tx: Transaction, workspaceId: string, ref: CampaignRef) =>
+  tx
     .select()
     .from(campaign)
     .where(and(eq(campaign.workspaceId, workspaceId), whereRef(ref)));
+
+async function readCampaign(tx: Transaction, workspaceId: string, ref: CampaignRef) {
+  const [found] = await selectCampaign(tx, workspaceId, ref);
   return found;
 }
 
@@ -78,17 +81,9 @@ async function readCampaign(tx: Transaction, workspaceId: string, ref: CampaignR
  */
 async function lockCampaign(tx: Transaction, workspaceId: string, ref: CampaignRef) {
   await lockWorkspace(tx, workspaceId);
-  const [found] = await tx
-    .select()
-    .from(campaign)
-    .where(and(eq(campaign.workspaceId, workspaceId), whereRef(ref)))
-    .for("no key update");
+  const [found] = await selectCampaign(tx, workspaceId, ref).for("no key update");
   return found;
 }
-
-/** A campaign by `ref`, with the workspace's settings for every campaign. */
-const campaignOf = async (tx: Transaction, workspaceId: string, ref: CampaignRef) =>
-  (await campaignRows(tx, workspaceId, whereRef(ref)))[0];
 
 const iso = (value: Date | null) => value?.toISOString() ?? null;
 
@@ -405,14 +400,13 @@ export function createCampaigns({ db, live }: { db: Database; live: Live }) {
     async send(workspaceId: string, ref: CampaignRef, input: SendInput) {
       const outcome = await withWorkspace(db, workspaceId, async (tx) => {
         // Read with no lock: the send's decision checks the status again under the workspace's.
-        const found = await campaignOf(tx, workspaceId, ref);
+        const found = await campaignRow(tx, workspaceId, whereRef(ref));
         if (found === undefined) return "not_found" as const;
         if (found.status !== "live") return "not_live" as const;
         const clientId = campaignClientId(found.id, input.clientId);
         const visitorId = await sendTarget(tx, workspaceId, input.visitor);
         if (visitorId === null) return "not_found" as const;
-        await lockVisitors(tx, workspaceId, [visitorId]);
-        const { botsPaused } = await lockWorkspace(tx, workspaceId);
+        const { botsPaused } = await lockForSend(tx, workspaceId, [visitorId]);
         const [retry] = await tx
           .select({ id: outboundMessage.id })
           .from(outboundMessage)
@@ -448,7 +442,7 @@ export function createCampaigns({ db, live }: { db: Database; live: Live }) {
      */
     async test(workspaceId: string, actor: Extract<Actor, { kind: "operator" }>, ref: CampaignRef) {
       return withWorkspace(db, workspaceId, async (tx) => {
-        const found = await campaignOf(tx, workspaceId, ref);
+        const found = await campaignRow(tx, workspaceId, whereRef(ref));
         if (found === undefined) return "not_found" as const;
         const visitorId = await insertTestVisitor(tx, workspaceId, actor.name);
         const { botsPaused } = await lockWorkspace(tx, workspaceId);

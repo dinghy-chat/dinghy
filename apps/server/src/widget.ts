@@ -1755,14 +1755,16 @@ export function registerWidgetRoutes(
     // A token that no longer works still counts the tab, as a visitor with none.
     const visitorId =
       token.kind === null ? null : await knownVisitor(db, found, c.req.param("key"), token);
-    const conversationId =
-      visitorId == null
-        ? null
-        : await withWorkspace(db, found.id, async (tx) => {
-            const open = await notePlace(tx, found.id, visitorId, country, zone);
-            await recheckCampaigns(tx, found.id, visitorId, BEAT_FIELDS);
-            return open;
-          });
+    const known = visitorId ?? null;
+    // One transaction for the visitor's place, their campaigns' checks and the page campaigns.
+    const { conversationId, pages } = await withWorkspace(db, found.id, async (tx) => {
+      let open: string | null = null;
+      if (known !== null) {
+        open = await notePlace(tx, found.id, known, country, zone);
+        await recheckCampaigns(tx, found.id, known, BEAT_FIELDS);
+      }
+      return { conversationId: open, pages: await pageCampaigns(tx, found.id, known) };
+    });
     await liveVisitors.beat(found.id, {
       tab,
       page: path,
@@ -1774,8 +1776,6 @@ export function registerWidgetRoutes(
       visitorId: visitorId ?? null,
       conversationId,
     });
-    const known = visitorId ?? null;
-    const pages = await withWorkspace(db, found.id, (tx) => pageCampaigns(tx, found.id, known));
     if (known === null) return c.json({ ...nothing, pages }, 200);
     return c.json(
       { ok: true as const, waiting: await outbound.shownCount(found.id, known), pages },

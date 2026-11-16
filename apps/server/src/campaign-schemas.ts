@@ -2,9 +2,13 @@ import { z } from "@hono/zod-openapi";
 import {
   BUTTONS_MAX,
   CAMPAIGN_GAP_HOURS_MAX,
+  CAMPAIGN_KEY_PATTERN,
+  CAMPAIGN_NAME_MAX,
   CAMPAIGN_VARIANTS_MAX,
   LOCALES,
   PAGE_SECONDS_MAX,
+  VARIANT_WEIGHT_MAX,
+  VARIANT_WEIGHT_MIN,
   WEEKDAYS,
 } from "../../../packages/widget/src/shared.ts";
 import {
@@ -42,7 +46,7 @@ export const CAMPAIGN_ID = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/;
 
 export const CampaignKey = z
   .string()
-  .regex(/^[a-z0-9][a-z0-9_-]{0,63}$/)
+  .regex(new RegExp(`^${CAMPAIGN_KEY_PATTERN}$`))
   .refine((key) => !CAMPAIGN_ID.test(key), "A key cannot look like a campaign's ID")
   .openapi({
     description: "Lowercase letters, digits, - and _, unique in the workspace",
@@ -113,14 +117,14 @@ export type CampaignMessage = z.infer<typeof MessageSchema>;
 const VariantSchema = z.union([
   z.strictObject({
     key: CampaignKey,
-    weight: z.number().int().min(1).max(100),
+    weight: z.number().int().min(VARIANT_WEIGHT_MIN).max(VARIANT_WEIGHT_MAX),
     message: MessageSchema.optional().openapi({
       description: "This variant's message. Left out, the campaign's own",
     }),
   }),
   z.strictObject({
     key: CampaignKey,
-    weight: z.number().int().min(1).max(100),
+    weight: z.number().int().min(VARIANT_WEIGHT_MIN).max(VARIANT_WEIGHT_MAX),
     control: z.literal(true).openapi({
       description: "The control group: no message, so the goal's results can compare",
     }),
@@ -226,7 +230,7 @@ function definitionProblems(definition: Definition): string[] {
 
 const DefinitionShape = z.strictObject({
   key: CampaignKey,
-  name: z.string().trim().min(1).max(100),
+  name: z.string().trim().min(1).max(CAMPAIGN_NAME_MAX),
   audience: AudienceCondition.optional().openapi({
     description: "Who it is for: a condition on the contact. Left out, everyone",
   }),
@@ -353,13 +357,13 @@ export const CampaignSettingsSchema = z
   })
   .openapi("CampaignSettings");
 
-export const CampaignSettingsView = CampaignSettingsSchema.extend({
+export const CampaignSettingsViewSchema = CampaignSettingsSchema.extend({
   pausedBy: z.string().nullable().openapi({
     description: "The member or key who paused every campaign, by its name then, or null",
   }),
   pausedAt: z.string().nullable().openapi({ description: "When, or null while they run" }),
 }).openapi("CampaignSettingsView");
-export type CampaignSettings = z.infer<typeof CampaignSettingsView>;
+export type CampaignSettingsView = z.infer<typeof CampaignSettingsViewSchema>;
 
 export const EstimateSchema = z.object({
   audience: AudienceCondition.optional(),

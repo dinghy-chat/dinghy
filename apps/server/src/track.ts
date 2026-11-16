@@ -2,7 +2,7 @@ import { createRoute, z } from "@hono/zod-openapi";
 import { and, eq, sql } from "drizzle-orm";
 import { API_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
-import { campaignRows, inAudience } from "./campaign-checks.ts";
+import { campaignRows, inAudience, triggerIs } from "./campaign-checks.ts";
 import { enterCampaign } from "./campaign-entry.ts";
 import { EVENT_NAME, eventFields } from "./conditions.ts";
 import { contactChanged } from "./contact-checks.ts";
@@ -108,7 +108,7 @@ export function createTracking({ db, live }: { db: Database; live: Live }) {
           workspaceId,
           and(
             eq(campaign.status, "live"),
-            sql`${campaign.definition} #>> '{trigger,type}' = 'event'`,
+            triggerIs("event"),
             sql`${campaign.definition} #>> '{trigger,name}' = ${input.name}`,
           ),
         );
