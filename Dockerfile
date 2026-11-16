@@ -17,6 +17,7 @@ COPY --from=install /repo ./
 COPY apps/operator apps/operator
 COPY packages/widget packages/widget
 COPY ee/operator ee/operator
+COPY apps/server/src/campaign-parts.ts apps/server/src/
 RUN node --input-type=module -e " \
   const { buildWidget } = await import('./packages/widget/build.ts'); \
   const { buildOperator } = await import('./apps/operator/build.ts'); \

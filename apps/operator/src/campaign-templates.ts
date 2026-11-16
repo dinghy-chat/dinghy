@@ -1,5 +1,4 @@
 import { PAGE_SECONDS_DEFAULT } from "../../../packages/widget/src/shared.ts";
-import { DAY_MS } from "../../server/src/time.ts";
 import type { CampaignDefinition } from "./api.ts";
 import { dateInput, newDefinition } from "./campaign-draft.ts";
 import { TINT, type Tint } from "./campaign-tile.tsx";
@@ -96,8 +95,10 @@ export const TEMPLATES: CampaignTemplate[] = [
     text: "templateAnnounceText",
     icon: "megaphone",
     tint: TINT.blue,
-    definition: () =>
-      draft(
+    definition: () => {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      return draft(
         "announcement",
         { name: "templateAnnounce", body: "templateAnnounceBody" },
         {
@@ -105,12 +106,13 @@ export const TEMPLATES: CampaignTemplate[] = [
             type: "schedule",
             repeat: "once",
             time: ANNOUNCE_TIME,
-            startDate: dateInput(new Date(Date.now() + DAY_MS)),
+            startDate: dateInput(tomorrow),
             timeZone: browserTimeZone(),
           },
           presentation: { ...newDefinition().presentation, show: "badge" },
         },
-      ),
+      );
+    },
   },
 ];
 
