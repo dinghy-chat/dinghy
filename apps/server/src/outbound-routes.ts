@@ -20,6 +20,7 @@ import {
   SEND_REFUSALS,
   SendSchema,
   VisitorRef,
+  WAITING_PER_VISITOR,
 } from "./outbound-schemas.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import { MINUTE_SECONDS } from "./time.ts";
@@ -53,7 +54,7 @@ const sendRoute = createRoute({
     404: errorAnswer("not_found: no visitor has this `id`"),
     409: errorAnswer("bots_paused: an owner or admin paused every bot"),
     429: errorAnswer(
-      "too_many_requests: over the key's rate limit. too_many_waiting: the visitor has 5 outbound messages waiting",
+      `too_many_requests: over the key's rate limit. too_many_waiting: the visitor has ${WAITING_PER_VISITOR} outbound messages waiting`,
     ),
   },
 });
@@ -101,7 +102,7 @@ const cancelRoute = createRoute({
   },
 });
 
-const cancelOnceRoute = createRoute({
+const cancelByKeyRoute = createRoute({
   method: "post",
   path: `${PATH}/cancel`,
   security: SESSION_OR_KEY,
@@ -160,7 +161,7 @@ export function registerOutboundRoutes(
     return found === null ? c.json(NOT_FOUND, 404) : c.json({ outboundMessage: found }, 200);
   });
 
-  app.openapi(cancelOnceRoute, async (c) => {
+  app.openapi(cancelByKeyRoute, async (c) => {
     const found = await outbound.cancel(c.get("memberWorkspaceId"), c.req.valid("json"));
     return c.json({ outboundMessage: found }, 200);
   });

@@ -18,6 +18,7 @@ import {
   label,
   type MessagePayload,
   operator,
+  outboundMessage,
   RESPONSE_EXCERPT_MAX,
   WEBHOOK_EVENTS,
   type WebhookEvent,
@@ -1008,7 +1009,16 @@ export function fanOutWebhooksOne(db: Database): Promise<boolean> {
 /** Whether what a delivery names still exists, so its foreign keys hold. */
 async function stillThere(tx: Transaction, workspaceId: string, subject: WebhookSubject) {
   if ("outboundMessageId" in subject) {
-    return (await outboundViews(tx, workspaceId, [subject.outboundMessageId])).size > 0;
+    const [found] = await tx
+      .select({ id: outboundMessage.id })
+      .from(outboundMessage)
+      .where(
+        and(
+          eq(outboundMessage.workspaceId, workspaceId),
+          eq(outboundMessage.id, subject.outboundMessageId),
+        ),
+      );
+    return found !== undefined;
   }
   if ((await findConversation(tx, workspaceId, subject.conversationId)) === null) return false;
   return (

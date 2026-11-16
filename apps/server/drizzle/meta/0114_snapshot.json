@@ -3622,7 +3622,7 @@
         },
         "outbound_message_status_reason": {
           "name": "outbound_message_status_reason",
-          "value": "\"outbound_message\".\"status_reason\" in ('open_conversation', 'open_conversation_skipped', 'human_handling', 'bots_paused', 'blocked', 'permission_revoked', 'workspace_inactive', 'unless_matched', 'audience_unmatched', 'frequency_capped', 'goal_reached', 'outside_business_hours', 'campaign_paused', 'campaign_ended', 'opted_out', 'cancelled_by_request', 'conversation_deleted')"
+          "value": "\"outbound_message\".\"status_reason\" in ('open_conversation', 'open_conversation_skipped', 'human_handling', 'bots_paused', 'blocked', 'permission_revoked', 'workspace_inactive', 'unless_matched', 'cancelled_by_request', 'conversation_deleted')"
         },
         "outbound_message_start_conversation": {
           "name": "outbound_message_start_conversation",

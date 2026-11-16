@@ -105,6 +105,7 @@ function runWorker({
 }: { mail?: boolean } & Partial<Parameters<typeof startWorker>[0]> = {}) {
   const worker = startWorker({
     db: workerDb,
+    appDb: app,
     logger,
     push: createPush(keys),
     mailer: mail ? mailer : undefined,

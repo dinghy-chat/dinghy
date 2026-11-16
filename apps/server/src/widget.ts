@@ -1593,7 +1593,7 @@ export function registerWidgetRoutes(
       visitorId: visitorId ?? null,
       conversationId,
     });
-    if (visitorId == null) return c.json(nothing, 200);
+    if (visitorId === null || visitorId === undefined) return c.json(nothing, 200);
     return c.json(
       { ok: true as const, waiting: await outbound.shownCount(found.id, visitorId) },
       200,

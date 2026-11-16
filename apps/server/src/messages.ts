@@ -66,7 +66,7 @@ export const isChat = (kind: SQLWrapper = message.kind) => inArray(kind, [...CHA
 
 /**
  * Whether a reply email may carry the message: every message but an outbound message sent with
- * `email: false`.
+ * `sendEmail: false`.
  */
 export const mayGoByEmail = () =>
   sql<boolean>`coalesce((${message.metadata} #>> '{outbound,sendEmail}')::boolean, true)`;

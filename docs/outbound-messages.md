@@ -196,8 +196,6 @@ At the send time, Dinghy checks the message again: a blocked visitor, the key's 
 | `cancelled_by_request` | Cancels | A cancel through the API, MCP or the operator app |
 | `conversation_deleted` | Cancels | A member deleted the conversation it was in before the visitor answered. Its text goes with it |
 
-Campaigns will set `audience_unmatched`, `frequency_capped`, `goal_reached`, `outside_business_hours`, `campaign_paused`, `campaign_ended` and `opted_out`. Dinghy does not set them yet.
-
 The contact page in the operator app lists the person's outbound messages with their status and reason, such as "read 10:02, not answered" or "waiting: open conversation".
 
 ## Send it once

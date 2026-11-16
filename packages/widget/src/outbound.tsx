@@ -215,7 +215,8 @@ export function Choices({ one, onPress }: { one: Choosable; onPress(index: numbe
   return (
     <div class="choices">
       {one.buttons.map((button, index) => (
-        <button type="button" key={button.label} onClick={() => onPress(index)}>
+        // biome-ignore lint/suspicious/noArrayIndexKey: a message's buttons never move, and two may share a label.
+        <button type="button" key={index} onClick={() => onPress(index)}>
           {button.label}
         </button>
       ))}

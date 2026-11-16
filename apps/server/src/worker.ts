@@ -66,9 +66,9 @@ interface WorkerOptions {
   db: Database;
   /**
    * The app's role, which writes the outbound messages whose time came, as they write messages and
-   * the worker's own role writes none. Without it, they wait for a worker that has one.
+   * the worker's own role writes none.
    */
-  appDb?: Database | undefined;
+  appDb: Database;
   logger: Logger;
   push?: Push | undefined;
   mailer?: Mailer | undefined;
@@ -371,7 +371,6 @@ export function startWorker({
   };
 
   const outboundStep = async () => {
-    if (appDb === undefined) return false;
     // Expiry first, so a message whose send time and expiry both passed while the worker was down
     // never goes.
     const expired = await expireOutbound(db, appDb, signals, BATCH);

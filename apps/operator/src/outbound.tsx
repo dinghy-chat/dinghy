@@ -20,13 +20,6 @@ const REASON_TEXT: Record<OutboundStatusReason, TextId> = {
   permission_revoked: "outboundReasonPermission",
   workspace_inactive: "outboundReasonWorkspace",
   unless_matched: "outboundReasonUnless",
-  audience_unmatched: "outboundReasonAudience",
-  frequency_capped: "outboundReasonFrequency",
-  goal_reached: "outboundReasonGoal",
-  outside_business_hours: "outboundReasonHours",
-  campaign_paused: "outboundReasonCampaignPaused",
-  campaign_ended: "outboundReasonCampaignEnded",
-  opted_out: "outboundReasonOptedOut",
   cancelled_by_request: "outboundReasonCancelled",
   conversation_deleted: "outboundReasonConversationDeleted",
 };

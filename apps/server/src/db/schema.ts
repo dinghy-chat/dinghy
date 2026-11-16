@@ -1754,13 +1754,6 @@ export const OUTBOUND_STATUS_REASONS = [
   "permission_revoked",
   "workspace_inactive",
   "unless_matched",
-  "audience_unmatched",
-  "frequency_capped",
-  "goal_reached",
-  "outside_business_hours",
-  "campaign_paused",
-  "campaign_ended",
-  "opted_out",
   "cancelled_by_request",
   "conversation_deleted",
 ] as const;

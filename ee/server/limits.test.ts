@@ -462,6 +462,7 @@ describe("uploads older than 12 months", () => {
 
     const worker = startWorker({
       db: workerDb,
+      appDb: db,
       logger,
       cloud: { signup: "early" },
       store: localStore(directory),

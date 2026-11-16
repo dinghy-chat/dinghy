@@ -711,7 +711,7 @@ export async function pruneOutboundBodies(db: Database, limit: number): Promise<
     UPDATE outbound_message SET body = NULL
     WHERE (workspace_id, id) IN (
       SELECT workspace_id, id FROM outbound_message
-      WHERE body IS NOT NULL AND created_at < now() - ${BODY_KEPT_MS}::float8 * interval '1 millisecond'
+      WHERE body IS NOT NULL
         AND (conversation_id IS NOT NULL OR status NOT IN (${waiting}))
         AND coalesce(replied_at, dismissed_at, cancelled_at, expires_at, created_at)
           < now() - ${BODY_KEPT_MS}::float8 * interval '1 millisecond'

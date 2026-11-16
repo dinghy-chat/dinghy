@@ -47,7 +47,7 @@ CREATE TABLE "outbound_message" (
 	CONSTRAINT "outbound_message_sender" CHECK (("outbound_message"."sender_kind" = 'member') = ("outbound_message"."sender_operator_id" is not null)),
 	CONSTRAINT "outbound_message_sender_kind" CHECK ("outbound_message"."sender_kind" in ('member', 'team', 'author')),
 	CONSTRAINT "outbound_message_status" CHECK ("outbound_message"."status" in ('scheduled', 'sent', 'delivered', 'read', 'replied', 'dismissed', 'cancelled', 'expired')),
-	CONSTRAINT "outbound_message_status_reason" CHECK ("outbound_message"."status_reason" in ('open_conversation', 'open_conversation_skipped', 'human_handling', 'bots_paused', 'blocked', 'permission_revoked', 'workspace_inactive', 'unless_matched', 'audience_unmatched', 'frequency_capped', 'goal_reached', 'outside_business_hours', 'campaign_paused', 'campaign_ended', 'opted_out', 'cancelled_by_request', 'conversation_deleted')),
+	CONSTRAINT "outbound_message_status_reason" CHECK ("outbound_message"."status_reason" in ('open_conversation', 'open_conversation_skipped', 'human_handling', 'bots_paused', 'blocked', 'permission_revoked', 'workspace_inactive', 'unless_matched', 'cancelled_by_request', 'conversation_deleted')),
 	CONSTRAINT "outbound_message_start_conversation" CHECK ("outbound_message"."start_conversation" in ('on_reply', 'now')),
 	CONSTRAINT "outbound_message_show" CHECK ("outbound_message"."show" in ('badge', 'preview', 'chat')),
 	CONSTRAINT "outbound_message_if_conversation_open" CHECK ("outbound_message"."if_conversation_open" in ('hold', 'join', 'skip')),
