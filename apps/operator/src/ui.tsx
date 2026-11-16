@@ -4,7 +4,6 @@ import {
   type InputHTMLAttributes,
   type MouseEvent,
   type ReactNode,
-  type RefObject,
   useEffect,
   useId,
   useRef,
@@ -66,13 +65,96 @@ export function failureText(
   );
 }
 
-/** Opens a dialog as a modal when it mounts. */
-export function useModal(): RefObject<HTMLDialogElement | null> {
+/**
+ * A dialog that opens as a modal when it mounts. Escape, a click on the backdrop or `close` from
+ * the children closes it, and `onClose` runs once whichever way it went.
+ */
+export function Modal({
+  className = "dialog",
+  role,
+  labelledBy,
+  isClosedByAnyClick = false,
+  onClose,
+  children,
+}: {
+  className?: string;
+  role?: "alertdialog";
+  labelledBy?: string;
+  /** Any click closes it, as on an image that fills the screen, not only one on the backdrop. */
+  isClosedByAnyClick?: boolean;
+  onClose(): void;
+  children(close: () => void): ReactNode;
+}) {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     dialog.current?.showModal();
   }, []);
-  return dialog;
+  const close = () => dialog.current?.close();
+  return (
+    // biome-ignore lint/a11y/useKeyWithClickEvents: Escape closes a dialog.
+    <dialog
+      ref={dialog}
+      className={className}
+      role={role}
+      aria-labelledby={labelledBy}
+      onClose={onClose}
+      onClick={(event) => {
+        // A click on the backdrop lands on the dialog itself.
+        if (isClosedByAnyClick || event.target === event.currentTarget) close();
+      }}
+    >
+      {children(close)}
+    </dialog>
+  );
+}
+
+/** A modal form with a title, help text, the fields, an error and a Cancel and submit row. */
+export function FormDialog({
+  title,
+  help,
+  failure,
+  submitLabel,
+  submitDisabled = false,
+  onSubmit,
+  onClose,
+  children,
+}: {
+  title: string;
+  help: string;
+  failure: TextId | null;
+  submitLabel: string;
+  submitDisabled?: boolean;
+  onSubmit(close: () => void): void;
+  onClose(): void;
+  children: ReactNode;
+}) {
+  const titleId = useId();
+  return (
+    <Modal labelledBy={titleId} onClose={onClose}>
+      {(close) => (
+        <form
+          className="dialog-body"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSubmit(close);
+          }}
+        >
+          <h2 id={titleId}>{title}</h2>
+          <p className="dialog-text">{help}</p>
+          {children}
+          <ErrorNote text={failure} />
+          <div className="dialog-actions">
+            <button type="button" className="pill" onClick={close}>
+              {t("cancel")}
+            </button>
+            <button type="submit" className="pill dark" disabled={submitDisabled}>
+              {submitLabel}
+            </button>
+          </div>
+        </form>
+      )}
+    </Modal>
+  );
 }
 
 export function ErrorNote({ text }: { text: TextId | null }) {

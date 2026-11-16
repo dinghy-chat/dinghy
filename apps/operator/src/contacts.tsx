@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { type FormEvent, type ReactNode, useEffect, useId, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import type { Contact, ContactDetail, ContactSort, Role, WorkspaceApi } from "./api.ts";
 import { duration, shortDate } from "./format.ts";
 import { Icon } from "./icons.tsx";
@@ -18,11 +18,11 @@ import {
   CopyIcon,
   ErrorNote,
   FlagBadge,
+  FormDialog,
   failureText,
   Loading,
   Page,
   Tip,
-  useModal,
 } from "./ui.tsx";
 import {
   ago,
@@ -233,13 +233,10 @@ function IdentityForm({
   onSave(change: { name: string | null; email: string | null }): Promise<unknown>;
   onClose(): void;
 }) {
-  const dialog = useModal();
-  const titleId = useId();
   const [name, setName] = useState(contact.name ?? "");
   const [email, setEmail] = useState(contact.email ?? "");
   const [failure, setFailure] = useState<TextId | null>(null);
-  const save = async (event: FormEvent) => {
-    event.preventDefault();
+  const save = async (close: () => void) => {
     setFailure(null);
     try {
       await onSave({
@@ -247,49 +244,34 @@ function IdentityForm({
         email: email.trim() === "" ? null : email.trim(),
       });
       toast("saved");
-      dialog.current?.close();
+      close();
     } catch (error) {
       setFailure(failureText(error, {}, "actionFailed"));
     }
   };
   return (
-    // biome-ignore lint/a11y/useKeyWithClickEvents: Escape closes a dialog.
-    <dialog
-      ref={dialog}
-      className="dialog"
-      aria-labelledby={titleId}
+    <FormDialog
+      title={t("contactEdit")}
+      help={t("contactIdentityHelp")}
+      failure={failure}
+      submitLabel={t("contactSave")}
+      onSubmit={(close) => void save(close)}
       onClose={onClose}
-      onClick={(event) => {
-        if (event.target === event.currentTarget) dialog.current?.close();
-      }}
     >
-      <form className="dialog-body" onSubmit={(event) => void save(event)}>
-        <h2 id={titleId}>{t("contactEdit")}</h2>
-        <p className="dialog-text">{t("contactIdentityHelp")}</p>
-        <label className="identity-field">
-          {t("contactNameLabel")}
-          <input value={name} maxLength={100} onChange={(event) => setName(event.target.value)} />
-        </label>
-        <label className="identity-field">
-          {t("email")}
-          <input
-            type="email"
-            value={email}
-            maxLength={320}
-            onChange={(event) => setEmail(event.target.value)}
-          />
-        </label>
-        <ErrorNote text={failure} />
-        <div className="dialog-actions">
-          <button type="button" className="pill" onClick={() => dialog.current?.close()}>
-            {t("cancel")}
-          </button>
-          <button type="submit" className="pill dark">
-            {t("contactSave")}
-          </button>
-        </div>
-      </form>
-    </dialog>
+      <label className="identity-field">
+        {t("contactNameLabel")}
+        <input value={name} maxLength={100} onChange={(event) => setName(event.target.value)} />
+      </label>
+      <label className="identity-field">
+        {t("email")}
+        <input
+          type="email"
+          value={email}
+          maxLength={320}
+          onChange={(event) => setEmail(event.target.value)}
+        />
+      </label>
+    </FormDialog>
   );
 }
 
