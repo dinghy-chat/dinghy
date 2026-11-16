@@ -52,7 +52,12 @@ import { imageUrls } from "./public-images.ts";
 import type { Push, PushPayload } from "./push.ts";
 import { retryDelayMs } from "./retry.ts";
 import { MINUTE_MS } from "./time.ts";
-import { requestedTranscriptRows, transcriptPlan, transcriptRows } from "./transcripts.ts";
+import {
+  requestedTranscriptRows,
+  transcriptPlan,
+  transcriptRows,
+  transcriptSent,
+} from "./transcripts.ts";
 import {
   emailStopped,
   emailStopUrl,
@@ -493,15 +498,29 @@ const held = (row: ClaimedDelivery) =>
     isNull(alertDelivery.finishedAt),
   );
 
+/**
+ * Ends a delivery. A sent transcript also moves its conversation's anchor, in the same transaction,
+ * so the next close's transcript starts after what this one carried.
+ */
 export async function finishDelivery(
   db: Database,
   row: ClaimedDelivery,
   outcome: "sent" | "skipped" | "failed",
 ): Promise<void> {
-  await db
-    .update(alertDelivery)
-    .set({ outcome, finishedAt: new Date(), claimedUntil: null })
-    .where(held(row));
+  const finish = (tx: Database | Transaction) =>
+    tx
+      .update(alertDelivery)
+      .set({ outcome, finishedAt: new Date(), claimedUntil: null })
+      .where(held(row))
+      .returning({ toSeq: alertDelivery.coveredToSeq });
+  if (outcome !== "sent" || row.channel !== "transcript") {
+    await finish(db);
+    return;
+  }
+  await withWorkspace(db, row.workspaceId, async (tx) => {
+    const [done] = await finish(tx);
+    if (done?.toSeq != null) await transcriptSent(tx, row, done.toSeq);
+  });
 }
 
 export async function retryDelivery(

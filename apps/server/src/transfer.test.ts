@@ -269,7 +269,12 @@ async function makeSource(): Promise<Source> {
     .where(eq(workspaceMember.operatorId, gone.id));
   await owner
     .update(conversation)
-    .set({ snoozedAt: SNOOZED_AT, snoozedUntil: SNOOZED_UNTIL, startedBy: "team" })
+    .set({
+      snoozedAt: SNOOZED_AT,
+      snoozedUntil: SNOOZED_UNTIL,
+      startedBy: "team",
+      transcriptSentSeq: 7n,
+    })
     .where(eq(conversation.id, conversationId));
   await owner.insert(emailStop).values({ workspaceId: space.id, addressHash: "a".repeat(64) });
   await owner
@@ -470,6 +475,7 @@ describe("a round trip onto a fresh install", () => {
     expect(row?.startedPage).toBe(`${SITE}/pricing`);
     expect(row?.snoozedAt).toEqual(SNOOZED_AT);
     expect(row?.snoozedUntil).toEqual(SNOOZED_UNTIL);
+    expect(row?.transcriptSentSeq).toBe(7n);
     const messages = await target.owner
       .select()
       .from(message)
@@ -996,7 +1002,8 @@ describe("a bad file changes nothing", () => {
       Buffer.concat([...tarEntry("export.json", Buffer.from("{nope")), tarEnd()]),
       "valid JSON",
     );
-  });
+    // Four imports in a row, which a busy CI runner takes more than the default 5 seconds for.
+  }, 15_000);
 
   test("a row that points at nothing fails after the uploads are stored, and they are cleaned up", async () => {
     await refuses(

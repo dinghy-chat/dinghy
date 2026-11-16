@@ -1,6 +1,7 @@
-// The whole conversation by email: at a close, after a delay, or when an operator asks for it.
+// The conversation by email: at a close, after a delay, what came since the last sent transcript,
+// and the whole conversation when an operator asks for it.
 
-import { and, desc, eq, gt, gte, isNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, or, type SQL, sql } from "drizzle-orm";
 import { escapeHtml, markdownHtml } from "../../../packages/widget/src/markdown.ts";
 import type {
   AlertPlan,
@@ -52,12 +53,71 @@ import { type VisitorWords, visitorWords } from "./visitor-words.ts";
 
 // The transcript waits, so a quick reopen cancels it.
 export const TRANSCRIPT_DELAY_MS = 5 * MINUTE_MS;
-// The most messages a transcript holds, the newest ones. The chat link has the rest.
-const TRANSCRIPT_MESSAGES = 500;
+// A transcript holds the newest messages up to both limits, so Gmail does not clip it at 102 KB
+// and hide the footer with the stop link. The bytes are the messages' HTML, which Gmail counts,
+// and leave room for the header, the intro and the footer. The chat link has the rest.
+const TRANSCRIPT_MESSAGES = 100;
+const TRANSCRIPT_BYTES = 80_000;
+
+/** The chat messages of a conversation after a position, as a transcript holds them. */
+const transcriptRange = (workspaceId: string, conversationId: string, after: bigint | null) =>
+  and(
+    eq(message.workspaceId, workspaceId),
+    eq(message.conversationId, conversationId),
+    after === null ? undefined : gt(message.seq, after),
+    isChat(),
+    isNull(message.deletedAt),
+  );
+
+/** How many messages a range has, its last one, and whether someone on the team wrote in it. */
+async function rangeStats(tx: Transaction, range: SQL | undefined) {
+  const [stats] = await tx
+    .select({
+      total: sql<number>`count(*)::int`,
+      lastSeq: sql<string | null>`max(${message.seq})`,
+      replied: sql<boolean>`coalesce(bool_or(${message.authorVisitorId} is null), false)`,
+    })
+    .from(message)
+    .where(range);
+  return stats ?? { total: 0, lastSeq: null, replied: false };
+}
+
+/**
+ * The newest messages whose HTML fits the byte limit, oldest first. The newest one is kept even when
+ * it alone is over the limit.
+ */
+export function newestThatFit<T extends TranscriptLine>(
+  newestFirst: T[],
+  view: TranscriptView,
+): T[] {
+  const kept: T[] = [];
+  let bytes = 0;
+  for (const line of newestFirst) {
+    bytes += Buffer.byteLength(lineHtml(line, view));
+    if (kept.length > 0 && bytes > TRANSCRIPT_BYTES) break;
+    kept.push(line);
+  }
+  return kept.reverse();
+}
+
+/** A transcript went, so the next close's transcript starts after the last message it carried. */
+export async function transcriptSent(
+  tx: Transaction,
+  { workspaceId, conversationId }: ClaimedDelivery,
+  toSeq: bigint,
+): Promise<void> {
+  await tx
+    .update(conversation)
+    .set({
+      transcriptSentSeq: sql`greatest(${conversation.transcriptSentSeq}, ${toSeq.toString()}::bigint)`,
+    })
+    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)));
+}
 
 /**
  * A close: one transcript to the visitor after a delay, when the visitor has an email, the workspace
- * sends transcripts, someone on the team replied, and no transcript holds every message already.
+ * sends transcripts, someone on the team replied since the last sent transcript, and no transcript
+ * holds every message already.
  */
 export async function transcriptRows(tx: Transaction, base: DeliveryBase): Promise<DeliveryRow[]> {
   const { workspaceId, conversationId } = base;
@@ -69,13 +129,15 @@ export async function transcriptRows(tx: Transaction, base: DeliveryBase): Promi
     .where(eq(widgetSettings.workspaceId, workspaceId));
   if (settings?.wanted !== true) return [];
   if (await emailStopped(tx, workspaceId, target.email)) return [];
-  const result = await tx.execute<{ last_seq: string | null; replied: boolean }>(sql`
-    select max(seq) as last_seq, coalesce(bool_or(author_visitor_id is null), false) as replied
-    from ${message}
-    where workspace_id = ${workspaceId} and conversation_id = ${conversationId}
-      and ${isChat()}`);
-  const stats = result.rows[0];
-  if (stats === undefined || !stats.replied || stats.last_seq === null) return [];
+  const [anchor] = await tx
+    .select({ sentSeq: conversation.transcriptSentSeq })
+    .from(conversation)
+    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)));
+  const stats = await rangeStats(
+    tx,
+    transcriptRange(workspaceId, conversationId, anchor?.sentSeq ?? null),
+  );
+  if (!stats.replied || stats.lastSeq === null) return [];
   // A sent or waiting transcript from a later close holds every message already.
   const [covered] = await tx
     .select({ id: alertDelivery.id })
@@ -85,7 +147,7 @@ export async function transcriptRows(tx: Transaction, base: DeliveryBase): Promi
         eq(alertDelivery.workspaceId, workspaceId),
         eq(alertDelivery.conversationId, conversationId),
         eq(alertDelivery.channel, "transcript"),
-        gt(alertDelivery.eventSeq, BigInt(stats.last_seq)),
+        gt(alertDelivery.eventSeq, BigInt(stats.lastSeq)),
         or(isNull(alertDelivery.outcome), eq(alertDelivery.outcome, "sent")),
       ),
     )
@@ -116,8 +178,9 @@ export async function queueTranscript(
 }
 
 /**
- * A transcript an operator asked for: now, unless one asked for the same newest message still waits,
- * or a sent one carried that message already. A failed one does not stop a retry.
+ * A transcript an operator asked for: now, unless one asked for the same newest message waits or
+ * was sent. A failed one does not stop a retry, and a close's transcript, which may hold only part
+ * of the conversation, never stops it.
  */
 export async function requestedTranscriptRows(
   tx: Transaction,
@@ -126,7 +189,6 @@ export async function requestedTranscriptRows(
   const { workspaceId, conversationId, messageId } = base;
   const target = await conversationVisitor(tx, workspaceId, conversationId);
   if (target === undefined || target.email === null) return [];
-  const newest = sql`(select ${message.seq} from ${message} where ${message.workspaceId} = ${workspaceId} and ${message.id} = ${messageId})`;
   const [covered] = await tx
     .select({ id: alertDelivery.id })
     .from(alertDelivery)
@@ -135,10 +197,8 @@ export async function requestedTranscriptRows(
         eq(alertDelivery.workspaceId, workspaceId),
         eq(alertDelivery.conversationId, conversationId),
         eq(alertDelivery.channel, "transcript"),
-        or(
-          and(isNull(alertDelivery.finishedAt), eq(alertDelivery.messageId, messageId)),
-          and(eq(alertDelivery.outcome, "sent"), gte(alertDelivery.coveredToSeq, newest)),
-        ),
+        eq(alertDelivery.messageId, messageId),
+        or(isNull(alertDelivery.finishedAt), eq(alertDelivery.outcome, "sent")),
       ),
     )
     .limit(1);
@@ -147,9 +207,11 @@ export async function requestedTranscriptRows(
 }
 
 /**
- * The whole conversation by email. A close's transcript sends nothing when the conversation was
- * reopened, or when a later close made another. A reply email waits for it, and leaves out the
- * replies it carried once it is sent, so the visitor does not get both.
+ * The conversation by email. A close's transcript holds the messages since the last sent
+ * transcript, and one an operator asks for holds the whole conversation, both within the limits.
+ * A close's transcript sends nothing when the conversation was reopened, or when a later close made
+ * another. A reply email waits for it, and leaves out the replies it carried once it is sent, so the
+ * visitor does not get both.
  */
 export async function transcriptPlan(
   tx: Transaction,
@@ -162,6 +224,7 @@ export async function transcriptPlan(
   const [state] = await tx
     .select({
       status: conversation.status,
+      sentSeq: conversation.transcriptSentSeq,
       email: visitor.email,
       locale: visitor.locale,
       fromClose: sql<boolean>`exists (select 1 from ${message} where ${message.workspaceId} = ${workspaceId} and ${message.id} = ${messageId} and ${message.kind} = 'closed')`,
@@ -174,40 +237,38 @@ export async function transcriptPlan(
   if (state.fromClose && (state.status !== "closed" || state.later)) return null;
   if (await emailStopped(tx, workspaceId, state.email)) return null;
   if ((await sentToday(tx, workspaceId, visitorId)).length >= VISITOR_EMAILS_PER_DAY) return null;
+  const after = state.fromClose ? state.sentSeq : null;
+  const range = transcriptRange(workspaceId, conversationId, after);
+  const stats = await rangeStats(tx, range);
+  if (state.fromClose && !stats.replied) return null;
   // The key share lock makes an edit wait until this transcript's range is recorded, as for a reply
   // email.
-  const lines = (
-    await tx
-      .select({
-        seq: message.seq,
-        body: message.body,
-        filename: filename(),
-        kind: message.kind,
-        authorVisitorId: message.authorVisitorId,
-        authorOperatorId: message.authorOperatorId,
-        authorApiKeyId: message.authorApiKeyId,
-        replyTo: messageColumns.replyTo,
-        createdAt: message.createdAt,
-      })
-      .from(message)
-      .where(
-        and(
-          eq(message.workspaceId, workspaceId),
-          eq(message.conversationId, conversationId),
-          isChat(),
-          isNull(message.deletedAt),
-        ),
-      )
-      .orderBy(desc(message.seq))
-      .limit(TRANSCRIPT_MESSAGES)
-      .for("key share", { of: message })
-  ).reverse();
-  if (lines.length === 0) return null;
-  const authors = await messageAuthors(tx, workspaceId, lines);
+  const newest = await tx
+    .select({
+      seq: message.seq,
+      body: message.body,
+      filename: filename(),
+      kind: message.kind,
+      authorVisitorId: message.authorVisitorId,
+      authorOperatorId: message.authorOperatorId,
+      authorApiKeyId: message.authorApiKeyId,
+      replyTo: messageColumns.replyTo,
+      createdAt: message.createdAt,
+    })
+    .from(message)
+    .where(range)
+    .orderBy(desc(message.seq))
+    .limit(TRANSCRIPT_MESSAGES)
+    .for("key share", { of: message });
+  if (newest.length === 0) return null;
   const chatUrl = chatLinkUrl(
     publicUrl,
     await createChatLink(tx, workspaceId, visitorId, conversationId),
   );
+  const words = visitorWords(state.locale);
+  const authors = await messageAuthors(tx, workspaceId, newest);
+  const lines = newestThatFit(newest, { place, authors, chatUrl, words });
+  const part = { sinceLastSent: after !== null, leftOut: stats.total - lines.length };
   const stopUrl = emailStopUrl(publicUrl, secret, workspaceId, state.email);
   const replyTo =
     inboundDomain === undefined
@@ -226,7 +287,7 @@ export async function transcriptPlan(
   return {
     channel: "email",
     to: state.email,
-    ...transcriptLetter(place, lines, authors, links, visitorWords(state.locale)),
+    ...transcriptLetter(place, lines, authors, links, words, part),
     stopUrl,
     replyTo,
     carries: { fromSeq: lines[0]?.seq ?? 0n, toSeq: lines.at(-1)?.seq ?? 0n },
@@ -257,6 +318,45 @@ const standIn = (line: TranscriptLine, words: VisitorWords) =>
       ? words.transcriptFile(line.filename)
       : null;
 
+/** What a transcript's lines need to name their authors and link to the chat. */
+interface TranscriptView {
+  place: Place;
+  authors: Map<string, MessageAuthor>;
+  chatUrl: string;
+  words: VisitorWords;
+}
+
+/** A line's author and time, as the visitor knows them. */
+const lineHead = (line: TranscriptLine, { place, authors, words }: TranscriptView) =>
+  `${visitorAuthorName(line, authors, place.name, words)}, ${words.time(line.createdAt)}`;
+
+/** A line's HTML: its author and time, then what it said, under the message it answers. */
+function lineHtml(line: TranscriptLine, view: TranscriptView): string {
+  const { chatUrl, words } = view;
+  const shown = standIn(line, words);
+  return (
+    `<p style="margin:16px 0 4px;color:${EMAIL_COLORS.muted};font-size:13px">${escapeHtml(lineHead(line, view))}</p>` +
+    quotedHtml(
+      visitorQuote(line.replyTo),
+      mailParagraphs(
+        shown === null
+          ? markdownHtml(line.body ?? "")
+          : `<p><a href="${escapeHtml(chatUrl)}">${escapeHtml(shown)}</a></p>`,
+      ),
+      words,
+    )
+  );
+}
+
+/**
+ * Which part of the conversation a transcript holds: only what came after the last sent transcript,
+ * and how many earlier messages of its range the limits left out.
+ */
+interface TranscriptPart {
+  sinceLastSent: boolean;
+  leftOut: number;
+}
+
 /** The transcript's words: each message under its author and time, as text and as HTML. */
 export function transcriptLetter(
   place: Place,
@@ -264,41 +364,25 @@ export function transcriptLetter(
   authors: Map<string, MessageAuthor>,
   links: VisitorLinks,
   words: VisitorWords,
+  part: TranscriptPart,
 ): { subject: string; text: string; html: string } {
   const { chatUrl } = links;
-  const heads = lines.map(
-    (line) =>
-      `${visitorAuthorName(line, authors, place.name, words)}, ${words.time(line.createdAt)}`,
-  );
+  const view = { place, authors, chatUrl, words };
+  const intro = [
+    part.sinceLastSent ? words.transcriptSince(place.name) : words.transcriptIntro(place.name),
+    ...(part.leftOut > 0 ? [words.transcriptLeftOut(part.leftOut)] : []),
+  ];
   const plain = lines
     .map(
-      (line, index) =>
-        `${words.lead(heads[index] ?? "")}\n${quotedText(visitorQuote(line.replyTo), standIn(line, words) ?? line.body ?? "", words)}`,
+      (line) =>
+        `${words.lead(lineHead(line, view))}\n${quotedText(visitorQuote(line.replyTo), standIn(line, words) ?? line.body ?? "", words)}`,
     )
     .join("\n\n");
   const html = [
-    `<p style="margin:0">${escapeHtml(words.transcriptIntro(place.name))}</p>`,
-    ...lines.map((line, index) => {
-      const shown = standIn(line, words);
-      return (
-        `<p style="margin:16px 0 4px;color:${EMAIL_COLORS.muted};font-size:13px">${escapeHtml(heads[index] ?? "")}</p>` +
-        quotedHtml(
-          visitorQuote(line.replyTo),
-          mailParagraphs(
-            shown === null
-              ? markdownHtml(line.body ?? "")
-              : `<p><a href="${escapeHtml(chatUrl)}">${escapeHtml(shown)}</a></p>`,
-          ),
-          words,
-        )
-      );
-    }),
+    ...intro.map((paragraph) => `<p style="margin:0 0 8px">${escapeHtml(paragraph)}</p>`),
+    ...lines.map((line) => lineHtml(line, view)),
   ].join("");
-  const paragraphs = [
-    words.transcriptIntro(place.name),
-    plain,
-    `${words.lead(words.continueChat)} ${chatUrl}`,
-  ];
+  const paragraphs = [...intro, plain, `${words.lead(words.continueChat)} ${chatUrl}`];
   return {
     subject: words.transcriptSubject(place.name),
     text: visitorLetterText(place.name, paragraphs, links, words),
@@ -324,14 +408,7 @@ async function requestTranscript(
   const [newest] = await tx
     .select({ id: message.id })
     .from(message)
-    .where(
-      and(
-        eq(message.workspaceId, workspaceId),
-        eq(message.conversationId, conversationId),
-        isChat(),
-        isNull(message.deletedAt),
-      ),
-    )
+    .where(transcriptRange(workspaceId, conversationId, null))
     .orderBy(desc(message.seq))
     .limit(1);
   if (newest === undefined) return false;
