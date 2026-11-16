@@ -30,10 +30,10 @@ import { Icon } from "./icons.tsx";
 import { CodeBlock } from "./install.tsx";
 import { useLoad, useSettled } from "./load.ts";
 import { reasonText } from "./outbound.tsx";
-import { Confirm, Menu } from "./popup.tsx";
+import { Confirm, Menu, type MenuItem } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
-import { Choices, Field, failureText, Loading, Modal, PageHead } from "./ui.tsx";
+import { Choices, ErrorNote, Field, failureText, Loading, Modal, PageHead } from "./ui.tsx";
 
 export const STATUS_TEXT: Record<Campaign["status"], TextId> = {
   draft: "campaignDraft",
@@ -48,16 +48,17 @@ export function StatusChip({ status }: { status: Campaign["status"] }) {
   return <span className={`chip${tone}`}>{t(STATUS_TEXT[status])}</span>;
 }
 
-/** Why a save or an action failed. A definition that does not fit together says each problem. */
-function campaignFailure(error: unknown): string {
+/**
+ * Why a save or an action failed. The editor checks the text's variables itself, so a definition
+ * the server still refuses gets one general line.
+ */
+function campaignFailure(error: unknown): TextId {
   if (error instanceof ApiError) {
-    if (error.code === "invalid_request" && error.detail !== null) {
-      return t("campaignInvalid", { problems: error.detail });
-    }
-    if (error.code === "campaign_key_taken") return t("campaignKeyTaken");
-    if (error.code === "campaign_ended") return t("campaignEndedRefused");
+    if (error.code === "invalid_request") return "campaignInvalid";
+    if (error.code === "campaign_key_taken") return "campaignKeyTaken";
+    if (error.code === "campaign_ended") return "campaignEndedRefused";
   }
-  return t(failureText(error, { 403: "campaignForbidden" }, "actionFailed"));
+  return failureText(error, { 403: "campaignForbidden" }, "actionFailed");
 }
 
 /** "1,204 people", or "10,000+ people" past the count's limit. */
@@ -158,7 +159,7 @@ function TestDialog({
           <p className="note" role="status">
             {blockedBy === null
               ? t("campaignTestClear")
-              : t("campaignTestBlocked", { rule: reasonText(blockedBy), code: blockedBy })}
+              : t("campaignTestBlocked", { rule: reasonText(blockedBy) })}
           </p>
           <div className="dialog-actions">
             <button type="button" className="pill" onClick={close}>
@@ -180,8 +181,27 @@ function TestDialog({
   );
 }
 
-/** The editor's sections, one for each part of the JSON. */
-function CampaignSections({
+/** The parts "More options" holds, which a new campaign leaves at their defaults. */
+const MORE_PARTS = ["variants", "presentation", "delivery", "rules"] as const;
+
+/** Whether the campaign changes one of the parts under "More options", so it opens on them. */
+const changesMore = (definition: CampaignDefinition) => {
+  const defaults = newDefinition();
+  return MORE_PARTS.some(
+    (part) => JSON.stringify(definition[part]) !== JSON.stringify(defaults[part]),
+  );
+};
+
+interface SectionProps {
+  definition: CampaignDefinition;
+  members: Member[];
+  language: Language;
+  onLanguage(language: Language): void;
+  onChange(definition: CampaignDefinition): void;
+}
+
+/** The sections everyone needs: the name, who it is for, when it goes, and what it says. */
+function MainSections({
   api,
   definition,
   isNew,
@@ -189,15 +209,7 @@ function CampaignSections({
   language,
   onLanguage,
   onChange,
-}: {
-  api: WorkspaceApi;
-  definition: CampaignDefinition;
-  isNew: boolean;
-  members: Member[];
-  language: Language;
-  onLanguage(language: Language): void;
-  onChange(definition: CampaignDefinition): void;
-}) {
+}: SectionProps & { api: WorkspaceApi; isNew: boolean }) {
   const estimate = useEstimate(api, definition);
   const change = <K extends keyof CampaignDefinition>(key: K, value: CampaignDefinition[K]) =>
     onChange(withPart(definition, key, value));
@@ -257,6 +269,16 @@ function CampaignSections({
           onChange={(message) => change("message", message)}
         />
       </FormSection>
+    </>
+  );
+}
+
+/** The advanced sections: A/B variants, how it shows, how it is delivered, and its rules. */
+function MoreSections({ definition, members, language, onLanguage, onChange }: SectionProps) {
+  const change = <K extends keyof CampaignDefinition>(key: K, value: CampaignDefinition[K]) =>
+    onChange(withPart(definition, key, value));
+  return (
+    <>
       <FormSection title="campaignVariants">
         <VariantsFields
           definition={definition}
@@ -280,14 +302,57 @@ function CampaignSections({
         />
       </FormSection>
       <FormSection title="campaignRules" help="campaignRulesHelp">
-        <RulesFields
-          rules={definition.rules}
-          delivery={definition.delivery}
-          onRules={(rules) => change("rules", rules)}
-          onDelivery={(delivery) => change("delivery", delivery)}
-        />
+        <RulesFields rules={definition.rules} onRules={(rules) => change("rules", rules)} />
       </FormSection>
     </>
+  );
+}
+
+/**
+ * The editor's form: the main sections open, and the others under "More options", which starts
+ * open when the campaign changes one of them. Its button stays usable for a member, who reads.
+ */
+function CampaignForm({
+  api,
+  formId,
+  editable,
+  isNew,
+  onSubmit,
+  children,
+  ...props
+}: SectionProps & {
+  api: WorkspaceApi;
+  formId: string;
+  editable: boolean;
+  isNew: boolean;
+  onSubmit(event: FormEvent<HTMLFormElement>): void;
+  /** The notes above the sections. */
+  children: ReactNode;
+}) {
+  const [more, setMore] = useState(() => changesMore(props.definition));
+  const moreId = useId();
+  return (
+    <form id={formId} className="widget-form" onSubmit={onSubmit}>
+      {children}
+      <fieldset className="widget-sections" disabled={!editable}>
+        <MainSections api={api} isNew={isNew} {...props} />
+      </fieldset>
+      <button
+        type="button"
+        className="more-options"
+        aria-expanded={more}
+        aria-controls={moreId}
+        onClick={() => setMore(!more)}
+      >
+        <Icon name="chevron" size={14} />
+        {t("campaignMoreOptions")}
+      </button>
+      {more && (
+        <fieldset id={moreId} className="widget-sections" disabled={!editable}>
+          <MoreSections {...props} />
+        </fieldset>
+      )}
+    </form>
   );
 }
 
@@ -326,12 +391,20 @@ function EditorActions({
     </button>
   );
   const editable = canEdit && status !== "ended";
+  const items: MenuItem[] = [
+    { label: t("campaignCode"), lead: <Icon name="code" size={18} />, onSelect: onCode },
+  ];
+  if (editable && campaign !== null) {
+    items.push({
+      label: t("campaignEnd"),
+      lead: <Icon name="prohibit" size={18} />,
+      danger: true,
+      divider: true,
+      onSelect: () => onAction("end"),
+    });
+  }
   return (
     <>
-      <button type="button" className="pill" onClick={onCode}>
-        <Icon name="code" size={18} />
-        {t("campaignCode")}
-      </button>
       {campaign !== null && (
         <button
           type="button"
@@ -353,22 +426,9 @@ function EditorActions({
           {t("campaignPause")}
         </button>
       )}
-      {editable && campaign !== null && (
-        <Menu
-          label={t("moreActions")}
-          buttonClass="round"
-          items={[
-            {
-              label: t("campaignEnd"),
-              lead: <Icon name="prohibit" size={18} />,
-              danger: true,
-              onSelect: () => onAction("end"),
-            },
-          ]}
-        >
-          <Icon name="dots" />
-        </Menu>
-      )}
+      <Menu label={t("moreActions")} buttonClass="round" items={items}>
+        <Icon name="dots" />
+      </Menu>
     </>
   );
 }
@@ -432,6 +492,97 @@ export function CampaignEditor({
   );
 }
 
+type Dialog =
+  | { kind: "code" | "end" }
+  | { kind: "test"; blockedBy: OutboundStatusReason | null; conversationId: string | null };
+
+/**
+ * What the page's buttons do, each while the page is busy, with its failure kept for the page. A
+ * pause or an end keeps the changes not saved yet, and only a save clears them.
+ */
+function useCampaignActions({
+  api,
+  campaign,
+  definition,
+  unsaved,
+  setCampaign,
+  setEdited,
+  setDialog,
+  onSaved,
+}: {
+  api: WorkspaceApi;
+  campaign: Campaign | null;
+  definition: CampaignDefinition;
+  unsaved: boolean;
+  setCampaign(campaign: Campaign): void;
+  setEdited(definition: CampaignDefinition | null): void;
+  setDialog(dialog: Dialog | null): void;
+  onSaved(id: string): void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<TextId | null>(null);
+  const busyWhile = async (work: () => Promise<void>) => {
+    setBusy(true);
+    setFailure(null);
+    try {
+      await work();
+    } catch (error) {
+      setFailure(campaignFailure(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const run = (work: () => Promise<Campaign>, done: TextId, { saves }: { saves: boolean }) =>
+    void busyWhile(async () => {
+      setCampaign(await work());
+      if (saves) setEdited(null);
+      toast(done);
+    });
+  // Kept at once, so a resume that fails after a first save does not create it twice.
+  const save = async () => {
+    if (campaign !== null) return (await api.saveCampaign(definition)).campaign;
+    const created = (await api.createCampaign(definition)).campaign;
+    setCampaign(created);
+    onSaved(created.id);
+    return created;
+  };
+  const setStatus = (action: "pause" | "end", done: TextId) => {
+    if (campaign === null) return;
+    run(async () => (await api.setCampaignStatus(campaign.id, action)).campaign, done, {
+      saves: false,
+    });
+  };
+  const act = (action: Action) => {
+    if (action === "end") return setDialog({ kind: "end" });
+    if (action === "save") return run(save, "campaignSaved", { saves: true });
+    if (action === "pause") return setStatus("pause", "campaignPausedToast");
+    // Going live or resuming saves the changes first.
+    run(
+      async () => {
+        const current = unsaved || campaign === null ? await save() : campaign;
+        return (await api.setCampaignStatus(current.id, "resume")).campaign;
+      },
+      "campaignLiveToast",
+      { saves: true },
+    );
+  };
+  const end = () => {
+    setDialog(null);
+    setStatus("end", "campaignEndedToast");
+  };
+  const test = () =>
+    void busyWhile(async () => {
+      if (campaign === null) return;
+      const sent = await api.testCampaign(campaign.id);
+      setDialog({
+        kind: "test",
+        blockedBy: sent.blockedBy,
+        conversationId: sent.outboundMessage.conversationId,
+      });
+    });
+  return { busy, failure, act, end, test };
+}
+
 function CampaignPage({
   api,
   me,
@@ -451,83 +602,22 @@ function CampaignPage({
   const [edited, setEdited] = useState<CampaignDefinition | null>(null);
   const [language, setLanguage] = useState<Language>("default");
   const [tab, setTab] = useState<"edit" | "results">("edit");
-  const [busy, setBusy] = useState(false);
-  const [failure, setFailure] = useState<string | null>(null);
-  const [dialog, setDialog] = useState<
-    | { kind: "code" | "end" }
-    | { kind: "test"; blockedBy: OutboundStatusReason | null; conversationId: string | null }
-    | null
-  >(null);
+  const [dialog, setDialog] = useState<Dialog | null>(null);
   const formId = useId();
   const saved = campaign?.definition ?? null;
   const definition = edited ?? saved ?? newDefinition();
   const unsaved = edited !== null && JSON.stringify(edited) !== JSON.stringify(saved);
   const editable = canEdit && campaign?.status !== "ended";
-
-  const run = async (work: () => Promise<Campaign>, done: TextId) => {
-    setBusy(true);
-    setFailure(null);
-    try {
-      setCampaign(await work());
-      setEdited(null);
-      toast(done);
-    } catch (error) {
-      setFailure(campaignFailure(error));
-    } finally {
-      setBusy(false);
-    }
-  };
-  // Kept at once, so a resume that fails after a first save does not create it twice.
-  const save = async () => {
-    if (campaign !== null) return (await api.saveCampaign(definition)).campaign;
-    const created = (await api.createCampaign(definition)).campaign;
-    setCampaign(created);
-    onSaved(created.id);
-    return created;
-  };
-  const act = (action: Action) => {
-    if (action === "end") {
-      setDialog({ kind: "end" });
-      return;
-    }
-    if (action === "save") return void run(save, "campaignSaved");
-    if (action === "pause" && campaign !== null) {
-      return void run(
-        async () => (await api.setCampaignStatus(campaign.id, "pause")).campaign,
-        "campaignPausedToast",
-      );
-    }
-    // Going live or resuming saves the changes first.
-    void run(async () => {
-      const current = unsaved || campaign === null ? await save() : campaign;
-      return (await api.setCampaignStatus(current.id, "resume")).campaign;
-    }, "campaignLiveToast");
-  };
-  const end = () => {
-    if (campaign === null) return;
-    setDialog(null);
-    void run(
-      async () => (await api.setCampaignStatus(campaign.id, "end")).campaign,
-      "campaignEndedToast",
-    );
-  };
-  const test = async () => {
-    if (campaign === null) return;
-    setBusy(true);
-    setFailure(null);
-    try {
-      const sent = await api.testCampaign(campaign.id);
-      setDialog({
-        kind: "test",
-        blockedBy: sent.blockedBy,
-        conversationId: sent.outboundMessage.conversationId,
-      });
-    } catch (error) {
-      setFailure(campaignFailure(error));
-    } finally {
-      setBusy(false);
-    }
-  };
+  const { busy, failure, act, end, test } = useCampaignActions({
+    api,
+    campaign,
+    definition,
+    unsaved,
+    setCampaign,
+    setEdited,
+    setDialog,
+    onSaved,
+  });
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const submitter = (event.nativeEvent as SubmitEvent).submitter;
@@ -557,17 +647,13 @@ function CampaignPage({
             busy={busy}
             formId={formId}
             onAction={act}
-            onTest={() => void test()}
+            onTest={test}
             onCode={() => setDialog({ kind: "code" })}
           />
         }
       />
       <div className="page-body">
-        {failure !== null && (
-          <p className="bad" role="alert">
-            {failure}
-          </p>
-        )}
+        <ErrorNote text={failure} />
         {campaign !== null && (
           <Choices<"edit" | "results">
             label={t("campaignTabs")}
@@ -595,23 +681,23 @@ function CampaignPage({
                 onLanguage={setLanguage}
               />
             )}
-            <form id={formId} className="widget-form" onSubmit={submit}>
+            <CampaignForm
+              api={api}
+              formId={formId}
+              editable={editable}
+              isNew={campaign === null}
+              definition={definition}
+              members={members}
+              language={language}
+              onLanguage={setLanguage}
+              onChange={setEdited}
+              onSubmit={submit}
+            >
               {!canEdit && <p className="note">{t("campaignMemberNote")}</p>}
               {campaign?.status === "live" && canEdit && (
                 <p className="note">{t("campaignLiveNote")}</p>
               )}
-              <fieldset className="widget-sections" disabled={!editable}>
-                <CampaignSections
-                  api={api}
-                  definition={definition}
-                  isNew={campaign === null}
-                  members={members}
-                  language={language}
-                  onLanguage={setLanguage}
-                  onChange={setEdited}
-                />
-              </fieldset>
-            </form>
+            </CampaignForm>
           </div>
         )}
       </div>

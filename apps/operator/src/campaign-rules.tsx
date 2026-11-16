@@ -1,15 +1,15 @@
 /** @jsxImportSource react */
+import { goalCondition } from "../../server/src/campaign-parts.ts";
 import type { CampaignDefinition, Condition } from "./api.ts";
-import { localTime } from "./campaign-conditions.ts";
 import { withPart } from "./campaign-draft.ts";
 import { ConditionBuilder } from "./condition-builder.tsx";
+import { dateTimeInput } from "./format.ts";
 import { type TextId, t } from "./text.ts";
 import { Choices, Field, type Option, SettingRow, Switch } from "./ui.tsx";
 
 type Presentation = CampaignDefinition["presentation"];
 type Delivery = CampaignDefinition["delivery"];
 type Rules = CampaignDefinition["rules"];
-type Goal = NonNullable<Rules["goal"]>;
 
 /** A duration as the server takes it: 1 to 9999 with m, h or d. */
 const DURATION_PATTERN = "[1-9][0-9]{0,3}[mhd]";
@@ -127,7 +127,7 @@ export function PresentationFields({
   );
 }
 
-/** Email, the assignment on a reply, and how long each message waits. */
+/** Email, always or once unread for a time, the assignment on a reply, and how long it waits. */
 export function DeliveryFields({
   delivery,
   onChange,
@@ -145,6 +145,12 @@ export function DeliveryFields({
           onChange={(sendEmail) => onChange({ ...delivery, sendEmail })}
         />
       </div>
+      <DurationField
+        label={t("campaignEmailIfUnread")}
+        hint={t("campaignEmailIfUnreadHelp")}
+        value={delivery.emailIfUnread}
+        onChange={(emailIfUnread) => onChange(withPart(delivery, "emailIfUnread", emailIfUnread))}
+      />
       <div className="setting-row setting-switch">
         <Switch
           label={t("campaignAssignOnReply")}
@@ -161,13 +167,6 @@ export function DeliveryFields({
       />
     </div>
   );
-}
-
-/** The goal's condition, without its time. */
-function goalCondition(goal: Goal | undefined): Condition | undefined {
-  if (goal === undefined) return undefined;
-  const { within: _within, ...condition } = goal;
-  return condition as Condition;
 }
 
 /** At most once, or at most once in a time. */
@@ -245,20 +244,10 @@ function SendWindowField({
   );
 }
 
-/** Frequency, hours, the end, who leaves the campaign, its goal and the email fallback. */
-export function RulesFields({
-  rules,
-  delivery,
-  onRules,
-  onDelivery,
-}: {
-  rules: Rules;
-  delivery: Delivery;
-  onRules(rules: Rules): void;
-  onDelivery(delivery: Delivery): void;
-}) {
+/** Frequency, hours, the end, who leaves the campaign, and its goal. */
+export function RulesFields({ rules, onRules }: { rules: Rules; onRules(rules: Rules): void }) {
   const change = (next: Partial<Rules>) => onRules({ ...rules, ...next });
-  const goal = goalCondition(rules.goal);
+  const goal = rules.goal === undefined ? undefined : goalCondition(rules.goal);
   const within = rules.goal?.within ?? GOAL_WITHIN;
   const setGoal = (condition: Condition | undefined, time: string) =>
     onRules(
@@ -283,7 +272,7 @@ export function RulesFields({
         label={t("campaignEndsAt")}
         hint={t("campaignEndsAtHelp")}
         type="datetime-local"
-        value={rules.endsAt === null ? "" : localTime(rules.endsAt)}
+        value={rules.endsAt === null ? "" : dateTimeInput(rules.endsAt)}
         onChange={(text) => change({ endsAt: text === "" ? null : new Date(text).toISOString() })}
       />
       <SettingRow label={t("campaignExitWhen")} hint={t("campaignExitWhenHelp")} stacked>
@@ -316,12 +305,6 @@ export function RulesFields({
           </>
         )}
       </SettingRow>
-      <DurationField
-        label={t("campaignEmailIfUnread")}
-        hint={t("campaignEmailIfUnreadHelp")}
-        value={delivery.emailIfUnread}
-        onChange={(emailIfUnread) => onDelivery(withPart(delivery, "emailIfUnread", emailIfUnread))}
-      />
     </div>
   );
 }

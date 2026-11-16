@@ -7,6 +7,7 @@ import {
   type OutboundButton,
   type TeamFace,
 } from "../../../packages/widget/src/shared.ts";
+import { renderTemplate } from "../../../packages/widget/src/template.ts";
 import type { CampaignDefinition, Me, Member, OperatorAppearance } from "./api.ts";
 import { type Language, LOCALE_TEXT, messageIn } from "./campaign-message.tsx";
 import { t } from "./text.ts";
@@ -23,6 +24,19 @@ const DEVICES: Option<Device>[] = [
   { value: "desktop", label: "previewDesktop" },
   { value: "phone", label: "previewPhone" },
 ];
+
+/**
+ * The text as a sample contact reads it: the variables filled with their name, and the others
+ * empty, so each `default` shows.
+ */
+function sampleText(body: string): string {
+  if (body === "") return t("campaignPreviewEmpty");
+  const sample: Record<string, string> = {
+    firstName: t("previewSampleFirstName"),
+    name: t("previewSampleName"),
+  };
+  return renderTemplate(body, (path) => sample[path]);
+}
 
 /** Who the visitor sees as the sender: the team, a member, or the member who saves it. */
 function senderFace(
@@ -110,7 +124,7 @@ export function CampaignPreview({
           // The message shows in place of the sample conversation.
           sample={{ question: "", answer: "", author: workspace }}
           outbound={{
-            body: body === "" ? t("campaignPreviewEmpty") : body,
+            body: sampleText(body),
             // The same buttons: the server's type spells the kinds another way.
             buttons: buttons as OutboundButton[],
             show,

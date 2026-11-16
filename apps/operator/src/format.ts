@@ -55,3 +55,11 @@ export function duration(seconds: number): string {
   if (seconds < 3600) return unit(Math.round(seconds / 60), "minute");
   return unit(seconds / 3600, "hour");
 }
+
+/** A time as a date and time field shows it, on this browser's clock. */
+export function dateTimeInput(iso: string): string {
+  const at = new Date(iso);
+  if (Number.isNaN(at.getTime())) return iso;
+  const shifted = new Date(at.getTime() - at.getTimezoneOffset() * MINUTE_MS);
+  return shifted.toISOString().slice(0, 16);
+}

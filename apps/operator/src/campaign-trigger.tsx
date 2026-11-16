@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import { useMemo } from "react";
-import { WEEKDAYS, type Weekday } from "../../../packages/widget/src/shared.ts";
+import { PAGE_SECONDS_MAX, WEEKDAYS, type Weekday } from "../../../packages/widget/src/shared.ts";
 import type { CampaignTrigger } from "./api.ts";
 import { zoneChoices } from "./business-hours.tsx";
 import { withPart } from "./campaign-draft.ts";
@@ -9,7 +9,7 @@ import { browserTimeZone, weekdayNames } from "./format.ts";
 import { CodeBlock } from "./install.tsx";
 import { Select } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
-import { Choices, Field, type Option } from "./ui.tsx";
+import { ChoiceList, Choices, Field, type Option } from "./ui.tsx";
 
 type TriggerType = CampaignTrigger["type"];
 type Schedule = Extract<CampaignTrigger, { type: "schedule" }>;
@@ -22,9 +22,19 @@ const TRIGGER_TEXT: Record<TriggerType, TextId> = {
   api: "triggerApi",
 };
 
-const TRIGGERS: Option<TriggerType>[] = (Object.keys(TRIGGER_TEXT) as TriggerType[]).map(
-  (value) => ({ value, label: TRIGGER_TEXT[value] }),
-);
+const TRIGGER_HELP: Record<TriggerType, TextId> = {
+  match: "triggerMatchHelp",
+  schedule: "triggerScheduleHelp",
+  event: "triggerEventHelp",
+  page: "triggerPageHelp",
+  api: "triggerApiHelp",
+};
+
+const TRIGGERS = (Object.keys(TRIGGER_TEXT) as TriggerType[]).map((value) => ({
+  value,
+  label: TRIGGER_TEXT[value],
+  hint: TRIGGER_HELP[value],
+}));
 
 const REPEATS: Option<Schedule["repeat"]>[] = [
   { value: "once", label: "repeatOnce" },
@@ -35,7 +45,6 @@ const REPEATS: Option<Schedule["repeat"]>[] = [
 
 /** How long a page campaign waits on the page by default. */
 const PAGE_SECONDS = 20;
-const PAGE_SECONDS_MAX = 3600;
 const DAY_NAMES = weekdayNames("short");
 const today = () => new Date().toLocaleDateString("en-CA");
 
@@ -197,7 +206,7 @@ function TriggerDetails({
         <div className="field-row">
           <Field
             label={t("conditionEventName")}
-            hint={t("triggerEventHelp")}
+            hint={t("triggerEventNameHelp")}
             required
             placeholder="export.finished"
             value={trigger.name}
@@ -249,9 +258,8 @@ export function TriggerFields({
 }) {
   return (
     <>
-      <Choices<TriggerType>
+      <ChoiceList<TriggerType>
         label={t("campaignTrigger")}
-        variant="outlined"
         value={trigger.type}
         options={TRIGGERS}
         onChange={(type) => onChange(triggerOf(type))}

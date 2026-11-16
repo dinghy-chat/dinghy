@@ -1,4 +1,5 @@
 import type { Condition } from "./api.ts";
+import { dateTimeInput } from "./format.ts";
 
 // The condition builder's model: a tree of groups and rules whose values are the text the operator
 // typed, so a half-typed number or date stays as it is. It turns into the server's grammar on each
@@ -123,19 +124,11 @@ function fieldOf(field: string): Pick<RuleDraft, "field" | "key"> {
   return { field: "attribute", key: field };
 }
 
-/** A time as the date and time field shows it, on this browser's clock. */
-export function localTime(iso: string): string {
-  const at = new Date(iso);
-  if (Number.isNaN(at.getTime())) return iso;
-  const shifted = new Date(at.getTime() - at.getTimezoneOffset() * 60_000);
-  return shifted.toISOString().slice(0, 16);
-}
-
 function textOf(rule: Rule, kind: FieldKind): string {
   const { value } = rule;
   if (value === undefined) return "";
   if (Array.isArray(value)) return value.join(", ");
-  if (kind === "time" && rule.op !== "older_than") return localTime(String(value));
+  if (kind === "time" && rule.op !== "older_than") return dateTimeInput(String(value));
   return String(value);
 }
 

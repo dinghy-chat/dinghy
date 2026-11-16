@@ -1,7 +1,18 @@
 /** @jsxImportSource react */
-import { useId, useRef } from "react";
+import { useEffect, useId, useRef } from "react";
 import { insertEmoji } from "../../../packages/widget/src/emoji.ts";
-import { LOCALES, type Locale, MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
+import {
+  BUTTONS_MAX,
+  CONTACT_VARIABLES,
+  LOCALES,
+  type Locale,
+  MESSAGE_MAX,
+} from "../../../packages/widget/src/shared.ts";
+import {
+  knownVariable,
+  type TemplateProblem,
+  templateProblems,
+} from "../../../packages/widget/src/template.ts";
 import type { CampaignDefinition, CampaignTrigger, Member } from "./api.ts";
 import { keyFromName, withPart } from "./campaign-draft.ts";
 import { Icon } from "./icons.tsx";
@@ -14,8 +25,6 @@ type Button = NonNullable<CampaignMessage["buttons"]>[number];
 type Translation = NonNullable<CampaignMessage["translations"]>[Locale];
 /** The message's own text, or one of its translations. */
 export type Language = "default" | Locale;
-
-const BUTTONS_MAX = 4;
 
 export const LOCALE_TEXT: Record<Locale, TextId> = {
   en: "widgetLanguageEnglish",
@@ -32,12 +41,27 @@ export function messageIn(message: CampaignMessage, language: Language) {
   };
 }
 
-/** The variables the text can read, for the campaign's trigger. */
+/** The variables the text can read, for the campaign's trigger, with an example of each kind. */
 function variablesFor(trigger: CampaignTrigger["type"]): string[] {
-  const contact = ["firstName", "name", "email", "userId", "language", "country", "timeZone"];
   const extra =
     trigger === "api" ? ["data.plan"] : trigger === "event" ? ["event.properties.rows"] : [];
-  return [...contact, "attributes.plan", ...extra];
+  return [...CONTACT_VARIABLES, "attributes.plan", ...extra];
+}
+
+/** A problem with a variable of the text, in words. */
+function problemText(problem: TemplateProblem): string {
+  switch (problem.kind) {
+    case "noVariable":
+      return t("templateNoVariable", { tag: problem.tag });
+    case "unknownFilter":
+      return t("templateUnknownFilter", { filter: problem.filter });
+    case "filterArgument":
+      return t(problem.takesArgument ? "templateFilterNeedsText" : "templateFilterTakesNoText", {
+        filter: problem.filter,
+      });
+    case "unknownVariable":
+      return t("templateUnknownVariable", { path: problem.path });
+  }
 }
 
 /** The text, with the variables it may read as chips that go in at the caret. */
@@ -52,6 +76,11 @@ function BodyField({
 }) {
   const box = useRef<HTMLTextAreaElement>(null);
   const id = useId();
+  const problemsId = useId();
+  const problems = templateProblems(body, knownVariable(trigger)).map(problemText);
+  const firstProblem = problems[0] ?? "";
+  // The form refuses to save while a variable does not read, as the server would.
+  useEffect(() => box.current?.setCustomValidity(firstProblem), [firstProblem]);
   return (
     <div className="field">
       <label htmlFor={id}>
@@ -64,8 +93,17 @@ function BodyField({
         required
         maxLength={MESSAGE_MAX}
         value={body}
+        aria-invalid={problems.length > 0}
+        aria-describedby={problems.length > 0 ? problemsId : undefined}
         onChange={(event) => onChange(event.target.value)}
       />
+      {problems.length > 0 && (
+        <ul id={problemsId} className="field-problems">
+          {problems.map((problem) => (
+            <li key={problem}>{problem}</li>
+          ))}
+        </ul>
+      )}
       <div className="variable-chips">
         <span className="hint">{t("campaignVariables")}</span>
         {variablesFor(trigger).map((name) => (

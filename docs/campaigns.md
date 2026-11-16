@@ -328,10 +328,10 @@ The **Campaigns** page lists the campaigns with their status and results, and fi
 
 - the audience, with a live count of the people who match now;
 - the trigger, with "would have sent to N people in the last 7 days" for `match` and `event`;
-- the message, presentation and delivery, beside a live preview of the widget in light and dark, in each language and at phone width;
-- the rules and the variants.
+- the message, beside a live preview of the widget with its variables filled for a sample contact, in light and dark, in each language and at phone width;
+- under **More options**, the variants, the presentation, the delivery and the rules.
 
-**Send a test to me** shows the message to a test visitor named after you, in a conversation you can open, whatever the rules say. It names the rule that would hold a real message now, such as `outside_business_hours`. **Copy as code** gives the JSON and the SDK call. **Pause all campaigns** sets the workspace's `paused`.
+**Send a test to me** shows the message to a test visitor named after you, in a conversation you can open, whatever the rules say. It names the rule that would hold a real message now, such as `outside_business_hours`. **Copy as code**, in the ⋯ menu, gives the JSON and the SDK call. **Pause all campaigns** sets the workspace's `paused`.
 
 ## The API
 

@@ -1,4 +1,5 @@
 /** @jsxImportSource react */
+import { CAMPAIGN_VARIANTS_MAX } from "../../../packages/widget/src/shared.ts";
 import type { CampaignDefinition, Member } from "./api.ts";
 import { type Language, MessageFields } from "./campaign-message.tsx";
 import { Icon } from "./icons.tsx";
@@ -11,7 +12,6 @@ type Variant = NonNullable<CampaignDefinition["variants"]>[number];
 type VariantKind = "campaign" | "own" | "control";
 
 const VARIANTS_MIN = 2;
-const VARIANTS_MAX = 5;
 const VARIANT_KEYS = ["a", "b", "c", "d", "e"];
 const EVEN_WEIGHT = 50;
 
@@ -25,7 +25,7 @@ const kindOfVariant = (variant: Variant): VariantKind =>
   "control" in variant ? "control" : "message" in variant ? "own" : "campaign";
 
 /** A variant of a kind, with its key and weight. Its own message starts as the campaign's. */
-function variantOf(
+function variantOfKind(
   kind: VariantKind,
   { key, weight }: Variant,
   base: CampaignDefinition["message"],
@@ -60,14 +60,16 @@ function VariantRow({
   return (
     <li className="variant">
       <div className="variant-head">
-        <input
-          aria-label={t("variantKey")}
-          className="mono"
-          required
-          value={variant.key}
-          onChange={(event) => onChange({ ...variant, key: event.target.value })}
-        />
-        <label className="variant-weight">
+        <label className="variant-field variant-key">
+          {t("variantKey")}
+          <input
+            className="mono"
+            required
+            value={variant.key}
+            onChange={(event) => onChange({ ...variant, key: event.target.value })}
+          />
+        </label>
+        <label className="variant-field">
           {t("variantWeight")}
           <input
             type="number"
@@ -82,7 +84,7 @@ function VariantRow({
           label={t("variantKind")}
           value={kind}
           choices={kinds.map((one) => ({ value: one.value, label: t(one.label) }))}
-          onChange={(next) => onChange(variantOf(next, variant, definition.message))}
+          onChange={(next) => onChange(variantOfKind(next, variant, definition.message))}
         />
         {canRemove && (
           <button
@@ -162,7 +164,7 @@ export function VariantsFields({
           ))}
         </ul>
       )}
-      {variants.length > 0 && variants.length < VARIANTS_MAX && (
+      {variants.length > 0 && variants.length < CAMPAIGN_VARIANTS_MAX && (
         <button
           type="button"
           className="text-button"

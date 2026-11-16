@@ -2,7 +2,7 @@
 // The Campaigns page: the list with each campaign's status, trigger and results, the rules for every
 // campaign, and one campaign's editor and results.
 import { type FormEvent, useState } from "react";
-import type { TeamFace } from "../../../packages/widget/src/shared.ts";
+import { CAMPAIGN_GAP_HOURS_MAX, type TeamFace } from "../../../packages/widget/src/shared.ts";
 import type {
   Campaign,
   CampaignSettings,
@@ -36,8 +36,6 @@ const CAMPAIGNS_PAUSED: PausedTexts = {
   resume: "campaignsResumeAll",
 };
 
-const GAP_HOURS_MAX = 720;
-
 function CampaignRow({ campaign, onOpen }: { campaign: Campaign; onOpen(): void }) {
   const { definition, totals } = campaign;
   return (
@@ -46,7 +44,6 @@ function CampaignRow({ campaign, onOpen }: { campaign: Campaign; onOpen(): void 
         <button type="button" className="who-cell contact-open" onClick={onOpen}>
           <span className="who-lines">
             <b>{definition.name}</b>
-            <span className="mono">{definition.key}</span>
           </span>
         </button>
       </td>
@@ -57,7 +54,16 @@ function CampaignRow({ campaign, onOpen }: { campaign: Campaign; onOpen(): void 
       <td className="number-cell">{totals.sent}</td>
       <td className="number-cell">{totals.read}</td>
       <td className="number-cell">{totals.replied}</td>
-      <td className="number-cell wide-cell">{totals.goalReached}</td>
+      <td className="number-cell wide-cell">
+        {definition.rules.goal === undefined ? (
+          <>
+            <span aria-hidden="true">—</span>
+            <span className="visually-hidden">{t("campaignNoGoal")}</span>
+          </>
+        ) : (
+          totals.goalReached
+        )}
+      </td>
     </tr>
   );
 }
@@ -111,7 +117,7 @@ function AllCampaignsRules({
                 aria-describedby={hintId}
                 type="number"
                 min={0}
-                max={GAP_HOURS_MAX}
+                max={CAMPAIGN_GAP_HOURS_MAX}
                 required
                 disabled={!canEdit}
                 value={typed}

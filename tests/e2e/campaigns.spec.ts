@@ -107,7 +107,8 @@ test("an owner writes a campaign, starts it, tests it and reads its results", as
   await expect(page.getByRole("table").getByRole("cell", { name: "1" }).first()).toBeVisible();
 
   // "Copy as code" gives the JSON and the SDK call.
-  await page.getByRole("button", { name: "Copy as code" }).click();
+  await page.getByRole("button", { name: "More actions" }).click();
+  await page.getByRole("menuitem", { name: "Copy as code" }).click();
   const code = page.getByRole("dialog", { name: "Copy as code" });
   await expect(code.getByText('"key": "pro-welcome"')).toBeVisible();
   await code.getByRole("radio", { name: "SDK" }).check();
@@ -150,6 +151,68 @@ test("a member reads campaigns and cannot change them", async ({ page }) => {
   );
   await expect(page.getByRole("button", { name: "Go live" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Save as draft" })).toHaveCount(0);
-  await page.getByRole("button", { name: "Copy as code" }).click();
+  await page.getByRole("button", { name: "More actions" }).click();
+  await expect(page.getByRole("menuitem", { name: "End campaign" })).toHaveCount(0);
+  await page.getByRole("menuitem", { name: "Copy as code" }).click();
   await expect(page.getByRole("dialog").getByText('"key": "trial-help"')).toBeVisible();
+});
+
+test("the editor keeps the main sections open, checks the text, and previews it", async ({
+  page,
+}) => {
+  await openCampaigns(page, "julien@shipmail.example");
+  await page.getByRole("button", { name: "New campaign" }).first().click();
+  // A new campaign shows the main sections, and the others under More options.
+  const more = page.getByRole("button", { name: "More options" });
+  await expect(more).toHaveAttribute("aria-expanded", "false");
+  await expect(page.getByRole("heading", { name: "Rules" })).toHaveCount(0);
+  await more.click();
+  await expect(page.getByRole("heading", { name: "Rules" })).toBeVisible();
+  // Both email settings sit in Delivery.
+  const delivery = page
+    .locator(".widget-section")
+    .filter({ has: page.getByRole("heading", { name: "Delivery" }) });
+  await expect(delivery.getByText("Email if unread after")).toBeVisible();
+
+  // Each trigger is a line with its help.
+  const fromCode = page.getByRole("radio", { name: "From your code", exact: true });
+  await expect(fromCode).toHaveAccessibleDescription("Only when your code sends it to one person.");
+
+  // The preview fills the variables with a sample contact, and a variable that does not read
+  // is named under the text, so the form does not save.
+  await page.getByLabel("Name", { exact: true }).fill("Variables");
+  const text = page.getByLabel("Text", { exact: true });
+  await text.fill(
+    'Hi {{ firstName | default: "there" }}, on {{ attributes.plan | default: "trial" }}?',
+  );
+  await expect(page.locator(".preview-stage").getByText("Hi Alex, on trial?")).toBeVisible();
+  await text.fill("Hi {{ nickname }}");
+  await expect(page.getByText("There is no variable nickname for this trigger.")).toBeVisible();
+  await expect(text).toHaveJSProperty("validity.valid", false);
+});
+
+test("a pause keeps the changes not saved yet", async ({ page }) => {
+  const saved = await api("PUT", "/campaigns/by-key/pause-keeps", {
+    key: "pause-keeps",
+    name: "Pause keeps",
+    trigger: { type: "api" },
+    message: { body: "The saved text" },
+    presentation: { startConversation: "on_reply", show: "badge", ifConversationOpen: "skip" },
+    rules: { frequency: { every: "7d" }, businessHours: false, endsAt: null },
+  });
+  expect(saved.status).toBe(201);
+  expect((await api("POST", "/campaigns/by-key/pause-keeps/resume")).status).toBe(200);
+  await openCampaigns(page, "julien@shipmail.example");
+  await page.getByRole("button", { name: /Pause keeps/ }).click();
+  // Its rules differ from a new campaign's, so More options starts open.
+  await expect(page.getByRole("button", { name: "More options" })).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  const text = page.getByLabel("Text", { exact: true });
+  await text.fill("A text not saved yet");
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  await expect(page.locator(".page-title .chip")).toHaveText("Paused");
+  await expect(text).toHaveValue("A text not saved yet");
+  await expect(page.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
 });

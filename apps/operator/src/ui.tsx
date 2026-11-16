@@ -943,6 +943,45 @@ export function Choices<T extends string>({
   );
 }
 
+/** A choice among longer options, one per line, each with a short line of help under its words. */
+export function ChoiceList<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: readonly (Option<T> & { hint: TextId })[];
+  onChange(value: T): void;
+}) {
+  const name = useId();
+  return (
+    <fieldset className="choice-list">
+      <legend className="visually-hidden">{label}</legend>
+      {options.map((option) => (
+        // Named by its words alone, and described by its help.
+        <label key={option.value} className="choice-option">
+          <input
+            type="radio"
+            name={name}
+            aria-labelledby={`${name}-${option.value}`}
+            aria-describedby={`${name}-${option.value}-hint`}
+            checked={value === option.value}
+            onChange={() => onChange(option.value)}
+          />
+          <span className="choice-text">
+            <span id={`${name}-${option.value}`}>{t(option.label)}</span>
+            <small className="hint" id={`${name}-${option.value}-hint`}>
+              {t(option.hint)}
+            </small>
+          </span>
+        </label>
+      ))}
+    </fieldset>
+  );
+}
+
 /** The title, its line of context and the actions, at the top of a page or of the inbox list. */
 export function PageHead({
   title,

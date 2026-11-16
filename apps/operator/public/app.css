@@ -5351,7 +5351,8 @@ button.quote:hover {
   flex-wrap: wrap;
   gap: 8px;
 }
-.events {
+.events,
+.choice-list {
   display: grid;
   gap: 2px;
 }
@@ -5360,7 +5361,8 @@ button.quote:hover {
   color: var(--navy);
   font-weight: 600;
 }
-.event-option {
+.event-option,
+.choice-option {
   display: flex;
   align-items: flex-start;
   gap: 12px;
@@ -5370,10 +5372,15 @@ button.quote:hover {
   font-weight: 500;
   cursor: pointer;
 }
-.event-option:hover {
+.event-option:hover,
+.choice-option:hover {
   background: var(--row-hover);
 }
-.event-option input {
+.choice-option:has(:checked) {
+  background: var(--soft);
+}
+.event-option input,
+.choice-option input {
   flex: none;
   width: 18px;
   height: 18px;
@@ -5381,7 +5388,8 @@ button.quote:hover {
   accent-color: var(--fill);
   cursor: pointer;
 }
-.event-text {
+.event-text,
+.choice-text {
   display: grid;
   gap: 2px;
   min-width: 0;
@@ -7898,6 +7906,16 @@ button.quote:hover {
   display: grid;
   gap: 14px;
 }
+/* Why the text's variables do not read, under the text. */
+.field-problems {
+  display: grid;
+  gap: 2px;
+  margin: 6px 0 0;
+  padding: 0;
+  color: var(--bad);
+  font-size: 14px;
+  list-style: none;
+}
 .variable-chips {
   margin-top: 8px;
 }
@@ -7918,18 +7936,23 @@ button.quote:hover {
   border-radius: 14px;
   box-shadow: inset 0 0 0 1px var(--line);
 }
-.variant-head > input {
-  flex: 1 1 120px;
-  min-width: 0;
-}
-.variant-weight {
+.variant-field {
   display: flex;
   align-items: center;
   gap: 8px;
   font-weight: 600;
 }
-.variant-weight input {
+.variant-field input {
   width: 84px;
+}
+.variant-key {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.variant-key input {
+  flex: 1;
+  width: auto;
+  min-width: 0;
 }
 /* A phone's width, where the chat fills the screen and a message shows as a card. */
 .preview-phone {
