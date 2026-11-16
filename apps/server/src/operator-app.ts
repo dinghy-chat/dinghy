@@ -60,11 +60,13 @@ export function registerOperatorApp(
     // Settings and each of its pages. The app shows its first page for a name it does not know.
     "/settings",
     "/settings/:page",
-    // The other views, and one contact, so a reload stays on the screen.
+    // The other views, one contact and one campaign, so a reload stays on the screen.
     "/contacts",
     "/contacts/:contact",
     "/visitors",
     "/analytics",
+    "/campaigns",
+    "/campaigns/:campaign",
     ...(signup ? ["/signup"] : []),
     ...(billing ? ["/billing/return"] : []),
   ];

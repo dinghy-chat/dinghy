@@ -39,6 +39,8 @@ test.each([
   "/contacts/0b9e4a4e-6f1c-4f7e-9d3a-5c2b1a0f8e7d",
   "/visitors",
   "/analytics",
+  "/campaigns",
+  "/campaigns/0b9e4a4e-6f1c-4f7e-9d3a-5c2b1a0f8e7d",
 ])("%s opens the app, so each screen has an address of its own", async (path) => {
   const response = await operatorApp().request(path);
   expect(response.status).toBe(200);
