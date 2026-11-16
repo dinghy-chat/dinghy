@@ -47,7 +47,7 @@ import { useLoad } from "./load.ts";
 import { Menu, type MenuItem } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
-import { Choices, ErrorNote, Loading } from "./ui.tsx";
+import { Choices, ErrorNote, Loading, type Option } from "./ui.tsx";
 import { ago } from "./visitor.ts";
 
 type Action = "save" | "live" | "pause" | "resume" | "duplicate" | Ending;
@@ -348,6 +348,12 @@ function useCampaignActions({
   return { busy, failure, act, finish, test };
 }
 
+/** The page's tabs. An ended campaign changes no more, so its results come first. */
+const TABS: Option<"edit" | "results">[] = [
+  { value: "edit", label: "campaignTabEdit" },
+  { value: "results", label: "campaignTabResults" },
+];
+
 /** How long a draft waits after the last change before it saves itself. */
 const AUTOSAVE_DELAY_MS = 800;
 
@@ -494,7 +500,6 @@ function CampaignPage({
   const [campaign, setCampaign] = useState(initial);
   const [edited, setEdited] = useState<CampaignDefinition | null>(null);
   const [language, setLanguage] = useState<Language>("default");
-  // An ended campaign changes no more, so its results come first.
   const [tab, setTab] = useState<"edit" | "results">(
     initial?.status === "ended" ? "results" : "edit",
   );
@@ -573,10 +578,7 @@ function CampaignPage({
               label={t("campaignTabs")}
               variant="pills"
               value={tab}
-              options={[
-                { value: "edit", label: "campaignTabEdit" },
-                { value: "results", label: "campaignTabResults" },
-              ]}
+              options={campaign.status === "ended" ? [...TABS].reverse() : TABS}
               onChange={setTab}
             />
           )}

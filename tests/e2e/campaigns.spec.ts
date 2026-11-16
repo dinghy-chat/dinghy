@@ -496,6 +496,8 @@ test("an ended campaign opens on its results, reads as text and duplicates as a 
   await openCampaigns(page, "julien@shipmail.example");
   await page.getByRole("button", { name: /^Ended nudge/ }).click();
 
+  const tabs = page.getByRole("group", { name: "Campaign views" });
+  await expect(tabs.getByRole("radio").first()).toHaveAccessibleName("Results");
   await expect(page.getByRole("radio", { name: "Results" })).toBeChecked();
   await expect(page.getByText(/^Ended .* · key/)).toBeVisible();
   await page.getByRole("radio", { name: "Campaign" }).check();
