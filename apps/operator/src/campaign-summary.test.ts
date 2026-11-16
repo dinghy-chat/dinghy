@@ -58,7 +58,14 @@ test("the list's sentence says who, when and how it shows, in plain words", () =
       audience: { field: "events.export.finished.count", op: "gte", value: 3 },
       trigger: { type: "event", name: "export.finished" },
     }),
-  ).toBe("People who did export.finished at least 3 times, after export.finished · as a card");
+  ).toBe("After export.finished, once they have done it 3 times · as a card");
+  // Another event, or a delay, keeps who and when apart.
+  expect(
+    sentence({
+      audience: { field: "events.export.finished.count", op: "gt", value: 2 },
+      trigger: { type: "event", name: "import.finished" },
+    }),
+  ).toBe("People who did export.finished more than 2 times, after import.finished · as a card");
   expect(
     sentence({
       audience: {

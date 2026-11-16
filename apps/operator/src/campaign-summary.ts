@@ -198,6 +198,14 @@ const WHO_MATCH: Record<GroupDraft["match"], TextId> = {
   none: "summaryWhoNone",
 };
 
+/** An audience's one rule, or null when it has none, several, or "none of". */
+function onlyRule(group: GroupDraft): RuleDraft | null {
+  const [only, ...others] = group.items;
+  return only !== undefined && others.length === 0 && !isGroup(only) && group.match !== "none"
+    ? only
+    : null;
+}
+
 /**
  * Who gets it, short enough for the list's one line: everyone, one rule in words, such as "People
  * whose plan is trial or pro", or how many rules they match.
@@ -205,8 +213,8 @@ const WHO_MATCH: Record<GroupDraft["match"], TextId> = {
 function audienceWords(audience: Condition | undefined): string {
   if (audience === undefined) return t("summaryEveryone");
   const group = groupOf(audience);
-  const [only, ...others] = group.items;
-  if (only !== undefined && others.length === 0 && !isGroup(only) && group.match !== "none") {
+  const only = onlyRule(group);
+  if (only !== null) {
     const phrase = rulePhrase(only);
     return phrase.kind === "did"
       ? t("summaryWhoDid", { did: phrase.words })
@@ -265,13 +273,30 @@ const SHOW_WORDS: Record<Presentation["show"], TextId> = {
   chat: "summaryShowChat",
 };
 
-/** The list's sentence: who, when and how it shows. */
-export const campaignSentence = ({ audience, trigger, presentation }: CampaignDefinition) =>
-  t("summarySentence", {
-    who: audienceWords(audience),
-    when: triggerWords(trigger),
-    show: t(SHOW_WORDS[presentation.show]),
+/**
+ * An event campaign whose audience counts the same event, said once: "After export.finished, once
+ * they have done it 3 times", or null for any other campaign.
+ */
+function eventCountWords(audience: Condition | undefined, trigger: CampaignTrigger) {
+  if (audience === undefined || trigger.type !== "event" || trigger.delay !== undefined)
+    return null;
+  const rule = onlyRule(groupOf(audience));
+  if (rule?.field !== "eventCount" || rule.key !== trigger.name) return null;
+  if (rule.op !== "gte" && rule.op !== "gt") return null;
+  const count = Number(rule.text) + (rule.op === "gt" ? 1 : 0);
+  return t("summaryEventFrom", {
+    event: trigger.name,
+    times: plural(count, "summaryTimeOne", "summaryTimeMany"),
   });
+}
+
+/** The list's sentence: who, when and how it shows. */
+export function campaignSentence({ audience, trigger, presentation }: CampaignDefinition) {
+  const show = t(SHOW_WORDS[presentation.show]);
+  const eventCount = eventCountWords(audience, trigger);
+  if (eventCount !== null) return t("summarySentenceWhen", { when: eventCount, show });
+  return t("summarySentence", { who: audienceWords(audience), when: triggerWords(trigger), show });
+}
 
 /** How many people, as the estimate gives it: "1,204 people", or "10,000+ people". */
 export const peopleWords = ({ count, more }: { count: number; more: boolean }) =>
