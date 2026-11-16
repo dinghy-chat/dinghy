@@ -91,7 +91,8 @@ export const senderMember = (
 /** The message without a sender who is no longer a member, so it comes from whoever saves it. */
 function withKnownSender(message: Message, members: Member[]): Message {
   const { sender } = message;
-  if (sender === undefined || sender === "team") return message;
+  // No members means the list has not loaded, since the workspace has at least whoever copies.
+  if (sender === undefined || sender === "team" || members.length === 0) return message;
   return senderMember(sender, members) === undefined
     ? withPart(message, "sender", undefined)
     : message;
