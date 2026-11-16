@@ -7847,6 +7847,10 @@ button.quote:hover {
   color: var(--mute);
   text-align: left;
 }
+/* A grid item stretches to its column, and a status chip fits its text. */
+.campaign-row > .chip {
+  justify-self: start;
+}
 .campaign-row:hover {
   background: var(--row-hover);
 }
