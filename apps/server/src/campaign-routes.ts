@@ -82,7 +82,15 @@ const listRoute = createRoute({
   request: { params: workspaceParams, query: CampaignListQuery },
   responses: {
     ...KEY_LIMITED,
-    200: jsonAnswer("The campaigns", z.object({ campaigns: z.array(CampaignSchema) })),
+    200: jsonAnswer(
+      "The campaigns",
+      z.object({
+        campaigns: z.array(CampaignSchema),
+        sentLastWeek: z.number().int().openapi({
+          description: "The messages every campaign sent in the last 7 days, whatever the status",
+        }),
+      }),
+    ),
     ...MEMBER_ERRORS,
     ...INVALID,
   },
@@ -308,7 +316,12 @@ export function registerCampaignRoutes(
 ): void {
   app.openapi(listRoute, async (c) => {
     const { status } = c.req.valid("query");
-    return c.json({ campaigns: await campaigns.list(c.get("memberWorkspaceId"), status) }, 200);
+    const workspaceId = c.get("memberWorkspaceId");
+    const [list, sentLastWeek] = await Promise.all([
+      campaigns.list(workspaceId, status),
+      campaigns.sentLastWeek(workspaceId),
+    ]);
+    return c.json({ campaigns: list, sentLastWeek }, 200);
   });
 
   app.openapi(estimateRoute, async (c) =>

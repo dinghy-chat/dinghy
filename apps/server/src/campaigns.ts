@@ -4,7 +4,7 @@ import type { Actor } from "./api-keys.ts";
 import { type CampaignRow, campaignRows, closedNow } from "./campaign-checks.ts";
 import { campaignClientId, enterCampaign } from "./campaign-entry.ts";
 import { emptyCounts, goalCondition, messagesOf, sendsEmail } from "./campaign-parts.ts";
-import { campaignResults, campaignTotals } from "./campaign-results.ts";
+import { campaignResults, campaignTotals, sentLastWeek } from "./campaign-results.ts";
 import type {
   CampaignDefinition,
   CampaignPatchSchema,
@@ -345,6 +345,9 @@ export function createCampaigns({ db, live }: { db: Database; live: Live }) {
         return viewsOf(tx, workspaceId, rows);
       });
     },
+
+    sentLastWeek: (workspaceId: string) =>
+      withWorkspace(db, workspaceId, (tx) => sentLastWeek(tx, workspaceId)),
 
     get: (workspaceId: string, ref: CampaignRef) =>
       withWorkspace(db, workspaceId, async (tx) => {

@@ -449,6 +449,18 @@ describe("a send from code", () => {
     expect(again.outboundMessage.id).toBe(sent.outboundMessage.id);
   });
 
+  test("the list counts the messages every campaign sent in the last 7 days", async () => {
+    const sentLastWeek = async () => {
+      const listed = await withKey(app, server.token, "GET", inSpace("/campaigns"));
+      return (await json<{ sentLastWeek: number }>(listed)).sentLastWeek;
+    };
+    const before = await sentLastWeek();
+    const key = keyOf("last-week");
+    await live(key);
+    expect((await sendCampaign(key, { visitor: { userId: userId() } })).status).toBe(201);
+    expect(await sentLastWeek()).toBe(before + 1);
+  });
+
   test("a retry with the same client ID answers the first result", async () => {
     const key = keyOf("retry");
     await live(key, { rules: { frequency: { every: "1m" } } });

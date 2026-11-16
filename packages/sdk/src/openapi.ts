@@ -4179,6 +4179,8 @@ export interface paths {
           content: {
             "application/json": {
               campaigns: components["schemas"]["Campaign"][];
+              /** @description The messages every campaign sent in the last 7 days, whatever the status */
+              sentLastWeek: number;
             };
           };
         };

@@ -17617,9 +17617,13 @@
                       "items": {
                         "$ref": "#/components/schemas/Campaign"
                       }
+                    },
+                    "sentLastWeek": {
+                      "type": "integer",
+                      "description": "The messages every campaign sent in the last 7 days, whatever the status"
                     }
                   },
-                  "required": ["campaigns"]
+                  "required": ["campaigns", "sentLastWeek"]
                 }
               }
             }

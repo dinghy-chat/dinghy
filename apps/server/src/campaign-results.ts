@@ -137,3 +137,20 @@ export async function campaignTotals(tx: Transaction, workspaceId: string, campa
   for (const row of rows) addCounts(totals.get(row.campaignId) ?? emptyCounts(), row);
   return totals;
 }
+
+/** The days "last week" covers, today in UTC included. */
+const WEEK_DAYS = 7;
+
+/** The messages every campaign sent in the last 7 days, in one query. */
+export async function sentLastWeek(tx: Transaction, workspaceId: string): Promise<number> {
+  const [row] = await tx
+    .select({ sent: sql<number>`coalesce(sum(${campaignDay.sent}), 0)::int` })
+    .from(campaignDay)
+    .where(
+      and(
+        eq(campaignDay.workspaceId, workspaceId),
+        sql`${campaignDay.day} > (now() at time zone 'UTC')::date - ${WEEK_DAYS}::int`,
+      ),
+    );
+  return row?.sent ?? 0;
+}

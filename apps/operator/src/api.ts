@@ -914,7 +914,7 @@ export function workspaceApi(workspaceId: string) {
       }),
     cancelOutbound: (id: string) =>
       post<{ outboundMessage: OutboundMessage }>(`${base}/outbound-messages/${id}/cancel`, {}),
-    campaigns: () => call<{ campaigns: Campaign[] }>(`${base}/campaigns`),
+    campaigns: () => call<{ campaigns: Campaign[]; sentLastWeek: number }>(`${base}/campaigns`),
     campaign: (id: string) => call<{ campaign: Campaign }>(`${base}/campaigns/${id}`),
     createCampaign: (definition: CampaignDefinition) =>
       post<{ campaign: Campaign }>(`${base}/campaigns`, definition),
