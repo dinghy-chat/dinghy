@@ -573,6 +573,24 @@ describe("a send's metadata and expiresIn, and the list's filters", () => {
   });
 });
 
+describe("a typed answer after a link", () => {
+  test("carries no button, even though the visitor opened a link button first", async () => {
+    const user = userId();
+    const sent = await send({
+      visitor: { userId: user },
+      body: "Compare the plans?",
+      buttons: [{ label: "See plans", url: "https://example.com/plans", value: "plans" }],
+    });
+    const { id } = sent.outboundMessage;
+    const token = await hostToken(space, user);
+    await waiting(token);
+    await widget(token, "POST", `/outbound-messages/${id}/click`, { button: 0 });
+    expect((await rowOf(id))?.chosenButton).toMatchObject({ value: "plans" });
+    await answer(token, "No thanks", [id]);
+    expect(await rowOf(id)).toMatchObject({ status: "replied", chosenButton: null });
+  });
+});
+
 describe("a change that commits while another waits for the lock", () => {
   test("a fetch that waited sees the cancel, and shows nothing", async () => {
     const user = userId();

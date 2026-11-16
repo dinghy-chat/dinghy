@@ -288,7 +288,8 @@ async function markAnswered(
       {
         status: "replied",
         repliedAt: new Date(),
-        ...(row.id === pressedId && button !== undefined && { chosenButton: button }),
+        // The answer's own button, or none for a typed answer, even after a link was opened.
+        chosenButton: row.id === pressedId ? (button ?? null) : null,
       },
       "outbound_message.replied",
     );
