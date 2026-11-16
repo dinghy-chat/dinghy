@@ -40,6 +40,12 @@ const en = {
   replyInChat: "Reply in the chat",
   transcriptSubject: (name: string) => `Your conversation with ${name}`,
   transcriptIntro: (name: string) => `Here is your conversation with ${name}, for your records.`,
+  transcriptSince: (name: string) =>
+    `Here is your conversation with ${name} since the last transcript we sent you, for your records.`,
+  transcriptLeftOut: (count: number) =>
+    count === 1
+      ? "1 earlier message is not in this email. Open the chat to read it."
+      : `${count} earlier messages are not in this email. Open the chat to read them.`,
   transcriptImage: "Sent an image. Open the chat to see it.",
   transcriptFile: (name: string | null) =>
     `Sent ${name === null ? "a file" : `the file ${name}`}. Open the chat to download it.`,
@@ -79,6 +85,12 @@ const fr: VisitorWords = {
   replyInChat: "Répondre dans le chat",
   transcriptSubject: (name) => `Votre conversation avec ${name}`,
   transcriptIntro: (name) => `Voici votre conversation avec ${name}, pour vos archives.`,
+  transcriptSince: (name) =>
+    `Voici votre conversation avec ${name} depuis la dernière transcription envoyée, pour vos archives.`,
+  transcriptLeftOut: (count) =>
+    count === 1
+      ? "1 message précédent n'est pas dans cet e-mail. Ouvrez le chat pour le lire."
+      : `${count} messages précédents ne sont pas dans cet e-mail. Ouvrez le chat pour les lire.`,
   transcriptImage: "Image envoyée. Ouvrez le chat pour la voir.",
   transcriptFile: (name) =>
     `${name === null ? "Fichier envoyé" : `Fichier ${name} envoyé`}. Ouvrez le chat pour le télécharger.`,
@@ -112,6 +124,12 @@ const es: VisitorWords = {
   replyInChat: "Responder en el chat",
   transcriptSubject: (name) => `Tu conversación con ${name}`,
   transcriptIntro: (name) => `Esta es tu conversación con ${name}, para que la guardes.`,
+  transcriptSince: (name) =>
+    `Esta es tu conversación con ${name} desde la última transcripción que te enviamos, para que la guardes.`,
+  transcriptLeftOut: (count) =>
+    count === 1
+      ? "1 mensaje anterior no está en este correo. Abre el chat para leerlo."
+      : `${count} mensajes anteriores no están en este correo. Abre el chat para leerlos.`,
   transcriptImage: "Se envió una imagen. Abre el chat para verla.",
   transcriptFile: (name) =>
     `Se envió ${name === null ? "un archivo" : `el archivo ${name}`}. Abre el chat para descargarlo.`,

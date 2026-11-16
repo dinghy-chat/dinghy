@@ -1,5 +1,5 @@
 {
-  "id": "646fe98b-0166-464a-ac87-b03dfefa2761",
+  "id": "320cdd26-4787-4f42-afbf-1835d6e382b1",
   "prevId": "135dd998-a82b-4c48-8135-2d64138f0045",
   "version": "7",
   "dialect": "postgresql",
@@ -942,502 +942,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.campaign": {
-      "name": "campaign",
-      "schema": "",
-      "columns": {
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "key": {
-          "name": "key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'draft'"
-        },
-        "definition": {
-          "name": "definition",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "version": {
-          "name": "version",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 1
-        },
-        "author_operator_id": {
-          "name": "author_operator_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "author_api_key_id": {
-          "name": "author_api_key_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "live_at": {
-          "name": "live_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "ended_at": {
-          "name": "ended_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "campaign_live_idx": {
-          "name": "campaign_live_idx",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"campaign\".\"status\" = 'live'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "campaign_api_key_idx": {
-          "name": "campaign_api_key_idx",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "author_api_key_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "campaign_workspace_id_workspace_id_fk": {
-          "name": "campaign_workspace_id_workspace_id_fk",
-          "tableFrom": "campaign",
-          "tableTo": "workspace",
-          "columnsFrom": ["workspace_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "campaign_author_operator_fk": {
-          "name": "campaign_author_operator_fk",
-          "tableFrom": "campaign",
-          "tableTo": "workspace_member",
-          "columnsFrom": ["workspace_id", "author_operator_id"],
-          "columnsTo": ["workspace_id", "operator_id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "campaign_author_api_key_fk": {
-          "name": "campaign_author_api_key_fk",
-          "tableFrom": "campaign",
-          "tableTo": "api_key",
-          "columnsFrom": ["workspace_id", "author_api_key_id"],
-          "columnsTo": ["workspace_id", "id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "campaign_workspace_id_id_pk": {
-          "name": "campaign_workspace_id_id_pk",
-          "columns": ["workspace_id", "id"]
-        }
-      },
-      "uniqueConstraints": {
-        "campaign_key_key": {
-          "name": "campaign_key_key",
-          "nullsNotDistinct": false,
-          "columns": ["workspace_id", "key"]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "campaign_one_author": {
-          "name": "campaign_one_author",
-          "value": "num_nonnulls(\"campaign\".\"author_operator_id\", \"campaign\".\"author_api_key_id\") = 1"
-        },
-        "campaign_status": {
-          "name": "campaign_status",
-          "value": "\"campaign\".\"status\" in ('draft', 'live', 'paused', 'ended')"
-        },
-        "campaign_key_format": {
-          "name": "campaign_key_format",
-          "value": "\"campaign\".\"key\" ~ '^[a-z0-9][a-z0-9_-]{0,63}$'"
-        },
-        "campaign_name_length": {
-          "name": "campaign_name_length",
-          "value": "char_length(\"campaign\".\"name\") between 1 and 100"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.campaign_day": {
-      "name": "campaign_day",
-      "schema": "",
-      "columns": {
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "campaign_id": {
-          "name": "campaign_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "day": {
-          "name": "day",
-          "type": "date",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "variant": {
-          "name": "variant",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "''"
-        },
-        "entered": {
-          "name": "entered",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "sent": {
-          "name": "sent",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "delivered": {
-          "name": "delivered",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "read": {
-          "name": "read",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "replied": {
-          "name": "replied",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "dismissed": {
-          "name": "dismissed",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "goal_reached": {
-          "name": "goal_reached",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "conversations_started": {
-          "name": "conversations_started",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "clicks": {
-          "name": "clicks",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::jsonb"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "campaign_day_workspace_id_workspace_id_fk": {
-          "name": "campaign_day_workspace_id_workspace_id_fk",
-          "tableFrom": "campaign_day",
-          "tableTo": "workspace",
-          "columnsFrom": ["workspace_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "campaign_day_campaign_fk": {
-          "name": "campaign_day_campaign_fk",
-          "tableFrom": "campaign_day",
-          "tableTo": "campaign",
-          "columnsFrom": ["workspace_id", "campaign_id"],
-          "columnsTo": ["workspace_id", "id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "campaign_day_workspace_id_campaign_id_day_variant_pk": {
-          "name": "campaign_day_workspace_id_campaign_id_day_variant_pk",
-          "columns": ["workspace_id", "campaign_id", "day", "variant"]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.campaign_run": {
-      "name": "campaign_run",
-      "schema": "",
-      "columns": {
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "campaign_id": {
-          "name": "campaign_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "occurrence": {
-          "name": "occurrence",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "cursor": {
-          "name": "cursor",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "finished_at": {
-          "name": "finished_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "campaign_run_open_idx": {
-          "name": "campaign_run_open_idx",
-          "columns": [
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"campaign_run\".\"finished_at\" is null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "campaign_run_workspace_id_workspace_id_fk": {
-          "name": "campaign_run_workspace_id_workspace_id_fk",
-          "tableFrom": "campaign_run",
-          "tableTo": "workspace",
-          "columnsFrom": ["workspace_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "campaign_run_campaign_fk": {
-          "name": "campaign_run_campaign_fk",
-          "tableFrom": "campaign_run",
-          "tableTo": "campaign",
-          "columnsFrom": ["workspace_id", "campaign_id"],
-          "columnsTo": ["workspace_id", "id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "campaign_run_workspace_id_id_pk": {
-          "name": "campaign_run_workspace_id_id_pk",
-          "columns": ["workspace_id", "id"]
-        }
-      },
-      "uniqueConstraints": {
-        "campaign_run_occurrence_key": {
-          "name": "campaign_run_occurrence_key",
-          "nullsNotDistinct": false,
-          "columns": ["workspace_id", "campaign_id", "occurrence"]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.campaign_trigger": {
-      "name": "campaign_trigger",
-      "schema": "",
-      "columns": {
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "campaign_id": {
-          "name": "campaign_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "field": {
-          "name": "field",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {
-        "campaign_trigger_field_idx": {
-          "name": "campaign_trigger_field_idx",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "field",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "campaign_trigger_workspace_id_workspace_id_fk": {
-          "name": "campaign_trigger_workspace_id_workspace_id_fk",
-          "tableFrom": "campaign_trigger",
-          "tableTo": "workspace",
-          "columnsFrom": ["workspace_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "campaign_trigger_campaign_fk": {
-          "name": "campaign_trigger_campaign_fk",
-          "tableFrom": "campaign_trigger",
-          "tableTo": "campaign",
-          "columnsFrom": ["workspace_id", "campaign_id"],
-          "columnsTo": ["workspace_id", "id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "campaign_trigger_workspace_id_campaign_id_field_pk": {
-          "name": "campaign_trigger_workspace_id_campaign_id_field_pk",
-          "columns": ["workspace_id", "campaign_id", "field"]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.chat_link": {
       "name": "chat_link",
       "schema": "",
@@ -1592,87 +1096,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.contact_event": {
-      "name": "contact_event",
-      "schema": "",
-      "columns": {
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "visitor_id": {
-          "name": "visitor_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "count": {
-          "name": "count",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "first_at": {
-          "name": "first_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "last_at": {
-          "name": "last_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "recent_ids": {
-          "name": "recent_ids",
-          "type": "text[]",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'{}'::text[]"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {
-        "contact_event_workspace_id_workspace_id_fk": {
-          "name": "contact_event_workspace_id_workspace_id_fk",
-          "tableFrom": "contact_event",
-          "tableTo": "workspace",
-          "columnsFrom": ["workspace_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "contact_event_visitor_fk": {
-          "name": "contact_event_visitor_fk",
-          "tableFrom": "contact_event",
-          "tableTo": "visitor",
-          "columnsFrom": ["workspace_id", "visitor_id"],
-          "columnsTo": ["workspace_id", "id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "contact_event_workspace_id_visitor_id_name_pk": {
-          "name": "contact_event_workspace_id_visitor_id_name_pk",
-          "columns": ["workspace_id", "visitor_id", "name"]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.conversation": {
       "name": "conversation",
       "schema": "",
@@ -1751,6 +1174,12 @@
         "snoozed_until": {
           "name": "snoozed_until",
           "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "transcript_sent_seq": {
+          "name": "transcript_sent_seq",
+          "type": "bigint",
           "primaryKey": false,
           "notNull": false
         },
@@ -3889,42 +3318,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "campaign_id": {
-          "name": "campaign_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "campaign_run_id": {
-          "name": "campaign_run_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "variant": {
-          "name": "variant",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "sent_at": {
-          "name": "sent_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "goal_reached_at": {
-          "name": "goal_reached_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "email_if_unread_at": {
-          "name": "email_if_unread_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -3934,67 +3327,6 @@
         }
       },
       "indexes": {
-        "outbound_message_campaign_idx": {
-          "name": "outbound_message_campaign_idx",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "campaign_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "visitor_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "outbound_message_campaign_sent_idx": {
-          "name": "outbound_message_campaign_sent_idx",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "visitor_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "sent_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"outbound_message\".\"campaign_id\" is not null and \"outbound_message\".\"sent_at\" is not null",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "outbound_message_created_idx": {
           "name": "outbound_message_created_idx",
           "columns": [
@@ -4221,24 +3553,6 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
-        "outbound_message_campaign_fk": {
-          "name": "outbound_message_campaign_fk",
-          "tableFrom": "outbound_message",
-          "tableTo": "campaign",
-          "columnsFrom": ["workspace_id", "campaign_id"],
-          "columnsTo": ["workspace_id", "id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "outbound_message_campaign_run_fk": {
-          "name": "outbound_message_campaign_run_fk",
-          "tableFrom": "outbound_message",
-          "tableTo": "campaign_run",
-          "columnsFrom": ["workspace_id", "campaign_run_id"],
-          "columnsTo": ["workspace_id", "id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
         "outbound_message_visitor_fk": {
           "name": "outbound_message_visitor_fk",
           "tableFrom": "outbound_message",
@@ -4283,11 +3597,6 @@
         }
       },
       "uniqueConstraints": {
-        "outbound_message_run_visitor_key": {
-          "name": "outbound_message_run_visitor_key",
-          "nullsNotDistinct": false,
-          "columns": ["workspace_id", "campaign_run_id", "visitor_id"]
-        },
         "outbound_message_operator_client_key": {
           "name": "outbound_message_operator_client_key",
           "nullsNotDistinct": false,
@@ -4301,10 +3610,6 @@
       },
       "policies": {},
       "checkConstraints": {
-        "outbound_message_variant": {
-          "name": "outbound_message_variant",
-          "value": "(\"outbound_message\".\"variant\" is null) or (\"outbound_message\".\"campaign_id\" is not null)"
-        },
         "outbound_message_one_author": {
           "name": "outbound_message_one_author",
           "value": "num_nonnulls(\"outbound_message\".\"author_operator_id\", \"outbound_message\".\"author_api_key_id\") = 1"
@@ -4323,7 +3628,7 @@
         },
         "outbound_message_status_reason": {
           "name": "outbound_message_status_reason",
-          "value": "\"outbound_message\".\"status_reason\" in ('open_conversation', 'open_conversation_skipped', 'human_handling', 'bots_paused', 'blocked', 'permission_revoked', 'workspace_inactive', 'unless_matched', 'cancelled_by_request', 'conversation_deleted', 'opted_out', 'audience_unmatched', 'frequency_capped', 'goal_reached', 'outside_business_hours', 'outside_send_window', 'campaign_paused', 'campaign_ended', 'control_group')"
+          "value": "\"outbound_message\".\"status_reason\" in ('open_conversation', 'open_conversation_skipped', 'human_handling', 'bots_paused', 'blocked', 'permission_revoked', 'workspace_inactive', 'unless_matched', 'cancelled_by_request', 'conversation_deleted')"
         },
         "outbound_message_start_conversation": {
           "name": "outbound_message_start_conversation",
@@ -5532,12 +4837,6 @@
           "notNull": true,
           "default": false
         },
-        "opted_out_at": {
-          "name": "opted_out_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -5845,12 +5144,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "campaign_id": {
-          "name": "campaign_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
         "label_id": {
           "name": "label_id",
           "type": "uuid",
@@ -6054,27 +5347,6 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
-        },
-        "webhook_delivery_campaign_idx": {
-          "name": "webhook_delivery_campaign_idx",
-          "columns": [
-            {
-              "expression": "workspace_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "campaign_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
         }
       },
       "foreignKeys": {
@@ -6122,15 +5394,6 @@
           "columnsTo": ["workspace_id", "id"],
           "onDelete": "cascade",
           "onUpdate": "no action"
-        },
-        "webhook_delivery_campaign_fk": {
-          "name": "webhook_delivery_campaign_fk",
-          "tableFrom": "webhook_delivery",
-          "tableTo": "campaign",
-          "columnsFrom": ["workspace_id", "campaign_id"],
-          "columnsTo": ["workspace_id", "id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {
@@ -6142,9 +5405,9 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "webhook_delivery_one_subject": {
-          "name": "webhook_delivery_one_subject",
-          "value": "num_nonnulls(\"webhook_delivery\".\"conversation_id\", \"webhook_delivery\".\"outbound_message_id\", \"webhook_delivery\".\"campaign_id\") = 1"
+        "webhook_delivery_subject": {
+          "name": "webhook_delivery_subject",
+          "value": "(\"webhook_delivery\".\"conversation_id\" is null) <> (\"webhook_delivery\".\"outbound_message_id\" is null)"
         },
         "webhook_delivery_label": {
           "name": "webhook_delivery_label",
@@ -6629,19 +5892,6 @@
           "primaryKey": false,
           "notNull": false
         },
-        "campaigns_paused_at": {
-          "name": "campaigns_paused_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "campaign_gap_hours": {
-          "name": "campaign_gap_hours",
-          "type": "smallint",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 24
-        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -6679,10 +5929,6 @@
       },
       "policies": {},
       "checkConstraints": {
-        "workspace_campaign_gap_hours": {
-          "name": "workspace_campaign_gap_hours",
-          "value": "\"workspace\".\"campaign_gap_hours\" between 0 and 720"
-        },
         "workspace_waiting_inactive": {
           "name": "workspace_waiting_inactive",
           "value": "not (\"workspace\".\"active\" and \"workspace\".\"waiting_since\" is not null)"

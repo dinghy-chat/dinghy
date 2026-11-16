@@ -25344,7 +25344,7 @@
             "sessionCookie": []
           }
         ],
-        "summary": "Email the visitor the whole conversation now, through the worker. A second request before a new message sends nothing more",
+        "summary": "Email the visitor the whole conversation now, up to its newest 100 messages that fit in one email, through the worker. A second request before a new message sends nothing more",
         "parameters": [
           {
             "schema": {

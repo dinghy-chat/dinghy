@@ -72,12 +72,14 @@ ALTER TABLE "webhook_delivery" DROP CONSTRAINT "webhook_delivery_subject";--> st
 ALTER TABLE "outbound_message" ADD COLUMN "campaign_id" uuid;--> statement-breakpoint
 ALTER TABLE "outbound_message" ADD COLUMN "campaign_run_id" uuid;--> statement-breakpoint
 ALTER TABLE "outbound_message" ADD COLUMN "variant" text;--> statement-breakpoint
+ALTER TABLE "outbound_message" ADD COLUMN "from_code" boolean DEFAULT false NOT NULL;--> statement-breakpoint
 ALTER TABLE "outbound_message" ADD COLUMN "sent_at" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "outbound_message" ADD COLUMN "goal_reached_at" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "outbound_message" ADD COLUMN "email_if_unread_at" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "visitor" ADD COLUMN "opted_out_at" timestamp with time zone;--> statement-breakpoint
 ALTER TABLE "webhook_delivery" ADD COLUMN "campaign_id" uuid;--> statement-breakpoint
 ALTER TABLE "workspace" ADD COLUMN "campaigns_paused_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "workspace" ADD COLUMN "campaigns_paused_by" text;--> statement-breakpoint
 ALTER TABLE "workspace" ADD COLUMN "campaign_gap_hours" smallint DEFAULT 24 NOT NULL;--> statement-breakpoint
 ALTER TABLE "campaign" ADD CONSTRAINT "campaign_workspace_id_workspace_id_fk" FOREIGN KEY ("workspace_id") REFERENCES "public"."workspace"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "campaign" ADD CONSTRAINT "campaign_author_operator_fk" FOREIGN KEY ("workspace_id","author_operator_id") REFERENCES "public"."workspace_member"("workspace_id","operator_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

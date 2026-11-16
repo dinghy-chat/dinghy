@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { replyLetter } from "./alerts.ts";
-import { transcriptLetter } from "./transcripts.ts";
+import { newestThatFit, transcriptLetter } from "./transcripts.ts";
 import { visitorWords } from "./visitor-words.ts";
 
 const links = {
@@ -130,6 +130,7 @@ describe("the transcript", () => {
     replyTo: null,
     createdAt: at,
   };
+  const whole = { sinceLastSent: false, leftOut: 0 };
 
   test("names each author as the visitor knows them, with the time in UTC", () => {
     const authors = new Map([
@@ -146,6 +147,7 @@ describe("the transcript", () => {
       authors,
       links,
       english,
+      whole,
     );
     expect(letter.subject).toBe("Your conversation with Acme");
     const when = english.time(at);
@@ -166,6 +168,7 @@ describe("the transcript", () => {
       new Map(),
       links,
       english,
+      whole,
     );
     const said = "Sent the file notes.txt. Open the chat to download it.";
     expect(letter.text).toContain(`You, ${english.time(at)}:\n${said}`);
@@ -173,12 +176,59 @@ describe("the transcript", () => {
   });
 
   test("shares the reply email's header and footer", () => {
-    const letter = transcriptLetter(acme, [line], new Map(), links, english);
+    const letter = transcriptLetter(acme, [line], new Map(), links, english, whole);
     expect(letter.html).toContain(">Continue the chat</a>");
     expect(letter.html).toContain(">Stop these emails</a>");
     const shown = visibleText(letter.html);
     expect(shown).not.toContain(links.chatUrl);
     expect(shown).not.toContain(links.stopUrl);
+  });
+
+  test("a later part says it follows the last email, and names what the limits left out", () => {
+    const letter = transcriptLetter(acme, [line], new Map(), links, english, {
+      sinceLastSent: true,
+      leftOut: 3,
+    });
+    expect(letter.text).toContain(
+      "Here is your conversation with Acme since the last transcript we sent you, for your records.\n\n3 earlier messages are not in this email. Open the chat to read them.",
+    );
+    expect(visibleText(letter.html)).toContain("3 earlier messages are not in this email.");
+    const one = transcriptLetter(acme, [line], new Map(), links, french, {
+      sinceLastSent: false,
+      leftOut: 1,
+    });
+    expect(one.text).toContain(
+      "1 message précédent n'est pas dans cet e-mail. Ouvrez le chat pour le lire.",
+    );
+  });
+
+  test("keeps the transcript's HTML under Gmail's 102 KB, with the newest messages", () => {
+    const view = { place: acme, authors: new Map(), chatUrl: links.chatUrl, words: english };
+    // Cyrillic takes two bytes a character, and escaping and links make the HTML longer.
+    const heavy = {
+      ...line,
+      body: `${"ж".repeat(1_000)} <a&b> https://example.com/${"x".repeat(200)}`,
+    };
+    const kept = newestThatFit(
+      Array.from({ length: 100 }, () => heavy),
+      view,
+    );
+    expect(kept.length).toBeLessThan(100);
+    const letter = transcriptLetter(acme, kept, new Map(), links, english, {
+      sinceLastSent: false,
+      leftOut: 100 - kept.length,
+    });
+    expect(Buffer.byteLength(letter.html)).toBeLessThan(102_000);
+    // The newest message goes even when it alone is over the limit, and the oldest comes first.
+    expect(newestThatFit([{ ...line, body: "x".repeat(100_000) }, line], view)).toHaveLength(1);
+    const order = newestThatFit(
+      [
+        { ...line, body: "new" },
+        { ...line, body: "old" },
+      ],
+      view,
+    );
+    expect(order.map((one) => one.body)).toEqual(["old", "new"]);
   });
 
   test("a team reply whose author is gone is the team's, never a visitor's", () => {
@@ -188,6 +238,7 @@ describe("the transcript", () => {
       new Map(),
       links,
       english,
+      whole,
     );
     expect(letter.text).not.toContain("A visitor");
     expect(letter.text).toContain(`The Acme team, ${english.time(at)}:\nHello`);
@@ -261,6 +312,7 @@ describe("in the visitor's language", () => {
       new Map(),
       links,
       french,
+      { sinceLastSent: false, leftOut: 0 },
     );
     expect(letter.subject).toBe("Votre conversation avec Acme");
     expect(french.time(at)).toBe("11 nov. 2026, 20:20 UTC");

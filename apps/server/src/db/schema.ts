@@ -78,7 +78,8 @@ export const messageKind = pgEnum("message_kind", MESSAGE_KINDS);
 export const CHAT_KINDS = ["text", "image", "file"] as const;
 /** What people wrote: the chat, and the notes only the team sees. */
 export const WRITTEN_KINDS = [...CHAT_KINDS, "note"] as const;
-// `transcript` is the email of a whole conversation to its visitor, after a close or on request.
+// `transcript` is the email of a conversation to its visitor: after a close, what came since the last
+// sent transcript, and on request, the whole conversation.
 // `mention_push` and `mention_email` tell a member that a note mentions them. They are channels of
 // their own, so a note's alerts never take the unique key of a visitor message's.
 export const alertChannel = pgEnum("alert_channel", [
@@ -393,6 +394,9 @@ export const conversation = pgTable(
     // none until the visitor writes. A visitor message, a close and a reopen clear both.
     snoozedAt: timestamp("snoozed_at", { withTimezone: true }),
     snoozedUntil: timestamp("snoozed_until", { withTimezone: true }),
+    // The last message a sent transcript carried. A close's transcript starts after it. It is kept
+    // here because finished deliveries are deleted after 30 days.
+    transcriptSentSeq: bigint("transcript_sent_seq", { mode: "bigint" }),
     createdAt: createdAt(),
     // Milliseconds, the precision of a JSON date, so a paging cursor can name a row exactly.
     updatedAt: timestamp("updated_at", { withTimezone: true, precision: 3 }).notNull().defaultNow(),

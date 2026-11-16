@@ -1,6 +1,6 @@
 {
-  "id": "6fa0dee6-0ad2-4891-a684-a4ae625dc774",
-  "prevId": "492ad81e-ceea-4c52-aceb-94d15e29e510",
+  "id": "e822f071-9def-4dce-bbdf-3f3c34f37faf",
+  "prevId": "4e8583fc-6318-4ff5-bc03-9193f447013f",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1751,6 +1751,12 @@
         "snoozed_until": {
           "name": "snoozed_until",
           "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "transcript_sent_seq": {
+          "name": "transcript_sent_seq",
+          "type": "bigint",
           "primaryKey": false,
           "notNull": false
         },

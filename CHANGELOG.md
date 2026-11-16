@@ -16,6 +16,11 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - A **Campaigns** page in the operator app: the list with status and results, an editor with a live audience count, "would have sent to N people in the last 7 days" and a live preview in light and dark, per language and at phone width, **Send a test to me**, which names the rule that would hold a real message, and **Copy as code**.
 - The widget runs page campaigns, and `message:received` carries `outbound.campaignId`.
 
+### Changed
+
+- When a conversation closes again, its transcript email holds only the messages since the last transcript the visitor got, in place of the whole conversation. **Email transcript** still sends the whole conversation.
+- A transcript email holds the newest messages that fit, at most 100, so Gmail does not cut it and hide the link to stop the emails. It says how many earlier messages are in the chat.
+
 ## [0.36.0] - 2026-11-16
 
 ### Changed

@@ -1,0 +1,1 @@
+ALTER TABLE "conversation" ADD COLUMN "transcript_sent_seq" bigint;
