@@ -429,6 +429,11 @@ test("on a phone, the sections sit in a tab bar and the reply text takes the ful
   const tabs = operator.getByRole("navigation", { name: "Main menu" });
   const box = await tabs.boundingBox();
   expect(Math.round((box?.y ?? 0) + (box?.height ?? 0))).toBe(844);
+  // Every section fits in one row.
+  const tops = await tabs
+    .getByRole("button")
+    .evaluateAll((buttons) => buttons.map((one) => one.getBoundingClientRect().top));
+  expect(new Set(tops).size).toBe(1);
   await tabs.getByRole("button", { name: "Contacts" }).click();
   await expect(operator.getByRole("heading", { name: "Contacts" })).toBeVisible();
   await tabs.getByRole("button", { name: "Inbox" }).click();

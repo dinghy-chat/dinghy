@@ -5919,7 +5919,8 @@ button.quote:hover {
     left: 0;
     z-index: 40;
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
     gap: 2px;
     margin: 0;
     padding: 4px max(4px, env(safe-area-inset-right)) calc(4px + env(safe-area-inset-bottom))
@@ -5936,8 +5937,9 @@ button.quote:hover {
     min-width: 0;
     height: calc(var(--tab-bar-height) - 9px);
     min-height: 0;
-    padding: 0 2px;
-    font-size: 11.5px;
+    padding: 0;
+    /* Six labels share the row, so they shrink on a screen narrower than 390px. */
+    font-size: min(11.5px, 3vw);
     line-height: 1.2;
   }
   .nav button[aria-current="page"] {
