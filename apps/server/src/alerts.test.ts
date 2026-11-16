@@ -2047,6 +2047,7 @@ describe("transcripts", () => {
     await fanOutAll();
     runWorker({ mail: true });
     await untilDue(() => transcriptMails().length === 1, "the first transcript");
+    await untilDue(allFinished, "the first transcript to finish");
     await setStatus(conversationId, anna, "open");
     await visitorWrites(from, "And my invoices?");
     // A visitor's message alone sends none: the team has not answered it.
@@ -2064,7 +2065,9 @@ describe("transcripts", () => {
     expect(second).toContain("And my invoices?");
     expect(second).toContain("Open Billing, then Invoices.");
     expect(second).not.toContain("How do I export my data?");
-    // The anchor outlives the deliveries, which are deleted after 30 days.
+    // The anchor outlives the deliveries, which are deleted after 30 days. A sent transcript moves
+    // it when its row finishes, just after the mail goes.
+    await untilDue(allFinished, "the second transcript to finish");
     await owner.delete(alertDelivery);
     await setStatus(conversationId, anna, "open");
     await operatorWrites(anna, conversationId, "Anything else?");
