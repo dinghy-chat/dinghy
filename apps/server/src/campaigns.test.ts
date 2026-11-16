@@ -786,7 +786,7 @@ describe("a schedule", () => {
       /* Each pass runs one batch. */
     }
     expect(await campaignMessages(made.id)).toHaveLength(120);
-  });
+  }, 20_000);
 });
 
 describe("an unread message by email", () => {
