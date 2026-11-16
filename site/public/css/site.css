@@ -2057,7 +2057,7 @@ main {
   font-size: 14px;
 }
 
-/* The track call of "Messages from your code", in the terminal's colors. */
+/* The track call of "Turn app events into chat messages", in the terminal's colors. */
 .code-window {
   border-radius: 16px 16px 0 0;
   box-shadow: 0 12px 32px rgb(11 34 57 / .14);
