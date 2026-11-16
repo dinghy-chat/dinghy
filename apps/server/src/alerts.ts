@@ -52,7 +52,12 @@ import { imageUrls } from "./public-images.ts";
 import type { Push, PushPayload } from "./push.ts";
 import { retryDelayMs } from "./retry.ts";
 import { MINUTE_MS } from "./time.ts";
-import { requestedTranscriptRows, transcriptPlan, transcriptRows } from "./transcripts.ts";
+import {
+  requestedTranscriptRows,
+  transcriptPlan,
+  transcriptRows,
+  transcriptSent,
+} from "./transcripts.ts";
 import {
   emailStopped,
   emailStopUrl,
@@ -514,15 +519,7 @@ export async function finishDelivery(
   }
   await withWorkspace(db, row.workspaceId, async (tx) => {
     const [done] = await finish(tx);
-    if (done?.toSeq == null) return;
-    await tx
-      .update(conversation)
-      .set({
-        transcriptSentSeq: sql`greatest(${conversation.transcriptSentSeq}, ${done.toSeq.toString()}::bigint)`,
-      })
-      .where(
-        and(eq(conversation.workspaceId, row.workspaceId), eq(conversation.id, row.conversationId)),
-      );
+    if (done?.toSeq != null) await transcriptSent(tx, row, done.toSeq);
   });
 }
 

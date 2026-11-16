@@ -54,10 +54,10 @@ import { type VisitorWords, visitorWords } from "./visitor-words.ts";
 // The transcript waits, so a quick reopen cancels it.
 export const TRANSCRIPT_DELAY_MS = 5 * MINUTE_MS;
 // A transcript holds the newest messages up to both limits, so Gmail does not clip it at 102 KB
-// and hide the footer with the stop link. Bytes, not characters, as most scripts take two or three
-// bytes a character. The chat link has the rest.
+// and hide the footer with the stop link. The bytes are the messages' HTML, which Gmail counts,
+// and leave room for the header, the intro and the footer. The chat link has the rest.
 const TRANSCRIPT_MESSAGES = 100;
-const TRANSCRIPT_BYTES = 40_000;
+const TRANSCRIPT_BYTES = 80_000;
 
 /** The chat messages of a conversation after a position, as a transcript holds them. */
 const transcriptRange = (workspaceId: string, conversationId: string, after: bigint | null) =>
@@ -82,16 +82,36 @@ async function rangeStats(tx: Transaction, range: SQL | undefined) {
   return stats ?? { total: 0, lastSeq: null, replied: false };
 }
 
-/** The newest messages within the byte limit, oldest first. The newest one always fits. */
-export function newestThatFit<T extends { body: string | null }>(newestFirst: T[]): T[] {
+/**
+ * The newest messages whose HTML fits the byte limit, oldest first. The newest one is kept even when
+ * it alone is over the limit.
+ */
+export function newestThatFit<T extends TranscriptLine>(
+  newestFirst: T[],
+  view: TranscriptView,
+): T[] {
   const kept: T[] = [];
   let bytes = 0;
   for (const line of newestFirst) {
-    bytes += Buffer.byteLength(line.body ?? "");
+    bytes += Buffer.byteLength(lineHtml(line, view));
     if (kept.length > 0 && bytes > TRANSCRIPT_BYTES) break;
     kept.push(line);
   }
   return kept.reverse();
+}
+
+/** A transcript went, so the next close's transcript starts after the last message it carried. */
+export async function transcriptSent(
+  tx: Transaction,
+  { workspaceId, conversationId }: ClaimedDelivery,
+  toSeq: bigint,
+): Promise<void> {
+  await tx
+    .update(conversation)
+    .set({
+      transcriptSentSeq: sql`greatest(${conversation.transcriptSentSeq}, ${toSeq.toString()}::bigint)`,
+    })
+    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)));
 }
 
 /**
@@ -223,32 +243,32 @@ export async function transcriptPlan(
   if (state.fromClose && !stats.replied) return null;
   // The key share lock makes an edit wait until this transcript's range is recorded, as for a reply
   // email.
-  const lines = newestThatFit(
-    await tx
-      .select({
-        seq: message.seq,
-        body: message.body,
-        filename: filename(),
-        kind: message.kind,
-        authorVisitorId: message.authorVisitorId,
-        authorOperatorId: message.authorOperatorId,
-        authorApiKeyId: message.authorApiKeyId,
-        replyTo: messageColumns.replyTo,
-        createdAt: message.createdAt,
-      })
-      .from(message)
-      .where(range)
-      .orderBy(desc(message.seq))
-      .limit(TRANSCRIPT_MESSAGES)
-      .for("key share", { of: message }),
-  );
-  if (lines.length === 0) return null;
-  const part = { since: after !== null, leftOut: stats.total - lines.length };
-  const authors = await messageAuthors(tx, workspaceId, lines);
+  const newest = await tx
+    .select({
+      seq: message.seq,
+      body: message.body,
+      filename: filename(),
+      kind: message.kind,
+      authorVisitorId: message.authorVisitorId,
+      authorOperatorId: message.authorOperatorId,
+      authorApiKeyId: message.authorApiKeyId,
+      replyTo: messageColumns.replyTo,
+      createdAt: message.createdAt,
+    })
+    .from(message)
+    .where(range)
+    .orderBy(desc(message.seq))
+    .limit(TRANSCRIPT_MESSAGES)
+    .for("key share", { of: message });
+  if (newest.length === 0) return null;
   const chatUrl = chatLinkUrl(
     publicUrl,
     await createChatLink(tx, workspaceId, visitorId, conversationId),
   );
+  const words = visitorWords(state.locale);
+  const authors = await messageAuthors(tx, workspaceId, newest);
+  const lines = newestThatFit(newest, { place, authors, chatUrl, words });
+  const part = { sinceLastSent: after !== null, leftOut: stats.total - lines.length };
   const stopUrl = emailStopUrl(publicUrl, secret, workspaceId, state.email);
   const replyTo =
     inboundDomain === undefined
@@ -267,7 +287,7 @@ export async function transcriptPlan(
   return {
     channel: "email",
     to: state.email,
-    ...transcriptLetter(place, lines, authors, links, visitorWords(state.locale), part),
+    ...transcriptLetter(place, lines, authors, links, words, part),
     stopUrl,
     replyTo,
     carries: { fromSeq: lines[0]?.seq ?? 0n, toSeq: lines.at(-1)?.seq ?? 0n },
@@ -298,12 +318,42 @@ const standIn = (line: TranscriptLine, words: VisitorWords) =>
       ? words.transcriptFile(line.filename)
       : null;
 
+/** What a transcript's lines need to name their authors and link to the chat. */
+interface TranscriptView {
+  place: Place;
+  authors: Map<string, MessageAuthor>;
+  chatUrl: string;
+  words: VisitorWords;
+}
+
+/** A line's author and time, as the visitor knows them. */
+const lineHead = (line: TranscriptLine, { place, authors, words }: TranscriptView) =>
+  `${visitorAuthorName(line, authors, place.name, words)}, ${words.time(line.createdAt)}`;
+
+/** A line's HTML: its author and time, then what it said, under the message it answers. */
+function lineHtml(line: TranscriptLine, view: TranscriptView): string {
+  const { chatUrl, words } = view;
+  const shown = standIn(line, words);
+  return (
+    `<p style="margin:16px 0 4px;color:${EMAIL_COLORS.muted};font-size:13px">${escapeHtml(lineHead(line, view))}</p>` +
+    quotedHtml(
+      visitorQuote(line.replyTo),
+      mailParagraphs(
+        shown === null
+          ? markdownHtml(line.body ?? "")
+          : `<p><a href="${escapeHtml(chatUrl)}">${escapeHtml(shown)}</a></p>`,
+      ),
+      words,
+    )
+  );
+}
+
 /**
  * Which part of the conversation a transcript holds: only what came after the last sent transcript,
  * and how many earlier messages of its range the limits left out.
  */
 interface TranscriptPart {
-  since: boolean;
+  sinceLastSent: boolean;
   leftOut: number;
 }
 
@@ -317,37 +367,20 @@ export function transcriptLetter(
   part: TranscriptPart,
 ): { subject: string; text: string; html: string } {
   const { chatUrl } = links;
+  const view = { place, authors, chatUrl, words };
   const intro = [
-    part.since ? words.transcriptSince(place.name) : words.transcriptIntro(place.name),
+    part.sinceLastSent ? words.transcriptSince(place.name) : words.transcriptIntro(place.name),
     ...(part.leftOut > 0 ? [words.transcriptLeftOut(part.leftOut)] : []),
   ];
-  const heads = lines.map(
-    (line) =>
-      `${visitorAuthorName(line, authors, place.name, words)}, ${words.time(line.createdAt)}`,
-  );
   const plain = lines
     .map(
-      (line, index) =>
-        `${words.lead(heads[index] ?? "")}\n${quotedText(visitorQuote(line.replyTo), standIn(line, words) ?? line.body ?? "", words)}`,
+      (line) =>
+        `${words.lead(lineHead(line, view))}\n${quotedText(visitorQuote(line.replyTo), standIn(line, words) ?? line.body ?? "", words)}`,
     )
     .join("\n\n");
   const html = [
     ...intro.map((paragraph) => `<p style="margin:0 0 8px">${escapeHtml(paragraph)}</p>`),
-    ...lines.map((line, index) => {
-      const shown = standIn(line, words);
-      return (
-        `<p style="margin:16px 0 4px;color:${EMAIL_COLORS.muted};font-size:13px">${escapeHtml(heads[index] ?? "")}</p>` +
-        quotedHtml(
-          visitorQuote(line.replyTo),
-          mailParagraphs(
-            shown === null
-              ? markdownHtml(line.body ?? "")
-              : `<p><a href="${escapeHtml(chatUrl)}">${escapeHtml(shown)}</a></p>`,
-          ),
-          words,
-        )
-      );
-    }),
+    ...lines.map((line) => lineHtml(line, view)),
   ].join("");
   const paragraphs = [...intro, plain, `${words.lead(words.continueChat)} ${chatUrl}`];
   return {
@@ -375,14 +408,7 @@ async function requestTranscript(
   const [newest] = await tx
     .select({ id: message.id })
     .from(message)
-    .where(
-      and(
-        eq(message.workspaceId, workspaceId),
-        eq(message.conversationId, conversationId),
-        isChat(),
-        isNull(message.deletedAt),
-      ),
-    )
+    .where(transcriptRange(workspaceId, conversationId, null))
     .orderBy(desc(message.seq))
     .limit(1);
   if (newest === undefined) return false;
