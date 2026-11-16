@@ -1,4 +1,4 @@
-import { and, eq, gt, isNotNull, ne, or, type SQL, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNotNull, ne, or, type SQL, sql } from "drizzle-orm";
 import { type HoursState, hoursState } from "../../../packages/widget/src/hours.ts";
 import { type BusinessHours, WEEKDAYS } from "../../../packages/widget/src/shared.ts";
 import { readBusinessHours } from "./business-hours.ts";
@@ -134,6 +134,29 @@ async function withinGap(tx: Transaction, workspaceId: string, row: Row, gapHour
   return found.length > 0;
 }
 
+/** The ID of the campaign's newest message to the contact that `which` names, or null. */
+export async function newestMessage(
+  tx: Transaction,
+  workspaceId: string,
+  { campaignId, visitorId }: { campaignId: string; visitorId: string },
+  which: SQL | undefined,
+): Promise<string | null> {
+  const [found] = await tx
+    .select({ id: outboundMessage.id })
+    .from(outboundMessage)
+    .where(
+      and(
+        eq(outboundMessage.workspaceId, workspaceId),
+        eq(outboundMessage.campaignId, campaignId),
+        eq(outboundMessage.visitorId, visitorId),
+        which,
+      ),
+    )
+    .orderBy(desc(outboundMessage.createdAt))
+    .limit(1);
+  return found?.id ?? null;
+}
+
 /** Whether the contact reached the campaign's goal: it matches now, or one message counted it. */
 async function reachedGoal(
   tx: Transaction,
@@ -143,21 +166,15 @@ async function reachedGoal(
 ) {
   const { goal } = found.definition.rules;
   if (goal === undefined) return false;
-  const counted = await tx
-    .select({ id: outboundMessage.id })
-    .from(outboundMessage)
-    .where(
-      and(
-        eq(outboundMessage.workspaceId, workspaceId),
-        eq(outboundMessage.campaignId, found.id),
-        eq(outboundMessage.visitorId, visitorId),
-        isNotNull(outboundMessage.goalReachedAt),
-      ),
-    )
-    .limit(1);
+  const counted = await newestMessage(
+    tx,
+    workspaceId,
+    { campaignId: found.id, visitorId },
+    isNotNull(outboundMessage.goalReachedAt),
+  );
   const { within: _, ...condition } = goal;
   return (
-    counted.length > 0 ||
+    counted !== null ||
     (await matchesContact(tx, workspaceId, visitorId, condition, { campaignId: found.id }))
   );
 }

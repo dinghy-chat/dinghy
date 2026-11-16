@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
-import { and, desc, eq, gt, isNotNull, or } from "drizzle-orm";
+import { and, eq, gt, isNotNull, or } from "drizzle-orm";
 import { LOCALES, MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
-import { type CampaignRow, inAudience, reachedContact } from "./campaign-checks.ts";
+import { type CampaignRow, inAudience, newestMessage, reachedContact } from "./campaign-checks.ts";
 import type { CampaignDefinition, CampaignMessage } from "./campaign-schemas.ts";
 import { outboundMessage, visitor } from "./db/schema.ts";
 import type { Transaction } from "./db/tenant.ts";
@@ -58,20 +58,12 @@ async function frequencyBlocker(
           reachedContact,
           gt(outboundMessage.createdAt, new Date(Date.now() - toMs(frequency.every))),
         );
-  const [blocker] = await tx
-    .select({ id: outboundMessage.id })
-    .from(outboundMessage)
-    .where(
-      and(
-        eq(outboundMessage.workspaceId, workspaceId),
-        eq(outboundMessage.campaignId, found.id),
-        eq(outboundMessage.visitorId, visitorId),
-        or(recent, isNotNull(outboundMessage.goalReachedAt)),
-      ),
-    )
-    .orderBy(desc(outboundMessage.createdAt))
-    .limit(1);
-  return blocker?.id ?? null;
+  return newestMessage(
+    tx,
+    workspaceId,
+    { campaignId: found.id, visitorId },
+    or(recent, isNotNull(outboundMessage.goalReachedAt)),
+  );
 }
 
 /** The contact's A/B variant: the same one every time, from a hash of the campaign and the contact. */
