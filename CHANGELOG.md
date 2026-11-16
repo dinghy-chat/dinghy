@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.36.0] - 2026-11-16
+
 ### Changed
 
 - Each API key and connected app has one **Permissions** button in Settings > API & webhooks. It opens a dialog with the key's access level, its replies and its permissions, saved together, in place of a menu for each. The row lists what the key may do.
@@ -616,7 +618,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.35.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.36.0...HEAD
+[0.36.0]: https://github.com/dinghy-chat/dinghy/compare/v0.35.0...v0.36.0
 [0.35.0]: https://github.com/dinghy-chat/dinghy/compare/v0.34.0...v0.35.0
 [0.34.0]: https://github.com/dinghy-chat/dinghy/compare/v0.33.1...v0.34.0
 [0.33.1]: https://github.com/dinghy-chat/dinghy/compare/v0.33.0...v0.33.1
