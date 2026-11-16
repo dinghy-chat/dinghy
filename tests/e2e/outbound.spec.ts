@@ -221,8 +221,8 @@ test("a card's button reads the message, and reset() forgets the visitor's ID", 
   await expect
     .poll(() => heard(page))
     .toEqual([
-      ["outbound:read", { id, button }],
-      ["outbound:dismissed", { id, button }],
+      ["outbound:read", { id, campaignId: null, button }],
+      ["outbound:dismissed", { id, campaignId: null, button }],
     ]);
   const visitorId = () =>
     page.evaluate(

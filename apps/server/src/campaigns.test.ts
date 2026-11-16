@@ -872,14 +872,30 @@ describe("a page campaign", () => {
     expect(answer.status).toBe(201);
     expect(answer.json).toMatchObject({ body: "Yes", button: { value: "yes", label: "Yes" } });
     const [row] = await campaignMessages(made.id);
-    expect(row).toMatchObject({ visitorId, status: "replied", chosenButton: { value: "yes", label: "Yes" } });
-    const [conversationRow] = await owner.select().from(conversation).where(eq(conversation.visitorId, visitorId));
+    expect(row).toMatchObject({
+      visitorId,
+      status: "replied",
+      chosenButton: { value: "yes", label: "Yes" },
+    });
+    const [conversationRow] = await owner
+      .select()
+      .from(conversation)
+      .where(eq(conversation.visitorId, visitorId));
     expect(conversationRow?.id).toBe(row?.conversationId);
     // Once is once: the answered visitor's beat no longer lists it.
-    expect((await beat(token)).json.pages).not.toContainEqual(expect.objectContaining({ id: made.id }));
+    expect((await beat(token)).json.pages).not.toContainEqual(
+      expect.objectContaining({ id: made.id }),
+    );
 
-    const results = await withKey(app, server.token, "GET", inSpace(`/campaigns/${made.id}/results`));
-    const { variants } = await json<{ variants: (Record<string, number> & { clicks: Record<string, number> })[] }>(results);
+    const results = await withKey(
+      app,
+      server.token,
+      "GET",
+      inSpace(`/campaigns/${made.id}/results`),
+    );
+    const { variants } = await json<{
+      variants: (Record<string, number> & { clicks: Record<string, number> })[];
+    }>(results);
     expect(variants).toEqual([
       expect.objectContaining({
         entered: 1,
@@ -904,11 +920,20 @@ describe("a page campaign", () => {
     expect(await listed()).toBe(false);
     const { token, visitorId } = await newVisitor(app, space.publicKey);
     expect(await listed(token)).toBe(false);
-    await owner.update(visitor).set({ attributes: { plan: "pro" } }).where(eq(visitor.id, visitorId));
+    await owner
+      .update(visitor)
+      .set({ attributes: { plan: "pro" } })
+      .where(eq(visitor.id, visitorId));
     expect(await listed(token)).toBe(true);
-    await owner.update(workspace).set({ campaignsPausedAt: new Date() }).where(eq(workspace.id, space.id));
+    await owner
+      .update(workspace)
+      .set({ campaignsPausedAt: new Date() })
+      .where(eq(workspace.id, space.id));
     expect(await listed(token)).toBe(false);
-    await owner.update(workspace).set({ campaignsPausedAt: null }).where(eq(workspace.id, space.id));
+    await owner
+      .update(workspace)
+      .set({ campaignsPausedAt: null })
+      .where(eq(workspace.id, space.id));
     await widget("opt-out", { optedOut: true }, token);
     expect(await listed(token)).toBe(false);
     expect((await widget(`campaigns/${made.id}/show`, {}, token)).status).toBe(404);
