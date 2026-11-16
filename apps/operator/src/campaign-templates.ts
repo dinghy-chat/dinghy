@@ -57,7 +57,7 @@ export const TEMPLATES: CampaignTemplate[] = [
     tint: TINT.yellow,
     definition: () =>
       draft(
-        "setup-nudge",
+        "setup-help",
         {
           name: "templateSetup",
           body: "templateSetupBody",

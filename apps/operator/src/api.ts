@@ -926,6 +926,12 @@ export function workspaceApi(workspaceId: string) {
       }),
     setCampaignStatus: (id: string, action: "pause" | "resume" | "end") =>
       post<{ campaign: Campaign }>(`${base}/campaigns/${id}/${action}`, {}),
+    /** Deletes a campaign that never sent, as `canDelete` tells. */
+    deleteCampaign: (id: string) =>
+      call<{ ok: true }>(`${base}/campaigns/${id}`, { method: "DELETE" }),
+    /** The attribute keys and event names of recent contacts, for the editor to suggest. */
+    campaignNames: () =>
+      call<{ attributes: string[]; events: string[] }>(`${base}/campaigns/names`),
     campaignResults: (id: string) => call<CampaignResults>(`${base}/campaigns/${id}/results`),
     /** The saved message to a test visitor named after the member, and the rule that would hold it. */
     testCampaign: (id: string) =>

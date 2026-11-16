@@ -1,10 +1,12 @@
 /** @jsxImportSource react */
 import { percent, shareOf } from "./analytics.tsx";
 import type { Campaign } from "./api.ts";
+import { deleteBlock } from "./campaign-dialogs.tsx";
 import { campaignSentence } from "./campaign-summary.ts";
 import { StatusChip } from "./campaign-tile.tsx";
 import { TriggerTile } from "./campaign-trigger.tsx";
 import { Icon } from "./icons.tsx";
+import { Menu, type MenuItem } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 
 /** One result of a row: its number, its words and a thin bar of its share. */
@@ -64,11 +66,57 @@ function RowStats({ campaign }: { campaign: Campaign }) {
   );
 }
 
-/** A campaign in the list: its trigger's tile, its name and sentence, its status and results. */
-export function CampaignRow({ campaign, onOpen }: { campaign: Campaign; onOpen(): void }) {
+/** What a row's menu asks the list to do with its campaign. */
+export type RowAction = "rename" | "end" | "delete";
+
+/** The row's menu: a new name, an end, and a delete for a campaign that never sent. */
+function rowItems(campaign: Campaign, onAction: (action: RowAction) => void): MenuItem[] {
+  const block = deleteBlock(campaign);
+  const ended = campaign.status === "ended";
+  return [
+    ...(ended
+      ? []
+      : [
+          {
+            label: t("campaignRename"),
+            lead: <Icon name="pencil" size={18} />,
+            onSelect: () => onAction("rename"),
+          },
+          {
+            label: t("campaignEnd"),
+            lead: <Icon name="prohibit" size={18} />,
+            danger: true,
+            divider: true,
+            onSelect: () => onAction("end"),
+          },
+        ]),
+    {
+      label: t("campaignDelete"),
+      lead: <Icon name="trash" size={18} />,
+      danger: true,
+      ...(block !== null && { unavailable: t(block) }),
+      onSelect: () => onAction("delete"),
+    },
+  ];
+}
+
+/**
+ * A campaign in the list: its trigger's tile, its name and sentence, its status and results, and
+ * for an owner or an admin, a menu beside it.
+ */
+export function CampaignRow({
+  campaign,
+  onOpen,
+  onAction,
+}: {
+  campaign: Campaign;
+  onOpen(): void;
+  /** Null for a member, who reads campaigns only. */
+  onAction: ((action: RowAction) => void) | null;
+}) {
   const { definition } = campaign;
   return (
-    <li>
+    <li className="campaign-item">
       <button type="button" className="campaign-row" onClick={onOpen}>
         <TriggerTile type={definition.trigger.type} />
         <span className="row-lines">
@@ -81,8 +129,17 @@ export function CampaignRow({ campaign, onOpen }: { campaign: Campaign; onOpen()
         ) : (
           <RowStats campaign={campaign} />
         )}
-        <Icon name="chevronRight" size={16} />
+        {onAction === null && <Icon name="chevronRight" size={16} />}
       </button>
+      {onAction !== null && (
+        <Menu
+          label={t("campaignActions", { name: definition.name })}
+          buttonClass="round row-menu"
+          items={rowItems(campaign, onAction)}
+        >
+          <Icon name="dots" />
+        </Menu>
+      )}
     </li>
   );
 }

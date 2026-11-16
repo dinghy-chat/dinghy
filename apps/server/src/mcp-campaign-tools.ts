@@ -158,6 +158,19 @@ export function campaignTools({
         },
       }),
     ),
+    onCampaign({
+      name: "delete_campaign",
+      title: "Delete a campaign",
+      description:
+        "Deletes a campaign that never sent a message, such as a draft, by `id` or `key`. Test messages do not count. Errors: `campaign_live` (pause or end it first), `campaign_sent` (it keeps its results, so end it).",
+      input: Ref,
+      idempotent: true,
+      destructive: true,
+      async run(ref, _input, workspaceId) {
+        const refusal = await campaigns.remove(workspaceId, ref);
+        return refusal === null ? { data: { ok: true } } : refused(refusal);
+      },
+    }),
   ];
   return { everyKey, setupOnly };
 }

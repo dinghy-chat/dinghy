@@ -11,6 +11,7 @@ import { zoneChoices } from "./business-hours.tsx";
 import { dateInput, withPart } from "./campaign-draft.ts";
 import { DAY_NAMES, durationWords } from "./campaign-summary.ts";
 import { TINT, Tile, type Tint } from "./campaign-tile.tsx";
+import { EVENT_NAMES } from "./condition-builder.tsx";
 import { browserTimeZone } from "./format.ts";
 import { Icon, type IconName } from "./icons.tsx";
 import { CodeBlock } from "./install.tsx";
@@ -238,6 +239,7 @@ function TriggerDetails({
           <Field
             label={t("conditionEventName")}
             hint={t("triggerEventNameHelp")}
+            list={EVENT_NAMES}
             required
             placeholder="export.finished"
             value={trigger.name}

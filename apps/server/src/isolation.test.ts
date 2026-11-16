@@ -398,6 +398,21 @@ const CAMPAIGN_ATTACKS: Record<string, Attack> = {
   ...byIdAndKey("GET", "", (world) =>
     campaignRefusedInBoth(world, "GET", "", () => campaignRow(world.campaignB.id)),
   ),
+  ...byIdAndKey("DELETE", "", (world) =>
+    campaignRefusedInBoth(world, "DELETE", "", () => campaignRow(world.campaignB.id)),
+  ),
+  "GET /v1/operator/workspaces/:workspaceId/campaigns/names": async (world) => {
+    const { operator: as, anna, a, b, other } = world;
+    const name = `theirs.${randomUUID()}`;
+    const now = new Date();
+    await owner
+      .insert(contactEvent)
+      .values({ workspaceId: b.id, visitorId: other.id, name, firstAt: now, lastAt: now });
+    expect((await as(anna, "GET", inWorkspace(b.id, "/campaigns/names"))).status).toBe(404);
+    const own = await as(anna, "GET", inWorkspace(a.id, "/campaigns/names"));
+    expect(own.status).toBe(200);
+    expect(await own.text()).not.toContain(name);
+  },
   ...byIdAndKey("PATCH", "", (world) =>
     campaignRefusedInBoth(world, "PATCH", "", () => campaignRow(world.campaignB.id), {
       name: "Renamed across",

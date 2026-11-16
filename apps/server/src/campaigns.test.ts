@@ -843,6 +843,50 @@ describe("Send a test to me", () => {
   });
 });
 
+describe("a delete", () => {
+  test("removes a campaign that sent only tests, and keeps one that sent for its results", async () => {
+    const remove = (key: string, token = admin.token) =>
+      withKey(app, token, "DELETE", inSpace(`/campaigns/by-key/${key}`));
+    const trial = await live(keyOf("trial"), {}, false);
+    await asOperator(app, boss.cookie, "POST", inSpace(`/campaigns/${trial.id}/test`));
+    const deleted = await asOperator(app, boss.cookie, "DELETE", inSpace(`/campaigns/${trial.id}`));
+    expect(deleted.status).toBe(200);
+    expect(await campaignMessages(trial.id)).toEqual([]);
+    const gone = await withKey(app, admin.token, "GET", inSpace(`/campaigns/${trial.id}`));
+    expect(gone.status).toBe(404);
+
+    const key = keyOf("sent");
+    await live(key);
+    expect((await remove(key, server.token)).status).toBe(403);
+    expect((await json(await remove(key))).error?.code).toBe("campaign_live");
+    expect((await sendCampaign(key, { visitor: { userId: userId() } })).status).toBe(201);
+    await withKey(app, admin.token, "POST", inSpace(`/campaigns/by-key/${key}/end`));
+    expect((await json(await remove(key))).error?.code).toBe("campaign_sent");
+
+    const draft = await live(keyOf("mcp-draft"), {}, false);
+    const deletedByTool = await callTool(app, admin.token, "delete_campaign", { id: draft.id });
+    expect(deletedByTool.isError).toBeFalsy();
+    expect(await owner.select().from(campaign).where(eq(campaign.id, draft.id))).toEqual([]);
+  });
+});
+
+describe("the editor's suggestions", () => {
+  test("list the attribute keys and event names of recent contacts", async () => {
+    const user = userId();
+    const attribute = `plan_${randomUUID().slice(0, 8)}`;
+    await upsertContact(user, { attributes: { [attribute]: "pro" } });
+    const name = `export.${randomUUID().slice(0, 8)}`;
+    await withKey(app, server.token, "POST", inSpace("/track"), {
+      visitor: { userId: user },
+      name,
+    });
+    const response = await withKey(app, server.token, "GET", inSpace("/campaigns/names"));
+    const names = await json<{ attributes: string[]; events: string[] }>(response);
+    expect(names.attributes).toContain(attribute);
+    expect(names.events).toContain(name);
+  });
+});
+
 describe("a page campaign", () => {
   /** A widget request, with a visitor's token or none. */
   const widget = async (path: string, body: unknown, token?: string) => {

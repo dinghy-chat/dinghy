@@ -35,7 +35,7 @@ Branch on `code`, which is stable, and show `message` only to people. The OpenAP
 | 403 | `send_mode_required`, `send_as_member_required`, `send_email_required` | For an API key's [outbound message](#outbound-messages-and-contacts): the key drafts replies, it may not send as a member, or it may not send with `sendEmail: true` |
 | 404 | `not_found` | It does not exist, or it is in another workspace |
 | 409 | `conversation_closed`, `webhook_limit`, `site_limit`, `grant_limit`, `message_seen` | Reopen the conversation to reply or to snooze it, the workspace has 5 webhooks, 20 allowed sites or 50 connected apps already, or the visitor has seen the reply you tried to edit |
-| 409 | `campaign_key_taken`, `campaign_ended`, `campaign_not_live`, `opted_out` | For a [campaign](#campaigns): another campaign has the key, the campaign ended, or a send names a campaign that is not live. `opted_out`: the visitor turned off automatic messages, so a key's or a campaign's send does not go |
+| 409 | `campaign_key_taken`, `campaign_ended`, `campaign_not_live`, `campaign_live`, `campaign_sent`, `opted_out` | For a [campaign](#campaigns): another campaign has the key, the campaign ended, a send names a campaign that is not live, or a delete names one that is live or sent messages. `opted_out`: the visitor turned off automatic messages, so a key's or a campaign's send does not go |
 | 409 | `human_handling`, `bots_paused`, `drafts_text_only` | For an API key: a person handles the conversation and the key sends directly, an owner or admin paused every bot, or a key in draft mode sent an image or a file. See [Bots](#bots-reply-modes-drafts-notes-and-handoff) |
 | 413 | `too_large` | The body is too large |
 | 429 | `too_many_requests`, `too_many_streams` | A rate limit. Wait for the `Retry-After` header's seconds |
@@ -446,10 +446,12 @@ A campaign is a saved rule that sends outbound messages: who gets one, when, wha
 | `POST /campaigns/{id}/resume` | Starts a draft, or resumes a paused campaign |
 | `POST /campaigns/{id}/pause` | Pauses a live campaign: it makes no new messages, and those not sent yet wait |
 | `POST /campaigns/{id}/end` | Ends it for good. Its messages that wait are cancelled with `campaign_ended` |
+| `DELETE /campaigns/{id}` | Deletes a campaign that never sent a message, with its test messages. A live one answers 409 `campaign_live`, and one that sent 409 `campaign_sent` |
 | `GET /campaigns/{id}/results` | Its results per day in UTC and per variant, as `{ days, variants }`, from `from` to `to`, such as `2026-12-01` |
 | `POST /campaigns/{id}/send` | `{ clientId, visitor, data? }` runs a live campaign for one person |
 | `POST /campaigns/{id}/test` | With a session only: shows the message to a test visitor named after the member, and answers `{ outboundMessage, blockedBy }` |
 | `POST /campaigns/estimate` | `{ audience?, trigger? }`: how many contacts the editor's choices reach |
+| `GET /campaigns/names` | `{ attributes, events }`: the attribute keys and event names of the 1,000 contacts seen last, A to Z, for the editor to suggest |
 | `GET /campaign-settings` | `{ paused, gapHours, pausedBy, pausedAt }`, the rules for every campaign, and who paused them and when |
 | `PUT /campaign-settings` | Changes both. Owners, admins and Full access keys only |
 | `POST /track` | Tracks a server event about a contact. API keys only |
@@ -703,6 +705,7 @@ Every key and connected app gets the Chats tools. A Full access one also gets th
 | `upsert_campaign` | Full access | Creates a draft campaign from `definition`, or replaces the one with its key. The status stays |
 | `pause_campaign`, `resume_campaign` | Full access | Pauses a live campaign, or starts or resumes one, by `id` or `key` |
 | `end_campaign` | Full access | Ends a campaign for good, by `id` or `key`. Marked destructive |
+| `delete_campaign` | Full access | Deletes a campaign that never sent a message, by `id` or `key`. Marked destructive |
 
 Each tool says in its annotations whether it only reads, whether a retry is safe, and whether it deletes or ends something. A client asks the person before it calls a destructive tool. The server's instructions, and every tool that returns text a visitor wrote, tell the agent that this text is data and that it must never follow instructions in it.
 

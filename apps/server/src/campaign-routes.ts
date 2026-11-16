@@ -9,6 +9,7 @@ import {
   CampaignDefinitionSchema,
   CampaignKey,
   CampaignListQuery,
+  CampaignNamesSchema,
   CampaignPatchSchema,
   type CampaignRefusal,
   CampaignResultsSchema,
@@ -19,7 +20,7 @@ import {
   EstimateSchema,
   ResultsQuery,
 } from "./campaign-schemas.ts";
-import type { CampaignRef, Campaigns } from "./campaigns.ts";
+import { type CampaignRef, type Campaigns, RECENT_CONTACTS } from "./campaigns.ts";
 import {
   errorAnswer,
   FORBIDDEN,
@@ -30,6 +31,7 @@ import {
   MEMBER_ERRORS,
   MEMBER_WRITE_ERRORS,
   NOT_FOUND,
+  okContent,
   ROLE_WRITE_ERRORS,
   zodFailure,
 } from "./errors.ts";
@@ -166,6 +168,21 @@ const readSettingsRoute = createRoute({
   responses: { ...KEY_LIMITED, 200: settingsAnswer, ...MEMBER_ERRORS },
 });
 
+const namesRoute = createRoute({
+  method: "get",
+  path: `${PATH}/names`,
+  security: SESSION_OR_KEY,
+  summary:
+    "The attribute keys and event names of recently seen contacts, for an audience or a trigger",
+  description: `It reads the ${RECENT_CONTACTS.toLocaleString("en")} contacts seen last, and test visitors are left out.`,
+  request: { params: workspaceParams },
+  responses: {
+    ...KEY_LIMITED,
+    200: jsonAnswer("The names", CampaignNamesSchema),
+    ...MEMBER_ERRORS,
+  },
+});
+
 const saveSettingsRoute = createRoute({
   method: "put",
   path: SETTINGS_PATH,
@@ -203,6 +220,27 @@ const patchRoutes = refPaths("").map(({ path, params }) =>
       ...ROLE_WRITE_ERRORS,
       403: errorAnswer(`forbidden: this role or key may not. ${AUTHOR_TEXT}`),
       409: errorAnswer(REFUSED_TEXT),
+    },
+  }),
+);
+
+const deleteRoutes = refPaths("").map(({ path, params }) =>
+  createRoute({
+    method: "delete",
+    path,
+    security: SESSION_OR_SETUP_KEY,
+    summary:
+      "Delete a campaign that never sent a message, such as a draft. Owners, admins and Full access keys only",
+    description:
+      "Test messages do not count. A campaign that sent keeps its results, so it can only end.",
+    request: { params },
+    responses: {
+      ...KEY_LIMITED,
+      200: { description: "Deleted", content: okContent },
+      ...ROLE_WRITE_ERRORS,
+      409: errorAnswer(
+        "campaign_live: pause or end the campaign first. campaign_sent: the campaign sent messages",
+      ),
     },
   }),
 );
@@ -351,6 +389,10 @@ export function registerCampaignRoutes(
     return c.json({ campaign: outcome.view }, 201);
   });
 
+  app.openapi(namesRoute, async (c) =>
+    c.json(await campaigns.names(c.get("memberWorkspaceId")), 200),
+  );
+
   // Before the routes by ID, so `by-key` never reads as an ID.
   app.openapi(upsertRoute, async (c) => {
     if (!mayChange(c)) return c.json(FORBIDDEN, 403);
@@ -385,6 +427,16 @@ export function registerCampaignRoutes(
       );
       if (typeof outcome === "string" || outcome instanceof z.ZodError) return refused(c, outcome);
       return c.json({ campaign: outcome.view }, 200);
+    });
+  }
+
+  for (const route of deleteRoutes) {
+    app.openapi(route, async (c) => {
+      if (!mayChange(c)) return c.json(FORBIDDEN, 403);
+      const ref = parseRef(c.req.valid("param").ref);
+      const refusal = await campaigns.remove(c.get("memberWorkspaceId"), ref);
+      if (refusal !== null) return refused(c, refusal);
+      return c.json({ ok: true as const }, 200);
     });
   }
 

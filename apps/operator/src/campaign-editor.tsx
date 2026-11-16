@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
-import { type FormEvent, type ReactNode, useId, useState } from "react";
+import { type FormEvent, type ReactNode, useId, useRef, useState } from "react";
+import { flushSync } from "react-dom";
 import {
   CAMPAIGN_KEY_PATTERN,
   CAMPAIGN_NAME_MAX,
@@ -15,7 +16,13 @@ import {
   type WorkspaceApi,
 } from "./api.ts";
 import { LeaveGuard } from "./appearance.tsx";
-import { CodeDialog, TestDialog } from "./campaign-dialogs.tsx";
+import {
+  CodeDialog,
+  deleteBlock,
+  EndingConfirm,
+  GoLiveDialog,
+  TestDialog,
+} from "./campaign-dialogs.tsx";
 import { keyFromName, newDefinition } from "./campaign-draft.ts";
 import { CampaignSteps } from "./campaign-form.tsx";
 import type { Language } from "./campaign-message.tsx";
@@ -24,7 +31,7 @@ import { CampaignResultsView } from "./campaign-results.tsx";
 import { StatusChip } from "./campaign-tile.tsx";
 import { Icon } from "./icons.tsx";
 import { useLoad } from "./load.ts";
-import { Confirm, Menu, type MenuItem } from "./popup.tsx";
+import { Menu, type MenuItem } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
 import { Choices, ErrorNote, failureText, Loading } from "./ui.tsx";
@@ -34,20 +41,22 @@ import { ago } from "./visitor.ts";
  * Why a save or an action failed. The editor checks the text's variables itself, so a definition
  * the server still refuses gets one general line.
  */
-function campaignFailure(error: unknown): TextId {
+export function campaignFailure(error: unknown): TextId {
   if (error instanceof ApiError) {
     if (error.code === "invalid_request") return "campaignInvalid";
     if (error.code === "campaign_key_taken") return "campaignKeyTaken";
     if (error.code === "campaign_ended") return "campaignEndedRefused";
+    if (error.code === "campaign_sent") return "campaignDeleteSent";
+    if (error.code === "campaign_live") return "campaignDeleteLive";
   }
   return failureText(error, { 403: "campaignForbidden" }, "actionFailed");
 }
 
-type Action = "save" | "live" | "pause" | "resume" | "end";
+type Action = "save" | "live" | "pause" | "resume" | "end" | "delete";
 
 /**
- * The page's buttons: a test, a save, the code and the end in a menu, and the one step the status
- * allows next, go live, pause or resume.
+ * The page's buttons: a save, the one step the status allows next, go live, pause or resume, and
+ * the rest in a menu: a test, the code, the end and the delete.
  */
 function EditorActions({
   campaign,
@@ -56,6 +65,7 @@ function EditorActions({
   busy,
   formId,
   onAction,
+  onGoLive,
   onTest,
   onCode,
 }: {
@@ -65,6 +75,7 @@ function EditorActions({
   busy: boolean;
   formId: string;
   onAction(action: Action): void;
+  onGoLive(): void;
   onTest(): void;
   onCode(): void;
 }) {
@@ -87,39 +98,48 @@ function EditorActions({
     </button>
   );
   const editable = canEdit && status !== "ended";
-  const items: MenuItem[] = [
-    { label: t("campaignCode"), lead: <Icon name="code" size={18} />, onSelect: onCode },
-  ];
-  if (editable && campaign !== null) {
+  const items: MenuItem[] = [];
+  if (campaign !== null && status !== "ended") {
     items.push({
-      label: t("campaignEnd"),
-      lead: <Icon name="prohibit" size={18} />,
+      label: t("campaignTest"),
+      lead: <Icon name="flask" size={18} />,
+      ...(unsaved && { unavailable: t("campaignTestSaveFirst") }),
+      onSelect: onTest,
+    });
+  }
+  items.push({ label: t("campaignCode"), lead: <Icon name="code" size={18} />, onSelect: onCode });
+  if (canEdit && campaign !== null) {
+    const block = deleteBlock(campaign);
+    if (status !== "ended") {
+      items.push({
+        label: t("campaignEnd"),
+        lead: <Icon name="prohibit" size={18} />,
+        danger: true,
+        divider: true,
+        onSelect: () => onAction("end"),
+      });
+    }
+    items.push({
+      label: t("campaignDelete"),
+      lead: <Icon name="trash" size={18} />,
       danger: true,
-      divider: true,
-      onSelect: () => onAction("end"),
+      divider: status === "ended",
+      ...(block !== null && { unavailable: t(block) }),
+      onSelect: () => onAction("delete"),
     });
   }
   return (
     <>
-      {campaign !== null && (
-        <button
-          type="button"
-          className="pill"
-          disabled={busy || unsaved || status === "ended"}
-          title={unsaved ? t("campaignTestSaveFirst") : undefined}
-          onClick={onTest}
-        >
-          {t("campaignTest")}
-        </button>
-      )}
       {editable &&
         submit("save", status === "draft" ? "campaignSaveDraft" : "save", {
           isIdle: !unsaved && campaign !== null,
         })}
-      <Menu label={t("moreActions")} buttonClass="round" items={items}>
-        <Icon name="dots" />
-      </Menu>
-      {editable && status === "draft" && submit("live", "campaignGoLive", { isDark: true })}
+      {editable && status === "draft" && (
+        // Not a submit, so Enter in a field never starts it: it asks first.
+        <button type="button" className="pill dark" disabled={busy} onClick={onGoLive}>
+          {t("campaignGoLive")}
+        </button>
+      )}
       {editable && status === "paused" && submit("resume", "campaignResume", { isDark: true })}
       {editable && status === "live" && (
         <button
@@ -132,6 +152,9 @@ function EditorActions({
           {t("campaignPause")}
         </button>
       )}
+      <Menu label={t("moreActions")} buttonClass="round" items={items}>
+        <Icon name="dots" />
+      </Menu>
     </>
   );
 }
@@ -196,7 +219,7 @@ export function CampaignEditor({
 }
 
 type Dialog =
-  | { kind: "code" | "end" }
+  | { kind: "code" | "end" | "delete" | "live" }
   | { kind: "test"; blockedBy: OutboundStatusReason | null; conversationId: string | null };
 
 /**
@@ -212,6 +235,7 @@ function useCampaignActions({
   setEdited,
   setDialog,
   onSaved,
+  onDeleted,
 }: {
   api: WorkspaceApi;
   campaign: Campaign | null;
@@ -221,6 +245,7 @@ function useCampaignActions({
   setEdited(definition: CampaignDefinition | null): void;
   setDialog(dialog: Dialog | null): void;
   onSaved(id: string): void;
+  onDeleted(): void;
 }) {
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<TextId | null>(null);
@@ -256,7 +281,7 @@ function useCampaignActions({
     });
   };
   const act = (action: Action) => {
-    if (action === "end") return setDialog({ kind: "end" });
+    if (action === "end" || action === "delete") return setDialog({ kind: action });
     if (action === "save") return run(save, "campaignSaved", { saves: true });
     if (action === "pause") return setStatus("pause", "campaignPausedToast");
     // Going live or resuming saves the changes first.
@@ -273,6 +298,17 @@ function useCampaignActions({
     setDialog(null);
     setStatus("end", "campaignEndedToast");
   };
+  const remove = () => {
+    setDialog(null);
+    if (campaign === null) return;
+    void busyWhile(async () => {
+      await api.deleteCampaign(campaign.id);
+      toast("campaignDeleted");
+      // Its changes not saved go with it, so leaving the page asks nothing.
+      flushSync(() => setEdited(null));
+      onDeleted();
+    });
+  };
   const test = () =>
     void busyWhile(async () => {
       if (campaign === null) return;
@@ -283,7 +319,7 @@ function useCampaignActions({
         conversationId: sent.outboundMessage.conversationId,
       });
     });
-  return { busy, failure, act, end, test };
+  return { busy, failure, act, end, remove, test };
 }
 
 /** "Saved 2 minutes ago", or that the changes wait for a save. */
@@ -317,20 +353,24 @@ function CampaignHead({
     <header className="page-head campaign-head">
       <div className="page-title">
         <div className="campaign-title">
-          <input
-            className="title-input"
-            aria-label={t("campaignName")}
-            placeholder={t("campaignNew")}
-            required
-            maxLength={CAMPAIGN_NAME_MAX}
-            disabled={!editable}
-            value={definition.name}
-            onChange={(event) => {
-              const name = event.target.value;
-              const followsName = campaign === null && !isKeyTyped;
-              onChange({ ...definition, name, ...(followsName && { key: keyFromName(name) }) });
-            }}
-          />
+          <label className="title-edit">
+            <input
+              className="title-input"
+              aria-label={t("campaignName")}
+              title={editable ? t("campaignRenameHint") : undefined}
+              placeholder={t("campaignNew")}
+              required
+              maxLength={CAMPAIGN_NAME_MAX}
+              disabled={!editable}
+              value={definition.name}
+              onChange={(event) => {
+                const name = event.target.value;
+                const followsName = campaign === null && !isKeyTyped;
+                onChange({ ...definition, name, ...(followsName && { key: keyFromName(name) }) });
+              }}
+            />
+            {editable && <Icon name="pencil" size={18} />}
+          </label>
           <StatusChip status={campaign?.status ?? "draft"} />
         </div>
         <p>
@@ -382,11 +422,12 @@ function CampaignPage({
   // One object for a new campaign, so the preview's memo holds until the first change.
   const [blank] = useState(newDefinition);
   const formId = useId();
+  const form = useRef<HTMLFormElement>(null);
   const saved = campaign?.definition ?? null;
   const definition = edited ?? saved ?? blank;
   const unsaved = edited !== null && JSON.stringify(edited) !== JSON.stringify(saved);
   const editable = canEdit && campaign?.status !== "ended";
-  const { busy, failure, act, end, test } = useCampaignActions({
+  const { busy, failure, act, end, remove, test } = useCampaignActions({
     api,
     campaign,
     definition,
@@ -395,6 +436,7 @@ function CampaignPage({
     setEdited,
     setDialog,
     onSaved,
+    onDeleted: onBack,
   });
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -405,7 +447,7 @@ function CampaignPage({
   return (
     <section className="page campaign-page" aria-label={title}>
       <LeaveGuard unsaved={unsaved} />
-      <form id={formId} className="campaign-form" onSubmit={submit}>
+      <form ref={form} id={formId} className="campaign-form" onSubmit={submit}>
         <button type="button" className="text-button back-link" onClick={onBack}>
           <Icon name="back" size={14} />
           {t("campaigns")}
@@ -424,6 +466,9 @@ function CampaignPage({
               busy={busy}
               formId={formId}
               onAction={act}
+              onGoLive={() => {
+                if (form.current?.reportValidity()) setDialog({ kind: "live" });
+              }}
               onTest={test}
               onCode={() => setDialog({ kind: "code" })}
             />
@@ -467,6 +512,7 @@ function CampaignPage({
                   api={api}
                   definition={definition}
                   members={members}
+                  meId={me.id}
                   language={language}
                   editable={editable}
                   onLanguage={setLanguage}
@@ -488,13 +534,22 @@ function CampaignPage({
           onClose={() => setDialog(null)}
         />
       )}
-      {dialog?.kind === "end" && (
-        <Confirm
-          title={t("campaignEndTitle", { name: title })}
-          text={t("campaignEndText")}
-          confirm={t("campaignEnd")}
-          onConfirm={end}
+      {(dialog?.kind === "end" || dialog?.kind === "delete") && (
+        <EndingConfirm
+          kind={dialog.kind}
+          name={title}
+          onConfirm={dialog.kind === "end" ? end : remove}
           onCancel={() => setDialog(null)}
+        />
+      )}
+      {dialog?.kind === "live" && (
+        <GoLiveDialog
+          definition={definition}
+          onConfirm={() => {
+            setDialog(null);
+            act("live");
+          }}
+          onClose={() => setDialog(null)}
         />
       )}
     </section>

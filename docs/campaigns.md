@@ -76,6 +76,8 @@ A save never changes the status, so a deploy that upserts its campaigns never re
 
 When `rules.endsAt` passes, the worker ends the campaign within about a minute.
 
+A campaign that never sent a message, such as a draft or a trial run, can be deleted with `DELETE .../campaigns/{id}`. Test messages do not count, and they go with it. A live one answers 409 `campaign_live`, so pause or end it first. One that sent answers 409 `campaign_sent`: it keeps its results, so end it instead.
+
 ## Triggers
 
 `trigger.type` decides when a contact gets the message.
@@ -331,7 +333,9 @@ The **Campaigns** page lists the campaigns with their status and results, and fi
 - the message, beside a live preview of the widget with its variables filled for a sample contact, in light and dark, in each language and at phone width;
 - under **More options**, the variants, the presentation, the delivery and the rules.
 
-**Send a test to me** shows the message to a test visitor named after you, in a conversation you can open, whatever the rules say. It names the rule that would hold a real message now, such as `outside_business_hours`. **Copy as code**, in the ⋯ menu, gives the JSON and the SDK call. **Pause all campaigns** sets the workspace's `paused`.
+An attribute key or an event name suggests the ones your recent contacts have, from `GET .../campaigns/names`, and takes a new one too. The variants' weights show as shares that add up to 100%.
+
+**Go live** asks first, with what the campaign will do. The ⋯ menu holds **Send me a test**, which shows the message to a test visitor named after you, in a conversation you can open, whatever the rules say, and names the rule that would hold a real message now, such as `outside_business_hours`. It also holds **Copy as code**, which gives the JSON and the SDK call, **End campaign** and **Delete campaign**. Each row of the list has a menu to rename, end or delete its campaign. **Pause all campaigns**, in the page's ⋯ menu while a campaign is live, sets the workspace's `paused`.
 
 ## The API
 
@@ -345,6 +349,7 @@ These routes are under `/v1/operator/workspaces/{workspaceId}`. A route on one c
 | `dinghy.campaigns.upsert(definition)` | Creates a draft, or replaces the campaign with this key | `PUT .../campaigns/by-key/{key}` |
 | `dinghy.campaigns.update(ref, patch)` | Replaces the parts the patch gives | `PATCH .../campaigns/{id}` |
 | `dinghy.campaigns.pause(ref)`, `resume(ref)`, `end(ref)` | Changes its status | `POST .../campaigns/{id}/pause`, `/resume`, `/end` |
+| `dinghy.campaigns.delete(ref)` | Deletes one that never sent a message | `DELETE .../campaigns/{id}` |
 | `dinghy.campaigns.results(ref, { from, to })` | Its results per day and variant | `GET .../campaigns/{id}/results` |
 | `dinghy.campaigns.send(ref, { visitor, data?, clientId? })` | Runs it for one person | `POST .../campaigns/{id}/send` |
 | `dinghy.track({ visitor, name, properties?, occurredAt?, id? })` | Tracks a [server event](#server-events) | `POST .../track` |
@@ -388,7 +393,7 @@ It answers 201 with `{ outboundMessage }`. A retry with the same `clientId`, and
 
 ### MCP
 
-Every key has `list_campaigns`, `get_campaign`, `get_campaign_results`, `send_campaign` and `track_event`. A Full access key also has `upsert_campaign`, `pause_campaign`, `resume_campaign` and `end_campaign`. [Use Dinghy with AI agents](agents.md#campaigns) has more.
+Every key has `list_campaigns`, `get_campaign`, `get_campaign_results`, `send_campaign` and `track_event`. A Full access key also has `upsert_campaign`, `pause_campaign`, `resume_campaign`, `end_campaign` and `delete_campaign`. [Use Dinghy with AI agents](agents.md#campaigns) has more.
 
 ## Status reasons
 

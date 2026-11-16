@@ -312,14 +312,19 @@ function ButtonsField({
 const SENDER_AUTHOR = "author";
 const SENDER_TEAM = "team";
 
-/** Who the visitor sees: whoever saved it last, the team, or a member. */
+/**
+ * Who the visitor sees: the team, a member, or whoever saves the campaign. A save here makes you
+ * that one, so it reads "You", and you are not listed again under your name.
+ */
 function SenderField({
   sender,
   members,
+  meId,
   onChange,
 }: {
   sender: CampaignMessage["sender"];
   members: Member[];
+  meId: string;
   onChange(sender: CampaignMessage["sender"]): void;
 }) {
   const value =
@@ -330,6 +335,9 @@ function SenderField({
         : "operatorId" in sender
           ? sender.operatorId
           : (members.find((one) => one.email === sender.email)?.id ?? sender.email);
+  const me = members.find((one) => one.id === meId);
+  // You by name only when the campaign names you, as code may.
+  const listed = members.filter((one) => one.id !== meId || value === meId);
   return (
     <div className="composer-from">
       <span aria-hidden="true">{t("campaignSender")}</span>
@@ -337,9 +345,12 @@ function SenderField({
         label={t("campaignSender")}
         value={value}
         choices={[
-          { value: SENDER_AUTHOR, label: t("senderAuthor") },
+          {
+            value: SENDER_AUTHOR,
+            label: me === undefined ? t("senderAuthor") : t("senderYou", { name: me.name }),
+          },
           { value: SENDER_TEAM, label: t("outboundTeam") },
-          ...members.map((one) => ({ value: one.id, label: one.name })),
+          ...listed.map((one) => ({ value: one.id, label: one.name })),
           // An email from code that names no member here, or none yet: kept as it is.
           ...([SENDER_AUTHOR, SENDER_TEAM, ...members.map((one) => one.id)].includes(value)
             ? []
@@ -480,6 +491,7 @@ export function MessageFields({
   message,
   trigger,
   members,
+  meId,
   language,
   onLanguage,
   onChange,
@@ -487,6 +499,7 @@ export function MessageFields({
   message: CampaignMessage;
   trigger: CampaignTrigger["type"];
   members: Member[];
+  meId: string;
   /** The language on show, which the preview shows too. */
   language: Language;
   onLanguage(language: Language): void;
@@ -500,10 +513,14 @@ export function MessageFields({
         <SenderField
           sender={message.sender}
           members={members}
+          meId={meId}
           onChange={(sender) => onChange(withPart(message, "sender", sender))}
         />
         <LanguageTabs message={message} language={shown} onLanguage={onLanguage} />
       </div>
+      {message.translations !== undefined && (
+        <p className="hint composer-hint">{t("campaignLanguagesHelp")}</p>
+      )}
       {shown === "default" ? (
         <BodyField
           body={message.body}

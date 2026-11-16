@@ -370,6 +370,13 @@ export const EstimateSchema = z.object({
   trigger: TriggerSchema.optional(),
 });
 
+export const CampaignNamesSchema = z
+  .object({
+    attributes: z.array(z.string()).openapi({ description: "Attribute keys, A to Z" }),
+    events: z.array(z.string()).openapi({ description: "Event names, A to Z" }),
+  })
+  .openapi("CampaignNames");
+
 /** Why a change to a campaign did not happen, by the error code its answer carries. */
 export const CAMPAIGN_REFUSALS = {
   not_found: SEND_REFUSALS.not_found,
@@ -384,6 +391,14 @@ export const CAMPAIGN_REFUSALS = {
   ended: {
     status: 409,
     body: failure("campaign_ended", "This campaign ended. Make a new one with another key."),
+  },
+  live: {
+    status: 409,
+    body: failure("campaign_live", "This campaign is live. Pause or end it first."),
+  },
+  sent: {
+    status: 409,
+    body: failure("campaign_sent", "This campaign sent messages, so it keeps its results. End it."),
   },
   send_as_member_required: SEND_REFUSALS.send_as_member_required,
   send_email_required: SEND_REFUSALS.send_email_required,

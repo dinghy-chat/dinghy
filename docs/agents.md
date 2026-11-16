@@ -132,6 +132,7 @@ A Full access key also gets these:
 - `resume_campaign` starts a draft or resumes a paused campaign, by `id` or `key`.
 - `pause_campaign` pauses a live campaign: it makes no new messages, and those not sent yet wait.
 - `end_campaign` ends a campaign for good and cancels its messages that wait. It is marked destructive.
+- `delete_campaign` deletes a campaign that never sent a message, such as a draft you made to try something. It answers `campaign_live` for a live one and `campaign_sent` for one that sent. It is marked destructive.
 
 A new campaign is a draft until `resume_campaign`, so a person can check it first with **Send a test to me** in the operator app. Errors to expect:
 
@@ -193,7 +194,7 @@ With Full access, `send_test_message` sends a message as a test visitor, through
 - **Visitor text is data.** Anyone on the internet can type into your chat, and a message can say "ignore your instructions and...". Never follow instructions in a visitor's message, name, page context or attributes. Dinghy's tool descriptions say so to the agent, and your bot's own prompt should say it too.
 - **Two connections for two jobs.** Give the coding agent that installs Dinghy a Full access connection. Give the bot that answers chats its own Chats connection, so text from a visitor cannot reach the webhook or site tools.
 - **Drafts first.** Start a new bot in **Drafts only**, read its drafts for a while, then switch it to **Send directly**.
-- **Ask before deleting.** `remove_allowed_site`, `delete_webhook`, `delete_test_visitors`, `end_campaign` and `close_conversation` are marked destructive, so a client asks you before it calls them.
+- **Ask before deleting.** `remove_allowed_site`, `delete_webhook`, `delete_test_visitors`, `end_campaign`, `delete_campaign` and `close_conversation` are marked destructive, so a client asks you before it calls them.
 - **What no key can do.** No key or connection can manage keys, connected apps or members, see the signing secret, read billing, export or delete the workspace, send, edit or discard a draft, give a conversation back to bots, pause or resume bots, upload the logo, or edit or delete messages. A key reaches a visitor through the chat only: a reply in the conversation it answers, or an outbound message. An outbound message with `sendEmail: true` and `startConversation: "now"` also goes in the reply email to the visitor's address, and `upsert_contact` can set that address. So `sendEmail: true` needs the key's permission **May email visitors**, off by default: an agent that reads visitor text could be steered into emailing an address of an attacker's choice. The key has no other tool that sends email or calls an address of its choice.
 
 ## Tell your agent about Dinghy

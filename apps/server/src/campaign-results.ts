@@ -1,4 +1,4 @@
-import { and, eq, gte, inArray, lte, type SQL, sql } from "drizzle-orm";
+import { and, eq, gt, gte, inArray, lte, type SQL, sql } from "drizzle-orm";
 import { addCounts, type CampaignCount, type Counts, emptyCounts } from "./campaign-parts.ts";
 import { campaignDay, type OutboundEventKind, type outboundMessage } from "./db/schema.ts";
 import type { Transaction } from "./db/tenant.ts";
@@ -153,4 +153,20 @@ export async function sentLastWeek(tx: Transaction, workspaceId: string): Promis
       ),
     );
   return row?.sent ?? 0;
+}
+
+/** Whether the campaign sent a message to anyone but a test visitor. */
+export async function hasSent(tx: Transaction, workspaceId: string, campaignId: string) {
+  const [row] = await tx
+    .select({ one: sql`1` })
+    .from(campaignDay)
+    .where(
+      and(
+        eq(campaignDay.workspaceId, workspaceId),
+        eq(campaignDay.campaignId, campaignId),
+        gt(campaignDay.sent, 0),
+      ),
+    )
+    .limit(1);
+  return row !== undefined;
 }

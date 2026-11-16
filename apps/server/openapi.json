@@ -50,7 +50,9 @@
                   "busy",
                   "campaign_ended",
                   "campaign_key_taken",
+                  "campaign_live",
                   "campaign_not_live",
+                  "campaign_sent",
                   "check_unavailable",
                   "checkout_retry_later",
                   "conversation_closed",
@@ -3483,6 +3485,26 @@
           }
         },
         "required": ["paused", "gapHours"]
+      },
+      "CampaignNames": {
+        "type": "object",
+        "properties": {
+          "attributes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Attribute keys, A to Z"
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Event names, A to Z"
+          }
+        },
+        "required": ["attributes", "events"]
       },
       "CampaignPatch": {
         "type": "object",
@@ -18185,6 +18207,83 @@
         }
       }
     },
+    "/v1/operator/workspaces/{workspaceId}/campaigns/names": {
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "summary": "The attribute keys and event names of recently seen contacts, for an audience or a trigger",
+        "description": "It reads the 1,000 contacts seen last, and test visitors are left out.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The names",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CampaignNames"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/operator/workspaces/{workspaceId}/campaigns/by-key/{key}": {
       "put": {
         "security": [
@@ -18599,6 +18698,149 @@
             }
           }
         }
+      },
+      "delete": {
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "setupKey": []
+          }
+        ],
+        "summary": "Delete a campaign that never sent a message, such as a draft. Owners, admins and Full access keys only",
+        "description": "Test messages do not count. A campaign that sent keeps its results, so it can only end.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$",
+              "description": "The campaign's ID"
+            },
+            "required": true,
+            "description": "The campaign's ID",
+            "name": "ref",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [true]
+                    }
+                  },
+                  "required": ["ok"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden: this role may not do this. suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "campaign_live: pause or end the campaign first. campaign_sent: the campaign sent messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: the workspace is busy. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/v1/operator/workspaces/{workspaceId}/campaigns/by-key/{ref}": {
@@ -18807,6 +19049,150 @@
           },
           "409": {
             "description": "campaign_key_taken: another campaign has this key. campaign_ended: an ended campaign does not change",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: the workspace is busy. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "setupKey": []
+          }
+        ],
+        "summary": "Delete a campaign that never sent a message, such as a draft. Owners, admins and Full access keys only",
+        "description": "Test messages do not count. A campaign that sent keeps its results, so it can only end.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_\\-]{0,63}$",
+              "description": "The campaign's key",
+              "example": "dns-help"
+            },
+            "required": true,
+            "description": "The campaign's key",
+            "name": "ref",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [true]
+                    }
+                  },
+                  "required": ["ok"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "forbidden: this role may not do this. suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "campaign_live: pause or end the campaign first. campaign_sent: the campaign sent messages",
             "content": {
               "application/json": {
                 "schema": {

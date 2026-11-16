@@ -150,6 +150,11 @@ export function campaigns(request: Request) {
     /** Starts a draft, or resumes a paused campaign. */
     resume: status("/resume"),
     end: status("/end"),
+    /** Deletes a campaign that never sent a message. One that sent can only end. */
+    delete: (ref: CampaignRef) => {
+      const { at, path } = campaignAt(ref, "");
+      return request("delete", at, { path });
+    },
     results: (ref: CampaignRef, query: QueryOf<ByKey<"/results">, "get"> = {}) => {
       const { at, path } = campaignAt(ref, "/results");
       return request("get", at, { path, query });

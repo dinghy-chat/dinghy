@@ -148,7 +148,7 @@ It reconnects when the server ends the stream or the connection drops, and resum
 | `conversations`    | `list`, `search`, `messages`, `reply`, `note`, `upload`, `receipt`, `close`, `reopen`, `snooze`, `assign`, `addLabel`, `removeLabel`, `handoff`, `typing`                                 |
 | `contacts`         | `upsert`                                                                                                                                                                                  |
 | `outboundMessages` | `send`, `get`, `list`, `cancel`                                                                                                                                                           |
-| `campaigns`        | `list`, `get`, `create`, `upsert`, `update`, `pause`, `resume`, `end`, `results`, `send`                                                                                                  |
+| `campaigns`        | `list`, `get`, `create`, `upsert`, `update`, `pause`, `resume`, `end`, `delete`, `results`, `send`                                                                                        |
 | `labels`           | `list`                                                                                                                                                                                    |
 | `savedReplies`     | `list`                                                                                                                                                                                    |
 | `analytics`        | `get`                                                                                                                                                                                     |

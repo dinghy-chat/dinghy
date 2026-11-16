@@ -149,6 +149,7 @@ describe("who may set up", () => {
       "pause_campaign",
       "resume_campaign",
       "end_campaign",
+      "delete_campaign",
     ]) {
       expect(names).toContain(name);
     }
@@ -156,6 +157,7 @@ describe("who may set up", () => {
     expect(destructive.map((one) => one.name).sort()).toEqual([
       "cancel_outbound_message",
       "close_conversation",
+      "delete_campaign",
       "delete_test_visitors",
       "delete_webhook",
       "end_campaign",

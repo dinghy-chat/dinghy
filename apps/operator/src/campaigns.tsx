@@ -13,13 +13,14 @@ import type {
   WorkspaceApi,
 } from "./api.ts";
 import { PausedBanner, type PausedTexts } from "./bots.tsx";
-import { CampaignEditor } from "./campaign-editor.tsx";
-import { CampaignRow } from "./campaign-row.tsx";
+import { EndingConfirm, RenameDialog } from "./campaign-dialogs.tsx";
+import { CampaignEditor, campaignFailure } from "./campaign-editor.tsx";
+import { CampaignRow, type RowAction } from "./campaign-row.tsx";
 import { freeKey, TEMPLATES } from "./campaign-templates.ts";
 import { Tile } from "./campaign-tile.tsx";
 import { Icon } from "./icons.tsx";
 import { useLoad } from "./load.ts";
-import { Menu } from "./popup.tsx";
+import { Menu, type MenuItem } from "./popup.tsx";
 import { TableSkeleton } from "./skeleton.tsx";
 import { type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
@@ -146,39 +147,40 @@ function Templates({
   );
 }
 
-/** The header's buttons: Pause all, the rules for every campaign in a menu, and New campaign. */
+/**
+ * The header's buttons: the rules for every campaign in a menu, and New campaign. Pause all shows
+ * while a campaign is live, and Resume all while they are paused.
+ */
 function ListActions({
   settings,
+  isAnyLive,
   canEdit,
   onPause,
   onGap,
   onNew,
 }: {
   settings: CampaignSettingsView | null;
+  isAnyLive: boolean;
   canEdit: boolean;
   onPause(paused: boolean): void;
   onGap(): void;
   onNew(): void;
 }) {
+  if (settings === null) return null;
+  const items: MenuItem[] = [];
+  if (canEdit && (settings.paused || isAnyLive)) {
+    items.push({
+      label: t(settings.paused ? "campaignsResumeAll" : "campaignsPauseAll"),
+      lead: <Icon name={settings.paused ? "play" : "pause"} size={18} />,
+      onSelect: () => onPause(!settings.paused),
+    });
+  }
+  items.push({ label: t("campaignGap"), lead: <Icon name="clock" size={18} />, onSelect: onGap });
   return (
     <>
-      {canEdit && settings !== null && (
-        <button type="button" className="pill" onClick={() => onPause(!settings.paused)}>
-          <Icon name={settings.paused ? "play" : "pause"} size={16} />
-          {t(settings.paused ? "campaignsResumeAll" : "campaignsPauseAll")}
-        </button>
-      )}
-      {settings !== null && (
-        <Menu
-          label={t("moreActions")}
-          buttonClass="round"
-          items={[
-            { label: t("campaignGap"), lead: <Icon name="clock" size={18} />, onSelect: onGap },
-          ]}
-        >
-          <Icon name="dots" />
-        </Menu>
-      )}
+      <Menu label={t("moreActions")} buttonClass="round" items={items}>
+        <Icon name="dots" />
+      </Menu>
       {canEdit && (
         <button type="button" className="pill dark" onClick={onNew}>
           <Icon name="plusBold" size={14} />
@@ -197,7 +199,16 @@ function listContext(campaigns: Campaign[] | null, sentLastWeek: number): string
 }
 
 /** The campaigns by status, one row each. */
-function CampaignRows({ campaigns, onOpen }: { campaigns: Campaign[]; onOpen(id: string): void }) {
+function CampaignRows({
+  campaigns,
+  onOpen,
+  onAction,
+}: {
+  campaigns: Campaign[];
+  onOpen(id: string): void;
+  /** Null for a member, who reads campaigns only. */
+  onAction: ((campaign: Campaign, action: RowAction) => void) | null;
+}) {
   const [filter, setFilter] = useState<Filter>("all");
   // A tab with no campaign shows no count.
   const countOf = (count: number) => (count === 0 ? undefined : count);
@@ -223,13 +234,23 @@ function CampaignRows({ campaigns, onOpen }: { campaigns: Campaign[]; onOpen(id:
       ) : (
         <ul className="campaign-rows">
           {shown.map((campaign) => (
-            <CampaignRow key={campaign.id} campaign={campaign} onOpen={() => onOpen(campaign.id)} />
+            <CampaignRow
+              key={campaign.id}
+              campaign={campaign}
+              onOpen={() => onOpen(campaign.id)}
+              onAction={onAction && ((action) => onAction(campaign, action))}
+            />
           ))}
         </ul>
       )}
     </>
   );
 }
+
+/** A row's action that waits for a dialog. */
+type Asked =
+  | { campaign: Campaign; action: "rename" }
+  | { campaign: Campaign; action: "end" | "delete" };
 
 /** Every campaign, by status, with Pause all, the gap between two messages, and the templates. */
 function CampaignList({
@@ -249,6 +270,7 @@ function CampaignList({
   const loadedSettings = useLoad(() => api.campaignSettings(), [api, version]);
   const [failure, setFailure] = useState<TextId | null>(null);
   const [isGapOpen, setGapOpen] = useState(false);
+  const [asked, setAsked] = useState<Asked | null>(null);
   const settings = loadedSettings.data;
   const campaigns = list.data?.campaigns ?? null;
   /** Saves a change of the settings, and answers why it failed, or null. */
@@ -262,6 +284,27 @@ function CampaignList({
       return failureText(error, {}, "actionFailed");
     }
   };
+  /** Runs a row's action, then reads the list again. Answers why it failed, or null. */
+  const run = async (work: () => Promise<unknown>, done: TextId) => {
+    try {
+      await work();
+      toast(done);
+      list.reload();
+      return null;
+    } catch (error) {
+      return campaignFailure(error);
+    }
+  };
+  const confirmed = ({ campaign, action }: Extract<Asked, { action: "end" | "delete" }>) => {
+    setAsked(null);
+    void run(
+      () =>
+        action === "end"
+          ? api.setCampaignStatus(campaign.id, "end")
+          : api.deleteCampaign(campaign.id),
+      action === "end" ? "campaignEndedToast" : "campaignDeleted",
+    ).then(setFailure);
+  };
   const pause = async (paused: boolean) =>
     setFailure(
       await saveSettings({ paused }, paused ? "campaignsPausedToast" : "campaignsResumedToast"),
@@ -273,6 +316,7 @@ function CampaignList({
       actions={
         <ListActions
           settings={settings}
+          isAnyLive={campaigns?.some((one) => one.status === "live") ?? false}
           canEdit={canEdit}
           onPause={(paused) => void pause(paused)}
           onGap={() => setGapOpen(true)}
@@ -299,7 +343,11 @@ function CampaignList({
             <b>{t("campaignsEmpty")}</b> {t("campaignsEmptyHint")}
           </p>
         ) : (
-          <CampaignRows campaigns={campaigns} onOpen={onOpen} />
+          <CampaignRows
+            campaigns={campaigns}
+            onOpen={onOpen}
+            onAction={canEdit ? (campaign, action) => setAsked({ campaign, action }) : null}
+          />
         )}
         {campaigns !== null && canEdit && (
           <Templates
@@ -315,6 +363,23 @@ function CampaignList({
           canEdit={canEdit}
           onSave={(gapHours) => saveSettings({ gapHours }, "saved")}
           onClose={() => setGapOpen(false)}
+        />
+      )}
+      {asked?.action === "rename" && (
+        <RenameDialog
+          name={asked.campaign.definition.name}
+          onSave={(name) =>
+            run(() => api.saveCampaign({ ...asked.campaign.definition, name }), "campaignRenamed")
+          }
+          onClose={() => setAsked(null)}
+        />
+      )}
+      {asked !== null && asked.action !== "rename" && (
+        <EndingConfirm
+          kind={asked.action}
+          name={asked.campaign.definition.name}
+          onConfirm={() => confirmed(asked)}
+          onCancel={() => setAsked(null)}
         />
       )}
     </Page>
