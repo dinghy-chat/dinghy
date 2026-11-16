@@ -77,26 +77,36 @@ export const keyFromName = (name: string) =>
     .replace(/^-+|-+$/g, "")
     .slice(0, KEY_MAX);
 
+/** The member a message's sender names, by ID or by email in any case, as the server matches. */
+export const senderMember = (
+  sender: { operatorId: string } | { email: string },
+  members: Member[],
+) =>
+  members.find((one) =>
+    "operatorId" in sender
+      ? one.id === sender.operatorId
+      : one.email.toLowerCase() === sender.email.toLowerCase(),
+  );
+
 /** The message without a sender who is no longer a member, so it comes from whoever saves it. */
 function withKnownSender(message: Message, members: Member[]): Message {
   const { sender } = message;
   if (sender === undefined || sender === "team") return message;
-  const isMember = members.some((one) =>
-    "operatorId" in sender ? one.id === sender.operatorId : one.email === sender.email,
-  );
-  return isMember ? message : withPart(message, "sender", undefined);
+  return senderMember(sender, members) === undefined
+    ? withPart(message, "sender", undefined)
+    : message;
 }
 
 /**
- * A copy of a campaign that can go live as it is: a date already past ends no copy and starts no
- * schedule, and a sender who left gives way to whoever saves it.
+ * A copy of a campaign as a new draft: an end already past would end it at once, so it goes, and a
+ * sender who left gives way to whoever saves it. A schedule keeps its dates, which the draft shows
+ * to change.
  */
 export function copyOf(
   definition: CampaignDefinition,
   { name, key, members, now }: { name: string; key: string; members: Member[]; now: Date },
 ): CampaignDefinition {
-  const today = dateInput(now);
-  const { trigger, rules } = definition;
+  const { rules } = definition;
   const variants = definition.variants?.map((variant) =>
     "message" in variant && variant.message !== undefined
       ? { ...variant, message: withKnownSender(variant.message, members) }
@@ -108,16 +118,6 @@ export function copyOf(
       name,
       key,
       message: withKnownSender(definition.message, members),
-      trigger:
-        trigger.type === "schedule" && trigger.startDate < today
-          ? withPart(
-              { ...trigger, startDate: today },
-              "endDate",
-              trigger.endDate !== undefined && trigger.endDate < today
-                ? undefined
-                : trigger.endDate,
-            )
-          : trigger,
       rules: {
         ...rules,
         endsAt: rules.endsAt !== null && new Date(rules.endsAt) <= now ? null : rules.endsAt,

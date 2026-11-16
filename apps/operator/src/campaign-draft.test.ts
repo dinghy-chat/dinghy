@@ -57,7 +57,7 @@ test("a date input's day is written year first", () => {
   expect(dateInput(new Date(2026, 10, 6))).toBe("2026-11-06");
 });
 
-test("a copy drops what would stop it: a past end, a past start and a sender who left", () => {
+test("a copy drops a past end and a sender who left, and keeps the rest", () => {
   const now = new Date("2026-11-16T12:00:00Z");
   const member: Member = {
     id: "00000000-0000-4000-8000-000000000001",
@@ -76,6 +76,7 @@ test("a copy drops what would stop it: a past end, a past start and a sender who
       variants: [
         { key: "a", weight: 50, message: { body: "Hi", sender: { operatorId: member.id } } },
         { key: "b", weight: 50, message: { body: "Hey", sender: { email: "left@example.com" } } },
+        { key: "c", weight: 50, message: { body: "Yo", sender: { email: "JULIEN@example.com" } } },
       ],
       trigger: {
         type: "schedule",
@@ -93,12 +94,14 @@ test("a copy drops what would stop it: a past end, a past start and a sender who
   expect(copy.variants).toEqual([
     { key: "a", weight: 50, message: { body: "Hi", sender: { operatorId: member.id } } },
     { key: "b", weight: 50, message: { body: "Hey" } },
+    { key: "c", weight: 50, message: { body: "Yo", sender: { email: "JULIEN@example.com" } } },
   ]);
   expect(copy.trigger).toEqual({
     type: "schedule",
     repeat: "daily",
     time: "09:00",
-    startDate: dateInput(now),
+    startDate: "2026-10-01",
+    endDate: "2026-10-31",
     timeZone: "UTC",
   });
   expect(copy.rules.endsAt).toBeNull();

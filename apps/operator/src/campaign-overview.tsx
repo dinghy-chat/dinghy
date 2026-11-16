@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
 import type { ReactNode } from "react";
 import type { CampaignDefinition, Member } from "./api.ts";
+import { senderMember } from "./campaign-draft.ts";
 import { type Language, messageIn } from "./campaign-message.tsx";
 import { Step } from "./campaign-steps.tsx";
 import {
@@ -24,9 +25,7 @@ type Message = CampaignDefinition["message"];
 function senderWords(sender: Message["sender"], members: Member[]): string {
   if (sender === undefined) return t("senderAuthor");
   if (sender === "team") return t("outboundTeam");
-  const member = members.find((one) =>
-    "operatorId" in sender ? one.id === sender.operatorId : one.email === sender.email,
-  );
+  const member = senderMember(sender, members);
   if (member !== undefined) return member.name;
   return "email" in sender ? sender.email : t("overviewSenderGone");
 }
