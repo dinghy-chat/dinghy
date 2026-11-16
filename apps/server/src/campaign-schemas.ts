@@ -307,6 +307,9 @@ export const CampaignSchema = z
   })
   .openapi("Campaign");
 
+/** A campaign as the API answers it, for the operator app. */
+export type CampaignView = z.infer<typeof CampaignSchema>;
+
 export const CampaignResultsSchema = z
   .object({
     days: z.array(
@@ -319,6 +322,8 @@ export const CampaignResultsSchema = z
     variants: z.array(ResultCountsSchema.extend({ variant: z.string().nullable() })),
   })
   .openapi("CampaignResults");
+
+export type CampaignResults = z.infer<typeof CampaignResultsSchema>;
 
 export const ResultsQuery = z.object({
   from: z.iso.date().optional().openapi({ description: "The first day, in UTC" }),
@@ -358,6 +363,7 @@ export const CampaignSettingsView = CampaignSettingsSchema.extend({
   }),
   pausedAt: z.string().nullable().openapi({ description: "When, or null while they run" }),
 }).openapi("CampaignSettingsView");
+export type CampaignSettings = z.infer<typeof CampaignSettingsView>;
 
 export const EstimateSchema = z.object({
   audience: AudienceCondition.optional(),

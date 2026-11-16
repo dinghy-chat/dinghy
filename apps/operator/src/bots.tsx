@@ -95,15 +95,32 @@ export function pauseBots(api: WorkspaceApi, paused: boolean, onChanged: () => v
   );
 }
 
+/** The words of a paused banner: the bots', or every campaign's. */
+export interface PausedTexts {
+  banner: TextId;
+  more: TextId;
+  short: TextId;
+  resume: TextId;
+}
+
+const BOTS_PAUSED: PausedTexts = {
+  banner: "botsPausedBanner",
+  more: "botsPausedBannerMore",
+  short: "botsPausedShort",
+  resume: "botsResume",
+};
+
 /**
- * Above every page while the bots are paused, with who paused them and when. Owners and admins can
- * resume them here. A phone shows the short line.
+ * A line while something is paused, with who paused it and when, such as above every page while
+ * the bots are paused. Owners and admins can resume it here. A phone shows the short line.
  */
-export function BotsPausedBanner({
+export function PausedBanner({
+  texts = BOTS_PAUSED,
   pausedBy,
   pausedAt,
   onResume,
 }: {
+  texts?: PausedTexts;
   pausedBy: string | null;
   pausedAt: string | null;
   onResume: (() => void) | null;
@@ -114,7 +131,7 @@ export function BotsPausedBanner({
         <Icon name="pause" size={13} />
       </span>
       <span className="bots-banner-long">
-        <b>{t("botsPausedBanner")}</b> {t("botsPausedBannerMore")}
+        <b>{t(texts.banner)}</b> {t(texts.more)}
         {pausedBy !== null && pausedAt !== null && (
           <span className="bots-banner-by">
             {" "}
@@ -122,11 +139,11 @@ export function BotsPausedBanner({
           </span>
         )}
       </span>
-      <span className="bots-banner-short">{t("botsPausedShort")}</span>
+      <span className="bots-banner-short">{t(texts.short)}</span>
       {onResume !== null && (
         <button type="button" className="pill dark small bots-resume" onClick={onResume}>
           <Icon name="play" size={13} />
-          {t("botsResume")}
+          {t(texts.resume)}
         </button>
       )}
     </div>

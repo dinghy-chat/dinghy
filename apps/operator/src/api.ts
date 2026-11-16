@@ -7,10 +7,30 @@ import type {
   WidgetSettings,
 } from "../../../packages/widget/src/shared.ts";
 import { readStream, retryAfterMs } from "../../../packages/widget/src/stream.ts";
+import type {
+  CampaignDefinition,
+  CampaignResults,
+  CampaignSettings,
+  CampaignView,
+} from "../../server/src/campaign-schemas.ts";
+import type { Condition } from "../../server/src/conditions.ts";
 import type { EventKind, LABEL_COLORS } from "../../server/src/db/schema.ts";
 import type { OperatorNotice } from "../../server/src/live.ts";
 
-export type { Quote };
+export type { CampaignDefinition, CampaignResults, CampaignSettings, Condition, Quote };
+export type Campaign = CampaignView;
+export type CampaignStatus = Campaign["status"];
+export type CampaignTrigger = CampaignDefinition["trigger"];
+export type CampaignCounts = Campaign["totals"];
+
+/** How many contacts a choice reaches, up to 10,000, with `more` past that. */
+type Reach = { count: number; more: boolean };
+export interface CampaignEstimate {
+  /** The contacts who match the audience now. */
+  matching: Reach;
+  /** Those a `match` or `event` trigger would have reached in the last 7 days, or null. */
+  lastWeek: Reach | null;
+}
 
 /** A list's assignee filter: the caller's conversations, or no one's. Null lists everyone's. */
 export type Assignee = "me" | "none";
@@ -360,7 +380,16 @@ export type OutboundStatusReason =
   | "workspace_inactive"
   | "unless_matched"
   | "cancelled_by_request"
-  | "conversation_deleted";
+  | "conversation_deleted"
+  | "opted_out"
+  | "audience_unmatched"
+  | "frequency_capped"
+  | "goal_reached"
+  | "outside_business_hours"
+  | "outside_send_window"
+  | "campaign_paused"
+  | "campaign_ended"
+  | "control_group";
 
 /** A message from the team to one visitor, which may wait outside any conversation. */
 export interface OutboundMessage {
@@ -595,11 +624,19 @@ export class ApiError extends Error {
   readonly code: string | null;
   /** On a refused stream, how long to wait before the next try, from Retry-After. */
   readonly retryMs: number | undefined;
-  constructor(status: number, code: string | null = null, retryMs?: number) {
+  /** The server's own words, such as the problems of a campaign that does not fit together. */
+  readonly detail: string | null;
+  constructor(
+    status: number,
+    code: string | null = null,
+    retryMs?: number,
+    detail = null as string | null,
+  ) {
     super(`The request failed with status ${status}`);
     this.status = status;
     this.code = code;
     this.retryMs = retryMs;
+    this.detail = detail;
   }
 }
 
@@ -614,11 +651,12 @@ export const READ_ONLY_EVENT = "dinghy:read-only";
 /** Throws for a failed response, and tells the app when the workspace turned out read-only. */
 async function failed(response: Response): Promise<never> {
   const body = (await response.json().catch(() => null)) as {
-    error?: { code?: unknown };
+    error?: { code?: unknown; message?: unknown };
   } | null;
   const code = typeof body?.error?.code === "string" ? body.error.code : null;
+  const detail = typeof body?.error?.message === "string" ? body.error.message : null;
   if (code === "read_only" || code === "suspended") dispatchEvent(new Event(READ_ONLY_EVENT));
-  throw new ApiError(response.status, code);
+  throw new ApiError(response.status, code, undefined, detail);
 }
 
 async function call<T>(path: string, init: RequestInit = {}): Promise<T> {
@@ -876,6 +914,33 @@ export function workspaceApi(workspaceId: string) {
       }),
     cancelOutbound: (id: string) =>
       post<{ outboundMessage: OutboundMessage }>(`${base}/outbound-messages/${id}/cancel`, {}),
+    campaigns: () => call<{ campaigns: Campaign[] }>(`${base}/campaigns`),
+    campaign: (id: string) => call<{ campaign: Campaign }>(`${base}/campaigns/${id}`),
+    createCampaign: (definition: CampaignDefinition) =>
+      post<{ campaign: Campaign }>(`${base}/campaigns`, definition),
+    /** Replaces the campaign with this key, whole: a part left out is removed. */
+    saveCampaign: (definition: CampaignDefinition) =>
+      call<{ campaign: Campaign }>(`${base}/campaigns/by-key/${definition.key}`, {
+        method: "PUT",
+        body: JSON.stringify(definition),
+      }),
+    setCampaignStatus: (id: string, action: "pause" | "resume" | "end") =>
+      post<{ campaign: Campaign }>(`${base}/campaigns/${id}/${action}`, {}),
+    campaignResults: (id: string) => call<CampaignResults>(`${base}/campaigns/${id}/results`),
+    /** The saved message to a test visitor named after the member, and the rule that would hold it. */
+    testCampaign: (id: string) =>
+      post<{ outboundMessage: OutboundMessage; blockedBy: OutboundStatusReason | null }>(
+        `${base}/campaigns/${id}/test`,
+        {},
+      ),
+    estimateCampaign: (choice: { audience?: Condition; trigger?: CampaignTrigger }) =>
+      post<CampaignEstimate>(`${base}/campaigns/estimate`, choice),
+    campaignSettings: () => call<CampaignSettings>(`${base}/campaign-settings`),
+    setCampaignSettings: (settings: { paused: boolean; gapHours: number }) =>
+      call<CampaignSettings>(`${base}/campaign-settings`, {
+        method: "PUT",
+        body: JSON.stringify(settings),
+      }),
     apiKeys: () => call<{ apiKeys: ApiKey[] }>(`${base}/api-keys`),
     createApiKey: (
       name: string,

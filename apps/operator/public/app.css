@@ -6636,13 +6636,15 @@ button.quote:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.chip.live-chatting {
+.chip.live-chatting,
+.chip.campaign-live {
   padding: 2px 8px;
   background: color-mix(in srgb, var(--green) 14%, transparent);
   color: var(--green);
   font-size: 12px;
 }
-.chip.live-chatting::before {
+.chip.live-chatting::before,
+.chip.campaign-live::before {
   content: "";
   width: 6px;
   height: 6px;
@@ -7780,5 +7782,166 @@ button.quote:hover {
   .help-menu .side-start {
     right: 0;
     left: auto;
+  }
+}
+/* Campaigns: the editor shares the Appearance layout, its preview beside the form. */
+.campaign-page {
+  container-type: inline-size;
+}
+.campaign-page > .back-link {
+  align-self: flex-start;
+  margin: 20px 34px 0;
+  color: var(--blue-deep);
+  font-size: 14px;
+}
+.campaign-page .page-head {
+  padding-top: 12px;
+}
+.campaign-page .page-title p {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.campaign-editor .widget-form {
+  max-width: 680px;
+}
+.field-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  align-items: start;
+  gap: 14px;
+}
+.campaign-list {
+  display: grid;
+  gap: 16px;
+}
+.campaign-list > .widget-section {
+  margin-top: 16px;
+}
+.estimate {
+  color: var(--navy);
+  font-weight: 600;
+}
+/* The condition builder: a group's match, its rules one per line, and a nested group in a box. */
+.condition-group {
+  display: grid;
+  gap: 10px;
+}
+.condition-group.nested {
+  padding: 12px;
+  border-radius: 14px;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.condition-match,
+.condition-adds,
+.condition-rule,
+.button-row,
+.variant-head,
+.language-tabs,
+.variable-chips,
+.preview-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.condition-adds,
+.language-tabs {
+  gap: 4px 16px;
+}
+.condition-items,
+.button-rows,
+.variants {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.condition-rule input,
+.button-row input {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+.message-fields {
+  display: grid;
+  gap: 14px;
+}
+.variable-chips {
+  margin-top: 8px;
+}
+.variable-chips .chip {
+  font-family: var(--mono);
+  font-weight: 500;
+}
+.variable-chips .chip:hover {
+  background: var(--soft-hover);
+}
+.variants {
+  gap: 12px;
+}
+.variant {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  border-radius: 14px;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.variant-head > input {
+  flex: 1 1 120px;
+  min-width: 0;
+}
+.variant-weight {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+.variant-weight input {
+  width: 84px;
+}
+/* A phone's width, where the chat fills the screen and a message shows as a card. */
+.preview-phone {
+  width: min(360px, 100%);
+  margin: 0 auto;
+}
+.results-charts {
+  grid-template-columns: minmax(0, 1fr);
+}
+.table-scroll {
+  overflow-x: auto;
+}
+.results-table th[scope="row"] {
+  color: var(--navy);
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+.repliers.no-lead li {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.dialog.code-dialog {
+  width: min(720px, calc(100vw - 32px));
+}
+/* A long campaign scrolls inside its block, so the dialog's buttons stay on screen. */
+.code-dialog pre {
+  max-height: min(420px, calc(100dvh - 320px));
+  overflow-y: auto;
+}
+.who-lines > .mono {
+  font-size: 12.5px;
+}
+@media (max-width: 1000px) {
+  /* A campaign has several actions, so they take their own row under the title. */
+  .campaign-page .page-actions {
+    grid-row: 3;
+    grid-column: 1 / -1;
+    margin-top: 12px;
+  }
+}
+@media (max-width: 760px) {
+  .campaign-page > .back-link {
+    margin: 16px 16px 0;
   }
 }
