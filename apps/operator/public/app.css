@@ -61,7 +61,7 @@
   --display: "Gabarito", "Hanken Grotesk", system-ui, sans-serif;
   --body: "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --rail: 200px;
+  --rail: 208px;
   /* Around the panel: warm paper grey, or the night. */
   --sky: light-dark(#f3f2ee, #0b141d);
   /* The panel, cards, menus and fields. */
@@ -7582,16 +7582,46 @@ button.quote:hover {
     display: none;
   }
 }
-/* A view's keys take the count's place at the row's end while the pointer rests on it, so the
-   count stays right-aligned and nothing overflows the narrow sidebar. */
+/* A view's keys take the count's place at the row's end while the pointer rests on it. They share
+   the last column with the count, so neither ever covers the label. A narrower screen moves the
+   views into a row, which has no room for them. */
 .nav .keys {
-  position: absolute;
-  top: 50%;
-  right: 10px;
   opacity: 0;
-  transform: translateY(-50%);
   transition: opacity 0.15s;
   pointer-events: none;
+}
+@media (min-width: 1001px) {
+  .nav button {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    column-gap: 6px;
+    padding-right: 10px;
+  }
+  .nav button > svg {
+    margin-right: 5px;
+  }
+  .nav .keys {
+    gap: 2px;
+  }
+  .nav .keys kbd {
+    min-width: 17px;
+    padding: 0 3px;
+  }
+  .nav .count,
+  .nav .keys {
+    grid-area: 1 / 3;
+    justify-self: end;
+  }
+  .nav-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+@media (max-width: 1000px) {
+  .nav .keys {
+    display: none;
+  }
 }
 .nav button:is(:hover, :focus-visible) .keys {
   opacity: 1;

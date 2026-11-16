@@ -129,3 +129,25 @@ test("Help opens the shortcuts, which the operator can turn off", async ({ brows
   await operator.keyboard.press("?");
   await expect(sheet).toBeVisible();
 });
+
+test("a view's keys never cover its label in the sidebar", async ({ browser }) => {
+  const operator = await signedIn(browser, server, "alice@example.com");
+  await operator.setViewportSize({ width: 1280, height: 800 });
+  const nav = operator.getByRole("navigation", { name: "Main menu" });
+  for (const item of await nav.getByRole("button").all()) {
+    await item.hover();
+    const keys = item.locator(".keys");
+    await expect(keys).toHaveCSS("opacity", "1");
+    const label = await item.locator(".nav-label").evaluate((node) => {
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      return {
+        right: range.getBoundingClientRect().right,
+        cut: node.scrollWidth > node.clientWidth,
+      };
+    });
+    const keysBox = await keys.boundingBox();
+    expect(label.cut, await item.innerText()).toBe(false);
+    expect(label.right, await item.innerText()).toBeLessThanOrEqual(keysBox?.x ?? 0);
+  }
+});

@@ -323,7 +323,7 @@ export function Sidebar({
               onClick={() => onView(item.view)}
             >
               <Icon name={item.icon} size={20} />
-              {t(item.label)}
+              <span className="nav-label">{t(item.label)}</span>
               {counted && (
                 <span className="count" aria-hidden="true">
                   {waiting}
