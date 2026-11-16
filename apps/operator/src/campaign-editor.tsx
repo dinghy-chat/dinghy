@@ -34,7 +34,7 @@ import {
   stopCampaign,
 } from "./campaign-actions.tsx";
 import { CodeDialog, GoLiveDialog, TestDialog } from "./campaign-dialogs.tsx";
-import { keyFromName, newDefinition } from "./campaign-draft.ts";
+import { copyOf, keyFromName, newDefinition } from "./campaign-draft.ts";
 import { CampaignSteps } from "./campaign-form.tsx";
 import type { Language } from "./campaign-message.tsx";
 import { CampaignOverview } from "./campaign-overview.tsx";
@@ -112,6 +112,7 @@ function EditorActions({
     items.push({
       label: t("campaignDuplicate"),
       lead: <Icon name="copy" size={18} />,
+      ...(unsaved && { unavailable: t("campaignDuplicateSaveFirst") }),
       onSelect: () => onAction("duplicate"),
     });
   }
@@ -237,6 +238,7 @@ function useCampaignActions({
   api,
   campaign,
   definition,
+  members,
   unsaved,
   setCampaign,
   setEdited,
@@ -248,6 +250,7 @@ function useCampaignActions({
   api: WorkspaceApi;
   campaign: Campaign | null;
   definition: CampaignDefinition;
+  members: Member[];
   unsaved: boolean;
   setCampaign(campaign: Campaign): void;
   setEdited(definition: CampaignDefinition | null): void;
@@ -283,18 +286,19 @@ function useCampaignActions({
     onSaved(created.id);
     return created;
   };
-  /** Saves a copy as a new draft with a free key, and opens it. */
+  /** Saves a copy of the saved campaign as a new draft with a free key, and opens it. */
   const duplicate = () =>
     void busyWhile(async () => {
+      if (campaign === null) return;
+      const saved = campaign.definition;
       const { campaigns } = await api.campaigns();
-      const taken = new Set(campaigns.map((one) => one.definition.key));
-      const name = t("campaignCopyName", { name: definition.name }).slice(0, CAMPAIGN_NAME_MAX);
-      const copy = await api.createCampaign({
-        ...definition,
-        name,
-        key: freeKey(definition.key, taken),
+      const copy = copyOf(saved, {
+        name: t("campaignCopyName", { name: saved.name }).slice(0, CAMPAIGN_NAME_MAX),
+        key: freeKey(saved.key, new Set(campaigns.map((one) => one.definition.key))),
+        members,
+        now: new Date(),
       });
-      onOpen(copy.campaign.id);
+      onOpen((await api.createCampaign(copy)).campaign.id);
     });
   const act = (action: Action) => {
     if (action === "end" || action === "delete") return setDialog({ kind: action });
@@ -507,6 +511,7 @@ function CampaignPage({
     api,
     campaign,
     definition,
+    members,
     unsaved,
     setCampaign,
     setEdited,

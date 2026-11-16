@@ -1,5 +1,7 @@
 import { expect, test } from "vitest";
+import type { Member } from "./api.ts";
 import {
+  copyOf,
   dateInput,
   missingLocales,
   newDefinition,
@@ -53,4 +55,58 @@ test("replaceAt changes or removes one item", () => {
 
 test("a date input's day is written year first", () => {
   expect(dateInput(new Date(2026, 10, 6))).toBe("2026-11-06");
+});
+
+test("a copy drops what would stop it: a past end, a past start and a sender who left", () => {
+  const now = new Date("2026-11-16T12:00:00Z");
+  const member: Member = {
+    id: "00000000-0000-4000-8000-000000000001",
+    name: "Julien",
+    email: "julien@example.com",
+    role: "owner",
+    pictureUrl: null,
+    twoFactor: "off",
+    canResetTwoFactor: false,
+  };
+  const gone = { operatorId: "00000000-0000-4000-8000-000000000002" };
+  const copy = copyOf(
+    {
+      ...abTest(),
+      message: { body: "Hello", sender: gone },
+      variants: [
+        { key: "a", weight: 50, message: { body: "Hi", sender: { operatorId: member.id } } },
+        { key: "b", weight: 50, message: { body: "Hey", sender: { email: "left@example.com" } } },
+      ],
+      trigger: {
+        type: "schedule",
+        repeat: "daily",
+        time: "09:00",
+        startDate: "2026-10-01",
+        endDate: "2026-10-31",
+        timeZone: "UTC",
+      },
+      rules: { ...newDefinition().rules, endsAt: "2026-11-01T00:00:00.000Z" },
+    },
+    { name: "Copy", key: "copy", members: [member], now },
+  );
+  expect(copy.message).toEqual({ body: "Hello" });
+  expect(copy.variants).toEqual([
+    { key: "a", weight: 50, message: { body: "Hi", sender: { operatorId: member.id } } },
+    { key: "b", weight: 50, message: { body: "Hey" } },
+  ]);
+  expect(copy.trigger).toEqual({
+    type: "schedule",
+    repeat: "daily",
+    time: "09:00",
+    startDate: dateInput(now),
+    timeZone: "UTC",
+  });
+  expect(copy.rules.endsAt).toBeNull();
+
+  // Dates still ahead stay as they are.
+  const ahead = copyOf(
+    { ...newDefinition(), rules: { ...newDefinition().rules, endsAt: "2027-01-01T00:00:00.000Z" } },
+    { name: "Copy", key: "copy", members: [], now },
+  );
+  expect(ahead.rules.endsAt).toBe("2027-01-01T00:00:00.000Z");
 });

@@ -1,6 +1,6 @@
 import { PAGE_SECONDS_DEFAULT } from "../../../packages/widget/src/shared.ts";
 import type { CampaignDefinition } from "./api.ts";
-import { dateInput, newDefinition } from "./campaign-draft.ts";
+import { dateInput, KEY_MAX, newDefinition } from "./campaign-draft.ts";
 import { TINT, type Tint } from "./campaign-tile.tsx";
 import { browserTimeZone } from "./format.ts";
 import type { IconName } from "./icons.tsx";
@@ -116,9 +116,12 @@ export const TEMPLATES: CampaignTemplate[] = [
   },
 ];
 
-/** `key`, or `key-2`, `key-3`… when another campaign has it. */
+/** `key`, or `key-2`, `key-3`… when another campaign has it, cut so it stays a valid key. */
 export function freeKey(key: string, taken: ReadonlySet<string>): string {
   let next = key;
-  for (let count = 2; taken.has(next); count += 1) next = `${key}-${count}`;
+  for (let count = 2; taken.has(next); count += 1) {
+    const suffix = `-${count}`;
+    next = `${key.slice(0, KEY_MAX - suffix.length)}${suffix}`;
+  }
   return next;
 }

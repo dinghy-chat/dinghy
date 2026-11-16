@@ -335,7 +335,11 @@ export function rulesWords(rules: Rules): string {
   if (rules.sendWindow !== undefined) parts.push(t("summaryWindow", rules.sendWindow));
   if (!rules.businessHours && rules.sendWindow === undefined) parts.push(t("summaryAnyTime"));
   if (rules.endsAt !== null) {
-    parts.push(t("summaryEnds", { date: new Date(rules.endsAt).toLocaleDateString() }));
+    const date = new Date(rules.endsAt).toLocaleString(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+    parts.push(t("summaryEnds", { date }));
   }
   return parts.join(" · ");
 }
@@ -359,11 +363,36 @@ const IF_OPEN_WORDS: Record<Presentation["ifConversationOpen"], TextId> = {
   skip: "summaryIfOpenSkip",
 };
 
-/** Delivery folded: when the conversation starts, an open one, and email. */
+/** Delivery folded: when the conversation starts, an open one, email, expiry and assignment. */
 export function deliveryWords({ presentation, delivery }: CampaignDefinition): string {
-  return [
+  const parts = [
     t(START_WORDS[presentation.startConversation]),
     t(IF_OPEN_WORDS[presentation.ifConversationOpen]),
-    t(delivery.sendEmail ? "summaryEmail" : "summaryNoEmail"),
-  ].join(" · ");
+    delivery.sendEmail
+      ? t("summaryEmail")
+      : delivery.emailIfUnread === undefined
+        ? t("summaryNoEmail")
+        : t("summaryEmailIfUnread", { after: durationWords(delivery.emailIfUnread) }),
+  ];
+  if (delivery.expiresIn !== undefined) {
+    parts.push(t("summaryExpires", { after: durationWords(delivery.expiresIn) }));
+  }
+  if (delivery.assignOnReply === false) parts.push(t("summaryNoAssign"));
+  return parts.join(" · ");
+}
+
+/**
+ * What a schedule's sentence leaves out: when a repeat starts and stops, and the time zone of its
+ * time, "Starts 2026-12-01 · until 2027-01-31 · Europe/Paris time".
+ */
+export function scheduleWords(trigger: Extract<CampaignTrigger, { type: "schedule" }>): string {
+  const parts =
+    trigger.repeat === "once"
+      ? []
+      : [
+          t("summaryStarts", { date: trigger.startDate }),
+          ...(trigger.endDate === undefined ? [] : [t("summaryUntil", { date: trigger.endDate })]),
+        ];
+  parts.push(t("summaryTimeZone", { zone: trigger.timeZone }));
+  return parts.join(" · ");
 }

@@ -1,6 +1,6 @@
 import { LOCALES, type Locale } from "../../../packages/widget/src/shared.ts";
 import { messagesOf } from "../../server/src/campaign-parts.ts";
-import type { CampaignDefinition } from "./api.ts";
+import type { CampaignDefinition, Member } from "./api.ts";
 
 // The editor's campaign: the same JSON the API takes, from a new one's first fields to the code
 // that "Copy as code" gives.
@@ -65,6 +65,9 @@ export const replaceAt = <T>(list: readonly T[], index: number, next: T | null):
 /** A day as a date input takes it, "2026-11-16", in this browser's time zone. */
 export const dateInput = (date: Date) => date.toLocaleDateString("en-CA");
 
+/** The longest key, as CAMPAIGN_KEY_PATTERN allows it. */
+export const KEY_MAX = 64;
+
 /** A key made from a name, as a new campaign suggests it: "DNS help" gives "dns-help". */
 export const keyFromName = (name: string) =>
   name
@@ -72,7 +75,58 @@ export const keyFromName = (name: string) =>
     .normalize("NFKD")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
-    .slice(0, 64);
+    .slice(0, KEY_MAX);
+
+/** The message without a sender who is no longer a member, so it comes from whoever saves it. */
+function withKnownSender(message: Message, members: Member[]): Message {
+  const { sender } = message;
+  if (sender === undefined || sender === "team") return message;
+  const isMember = members.some((one) =>
+    "operatorId" in sender ? one.id === sender.operatorId : one.email === sender.email,
+  );
+  return isMember ? message : withPart(message, "sender", undefined);
+}
+
+/**
+ * A copy of a campaign that can go live as it is: a date already past ends no copy and starts no
+ * schedule, and a sender who left gives way to whoever saves it.
+ */
+export function copyOf(
+  definition: CampaignDefinition,
+  { name, key, members, now }: { name: string; key: string; members: Member[]; now: Date },
+): CampaignDefinition {
+  const today = dateInput(now);
+  const { trigger, rules } = definition;
+  const variants = definition.variants?.map((variant) =>
+    "message" in variant && variant.message !== undefined
+      ? { ...variant, message: withKnownSender(variant.message, members) }
+      : variant,
+  );
+  return withPart(
+    {
+      ...definition,
+      name,
+      key,
+      message: withKnownSender(definition.message, members),
+      trigger:
+        trigger.type === "schedule" && trigger.startDate < today
+          ? withPart(
+              { ...trigger, startDate: today },
+              "endDate",
+              trigger.endDate !== undefined && trigger.endDate < today
+                ? undefined
+                : trigger.endDate,
+            )
+          : trigger,
+      rules: {
+        ...rules,
+        endsAt: rules.endsAt !== null && new Date(rules.endsAt) <= now ? null : rules.endsAt,
+      },
+    },
+    "variants",
+    variants,
+  );
+}
 
 /** The definition as JSON, as the API, MCP and the SDK take it. */
 export const definitionJson = (definition: CampaignDefinition) =>

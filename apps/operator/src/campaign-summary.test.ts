@@ -9,6 +9,7 @@ import {
   durationWords,
   goalWords,
   rulesWords,
+  scheduleWords,
 } from "./campaign-summary.ts";
 import { freeKey, TEMPLATES } from "./campaign-templates.ts";
 
@@ -103,6 +104,25 @@ test("the folded parts read as one line each", () => {
   expect(deliveryWords(newDefinition())).toBe(
     "Conversation starts on reply · skips people in a conversation · no email",
   );
+  expect(
+    deliveryWords({
+      ...newDefinition(),
+      delivery: { sendEmail: false, emailIfUnread: "1h", expiresIn: "7d", assignOnReply: false },
+    }),
+  ).toBe(
+    "Conversation starts on reply · skips people in a conversation · by email if unread after 1 hour · expires after 7 days · answers stay unassigned",
+  );
+  const schedule: Extract<CampaignDefinition["trigger"], { type: "schedule" }> = {
+    type: "schedule",
+    repeat: "weekly",
+    time: "09:00",
+    days: ["mon"],
+    startDate: "2026-12-01",
+    endDate: "2027-01-31",
+    timeZone: "Europe/Paris",
+  };
+  expect(scheduleWords(schedule)).toBe("Starts 2026-12-01 · until 2027-01-31 · Europe/Paris time");
+  expect(scheduleWords({ ...schedule, repeat: "once" })).toBe("Europe/Paris time");
 });
 
 test("each template is a definition the server takes", () => {
@@ -115,4 +135,7 @@ test("each template is a definition the server takes", () => {
 test("a template's key moves aside for a campaign that has it", () => {
   expect(freeKey("welcome", new Set())).toBe("welcome");
   expect(freeKey("welcome", new Set(["welcome", "welcome-2"]))).toBe("welcome-3");
+  // A long key gives way to its number, so it stays within 64 characters.
+  const long = "a".repeat(64);
+  expect(freeKey(long, new Set([long]))).toBe(`${"a".repeat(62)}-2`);
 });

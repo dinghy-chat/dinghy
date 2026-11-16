@@ -8,6 +8,7 @@ import {
   deliveryWords,
   goalWords,
   rulesWords,
+  scheduleWords,
   showWords,
   triggerWords,
   whoWords,
@@ -52,6 +53,8 @@ function MessageText({
           {buttons.map((button) => (
             <span key={button.label} className="chip">
               {button.label}
+              {"url" in button && <span className="overview-url">{button.url}</span>}
+              {"dismiss" in button && <span className="overview-url">{t("overviewDismiss")}</span>}
             </span>
           ))}
         </p>
@@ -81,6 +84,7 @@ export function CampaignOverview({
       </Step>
       <Step number={2} title={t("stepWhen")}>
         <Line>{asLine(triggerWords(trigger))}</Line>
+        {trigger.type === "schedule" && <Line>{scheduleWords(trigger)}</Line>}
       </Step>
       <Step number={3} title={t("stepMessage")}>
         {variants === undefined ? (
