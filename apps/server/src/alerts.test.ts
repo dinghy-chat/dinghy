@@ -2039,6 +2039,33 @@ describe("transcripts", () => {
     expect(await transcripts()).toHaveLength(2);
   });
 
+  test("a later close sends only what came after the last sent transcript", async () => {
+    const { anna, from, conversationId } = await chat();
+    const transcriptMails = () =>
+      mails.filter((mail) => mail.subject.startsWith("Your conversation"));
+    await setStatus(conversationId, anna, "closed");
+    await fanOutAll();
+    runWorker({ mail: true });
+    await untilDue(() => transcriptMails().length === 1, "the first transcript");
+    await setStatus(conversationId, anna, "open");
+    await visitorWrites(from, "And my invoices?");
+    // A visitor's message alone sends none: the team has not answered it.
+    await setStatus(conversationId, anna, "closed");
+    await fanOutAll();
+    await untilDue(allFinished, "every row to finish");
+    expect(transcriptMails()).toHaveLength(1);
+    await setStatus(conversationId, anna, "open");
+    await operatorWrites(anna, conversationId, "Open Billing, then Invoices.");
+    await setStatus(conversationId, anna, "closed");
+    await fanOutAll();
+    await untilDue(() => transcriptMails().length === 2, "the second transcript");
+    const second = transcriptMails()[1]?.text ?? "";
+    expect(second).toContain("Here is your conversation with Acme since our last email");
+    expect(second).toContain("And my invoices?");
+    expect(second).toContain("Open Billing, then Invoices.");
+    expect(second).not.toContain("How do I export my data?");
+  });
+
   test("none goes with the setting off, with no email, with no reply or with no mail server", async () => {
     const off = await chat();
     await owner

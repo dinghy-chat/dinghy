@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
 import { replyLetter } from "./alerts.ts";
-import { transcriptLetter } from "./transcripts.ts";
+import { newestThatFit, transcriptLetter } from "./transcripts.ts";
 import { visitorWords } from "./visitor-words.ts";
 
 const links = {
@@ -179,6 +179,36 @@ describe("the transcript", () => {
     const shown = visibleText(letter.html);
     expect(shown).not.toContain(links.chatUrl);
     expect(shown).not.toContain(links.stopUrl);
+  });
+
+  test("a later part says it follows the last email, and names what the limits left out", () => {
+    const letter = transcriptLetter(acme, [line], new Map(), links, english, {
+      since: true,
+      leftOut: 3,
+    });
+    expect(letter.text).toContain(
+      "Here is your conversation with Acme since our last email, for your records.\n\n3 earlier messages are not in this email. Open the chat to read them.",
+    );
+    expect(visibleText(letter.html)).toContain("3 earlier messages are not in this email.");
+    const one = transcriptLetter(acme, [line], new Map(), links, french, {
+      since: false,
+      leftOut: 1,
+    });
+    expect(one.text).toContain(
+      "1 message précédent n'est pas dans cet e-mail. Ouvrez le chat pour le lire.",
+    );
+  });
+
+  test("keeps the newest messages within 100 messages and 40,000 characters", () => {
+    const many = Array.from({ length: 150 }, (_, index) => ({ body: String(index) }));
+    const kept = newestThatFit(many);
+    expect(kept).toHaveLength(100);
+    expect(kept[0]?.body).toBe("99");
+    expect(kept.at(-1)?.body).toBe("0");
+    const long = "x".repeat(15_000);
+    expect(newestThatFit([{ body: long }, { body: long }, { body: long }])).toHaveLength(2);
+    // The newest message goes even when it alone is over the limit.
+    expect(newestThatFit([{ body: "x".repeat(50_000) }, { body: "older" }])).toHaveLength(1);
   });
 
   test("a team reply whose author is gone is the team's, never a visitor's", () => {

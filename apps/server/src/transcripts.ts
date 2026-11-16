@@ -52,12 +52,50 @@ import { type VisitorWords, visitorWords } from "./visitor-words.ts";
 
 // The transcript waits, so a quick reopen cancels it.
 export const TRANSCRIPT_DELAY_MS = 5 * MINUTE_MS;
-// The most messages a transcript holds, the newest ones. The chat link has the rest.
-const TRANSCRIPT_MESSAGES = 500;
+// A transcript holds the newest messages up to both limits, so Gmail does not clip it at 102 KB
+// and hide the footer with the stop link. The chat link has the rest.
+const TRANSCRIPT_MESSAGES = 100;
+const TRANSCRIPT_CHARACTERS = 40_000;
+
+/**
+ * The last message a sent transcript of the conversation carried, or -1 with none. A close's
+ * transcript starts after it, so the visitor gets each message once, even when a close sent nothing.
+ */
+async function lastSentSeq(
+  tx: Transaction,
+  workspaceId: string,
+  conversationId: string,
+): Promise<bigint> {
+  const [row] = await tx
+    .select({ seq: sql<string | null>`max(${alertDelivery.coveredToSeq})` })
+    .from(alertDelivery)
+    .where(
+      and(
+        eq(alertDelivery.workspaceId, workspaceId),
+        eq(alertDelivery.conversationId, conversationId),
+        eq(alertDelivery.channel, "transcript"),
+        eq(alertDelivery.outcome, "sent"),
+      ),
+    );
+  return row?.seq == null ? -1n : BigInt(row.seq);
+}
+
+/** The newest messages that fit both limits, oldest first. The newest one always fits. */
+export function newestThatFit<T extends { body: string | null }>(newestFirst: T[]): T[] {
+  const kept: T[] = [];
+  let characters = 0;
+  for (const line of newestFirst.slice(0, TRANSCRIPT_MESSAGES)) {
+    characters += line.body?.length ?? 0;
+    if (kept.length > 0 && characters > TRANSCRIPT_CHARACTERS) break;
+    kept.push(line);
+  }
+  return kept.reverse();
+}
 
 /**
  * A close: one transcript to the visitor after a delay, when the visitor has an email, the workspace
- * sends transcripts, someone on the team replied, and no transcript holds every message already.
+ * sends transcripts, someone on the team replied since the last sent transcript, and no transcript
+ * holds every message already.
  */
 export async function transcriptRows(tx: Transaction, base: DeliveryBase): Promise<DeliveryRow[]> {
   const { workspaceId, conversationId } = base;
@@ -69,11 +107,12 @@ export async function transcriptRows(tx: Transaction, base: DeliveryBase): Promi
     .where(eq(widgetSettings.workspaceId, workspaceId));
   if (settings?.wanted !== true) return [];
   if (await emailStopped(tx, workspaceId, target.email)) return [];
+  const after = await lastSentSeq(tx, workspaceId, conversationId);
   const result = await tx.execute<{ last_seq: string | null; replied: boolean }>(sql`
     select max(seq) as last_seq, coalesce(bool_or(author_visitor_id is null), false) as replied
     from ${message}
     where workspace_id = ${workspaceId} and conversation_id = ${conversationId}
-      and ${isChat()}`);
+      and seq > ${after.toString()}::bigint and ${isChat()}`);
   const stats = result.rows[0];
   if (stats === undefined || !stats.replied || stats.last_seq === null) return [];
   // A sent or waiting transcript from a later close holds every message already.
@@ -147,9 +186,11 @@ export async function requestedTranscriptRows(
 }
 
 /**
- * The whole conversation by email. A close's transcript sends nothing when the conversation was
- * reopened, or when a later close made another. A reply email waits for it, and leaves out the
- * replies it carried once it is sent, so the visitor does not get both.
+ * The conversation by email. A close's transcript holds the messages since the last sent
+ * transcript, and one an operator asks for holds the whole conversation, both within the limits.
+ * A close's transcript sends nothing when the conversation was reopened, or when a later close made
+ * another. A reply email waits for it, and leaves out the replies it carried once it is sent, so the
+ * visitor does not get both.
  */
 export async function transcriptPlan(
   tx: Transaction,
@@ -174,9 +215,25 @@ export async function transcriptPlan(
   if (state.fromClose && (state.status !== "closed" || state.later)) return null;
   if (await emailStopped(tx, workspaceId, state.email)) return null;
   if ((await sentToday(tx, workspaceId, visitorId)).length >= VISITOR_EMAILS_PER_DAY) return null;
+  const after = state.fromClose ? await lastSentSeq(tx, workspaceId, conversationId) : -1n;
+  const range = and(
+    eq(message.workspaceId, workspaceId),
+    eq(message.conversationId, conversationId),
+    gt(message.seq, after),
+    isChat(),
+    isNull(message.deletedAt),
+  );
+  const [counted] = await tx
+    .select({
+      total: sql<number>`count(*)::int`,
+      replied: sql<boolean>`coalesce(bool_or(${message.authorVisitorId} is null), false)`,
+    })
+    .from(message)
+    .where(range);
+  if (counted === undefined || (state.fromClose && !counted.replied)) return null;
   // The key share lock makes an edit wait until this transcript's range is recorded, as for a reply
   // email.
-  const lines = (
+  const lines = newestThatFit(
     await tx
       .select({
         seq: message.seq,
@@ -190,19 +247,13 @@ export async function transcriptPlan(
         createdAt: message.createdAt,
       })
       .from(message)
-      .where(
-        and(
-          eq(message.workspaceId, workspaceId),
-          eq(message.conversationId, conversationId),
-          isChat(),
-          isNull(message.deletedAt),
-        ),
-      )
+      .where(range)
       .orderBy(desc(message.seq))
       .limit(TRANSCRIPT_MESSAGES)
-      .for("key share", { of: message })
-  ).reverse();
+      .for("key share", { of: message }),
+  );
   if (lines.length === 0) return null;
+  const part = { since: after >= 0n, leftOut: counted.total - lines.length };
   const authors = await messageAuthors(tx, workspaceId, lines);
   const chatUrl = chatLinkUrl(
     publicUrl,
@@ -226,7 +277,7 @@ export async function transcriptPlan(
   return {
     channel: "email",
     to: state.email,
-    ...transcriptLetter(place, lines, authors, links, visitorWords(state.locale)),
+    ...transcriptLetter(place, lines, authors, links, visitorWords(state.locale), part),
     stopUrl,
     replyTo,
     carries: { fromSeq: lines[0]?.seq ?? 0n, toSeq: lines.at(-1)?.seq ?? 0n },
@@ -257,6 +308,15 @@ const standIn = (line: TranscriptLine, words: VisitorWords) =>
       ? words.transcriptFile(line.filename)
       : null;
 
+/**
+ * Which part of the conversation a transcript holds: only what came after the last sent transcript,
+ * and how many earlier messages of its range the limits left out.
+ */
+interface TranscriptPart {
+  since: boolean;
+  leftOut: number;
+}
+
 /** The transcript's words: each message under its author and time, as text and as HTML. */
 export function transcriptLetter(
   place: Place,
@@ -264,8 +324,13 @@ export function transcriptLetter(
   authors: Map<string, MessageAuthor>,
   links: VisitorLinks,
   words: VisitorWords,
+  part: TranscriptPart = { since: false, leftOut: 0 },
 ): { subject: string; text: string; html: string } {
   const { chatUrl } = links;
+  const intro = [
+    part.since ? words.transcriptSince(place.name) : words.transcriptIntro(place.name),
+    ...(part.leftOut > 0 ? [words.transcriptLeftOut(part.leftOut)] : []),
+  ];
   const heads = lines.map(
     (line) =>
       `${visitorAuthorName(line, authors, place.name, words)}, ${words.time(line.createdAt)}`,
@@ -277,7 +342,7 @@ export function transcriptLetter(
     )
     .join("\n\n");
   const html = [
-    `<p style="margin:0">${escapeHtml(words.transcriptIntro(place.name))}</p>`,
+    ...intro.map((paragraph) => `<p style="margin:0 0 8px">${escapeHtml(paragraph)}</p>`),
     ...lines.map((line, index) => {
       const shown = standIn(line, words);
       return (
@@ -294,11 +359,7 @@ export function transcriptLetter(
       );
     }),
   ].join("");
-  const paragraphs = [
-    words.transcriptIntro(place.name),
-    plain,
-    `${words.lead(words.continueChat)} ${chatUrl}`,
-  ];
+  const paragraphs = [...intro, plain, `${words.lead(words.continueChat)} ${chatUrl}`];
   return {
     subject: words.transcriptSubject(place.name),
     text: visitorLetterText(place.name, paragraphs, links, words),
