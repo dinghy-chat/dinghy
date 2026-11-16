@@ -5,35 +5,30 @@ import {
   ApiError,
   type Campaign,
   type CampaignDefinition,
-  type CampaignEstimate,
   type Me,
   type Member,
   type OutboundStatusReason,
   type WorkspaceApi,
 } from "./api.ts";
-import { FormSection, LeaveGuard } from "./appearance.tsx";
-import {
-  definitionJson,
-  keyFromName,
-  newDefinition,
-  upsertCode,
-  withPart,
-} from "./campaign-draft.ts";
-import { type Language, MessageFields } from "./campaign-message.tsx";
+import { LeaveGuard } from "./appearance.tsx";
+import { CodeDialog, TestDialog } from "./campaign-dialogs.tsx";
+import { keyFromName, newDefinition } from "./campaign-draft.ts";
+import { CampaignSteps } from "./campaign-form.tsx";
+import type { Language } from "./campaign-message.tsx";
 import { CampaignPreview } from "./campaign-preview.tsx";
 import { CampaignResultsView } from "./campaign-results.tsx";
-import { DeliveryFields, PresentationFields, RulesFields } from "./campaign-rules.tsx";
-import { sendCode, TriggerFields } from "./campaign-trigger.tsx";
-import { VariantsFields } from "./campaign-variants.tsx";
-import { ConditionBuilder } from "./condition-builder.tsx";
 import { Icon } from "./icons.tsx";
-import { CodeBlock } from "./install.tsx";
-import { useLoad, useSettled } from "./load.ts";
-import { reasonText } from "./outbound.tsx";
+import { useLoad } from "./load.ts";
 import { Confirm, Menu, type MenuItem } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
-import { Choices, ErrorNote, Field, failureText, Loading, Modal, PageHead } from "./ui.tsx";
+import { Choices, ErrorNote, failureText, Loading } from "./ui.tsx";
+import { ago } from "./visitor.ts";
+
+/** The longest name, as the server takes it. */
+const NAME_MAX = 100;
+/** A key as the server takes it: lowercase letters, digits, - and _. */
+const KEY_PATTERN = "[a-z0-9][a-z0-9_\\-]{0,63}";
 
 export const STATUS_TEXT: Record<Campaign["status"], TextId> = {
   draft: "campaignDraft",
@@ -42,10 +37,16 @@ export const STATUS_TEXT: Record<Campaign["status"], TextId> = {
   ended: "campaignEnded",
 };
 
-/** A status as a chip: live stands out, a pause warns. */
+const STATUS_TONE: Record<Campaign["status"], string> = {
+  draft: "chip warn",
+  live: "chip campaign-live",
+  paused: "chip",
+  ended: "chip",
+};
+
+/** A status as a chip: live in green with its dot, a draft in cream. */
 export function StatusChip({ status }: { status: Campaign["status"] }) {
-  const tone = status === "live" ? " campaign-live" : status === "paused" ? " warn" : "";
-  return <span className={`chip${tone}`}>{t(STATUS_TEXT[status])}</span>;
+  return <span className={STATUS_TONE[status]}>{t(STATUS_TEXT[status])}</span>;
 }
 
 /**
@@ -61,304 +62,12 @@ function campaignFailure(error: unknown): TextId {
   return failureText(error, { 403: "campaignForbidden" }, "actionFailed");
 }
 
-/** "1,204 people", or "10,000+ people" past the count's limit. */
-const reachText = ({ count, more }: { count: number; more: boolean }) =>
-  t(count === 1 && !more ? "campaignPeopleOne" : "campaignPeopleMany", {
-    count: `${count.toLocaleString()}${more ? "+" : ""}`,
-  });
-
-/** How many people the audience and the trigger reach, as the editor changes them. */
-function useEstimate(api: WorkspaceApi, definition: CampaignDefinition) {
-  const choice = JSON.stringify({ audience: definition.audience, trigger: definition.trigger });
-  const settled = useSettled(choice);
-  return useLoad(
-    () =>
-      api.estimateCampaign(JSON.parse(settled) as Parameters<WorkspaceApi["estimateCampaign"]>[0]),
-    [api, settled],
-  );
-}
-
-function EstimateLine({
-  estimate,
-  pick,
-  text,
-}: {
-  estimate: { data: CampaignEstimate | null; failure: TextId | null };
-  pick(estimate: CampaignEstimate): CampaignEstimate["lastWeek"];
-  text: TextId;
-}) {
-  if (estimate.failure !== null) return <p className="hint">{t("campaignEstimateWaiting")}</p>;
-  const reach = estimate.data === null ? null : pick(estimate.data);
-  if (reach === null) return null;
-  return (
-    <p className="estimate" role="status">
-      {t(text, { people: reachText(reach) })}
-    </p>
-  );
-}
-
-/** "Copy as code": the JSON, and the SDK calls that keep it in a repository and send it. */
-function CodeDialog({ definition, onClose }: { definition: CampaignDefinition; onClose(): void }) {
-  const [shown, setShown] = useState<"json" | "sdk">("json");
-  const titleId = useId();
-  const sdk =
-    definition.trigger.type === "api"
-      ? `${upsertCode(definition)}\n\n${sendCode(definition.key)}`
-      : upsertCode(definition);
-  return (
-    <Modal className="dialog code-dialog" labelledBy={titleId} onClose={onClose}>
-      {(close) => (
-        <div className="dialog-body">
-          <h2 id={titleId}>{t("campaignCode")}</h2>
-          <p className="dialog-text">{t("campaignCodeHelp")}</p>
-          <Choices<"json" | "sdk">
-            label={t("campaignCode")}
-            variant="tabs"
-            value={shown}
-            options={[
-              { value: "json", label: "campaignCodeJson" },
-              { value: "sdk", label: "campaignCodeSdk" },
-            ]}
-            onChange={setShown}
-          />
-          {shown === "json" ? (
-            <CodeBlock value={definitionJson(definition)} language="json" title="JSON" />
-          ) : (
-            <CodeBlock value={sdk} language="ts" title="@dinghy-chat/sdk" />
-          )}
-          <div className="dialog-actions">
-            <button type="button" className="pill dark" onClick={close}>
-              {t("done")}
-            </button>
-          </div>
-        </div>
-      )}
-    </Modal>
-  );
-}
-
-/** What "Send a test to me" did, and the rule that would hold a real message now. */
-function TestDialog({
-  blockedBy,
-  conversationId,
-  onOpenConversation,
-  onClose,
-}: {
-  blockedBy: OutboundStatusReason | null;
-  conversationId: string | null;
-  onOpenConversation(id: string): void;
-  onClose(): void;
-}) {
-  const titleId = useId();
-  return (
-    <Modal labelledBy={titleId} onClose={onClose}>
-      {(close) => (
-        <div className="dialog-body">
-          <h2 id={titleId}>{t("campaignTestSent")}</h2>
-          <p className="dialog-text">{t("campaignTestSentHelp")}</p>
-          <p className="note" role="status">
-            {blockedBy === null
-              ? t("campaignTestClear")
-              : t("campaignTestBlocked", { rule: reasonText(blockedBy) })}
-          </p>
-          <div className="dialog-actions">
-            <button type="button" className="pill" onClick={close}>
-              {t("close")}
-            </button>
-            {conversationId !== null && (
-              <button
-                type="button"
-                className="pill dark"
-                onClick={() => onOpenConversation(conversationId)}
-              >
-                {t("contactOpenConversation")}
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-    </Modal>
-  );
-}
-
-/** The parts "More options" holds, which a new campaign leaves at their defaults. */
-const MORE_PARTS = ["variants", "presentation", "delivery", "rules"] as const;
-
-/** Whether the campaign changes one of the parts under "More options", so it opens on them. */
-const changesMore = (definition: CampaignDefinition) => {
-  const defaults = newDefinition();
-  return MORE_PARTS.some(
-    (part) => JSON.stringify(definition[part]) !== JSON.stringify(defaults[part]),
-  );
-};
-
-interface SectionProps {
-  definition: CampaignDefinition;
-  members: Member[];
-  language: Language;
-  onLanguage(language: Language): void;
-  onChange(definition: CampaignDefinition): void;
-}
-
-/** The sections everyone needs: the name, who it is for, when it goes, and what it says. */
-function MainSections({
-  api,
-  definition,
-  isNew,
-  members,
-  language,
-  onLanguage,
-  onChange,
-}: SectionProps & { api: WorkspaceApi; isNew: boolean }) {
-  const estimate = useEstimate(api, definition);
-  const change = <K extends keyof CampaignDefinition>(key: K, value: CampaignDefinition[K]) =>
-    onChange(withPart(definition, key, value));
-  // A new campaign's key follows its name until someone types one.
-  const [keyTyped, setKeyTyped] = useState(!isNew);
-  return (
-    <>
-      <FormSection title="campaignNameTitle">
-        <div className="field-row">
-          <Field
-            label={t("campaignName")}
-            required
-            maxLength={100}
-            value={definition.name}
-            onChange={(name) =>
-              onChange({ ...definition, name, ...(!keyTyped && { key: keyFromName(name) }) })
-            }
-          />
-          <Field
-            label={t("campaignKey")}
-            hint={t(isNew ? "campaignKeyHelp" : "campaignKeyFixed")}
-            className="mono"
-            required
-            readOnly={!isNew}
-            pattern="[a-z0-9][a-z0-9_\-]{0,63}"
-            value={definition.key}
-            onChange={(key) => {
-              setKeyTyped(true);
-              change("key", key);
-            }}
-          />
-        </div>
-      </FormSection>
-      <FormSection title="campaignAudience" help="campaignAudienceHelp">
-        <ConditionBuilder
-          initial={definition.audience}
-          emptyText="campaignAudienceEveryone"
-          onChange={(audience) => change("audience", audience)}
-        />
-        <EstimateLine estimate={estimate} pick={(one) => one.matching} text="campaignMatchingNow" />
-      </FormSection>
-      <FormSection title="campaignTrigger" help="campaignTriggerHelp">
-        <TriggerFields
-          trigger={definition.trigger}
-          campaignKey={definition.key}
-          onChange={(trigger) => change("trigger", trigger)}
-        />
-        <EstimateLine estimate={estimate} pick={(one) => one.lastWeek} text="campaignLastWeek" />
-      </FormSection>
-      <FormSection title="campaignMessage" help="campaignMessageHelp">
-        <MessageFields
-          message={definition.message}
-          trigger={definition.trigger.type}
-          members={members}
-          language={language}
-          onLanguage={onLanguage}
-          onChange={(message) => change("message", message)}
-        />
-      </FormSection>
-    </>
-  );
-}
-
-/** The advanced sections: A/B variants, how it shows, how it is delivered, and its rules. */
-function MoreSections({ definition, members, language, onLanguage, onChange }: SectionProps) {
-  const change = <K extends keyof CampaignDefinition>(key: K, value: CampaignDefinition[K]) =>
-    onChange(withPart(definition, key, value));
-  return (
-    <>
-      <FormSection title="campaignVariants">
-        <VariantsFields
-          definition={definition}
-          members={members}
-          language={language}
-          onLanguage={onLanguage}
-          onChange={(variants) => change("variants", variants)}
-        />
-      </FormSection>
-      <FormSection title="campaignPresentation">
-        <PresentationFields
-          presentation={definition.presentation}
-          isPage={definition.trigger.type === "page"}
-          onChange={(presentation) => change("presentation", presentation)}
-        />
-      </FormSection>
-      <FormSection title="campaignDelivery">
-        <DeliveryFields
-          delivery={definition.delivery}
-          onChange={(delivery) => change("delivery", delivery)}
-        />
-      </FormSection>
-      <FormSection title="campaignRules" help="campaignRulesHelp">
-        <RulesFields rules={definition.rules} onRules={(rules) => change("rules", rules)} />
-      </FormSection>
-    </>
-  );
-}
-
-/**
- * The editor's form: the main sections open, and the others under "More options", which starts
- * open when the campaign changes one of them. Its button stays usable for a member, who reads.
- */
-function CampaignForm({
-  api,
-  formId,
-  editable,
-  isNew,
-  onSubmit,
-  children,
-  ...props
-}: SectionProps & {
-  api: WorkspaceApi;
-  formId: string;
-  editable: boolean;
-  isNew: boolean;
-  onSubmit(event: FormEvent<HTMLFormElement>): void;
-  /** The notes above the sections. */
-  children: ReactNode;
-}) {
-  const [more, setMore] = useState(() => changesMore(props.definition));
-  const moreId = useId();
-  return (
-    <form id={formId} className="widget-form" onSubmit={onSubmit}>
-      {children}
-      <fieldset className="widget-sections" disabled={!editable}>
-        <MainSections api={api} isNew={isNew} {...props} />
-      </fieldset>
-      <button
-        type="button"
-        className="more-options"
-        aria-expanded={more}
-        aria-controls={moreId}
-        onClick={() => setMore(!more)}
-      >
-        <Icon name="chevron" size={14} />
-        {t("campaignMoreOptions")}
-      </button>
-      {more && (
-        <fieldset id={moreId} className="widget-sections" disabled={!editable}>
-          <MoreSections {...props} />
-        </fieldset>
-      )}
-    </form>
-  );
-}
-
 type Action = "save" | "live" | "pause" | "resume" | "end";
 
-/** The page's buttons for the campaign's status: save, go live, pause, resume, and end in a menu. */
+/**
+ * The page's buttons: a test, a save while there are changes, the code and the end in a menu, and
+ * the one step the status allows next, go live, pause or resume.
+ */
 function EditorActions({
   campaign,
   canEdit,
@@ -385,7 +94,7 @@ function EditorActions({
       form={formId}
       value={action}
       className={dark ? "pill dark" : "pill"}
-      disabled={busy || (action === "save" && campaign !== null && !unsaved)}
+      disabled={busy}
     >
       {t(label)}
     </button>
@@ -413,22 +122,28 @@ function EditorActions({
           title={unsaved ? t("campaignTestSaveFirst") : undefined}
           onClick={onTest}
         >
-          <Icon name="flask" size={18} />
           {t("campaignTest")}
         </button>
       )}
-      {editable && submit("save", status === "draft" ? "campaignSaveDraft" : "save")}
+      {editable &&
+        (unsaved || campaign === null) &&
+        submit("save", status === "draft" ? "campaignSaveDraft" : "save")}
+      <Menu label={t("moreActions")} buttonClass="round" items={items}>
+        <Icon name="dots" />
+      </Menu>
       {editable && status === "draft" && submit("live", "campaignGoLive", true)}
       {editable && status === "paused" && submit("resume", "campaignResume", true)}
       {editable && status === "live" && (
-        <button type="button" className="pill" disabled={busy} onClick={() => onAction("pause")}>
+        <button
+          type="button"
+          className="pill dark"
+          disabled={busy}
+          onClick={() => onAction("pause")}
+        >
           <Icon name="pause" size={18} />
           {t("campaignPause")}
         </button>
       )}
-      <Menu label={t("moreActions")} buttonClass="round" items={items}>
-        <Icon name="dots" />
-      </Menu>
     </>
   );
 }
@@ -583,6 +298,78 @@ function useCampaignActions({
   return { busy, failure, act, end, test };
 }
 
+/** "Saved 2 minutes ago", or that the changes wait for a save. */
+function savedText(campaign: Campaign | null, unsaved: boolean): string {
+  if (campaign === null) return t("campaignNotSaved");
+  if (unsaved) return t("campaignUnsaved");
+  return t("campaignSavedAgo", { ago: ago(campaign.updatedAt) });
+}
+
+/**
+ * The campaign's name as the page's title, its status, when it was saved and its key. A new
+ * campaign's key follows its name until someone types one, and a saved one's never changes.
+ */
+function CampaignHead({
+  definition,
+  campaign,
+  editable,
+  unsaved,
+  actions,
+  onChange,
+}: {
+  definition: CampaignDefinition;
+  campaign: Campaign | null;
+  editable: boolean;
+  unsaved: boolean;
+  actions: ReactNode;
+  onChange(definition: CampaignDefinition): void;
+}) {
+  const [isKeyTyped, setKeyTyped] = useState(campaign !== null);
+  return (
+    <header className="page-head campaign-head">
+      <div className="page-title">
+        <div className="campaign-title">
+          <input
+            className="title-input"
+            aria-label={t("campaignName")}
+            placeholder={t("campaignNew")}
+            required
+            maxLength={NAME_MAX}
+            disabled={!editable}
+            value={definition.name}
+            onChange={(event) => {
+              const name = event.target.value;
+              onChange({ ...definition, name, ...(!isKeyTyped && { key: keyFromName(name) }) });
+            }}
+          />
+          <StatusChip status={campaign?.status ?? "draft"} />
+        </div>
+        <p>
+          {savedText(campaign, unsaved)} · {t("campaignKeyWord")}{" "}
+          {campaign === null ? (
+            <input
+              className="key-input mono"
+              aria-label={t("campaignKey")}
+              title={t("campaignKeyHelp")}
+              required
+              disabled={!editable}
+              pattern={KEY_PATTERN}
+              value={definition.key}
+              onChange={(event) => {
+                setKeyTyped(true);
+                onChange({ ...definition, key: event.target.value });
+              }}
+            />
+          ) : (
+            <code title={t("campaignKeyFixed")}>{definition.key}</code>
+          )}
+        </p>
+      </div>
+      <div className="page-actions">{actions}</div>
+    </header>
+  );
+}
+
 function CampaignPage({
   api,
   me,
@@ -603,9 +390,11 @@ function CampaignPage({
   const [language, setLanguage] = useState<Language>("default");
   const [tab, setTab] = useState<"edit" | "results">("edit");
   const [dialog, setDialog] = useState<Dialog | null>(null);
+  // One object for a new campaign, so the preview's memo holds until the first change.
+  const [blank] = useState(newDefinition);
   const formId = useId();
   const saved = campaign?.definition ?? null;
-  const definition = edited ?? saved ?? newDefinition();
+  const definition = edited ?? saved ?? blank;
   const unsaved = edited !== null && JSON.stringify(edited) !== JSON.stringify(saved);
   const editable = canEdit && campaign?.status !== "ended";
   const { busy, failure, act, end, test } = useCampaignActions({
@@ -627,80 +416,78 @@ function CampaignPage({
   return (
     <section className="page campaign-page" aria-label={title}>
       <LeaveGuard unsaved={unsaved} />
-      <button type="button" className="text-button back-link" onClick={onBack}>
-        <Icon name="back" size={14} />
-        {t("campaigns")}
-      </button>
-      <PageHead
-        title={title}
-        context={
-          <>
-            <StatusChip status={campaign?.status ?? "draft"} />{" "}
-            {definition.key !== "" && <span className="mono">{definition.key}</span>}
-          </>
-        }
-        actions={
-          <EditorActions
-            campaign={campaign}
-            canEdit={canEdit}
-            unsaved={unsaved}
-            busy={busy}
-            formId={formId}
-            onAction={act}
-            onTest={test}
-            onCode={() => setDialog({ kind: "code" })}
-          />
-        }
-      />
-      <div className="page-body">
-        <ErrorNote text={failure} />
-        {campaign !== null && (
-          <Choices<"edit" | "results">
-            label={t("campaignTabs")}
-            variant="tabs"
-            value={tab}
-            options={[
-              { value: "edit", label: "campaignTabEdit" },
-              { value: "results", label: "campaignTabResults" },
-            ]}
-            onChange={setTab}
-          />
-        )}
-        {tab === "results" && campaign !== null ? (
-          <CampaignResultsView api={api} campaign={campaign} />
-        ) : (
-          <div className="appearance campaign-editor">
-            {appearance !== null && (
-              <CampaignPreview
-                definition={definition}
-                appearance={appearance}
-                me={me}
-                members={members}
-                workspace={workspace}
-                language={language}
-                onLanguage={setLanguage}
-              />
-            )}
-            <CampaignForm
-              api={api}
+      <form id={formId} className="campaign-form" onSubmit={submit}>
+        <button type="button" className="text-button back-link" onClick={onBack}>
+          <Icon name="back" size={14} />
+          {t("campaigns")}
+        </button>
+        <CampaignHead
+          definition={definition}
+          campaign={campaign}
+          editable={editable}
+          unsaved={unsaved}
+          onChange={setEdited}
+          actions={
+            <EditorActions
+              campaign={campaign}
+              canEdit={canEdit}
+              unsaved={unsaved}
+              busy={busy}
               formId={formId}
-              editable={editable}
-              isNew={campaign === null}
-              definition={definition}
-              members={members}
-              language={language}
-              onLanguage={setLanguage}
-              onChange={setEdited}
-              onSubmit={submit}
-            >
-              {!canEdit && <p className="note">{t("campaignMemberNote")}</p>}
-              {campaign?.status === "live" && canEdit && (
-                <p className="note">{t("campaignLiveNote")}</p>
+              onAction={act}
+              onTest={test}
+              onCode={() => setDialog({ kind: "code" })}
+            />
+          }
+        />
+        <div className="page-body">
+          <ErrorNote text={failure} />
+          {campaign !== null && (
+            <Choices<"edit" | "results">
+              label={t("campaignTabs")}
+              variant="pills"
+              value={tab}
+              options={[
+                { value: "edit", label: "campaignTabEdit" },
+                { value: "results", label: "campaignTabResults" },
+              ]}
+              onChange={setTab}
+            />
+          )}
+          {tab === "results" && campaign !== null ? (
+            <CampaignResultsView api={api} campaign={campaign} />
+          ) : (
+            <div className="appearance campaign-editor">
+              {appearance !== null && (
+                <CampaignPreview
+                  definition={definition}
+                  appearance={appearance}
+                  me={me}
+                  members={members}
+                  workspace={workspace}
+                  language={language}
+                  onLanguage={setLanguage}
+                />
               )}
-            </CampaignForm>
-          </div>
-        )}
-      </div>
+              <div className="widget-form">
+                {!canEdit && <p className="note">{t("campaignMemberNote")}</p>}
+                {campaign?.status === "live" && canEdit && (
+                  <p className="note">{t("campaignLiveNote")}</p>
+                )}
+                <CampaignSteps
+                  api={api}
+                  definition={definition}
+                  members={members}
+                  language={language}
+                  editable={editable}
+                  onLanguage={setLanguage}
+                  onChange={setEdited}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+      </form>
       {dialog?.kind === "code" && (
         <CodeDialog definition={definition} onClose={() => setDialog(null)} />
       )}

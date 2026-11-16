@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { useState } from "react";
+import { memo, useState } from "react";
 import { pickLocale } from "../../../packages/widget/src/locale.ts";
 import {
   firstName,
@@ -10,6 +10,7 @@ import {
 import { renderTemplate } from "../../../packages/widget/src/template.ts";
 import type { CampaignDefinition, Me, Member, OperatorAppearance } from "./api.ts";
 import { type Language, LOCALE_TEXT, messageIn } from "./campaign-message.tsx";
+import { Icon } from "./icons.tsx";
 import { t } from "./text.ts";
 import { Choices, type Option } from "./ui.tsx";
 import { PreviewFrame, WidgetDrawing } from "./widget-drawing.tsx";
@@ -17,9 +18,11 @@ import { PreviewFrame, WidgetDrawing } from "./widget-drawing.tsx";
 type Device = "desktop" | "phone";
 
 const THEMES: Option<"light" | "dark">[] = [
-  { value: "light", label: "themeLight", icon: "sun" },
-  { value: "dark", label: "themeDark", icon: "moon" },
+  { value: "light", label: "themeLight" },
+  { value: "dark", label: "themeDark" },
 ];
+/** The lines of the sample page behind the chat, by width in percent. */
+const PAGE_LINES = [40, 85, 70, 78, 55];
 const DEVICES: Option<Device>[] = [
   { value: "desktop", label: "previewDesktop" },
   { value: "phone", label: "previewPhone" },
@@ -55,10 +58,11 @@ function senderFace(
 }
 
 /**
- * The campaign's message as the widget shows it, beside the form: in light or dark, in each of its
- * languages, and at a phone's width, where a message for the open chat shows as a card.
+ * The campaign's message as the widget shows it, over a sample page in a browser, beside the form:
+ * in light or dark, in each of its languages, and at a phone's width, where a message for the open
+ * chat shows as a card. It draws again only when its own props change.
  */
-export function CampaignPreview({
+export const CampaignPreview = memo(function CampaignPreview({
   definition,
   appearance,
   me,
@@ -86,21 +90,24 @@ export function CampaignPreview({
     <PreviewFrame
       controls={
         <div className="preview-controls">
-          <Choices<"light" | "dark">
-            label={t("previewTheme")}
-            value={theme}
-            options={THEMES}
-            onChange={setTheme}
-          />
           <Choices<Device>
             label={t("previewScreen")}
+            variant="outlined"
             value={device}
             options={DEVICES}
             onChange={setDevice}
           />
+          <Choices<"light" | "dark">
+            label={t("previewTheme")}
+            variant="outlined"
+            value={theme}
+            options={THEMES}
+            onChange={setTheme}
+          />
           {translated.length > 0 && (
             <Choices<Language>
               label={t("campaignLanguages")}
+              variant="outlined"
               value={language}
               options={[
                 { value: "default", label: "campaignDefaultLanguage" },
@@ -111,27 +118,44 @@ export function CampaignPreview({
           )}
         </div>
       }
+      note={
+        <p className="preview-note">
+          <Icon name="user" size={16} />
+          {t("previewSampleNote", { name: t("previewSampleFirstName") })}
+        </p>
+      }
     >
-      <div className={device === "phone" ? "preview-phone" : undefined}>
-        <WidgetDrawing
-          locale={
-            language === "default"
-              ? pickLocale(undefined, appearance.language, navigator.languages)
-              : language
-          }
-          appearance={appearance}
-          theme={theme}
-          // The message shows in place of the sample conversation.
-          sample={{ question: "", answer: "", author: workspace }}
-          outbound={{
-            body: sampleText(body),
-            // The same buttons: the server's type spells the kinds another way.
-            buttons: buttons as OutboundButton[],
-            show,
-            author: senderFace(message.sender, { me, members, workspace }),
-          }}
-        />
+      <div className={device === "phone" ? "browser-frame preview-phone" : "browser-frame"}>
+        <div className="browser-bar" aria-hidden="true">
+          <span className="browser-dots" />
+          <span className="browser-address">{t("previewSampleAddress")}</span>
+        </div>
+        <div className="sample-page">
+          <div className="sample-lines" aria-hidden="true">
+            {PAGE_LINES.map((width) => (
+              <span key={width} className="sample-line" style={{ width: `${width}%` }} />
+            ))}
+          </div>
+          <WidgetDrawing
+            locale={
+              language === "default"
+                ? pickLocale(undefined, appearance.language, navigator.languages)
+                : language
+            }
+            appearance={appearance}
+            theme={theme}
+            // The message shows in place of the sample conversation.
+            sample={{ question: "", answer: "", author: workspace }}
+            outbound={{
+              body: sampleText(body),
+              // The same buttons: the server's type spells the kinds another way.
+              buttons: buttons as OutboundButton[],
+              show,
+              author: senderFace(message.sender, { me, members, workspace }),
+            }}
+          />
+        </div>
       </div>
     </PreviewFrame>
   );
-}
+});

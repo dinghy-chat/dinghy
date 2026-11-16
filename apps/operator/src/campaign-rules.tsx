@@ -5,7 +5,15 @@ import { withPart } from "./campaign-draft.ts";
 import { ConditionBuilder } from "./condition-builder.tsx";
 import { dateTimeInput } from "./format.ts";
 import { type TextId, t } from "./text.ts";
-import { Choices, Field, type Option, SettingRow, Switch } from "./ui.tsx";
+import {
+  Choices,
+  Field,
+  type Option,
+  type OptionCard,
+  OptionCards,
+  SettingRow,
+  Switch,
+} from "./ui.tsx";
 
 type Presentation = CampaignDefinition["presentation"];
 type Delivery = CampaignDefinition["delivery"];
@@ -18,7 +26,7 @@ const FREQUENCY_EVERY = "7d";
 const SEND_WINDOW = { from: "09:00", to: "18:00" };
 
 /** A duration, such as "7d", or nothing when the box is empty. */
-export function DurationField({
+function DurationField({
   label,
   hint = t("durationHint"),
   required = false,
@@ -78,65 +86,84 @@ const STARTS: Option<Presentation["startConversation"]>[] = [
   { value: "on_reply", label: "startOnReply" },
   { value: "now", label: "startNow" },
 ];
-const SHOWS: Option<Presentation["show"]>[] = [
-  { value: "badge", label: "showBadge" },
-  { value: "preview", label: "showPreview" },
-  { value: "chat", label: "showChat" },
-];
 const IF_OPEN: Option<Presentation["ifConversationOpen"]>[] = [
   { value: "hold", label: "ifOpenHold" },
   { value: "join", label: "ifOpenJoin" },
   { value: "skip", label: "ifOpenSkip" },
 ];
 
-/** How the message shows. A page campaign never opens the chat, nor starts a conversation first. */
-export function PresentationFields({
-  presentation,
+/** A small drawing of the launcher, with a dot, a card above it, or the open chat. */
+const ShowArt = ({ show }: { show: Presentation["show"] }) => (
+  <span className={`show-art show-${show}`} />
+);
+
+const SHOW_CARDS: OptionCard<Presentation["show"]>[] = [
+  { value: "badge", label: "showBadge", hint: "showBadgeHelp", art: <ShowArt show="badge" /> },
+  {
+    value: "preview",
+    label: "showPreview",
+    hint: "showPreviewHelp",
+    art: <ShowArt show="preview" />,
+  },
+  { value: "chat", label: "showChat", hint: "showChatHelp", art: <ShowArt show="chat" /> },
+];
+
+/** How the message shows, as cards. A page campaign never opens the chat. */
+export function ShowCards({
+  show,
   isPage,
   onChange,
 }: {
-  presentation: Presentation;
+  show: Presentation["show"];
   isPage: boolean;
-  onChange(presentation: Presentation): void;
+  onChange(show: Presentation["show"]): void;
 }) {
-  const change = (next: Partial<Presentation>) => onChange({ ...presentation, ...next });
+  return (
+    <>
+      <OptionCards<Presentation["show"]>
+        label={t("campaignShow")}
+        value={show}
+        options={isPage ? SHOW_CARDS.filter((one) => one.value !== "chat") : SHOW_CARDS}
+        onChange={onChange}
+      />
+      {isPage && <p className="hint">{t("campaignShowPageHelp")}</p>}
+    </>
+  );
+}
+
+/**
+ * When the conversation starts and what an open one does, email, always or once unread for a time,
+ * the assignment on a reply, and how long it waits. A page campaign starts a conversation on reply.
+ */
+export function DeliveryFields({
+  presentation,
+  delivery,
+  isPage,
+  onPresentation,
+  onChange,
+}: {
+  presentation: Presentation;
+  delivery: Delivery;
+  isPage: boolean;
+  onPresentation(presentation: Presentation): void;
+  onChange(delivery: Delivery): void;
+}) {
   return (
     <div className="setting-rows">
-      <ChoiceRow
-        label="campaignShow"
-        hint={isPage ? "campaignShowPageHelp" : "campaignShowHelp"}
-        value={presentation.show}
-        options={isPage ? SHOWS.filter((one) => one.value !== "chat") : SHOWS}
-        onChange={(show) => change({ show })}
-      />
       <ChoiceRow
         label="campaignStart"
         hint="campaignStartHelp"
         value={presentation.startConversation}
         options={isPage ? STARTS.filter((one) => one.value !== "now") : STARTS}
-        onChange={(startConversation) => change({ startConversation })}
+        onChange={(startConversation) => onPresentation({ ...presentation, startConversation })}
       />
       <ChoiceRow
         label="campaignIfOpen"
         hint="campaignIfOpenHelp"
         value={presentation.ifConversationOpen}
         options={IF_OPEN}
-        onChange={(ifConversationOpen) => change({ ifConversationOpen })}
+        onChange={(ifConversationOpen) => onPresentation({ ...presentation, ifConversationOpen })}
       />
-    </div>
-  );
-}
-
-/** Email, always or once unread for a time, the assignment on a reply, and how long it waits. */
-export function DeliveryFields({
-  delivery,
-  onChange,
-}: {
-  delivery: Delivery;
-  onChange(delivery: Delivery): void;
-}) {
-  return (
-    <div className="setting-rows">
       <div className="setting-row setting-switch">
         <Switch
           label={t("campaignSendEmail")}
@@ -244,15 +271,9 @@ function SendWindowField({
   );
 }
 
-/** Frequency, hours, the end, who leaves the campaign, and its goal. */
+/** Frequency, hours, the end, and who leaves the campaign. */
 export function RulesFields({ rules, onRules }: { rules: Rules; onRules(rules: Rules): void }) {
   const change = (next: Partial<Rules>) => onRules({ ...rules, ...next });
-  const goal = rules.goal === undefined ? undefined : goalCondition(rules.goal);
-  const within = rules.goal?.within ?? GOAL_WITHIN;
-  const setGoal = (condition: Condition | undefined, time: string) =>
-    onRules(
-      withPart(rules, "goal", condition === undefined ? undefined : { ...condition, within: time }),
-    );
   return (
     <div className="setting-rows">
       <FrequencyField frequency={rules.frequency} onChange={(frequency) => change({ frequency })} />
@@ -285,26 +306,39 @@ export function RulesFields({ rules, onRules }: { rules: Rules; onRules(rules: R
           />
         )}
       </SettingRow>
-      <SettingRow label={t("campaignGoal")} hint={t("campaignGoalHelp")} stacked>
-        {() => (
-          <>
-            <ConditionBuilder
-              initial={goal}
-              inCampaign
-              emptyText="campaignGoalEmpty"
-              onChange={(condition) => setGoal(condition, within)}
-            />
-            {goal !== undefined && (
-              <DurationField
-                label={t("campaignGoalWithin")}
-                required
-                value={within}
-                onChange={(time) => setGoal(goal, time ?? "")}
-              />
-            )}
-          </>
-        )}
-      </SettingRow>
+    </div>
+  );
+}
+
+/** What the campaign is for, and how long after a message reaching it counts. */
+export function GoalFields({
+  goal,
+  onChange,
+}: {
+  goal: Rules["goal"];
+  onChange(goal: Rules["goal"]): void;
+}) {
+  const condition = goal === undefined ? undefined : goalCondition(goal);
+  const within = goal?.within ?? GOAL_WITHIN;
+  const set = (next: Condition | undefined, time: string) =>
+    onChange(next === undefined ? undefined : { ...next, within: time });
+  return (
+    <div className="setting-rows">
+      <p className="hint">{t("campaignGoalHelp")}</p>
+      <ConditionBuilder
+        initial={condition}
+        inCampaign
+        emptyText="campaignGoalEmpty"
+        onChange={(next) => set(next, within)}
+      />
+      {condition !== undefined && (
+        <DurationField
+          label={t("campaignGoalWithin")}
+          required
+          value={within}
+          onChange={(time) => set(condition, time ?? "")}
+        />
+      )}
     </div>
   );
 }

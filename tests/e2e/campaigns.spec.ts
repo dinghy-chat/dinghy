@@ -3,8 +3,9 @@ import { expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
 import { openInbox } from "./chat.ts";
 
-// The Campaigns page in the operator app: an owner writes a campaign in the editor, starts it,
-// tests it and reads its results, and a member reads campaigns without changing them.
+// The Campaigns page in the operator app: an owner writes a campaign in the editor's steps, starts
+// it, tests it and reads its results, starts one from a template, and a member reads campaigns
+// without changing them.
 
 let server: Awaited<ReturnType<typeof startE2EServer>>;
 /** The customer's server key, which tracks contacts and sends campaigns. */
@@ -40,6 +41,9 @@ async function openCampaigns(page: Page, email: string) {
   await expect(page.getByRole("heading", { name: "Campaigns", exact: true })).toBeVisible();
 }
 
+/** The editor's preview, which the widget's own code draws. */
+const preview = (page: Page) => page.locator(".preview-stage");
+
 test("an owner writes a campaign, starts it, tests it and reads its results", async ({ page }) => {
   // Two customers on the pro plan, and one on a trial.
   for (const [userId, plan] of [
@@ -55,38 +59,39 @@ test("an owner writes a campaign, starts it, tests it and reads its results", as
   }
   await openCampaigns(page, "julien@shipmail.example");
   await expect(page.getByText("No campaigns yet")).toBeVisible();
-  await page.getByRole("button", { name: "New campaign" }).first().click();
+  await expect(page.getByRole("heading", { name: "Start from a template" })).toBeVisible();
+  await page.getByRole("button", { name: "New campaign" }).click();
 
   await page.getByLabel("Name", { exact: true }).fill("Pro welcome");
-  await expect(page.getByRole("textbox", { name: /^Key/ })).toHaveValue("pro-welcome");
+  await expect(page.getByRole("textbox", { name: "Key" })).toHaveValue("pro-welcome");
+  await expect(page.getByText("Not saved yet")).toBeVisible();
 
-  // The audience: the attribute plan is pro, with the count of who matches now.
-  await expect(page.getByText("3 people match now.")).toBeVisible();
-  await page.getByRole("button", { name: "Add a rule" }).first().click();
-  await page.getByPlaceholder("Attribute key").fill("plan");
-  await page.getByLabel("Value", { exact: true }).fill("pro");
-  await expect(page.getByText("2 people match now.")).toBeVisible();
-  await expect(page.getByText("Would have sent to 2 people in the last 7 days.")).toBeVisible();
+  // Who gets it: the attribute plan is pro, with the count of who matches now in the step's head.
+  const who = page.getByRole("region", { name: "Who gets it" });
+  await expect(who.getByText("3 people now")).toBeVisible();
+  await who.getByRole("button", { name: "Add a rule" }).click();
+  await who.getByPlaceholder("Attribute key").fill("plan");
+  await who.getByLabel("Value", { exact: true }).fill("pro");
+  await expect(who.getByText("2 people now")).toBeVisible();
+  await expect(page.getByText("Would have reached 2 people in the last 7 days.")).toBeVisible();
 
-  // The trigger is the customer's code, which shows the call to make.
-  await page.getByRole("radio", { name: "From your code" }).check();
+  // When it goes: the customer's code, which shows the call to make.
+  await page.getByRole("radio", { name: "From code" }).check();
   await expect(page.getByText('dinghy.campaigns.send("pro-welcome"')).toBeVisible();
 
   await page.getByLabel("Text", { exact: true }).fill("Welcome to Pro! Want a tour?");
-  await page.getByRole("button", { name: "Add a button" }).first().click();
+  await page.getByRole("button", { name: "Button", exact: true }).click();
   await page.getByPlaceholder("Button text").fill("Yes please");
   await expect(page.getByPlaceholder("Value in results")).toHaveValue("yes-please");
+  await expect(page.getByRole("button", { name: "Edit the button Yes please" })).toBeVisible();
   // The preview draws the message with the widget's own code.
-  await expect(
-    page.locator(".preview-stage").getByText("Welcome to Pro! Want a tour?"),
-  ).toBeVisible();
-  await expect(
-    page.locator(".preview-stage").getByRole("button", { name: "Yes please" }),
-  ).toBeVisible();
+  await expect(preview(page).getByText("Welcome to Pro! Want a tour?")).toBeVisible();
+  await expect(preview(page).getByRole("button", { name: "Yes please" })).toBeVisible();
 
   await page.getByRole("button", { name: "Go live" }).click();
   await expect(page.getByText("Campaign live.")).toBeVisible();
-  await expect(page.locator(".page-title .chip")).toHaveText("Live");
+  await expect(page.locator(".campaign-title .chip")).toHaveText("Live");
+  await expect(page.getByText(/^Saved/)).toBeVisible();
 
   await page.getByRole("button", { name: "Send a test to me" }).click();
   const test = page.getByRole("dialog", { name: "Test sent" });
@@ -115,18 +120,33 @@ test("an owner writes a campaign, starts it, tests it and reads its results", as
   await expect(code.getByText("dinghy.campaigns.upsert(")).toBeVisible();
   await code.getByRole("button", { name: "Done" }).click();
 
+  // The row says who, when and how in one sentence, and the results so far.
   await page.getByRole("button", { name: "Campaigns", exact: true }).first().click();
-  const row = page.getByRole("row", { name: /Pro welcome/ });
-  await expect(row.getByText("Live")).toBeVisible();
-  await expect(row.getByText("From your code")).toBeVisible();
+  await expect(page.getByText("1 live · 1 sent in the last 7 days")).toBeVisible();
+  const row = page.getByRole("button", { name: /Pro welcome/ });
+  await expect(row.locator(".chip")).toHaveText("Live");
+  await expect(row).toContainText("plan is pro, when your code sends it · card above the launcher");
+  await expect(row.locator(".row-stat").first()).toContainText("1sent");
 
   // Pause all campaigns, with who paused them, and the resume.
-  await page.getByRole("button", { name: "Pause all campaigns" }).click();
+  await page.getByRole("button", { name: "Pause all" }).click();
   const banner = page.getByRole("status").filter({ hasText: "All campaigns are paused." });
   await expect(banner).toContainText("julien@shipmail.example paused them at");
   await banner.getByRole("button", { name: "Resume all" }).click();
   await expect(banner).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Pause all campaigns" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Pause all" })).toBeVisible();
+
+  // The hours between two messages sit in the header's menu.
+  await page.getByRole("button", { name: "More actions" }).click();
+  await page.getByRole("menuitem", { name: "Hours between campaign messages" }).click();
+  const gap = page.getByRole("dialog", { name: "Hours between campaign messages" });
+  await gap.getByLabel("Hours").fill("4");
+  await gap.getByRole("button", { name: "Save" }).click();
+  await expect(gap).toHaveCount(0);
+  await expect(page.getByText("Saved.")).toBeVisible();
+  await page.getByRole("button", { name: "More actions" }).click();
+  await page.getByRole("menuitem", { name: "Hours between campaign messages" }).click();
+  await expect(gap.getByLabel("Hours")).toHaveValue("4");
 });
 
 test("a member reads campaigns and cannot change them", async ({ page }) => {
@@ -140,55 +160,127 @@ test("a member reads campaigns and cannot change them", async ({ page }) => {
   expect(saved.status).toBe(201);
   await openCampaigns(page, "ben@shipmail.example");
   await expect(page.getByRole("button", { name: "New campaign" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Pause all campaigns" })).toHaveCount(0);
-  await expect(page.getByLabel("Hours between two campaign messages")).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Pause all" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Start from a template" })).toHaveCount(0);
+  await page.getByRole("button", { name: "More actions" }).click();
+  await page.getByRole("menuitem", { name: "Hours between campaign messages" }).click();
+  const gap = page.getByRole("dialog", { name: "Hours between campaign messages" });
+  await expect(gap.getByLabel("Hours")).toBeDisabled();
+  await expect(gap.getByRole("button", { name: "Save" })).toBeDisabled();
+  await gap.getByRole("button", { name: "Cancel" }).click();
 
-  await page.getByRole("button", { name: /Trial help/ }).click();
+  const row = page.getByRole("button", { name: /Trial help/ });
+  await expect(row).toContainText("Not live yet");
+  await row.click();
   await expect(page.getByText("Only owners and admins can change campaigns.")).toBeVisible();
   await expect(page.getByLabel("Name", { exact: true })).toBeDisabled();
   await expect(page.getByLabel("Text", { exact: true })).toHaveValue(
     "Your export finished. Need help with it?",
   );
+  await expect(page.getByRole("radio", { name: "After an event" })).toBeDisabled();
+  // A member still opens a folded part to read it.
+  await page.getByRole("button", { name: "Edit Rules" }).click();
+  await expect(page.getByLabel("Ends at")).toBeDisabled();
   await expect(page.getByRole("button", { name: "Go live" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Save as draft" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Translation" })).toHaveCount(0);
   await page.getByRole("button", { name: "More actions" }).click();
   await expect(page.getByRole("menuitem", { name: "End campaign" })).toHaveCount(0);
   await page.getByRole("menuitem", { name: "Copy as code" }).click();
   await expect(page.getByRole("dialog").getByText('"key": "trial-help"')).toBeVisible();
 });
 
-test("the editor keeps the main sections open, checks the text, and previews it", async ({
+test("the editor's steps: option cards, value tokens, variables and folded parts", async ({
   page,
 }) => {
   await openCampaigns(page, "julien@shipmail.example");
-  await page.getByRole("button", { name: "New campaign" }).first().click();
-  // A new campaign shows the main sections, and the others under More options.
-  const more = page.getByRole("button", { name: "More options" });
-  await expect(more).toHaveAttribute("aria-expanded", "false");
-  await expect(page.getByRole("heading", { name: "Rules" })).toHaveCount(0);
-  await more.click();
-  await expect(page.getByRole("heading", { name: "Rules" })).toBeVisible();
-  // Both email settings sit in Delivery.
-  const delivery = page
-    .locator(".widget-section")
-    .filter({ has: page.getByRole("heading", { name: "Delivery" }) });
-  await expect(delivery.getByText("Email if unread after")).toBeVisible();
+  await page.getByRole("button", { name: "New campaign" }).click();
+  for (const step of ["Who gets it", "When it goes", "The message", "How it shows"]) {
+    await expect(page.getByRole("heading", { name: step })).toBeVisible();
+  }
 
-  // Each trigger is a line with its help.
-  const fromCode = page.getByRole("radio", { name: "From your code", exact: true });
-  await expect(fromCode).toHaveAccessibleDescription("Only when your code sends it to one person.");
+  // A rule's list takes its values as tokens, each removed with its ×.
+  const who = page.getByRole("region", { name: "Who gets it" });
+  await who.getByRole("button", { name: "Add a rule" }).click();
+  await who.getByPlaceholder("Attribute key").fill("plan");
+  await who.getByRole("button", { name: /^Comparison/ }).click();
+  await page.getByRole("option", { name: "is one of" }).click();
+  const values = who.getByLabel("Value", { exact: true });
+  await values.fill("trial");
+  await values.press("Enter");
+  await values.fill("pro");
+  await values.press("Enter");
+  await expect(who.locator(".value-token")).toHaveText(["trial", "pro"]);
+  await who.getByRole("button", { name: "Remove trial" }).click();
+  await expect(who.locator(".value-token")).toHaveText(["pro"]);
+  await expect(who.getByRole("button", { name: "And a rule" })).toBeVisible();
 
-  // The preview fills the variables with a sample contact, and a variable that does not read
-  // is named under the text, so the form does not save.
+  // Each trigger is a card with its help, and its own settings go under the cards.
+  const fromCode = page.getByRole("radio", { name: "From code", exact: true });
+  await expect(fromCode).toHaveAccessibleDescription("One API call");
+  await expect(page.getByRole("radio", { name: "They match" })).toBeChecked();
+  await page.getByRole("button", { name: /^Wait before sending/ }).click();
+  await page.getByRole("option", { name: "1 hour", exact: true }).click();
+  await expect(page.getByText("after they match")).toBeVisible();
+
+  // The variables go in at the caret, and the preview fills them with a sample contact.
   await page.getByLabel("Name", { exact: true }).fill("Variables");
   const text = page.getByLabel("Text", { exact: true });
-  await text.fill(
-    'Hi {{ firstName | default: "there" }}, on {{ attributes.plan | default: "trial" }}?',
-  );
-  await expect(page.locator(".preview-stage").getByText("Hi Alex, on trial?")).toBeVisible();
+  await text.fill("Hi ");
+  await page.getByRole("button", { name: "First name", exact: true }).click();
+  await expect(text).toHaveValue("Hi {{ firstName }}");
+  await expect(preview(page).getByText("Hi Alex")).toBeVisible();
+  await expect(page.getByText("As a sample contact named Alex")).toBeVisible();
+  await page.getByRole("button", { name: "Other field" }).click();
+  await page.getByRole("menuitem", { name: "email" }).click();
+  await expect(text).toHaveValue("Hi {{ firstName }}{{ email }}");
+  // A variable that does not read is named under the text, so the form does not save.
   await text.fill("Hi {{ nickname }}");
   await expect(page.getByText("There is no variable nickname for this trigger.")).toBeVisible();
   await expect(text).toHaveJSProperty("validity.valid", false);
+  await text.fill("Hi {{ firstName }}");
+
+  // How it shows: a badge leaves only the launcher's dot, so the text is not in the preview.
+  await expect(page.getByRole("radio", { name: "Card" })).toBeChecked();
+  await page.getByRole("radio", { name: "Badge" }).check();
+  await expect(preview(page).getByText("Hi Alex")).toHaveCount(0);
+
+  // A translation and an A/B test start from the message's head.
+  await page.getByRole("button", { name: "Translation" }).click();
+  await page.getByRole("menuitem", { name: "French" }).click();
+  await expect(page.getByRole("radio", { name: "French" }).first()).toBeChecked();
+  await page.getByRole("button", { name: "A/B variant" }).click();
+  await expect(page.getByRole("heading", { name: "A/B test" })).toBeVisible();
+  await page.getByRole("button", { name: "Stop the test" }).click();
+  await expect(page.getByRole("heading", { name: "A/B test" })).toHaveCount(0);
+
+  // Rules, the goal and delivery are folded to one line, and open in place.
+  const rules = page.getByRole("region", { name: "Rules" });
+  await expect(rules).toContainText("Once per person · any time");
+  await rules.getByRole("button", { name: "Edit Rules" }).click();
+  await expect(rules.getByRole("group", { name: "How often" })).toBeVisible();
+  await rules.getByRole("button", { name: "Close Rules" }).click();
+  await expect(rules.getByRole("group", { name: "How often" })).toHaveCount(0);
+  const delivery = page.getByRole("region", { name: "Delivery" });
+  await expect(delivery).toContainText("Conversation starts on reply");
+  await delivery.getByRole("button", { name: "Edit Delivery" }).click();
+  await expect(delivery.getByText("Email if unread after")).toBeVisible();
+});
+
+test("a template makes a draft with a free key, and opens it", async ({ page }) => {
+  await openCampaigns(page, "julien@shipmail.example");
+  await page.getByRole("button", { name: /Welcome new users/ }).click();
+  await expect(page.getByLabel("Name", { exact: true })).toHaveValue("Welcome new users");
+  await expect(page.locator(".campaign-title .chip")).toHaveText("Draft");
+  await expect(page.locator(".campaign-head code")).toHaveText("welcome");
+  await expect(page.getByRole("region", { name: "Who gets it" })).toContainText("Signed in");
+
+  await page.getByRole("button", { name: "Campaigns", exact: true }).first().click();
+  await expect(page.getByRole("button", { name: /^Welcome new users/ }).first()).toContainText(
+    "Signed in, as they start to match · card above the launcher",
+  );
+  await page.getByRole("button", { name: /Welcome new users.*Say hello/ }).click();
+  await expect(page.locator(".campaign-head code")).toHaveText("welcome-2");
 });
 
 test("a pause keeps the changes not saved yet", async ({ page }) => {
@@ -203,16 +295,15 @@ test("a pause keeps the changes not saved yet", async ({ page }) => {
   expect(saved.status).toBe(201);
   expect((await api("POST", "/campaigns/by-key/pause-keeps/resume")).status).toBe(200);
   await openCampaigns(page, "julien@shipmail.example");
-  await page.getByRole("button", { name: /Pause keeps/ }).click();
-  // Its rules differ from a new campaign's, so More options starts open.
-  await expect(page.getByRole("button", { name: "More options" })).toHaveAttribute(
-    "aria-expanded",
-    "true",
+  await page.getByRole("button", { name: /^Pause keeps/ }).click();
+  await expect(page.getByRole("region", { name: "Rules" })).toContainText(
+    "At most every 7 days · any time",
   );
   const text = page.getByLabel("Text", { exact: true });
   await text.fill("A text not saved yet");
+  await expect(page.getByText("Changes not saved")).toBeVisible();
   await page.getByRole("button", { name: "Pause", exact: true }).click();
-  await expect(page.locator(".page-title .chip")).toHaveText("Paused");
+  await expect(page.locator(".campaign-title .chip")).toHaveText("Paused");
   await expect(text).toHaveValue("A text not saved yet");
   await expect(page.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
 });

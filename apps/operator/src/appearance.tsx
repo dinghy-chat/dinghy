@@ -149,7 +149,7 @@ export function LeaveGuard({ unsaved }: { unsaved: boolean }) {
 }
 
 /** A heading and its controls, one part of the form. */
-export function FormSection({
+function FormSection({
   title,
   help,
   children,

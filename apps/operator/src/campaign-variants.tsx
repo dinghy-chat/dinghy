@@ -5,7 +5,6 @@ import { type Language, MessageFields } from "./campaign-message.tsx";
 import { Icon } from "./icons.tsx";
 import { Select } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
-import { Switch } from "./ui.tsx";
 
 type Variant = NonNullable<CampaignDefinition["variants"]>[number];
 /** What a variant sends: the campaign's message, its own, or nothing, as the control group. */
@@ -111,7 +110,16 @@ function VariantRow({
   );
 }
 
-/** A/B variants by weight, each with the campaign's message or its own, and a control group. */
+/** Two even variants to start a test: the campaign's message, and a copy to change. */
+export const newVariants = (message: CampaignDefinition["message"]): Variant[] => [
+  { key: "a", weight: EVEN_WEIGHT },
+  { key: "b", weight: EVEN_WEIGHT, message },
+];
+
+/**
+ * A/B variants by weight, each with the campaign's message or its own, and a control group, under
+ * the message once "A/B variant" started a test.
+ */
 export function VariantsFields({
   definition,
   members,
@@ -130,41 +138,31 @@ export function VariantsFields({
   const replace = (index: number, next: Variant | null) =>
     onChange(variants.flatMap((one, at) => (at !== index ? [one] : next === null ? [] : [next])));
   return (
-    <>
-      <Switch
-        label={t("variantsOn")}
-        hint={t("variantsHelp")}
-        checked={variants.length > 0}
-        onChange={(on) =>
-          onChange(
-            on
-              ? [
-                  { key: "a", weight: EVEN_WEIGHT },
-                  { key: "b", weight: EVEN_WEIGHT, message: definition.message },
-                ]
-              : undefined,
-          )
-        }
-      />
-      {variants.length > 0 && (
-        <ul className="variants">
-          {variants.map((variant, index) => (
-            <VariantRow
-              // biome-ignore lint/suspicious/noArrayIndexKey: a key changes as it is typed, and the place does not.
-              key={index}
-              variant={variant}
-              definition={definition}
-              members={members}
-              language={language}
-              canRemove={variants.length > VARIANTS_MIN}
-              canControl={!hasControl || "control" in variant}
-              onLanguage={onLanguage}
-              onChange={(next) => replace(index, next)}
-            />
-          ))}
-        </ul>
-      )}
-      {variants.length > 0 && variants.length < CAMPAIGN_VARIANTS_MAX && (
+    <div className="variants-test">
+      <div className="variants-head">
+        <h4>{t("campaignVariants")}</h4>
+        <button type="button" className="text-button" onClick={() => onChange(undefined)}>
+          {t("variantsStop")}
+        </button>
+      </div>
+      <p className="hint">{t("variantsHelp")}</p>
+      <ul className="variants">
+        {variants.map((variant, index) => (
+          <VariantRow
+            // biome-ignore lint/suspicious/noArrayIndexKey: a key changes as it is typed, and the place does not.
+            key={index}
+            variant={variant}
+            definition={definition}
+            members={members}
+            language={language}
+            canRemove={variants.length > VARIANTS_MIN}
+            canControl={!hasControl || "control" in variant}
+            onLanguage={onLanguage}
+            onChange={(next) => replace(index, next)}
+          />
+        ))}
+      </ul>
+      {variants.length < CAMPAIGN_VARIANTS_MAX && (
         <button
           type="button"
           className="text-button"
@@ -181,6 +179,6 @@ export function VariantsFields({
           {t("variantAdd")}
         </button>
       )}
-    </>
+    </div>
   );
 }

@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
-// The Campaigns page: the list with each campaign's status, trigger and results, the rules for every
-// campaign, and one campaign's editor and results.
-import { type FormEvent, useState } from "react";
+// The Campaigns page: the list with each campaign's sentence, status and results, the templates
+// to start from, and one campaign's editor and results.
+import { useState } from "react";
 import { CAMPAIGN_GAP_HOURS_MAX, type TeamFace } from "../../../packages/widget/src/shared.ts";
 import type {
   Campaign,
@@ -13,21 +13,32 @@ import type {
   WorkspaceApi,
 } from "./api.ts";
 import { PausedBanner, type PausedTexts } from "./bots.tsx";
-import { CampaignEditor, STATUS_TEXT, StatusChip } from "./campaign-editor.tsx";
-import { triggerWords } from "./campaign-trigger.tsx";
+import { CampaignEditor, STATUS_TEXT } from "./campaign-editor.tsx";
+import { CampaignRow } from "./campaign-row.tsx";
+import { freeKey, TEMPLATES } from "./campaign-templates.ts";
+import { Tile } from "./campaign-tile.tsx";
 import { Icon } from "./icons.tsx";
 import { useLoad } from "./load.ts";
-import { EmptyArt } from "./scene.tsx";
+import { Menu } from "./popup.tsx";
 import { TableSkeleton } from "./skeleton.tsx";
 import { type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
-import { Choices, ErrorNote, failureText, Loading, type Option, Page, SettingRow } from "./ui.tsx";
+import {
+  Choices,
+  ErrorNote,
+  Field,
+  FormDialog,
+  failureText,
+  Loading,
+  type Option,
+  Page,
+} from "./ui.tsx";
 
 /** The address's word for a campaign not saved yet. */
 const NEW_CAMPAIGN = "new";
 
 type Filter = "all" | CampaignStatus;
-const STATUSES: CampaignStatus[] = ["draft", "live", "paused", "ended"];
+const STATUSES: CampaignStatus[] = ["live", "draft", "paused", "ended"];
 
 const CAMPAIGNS_PAUSED: PausedTexts = {
   banner: "campaignsPausedBanner",
@@ -36,144 +47,184 @@ const CAMPAIGNS_PAUSED: PausedTexts = {
   resume: "campaignsResumeAll",
 };
 
-function CampaignRow({ campaign, onOpen }: { campaign: Campaign; onOpen(): void }) {
-  const { definition, totals } = campaign;
+/** "Hours between campaign messages", for every campaign together. A member reads it. */
+function GapDialog({
+  gapHours,
+  canEdit,
+  onSave,
+  onClose,
+}: {
+  gapHours: number;
+  canEdit: boolean;
+  onSave(gapHours: number): Promise<TextId | null>;
+  onClose(): void;
+}) {
+  const [typed, setTyped] = useState(String(gapHours));
+  const [failure, setFailure] = useState<TextId | null>(null);
   return (
-    <tr>
-      <td>
-        <button type="button" className="who-cell contact-open" onClick={onOpen}>
-          <span className="who-lines">
-            <b>{definition.name}</b>
-          </span>
-        </button>
-      </td>
-      <td>
-        <StatusChip status={campaign.status} />
-      </td>
-      <td className="wide-cell">{triggerWords(definition.trigger)}</td>
-      <td className="number-cell">{totals.sent}</td>
-      <td className="number-cell">{totals.read}</td>
-      <td className="number-cell">{totals.replied}</td>
-      <td className="number-cell wide-cell">
-        {definition.rules.goal === undefined ? (
-          <>
-            <span aria-hidden="true">—</span>
-            <span className="visually-hidden">{t("campaignNoGoal")}</span>
-          </>
-        ) : (
-          totals.goalReached
-        )}
-      </td>
-    </tr>
+    <FormDialog
+      title={t("campaignGap")}
+      help={t("campaignGapHelp")}
+      failure={failure}
+      submitLabel={t("save")}
+      submitDisabled={!canEdit}
+      onSubmit={(close) =>
+        void onSave(Number(typed)).then((refused) =>
+          refused === null ? close() : setFailure(refused),
+        )
+      }
+      onClose={onClose}
+    >
+      <Field
+        label={t("campaignGapField")}
+        type="number"
+        min={0}
+        max={CAMPAIGN_GAP_HOURS_MAX}
+        required
+        disabled={!canEdit}
+        value={typed}
+        onChange={setTyped}
+      />
+    </FormDialog>
   );
 }
 
-/** The rules for every campaign: the pause, and the fewest hours between two messages to one visitor. */
-function AllCampaignsRules({
-  settings,
-  canEdit,
-  onSave,
+/** The four campaigns to start from. Each saves a draft with a free key, and opens it. */
+function Templates({
+  api,
+  taken,
+  onOpen,
 }: {
-  settings: CampaignSettings;
-  canEdit: boolean;
-  onSave(change: Partial<CampaignSettings>, done: TextId): Promise<void>;
+  api: WorkspaceApi;
+  taken: ReadonlySet<string>;
+  onOpen(id: string): void;
 }) {
-  const [typed, setTyped] = useState(String(settings.gapHours));
-  const [busy, setBusy] = useState(false);
-  const save = async (event: FormEvent) => {
-    event.preventDefault();
+  const [isBusy, setBusy] = useState(false);
+  const [failure, setFailure] = useState<TextId | null>(null);
+  const start = async (template: (typeof TEMPLATES)[number]) => {
     setBusy(true);
-    await onSave({ gapHours: Number(typed) }, "saved");
-    setBusy(false);
+    setFailure(null);
+    try {
+      const definition = template.definition();
+      const { campaign } = await api.createCampaign({
+        ...definition,
+        key: freeKey(definition.key, taken),
+      });
+      onOpen(campaign.id);
+    } catch (error) {
+      setFailure(failureText(error, {}, "actionFailed"));
+      setBusy(false);
+    }
   };
   return (
-    <section className="widget-section" aria-label={t("campaignsRules")}>
-      <h3>{t("campaignsRules")}</h3>
-      <form className="setting-rows" onSubmit={(event) => void save(event)}>
-        {canEdit && (
-          <SettingRow label={t("campaignsPauseAll")} hint={t("campaignsPauseAllHelp")}>
-            {() => (
-              <button
-                type="button"
-                className="pill"
-                onClick={() =>
-                  void onSave(
-                    { paused: !settings.paused },
-                    settings.paused ? "campaignsResumedToast" : "campaignsPausedToast",
-                  )
-                }
-              >
-                <Icon name={settings.paused ? "play" : "pause"} size={18} />
-                {t(settings.paused ? "campaignsResumeAll" : "campaignsPauseAll")}
-              </button>
-            )}
-          </SettingRow>
-        )}
-        <SettingRow label={t("campaignGap")} hint={t("campaignGapHelp")}>
-          {(hintId) => (
-            <div className="inline-field">
-              <input
-                aria-label={t("campaignGap")}
-                aria-describedby={hintId}
-                type="number"
-                min={0}
-                max={CAMPAIGN_GAP_HOURS_MAX}
-                required
-                disabled={!canEdit}
-                value={typed}
-                onChange={(event) => setTyped(event.target.value)}
-              />
-              {canEdit && (
-                <button
-                  type="submit"
-                  className="pill dark"
-                  disabled={busy || typed === String(settings.gapHours)}
-                >
-                  {t("save")}
-                </button>
-              )}
-            </div>
-          )}
-        </SettingRow>
-      </form>
+    <section className="campaign-templates" aria-labelledby="campaign-templates">
+      <h3 id="campaign-templates">{t("templatesTitle")}</h3>
+      <p className="hint">{t("templatesHelp")}</p>
+      <ErrorNote text={failure} />
+      <div className="template-cards">
+        {TEMPLATES.map((template) => (
+          <button
+            key={template.title}
+            type="button"
+            className="template-card"
+            disabled={isBusy}
+            onClick={() => void start(template)}
+          >
+            <Tile icon={template.icon} tint={template.tint} />
+            <b>{t(template.title)}</b>
+            <small>{t(template.text)}</small>
+          </button>
+        ))}
+      </div>
     </section>
   );
 }
 
-function CampaignTable({ campaigns, onOpen }: { campaigns: Campaign[]; onOpen(id: string): void }) {
+/** The header's buttons: Pause all, the rules for every campaign in a menu, and New campaign. */
+function ListActions({
+  settings,
+  canEdit,
+  onPause,
+  onGap,
+  onNew,
+}: {
+  settings: CampaignSettings | null;
+  canEdit: boolean;
+  onPause(paused: boolean): void;
+  onGap(): void;
+  onNew(): void;
+}) {
   return (
-    <table className="members contacts">
-      <thead>
-        <tr>
-          <th scope="col">{t("colName")}</th>
-          <th scope="col">{t("colStatus")}</th>
-          <th scope="col" className="wide-cell">
-            {t("campaignTrigger")}
-          </th>
-          <th scope="col" className="number-cell">
-            {t("resultSent")}
-          </th>
-          <th scope="col" className="number-cell">
-            {t("resultRead")}
-          </th>
-          <th scope="col" className="number-cell">
-            {t("resultReplied")}
-          </th>
-          <th scope="col" className="number-cell wide-cell">
-            {t("resultGoal")}
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        {campaigns.map((campaign) => (
-          <CampaignRow key={campaign.id} campaign={campaign} onOpen={() => onOpen(campaign.id)} />
-        ))}
-      </tbody>
-    </table>
+    <>
+      {canEdit && settings !== null && (
+        <button type="button" className="pill" onClick={() => onPause(!settings.paused)}>
+          <Icon name={settings.paused ? "play" : "pause"} size={16} />
+          {t(settings.paused ? "campaignsResumeAll" : "campaignsPauseAll")}
+        </button>
+      )}
+      {settings !== null && (
+        <Menu
+          label={t("moreActions")}
+          buttonClass="round"
+          items={[
+            { label: t("campaignGap"), lead: <Icon name="clock" size={18} />, onSelect: onGap },
+          ]}
+        >
+          <Icon name="dots" />
+        </Menu>
+      )}
+      {canEdit && (
+        <button type="button" className="pill dark" onClick={onNew}>
+          <Icon name="plusBold" size={14} />
+          {t("campaignNew")}
+        </button>
+      )}
+    </>
   );
 }
 
-/** Every campaign, by status, with Pause all and the gap between two messages. */
+/** "1 live · 214 sent in the last 7 days", or what campaigns are before there is one. */
+function listContext(campaigns: Campaign[] | null, sentLastWeek: number): string {
+  if (campaigns === null || campaigns.length === 0) return t("campaignsContext");
+  const live = campaigns.filter((one) => one.status === "live").length;
+  return t("campaignsSummary", { live, sent: sentLastWeek.toLocaleString() });
+}
+
+/** The campaigns by status, one row each. */
+function CampaignRows({ campaigns, onOpen }: { campaigns: Campaign[]; onOpen(id: string): void }) {
+  const [filter, setFilter] = useState<Filter>("all");
+  const filters: Option<Filter>[] = [
+    { value: "all", label: "campaignsAll", count: campaigns.length },
+    ...STATUSES.map((status) => ({
+      value: status,
+      label: STATUS_TEXT[status],
+      count: campaigns.filter((one) => one.status === status).length,
+    })),
+  ];
+  const shown = campaigns.filter((one) => filter === "all" || one.status === filter);
+  return (
+    <>
+      <Choices<Filter>
+        label={t("campaignsFilter")}
+        variant="pills"
+        value={filter}
+        options={filters}
+        onChange={setFilter}
+      />
+      {shown.length === 0 ? (
+        <p className="quiet">{t("campaignsNoneHere")}</p>
+      ) : (
+        <ul className="campaign-rows">
+          {shown.map((campaign) => (
+            <CampaignRow key={campaign.id} campaign={campaign} onOpen={() => onOpen(campaign.id)} />
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}
+
+/** Every campaign, by status, with Pause all, the gap between two messages, and the templates. */
 function CampaignList({
   api,
   canEdit,
@@ -189,46 +240,46 @@ function CampaignList({
   const list = useLoad(() => api.campaigns(), [api, version]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: version asks for a load.
   const loadedSettings = useLoad(() => api.campaignSettings(), [api, version]);
-  const [filter, setFilter] = useState<Filter>("all");
   const [failure, setFailure] = useState<TextId | null>(null);
+  const [isGapOpen, setGapOpen] = useState(false);
   const settings = loadedSettings.data;
   const campaigns = list.data?.campaigns ?? null;
+  /** Saves a change of the settings, and answers why it failed, or null. */
   const saveSettings = async (change: Partial<CampaignSettings>, done: TextId) => {
-    if (settings === null) return;
-    setFailure(null);
+    if (settings === null) return null;
     try {
       loadedSettings.setData(await api.setCampaignSettings({ ...settings, ...change }));
       toast(done);
+      return null;
     } catch (error) {
-      setFailure(failureText(error, {}, "actionFailed"));
+      return failureText(error, {}, "actionFailed");
     }
   };
-  const filters: Option<Filter>[] = [
-    { value: "all", label: "campaignsAll", count: campaigns?.length ?? 0 },
-    ...STATUSES.map((status) => ({
-      value: status,
-      label: STATUS_TEXT[status],
-      count: campaigns?.filter((one) => one.status === status).length ?? 0,
-    })),
-  ];
-  const shown = campaigns?.filter((one) => filter === "all" || one.status === filter) ?? [];
-  const newButton = (
-    <button type="button" className="pill dark" onClick={() => onOpen(NEW_CAMPAIGN)}>
-      <Icon name="plusBold" size={14} />
-      {t("campaignNew")}
-    </button>
-  );
+  const pause = async (paused: boolean) =>
+    setFailure(
+      await saveSettings({ paused }, paused ? "campaignsPausedToast" : "campaignsResumedToast"),
+    );
   return (
-    <Page title={t("campaigns")} context={t("campaignsContext")} actions={canEdit && newButton}>
+    <Page
+      title={t("campaigns")}
+      context={listContext(campaigns, list.data?.sentLastWeek ?? 0)}
+      actions={
+        <ListActions
+          settings={settings}
+          canEdit={canEdit}
+          onPause={(paused) => void pause(paused)}
+          onGap={() => setGapOpen(true)}
+          onNew={() => onOpen(NEW_CAMPAIGN)}
+        />
+      }
+    >
       <div className="campaign-list">
         {settings?.paused === true && (
           <PausedBanner
             texts={CAMPAIGNS_PAUSED}
             pausedBy={settings.pausedBy}
             pausedAt={settings.pausedAt}
-            onResume={
-              canEdit ? () => void saveSettings({ paused: false }, "campaignsResumedToast") : null
-            }
+            onResume={canEdit ? () => void pause(false) : null}
           />
         )}
         <ErrorNote text={failure} />
@@ -237,32 +288,28 @@ function CampaignList({
             <TableSkeleton />
           </Loading>
         ) : campaigns.length === 0 ? (
-          <div className="nothing empty-boat">
-            <EmptyArt scene="day" />
-            <b>{t("campaignsEmpty")}</b>
-            {t("campaignsEmptyHint")}
-            {canEdit && newButton}
-          </div>
+          <p className="campaign-empty">
+            <b>{t("campaignsEmpty")}</b> {t("campaignsEmptyHint")}
+          </p>
         ) : (
-          <>
-            <Choices<Filter>
-              label={t("campaignsFilter")}
-              variant="tabs"
-              value={filter}
-              options={filters}
-              onChange={setFilter}
-            />
-            {shown.length === 0 ? (
-              <p className="quiet">{t("campaignsNoneHere")}</p>
-            ) : (
-              <CampaignTable campaigns={shown} onOpen={onOpen} />
-            )}
-          </>
+          <CampaignRows campaigns={campaigns} onOpen={onOpen} />
         )}
-        {settings !== null && (
-          <AllCampaignsRules settings={settings} canEdit={canEdit} onSave={saveSettings} />
+        {campaigns !== null && canEdit && (
+          <Templates
+            api={api}
+            taken={new Set(campaigns.map((one) => one.definition.key))}
+            onOpen={onOpen}
+          />
         )}
       </div>
+      {isGapOpen && settings !== null && (
+        <GapDialog
+          gapHours={settings.gapHours}
+          canEdit={canEdit}
+          onSave={(gapHours) => saveSettings({ gapHours }, "saved")}
+          onClose={() => setGapOpen(false)}
+        />
+      )}
     </Page>
   );
 }

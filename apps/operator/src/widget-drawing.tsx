@@ -46,9 +46,17 @@ export function WidgetDrawing({ locale, ...props }: PreviewProps & { locale: Loc
 
 /**
  * The preview's box, which stays in view beside a form. On a phone it sits above the form, and
- * folds away. `controls` sit over the drawing, such as the visitor's device.
+ * folds away. `controls` sit over the drawing, such as the visitor's device, and `note` under it.
  */
-export function PreviewFrame({ controls, children }: { controls: ReactNode; children: ReactNode }) {
+export function PreviewFrame({
+  controls,
+  note,
+  children,
+}: {
+  controls: ReactNode;
+  note?: ReactNode;
+  children: ReactNode;
+}) {
   const [folded, setFolded] = useState(false);
   return (
     <section className="widget-preview" aria-label={t("previewTitle")} data-folded={folded}>
@@ -65,6 +73,7 @@ export function PreviewFrame({ controls, children }: { controls: ReactNode; chil
       <div className="preview-body">
         {controls}
         <div className="preview-stage">{children}</div>
+        {note}
       </div>
     </section>
   );

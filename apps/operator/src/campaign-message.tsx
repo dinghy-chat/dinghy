@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { useEffect, useId, useRef } from "react";
+import { type ReactNode, useEffect, useId, useRef, useState } from "react";
 import { insertEmoji } from "../../../packages/widget/src/emoji.ts";
 import {
   BUTTONS_MAX,
@@ -16,7 +16,7 @@ import {
 import type { CampaignDefinition, CampaignTrigger, Member } from "./api.ts";
 import { keyFromName, withPart } from "./campaign-draft.ts";
 import { Icon } from "./icons.tsx";
-import { Select } from "./popup.tsx";
+import { Menu, Select } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 import { Choices, Switch } from "./ui.tsx";
 
@@ -41,12 +41,27 @@ export function messageIn(message: CampaignMessage, language: Language) {
   };
 }
 
-/** The variables the text can read, for the campaign's trigger, with an example of each kind. */
-function variablesFor(trigger: CampaignTrigger["type"]): string[] {
+/** The variables one click puts in the text. "Other field" offers the rest. */
+const QUICK_VARIABLES: { name: string; label: TextId }[] = [
+  { name: "firstName", label: "campaignVariableFirstName" },
+  { name: "attributes.plan", label: "campaignVariablePlan" },
+];
+
+/** The other variables the text can read, for the campaign's trigger, with an example of each kind. */
+function otherVariables(trigger: CampaignTrigger["type"]): string[] {
   const extra =
     trigger === "api" ? ["data.plan"] : trigger === "event" ? ["event.properties.rows"] : [];
-  return [...CONTACT_VARIABLES, "attributes.plan", ...extra];
+  return [...CONTACT_VARIABLES.filter((name) => name !== "firstName"), ...extra];
 }
+
+const VARIABLE = /(\{\{[^}]*\}\})/;
+
+/** The text with each variable marked, drawn under the transparent box at the same place. */
+const marked = (body: string) =>
+  body.split(VARIABLE).map((part, index) =>
+    // biome-ignore lint/suspicious/noArrayIndexKey: the parts of one text, in order.
+    index % 2 === 1 ? <mark key={index}>{part}</mark> : part,
+  );
 
 /** A problem with a variable of the text, in words. */
 function problemText(problem: TemplateProblem): string {
@@ -64,15 +79,20 @@ function problemText(problem: TemplateProblem): string {
   }
 }
 
-/** The text, with the variables it may read as chips that go in at the caret. */
+/**
+ * The text, with its variables marked, then `children` (its buttons), then the variables that go
+ * in at the caret. A variable that does not read is named under the box.
+ */
 function BodyField({
   body,
   trigger,
   onChange,
+  children,
 }: {
   body: string;
   trigger: CampaignTrigger["type"];
   onChange(body: string): void;
+  children: ReactNode;
 }) {
   const box = useRef<HTMLTextAreaElement>(null);
   const id = useId();
@@ -81,22 +101,58 @@ function BodyField({
   const firstProblem = problems[0] ?? "";
   // The form refuses to save while a variable does not read, as the server would.
   useEffect(() => box.current?.setCustomValidity(firstProblem), [firstProblem]);
+  // It puts any text at the caret, as it does an emoji.
+  const insert = (name: string) => {
+    if (box.current !== null) onChange(insertEmoji(box.current, `{{ ${name} }}`));
+  };
   return (
-    <div className="field">
-      <label htmlFor={id}>
-        <span>{t("campaignBody")}</span>
+    <>
+      <label htmlFor={id} className="visually-hidden">
+        {t("campaignBody")}
       </label>
-      <textarea
-        ref={box}
-        id={id}
-        rows={4}
-        required
-        maxLength={MESSAGE_MAX}
-        value={body}
-        aria-invalid={problems.length > 0}
-        aria-describedby={problems.length > 0 ? problemsId : undefined}
-        onChange={(event) => onChange(event.target.value)}
-      />
+      <div className="composer-text">
+        <div className="composer-marks" aria-hidden="true">
+          {marked(body)}{" "}
+        </div>
+        <textarea
+          ref={box}
+          id={id}
+          rows={3}
+          required
+          maxLength={MESSAGE_MAX}
+          placeholder={t("campaignBodyPlaceholder")}
+          value={body}
+          aria-invalid={problems.length > 0}
+          aria-describedby={problems.length > 0 ? problemsId : undefined}
+          onChange={(event) => onChange(event.target.value)}
+        />
+      </div>
+      {children}
+      <div className="composer-tools">
+        {QUICK_VARIABLES.map((variable) => (
+          <button
+            key={variable.name}
+            type="button"
+            className="add-chip"
+            onClick={() => insert(variable.name)}
+          >
+            <Icon name="plus" size={12} />
+            {t(variable.label)}
+          </button>
+        ))}
+        <Menu
+          label={t("campaignVariableOther")}
+          buttonClass="add-chip"
+          side="start"
+          items={otherVariables(trigger).map((name) => ({
+            label: name,
+            onSelect: () => insert(name),
+          }))}
+        >
+          <Icon name="plus" size={12} />
+          {t("campaignVariableOther")}
+        </Menu>
+      </div>
       {problems.length > 0 && (
         <ul id={problemsId} className="field-problems">
           {problems.map((problem) => (
@@ -104,24 +160,7 @@ function BodyField({
           ))}
         </ul>
       )}
-      <div className="variable-chips">
-        <span className="hint">{t("campaignVariables")}</span>
-        {variablesFor(trigger).map((name) => (
-          <button
-            key={name}
-            type="button"
-            className="chip"
-            onClick={() => {
-              // It puts any text at the caret, as it does an emoji.
-              if (box.current !== null) onChange(insertEmoji(box.current, `{{ ${name} }}`));
-            }}
-          >
-            {name}
-          </button>
-        ))}
-      </div>
-      <small className="hint">{t("campaignVariablesHelp")}</small>
-    </div>
+    </>
   );
 }
 
@@ -158,7 +197,7 @@ function ButtonRow({
       buttonOf(next.kind ?? kind, next.label ?? button.label, next.value ?? value, next.url ?? url),
     );
   return (
-    <li className="button-row">
+    <div className="button-row">
       <input
         aria-label={t("buttonLabel")}
         placeholder={t("buttonLabel")}
@@ -206,11 +245,14 @@ function ButtonRow({
       >
         <Icon name="close" size={16} />
       </button>
-    </li>
+    </div>
   );
 }
 
-/** Up to four buttons, each with a value, so results count clicks in every language. */
+/**
+ * Up to four buttons as the visitor sees them, each with a value, so results count clicks in every
+ * language. A click on one opens its fields under the row.
+ */
 function ButtonsField({
   buttons,
   onChange,
@@ -218,36 +260,50 @@ function ButtonsField({
   buttons: Button[];
   onChange(buttons: Button[] | undefined): void;
 }) {
+  const [editing, setEditing] = useState<number | null>(null);
   const set = (next: Button[]) => onChange(next.length === 0 ? undefined : next);
+  const shown = editing === null ? undefined : buttons[editing];
   return (
-    <div className="field">
-      <span>{t("campaignButtons")}</span>
-      {buttons.length > 0 && (
-        <ul className="button-rows">
-          {buttons.map((button, index) => (
-            <ButtonRow
-              // biome-ignore lint/suspicious/noArrayIndexKey: a button has no ID, and its place is its name.
-              key={index}
-              button={button}
-              onChange={(next) =>
-                set(
-                  buttons.flatMap((one, at) =>
-                    at !== index ? [one] : next === null ? [] : [next],
-                  ),
-                )
-              }
-            />
-          ))}
-        </ul>
-      )}
-      {buttons.length < BUTTONS_MAX && (
-        <button
-          type="button"
-          className="text-button"
-          onClick={() => set([...buttons, { label: "", value: "" }])}
-        >
-          {t("buttonAdd")}
-        </button>
+    <div className="composer-buttons">
+      <fieldset className="composer-row">
+        <legend className="visually-hidden">{t("campaignButtons")}</legend>
+        {buttons.map((button, index) => (
+          <button
+            // biome-ignore lint/suspicious/noArrayIndexKey: a button has no ID, and its place is its name.
+            key={index}
+            type="button"
+            className="answer-pill"
+            aria-expanded={editing === index}
+            aria-label={t("buttonEdit", { label: button.label || t("buttonLabel") })}
+            onClick={() => setEditing(editing === index ? null : index)}
+          >
+            {button.label || t("buttonLabel")}
+          </button>
+        ))}
+        {buttons.length < BUTTONS_MAX && (
+          <button
+            type="button"
+            className="add-chip"
+            onClick={() => {
+              set([...buttons, { label: "", value: "" }]);
+              setEditing(buttons.length);
+            }}
+          >
+            <Icon name="plus" size={12} />
+            {t("buttonAdd")}
+          </button>
+        )}
+      </fieldset>
+      {editing !== null && shown !== undefined && (
+        <ButtonRow
+          button={shown}
+          onChange={(next) => {
+            set(
+              buttons.flatMap((one, at) => (at !== editing ? [one] : next === null ? [] : [next])),
+            );
+            if (next === null) setEditing(null);
+          }}
+        />
       )}
     </div>
   );
@@ -275,8 +331,8 @@ function SenderField({
           ? sender.operatorId
           : (members.find((one) => one.email === sender.email)?.id ?? sender.email);
   return (
-    <div className="field">
-      <span>{t("campaignSender")}</span>
+    <div className="composer-from">
+      <span aria-hidden="true">{t("campaignSender")}</span>
       <Select
         label={t("campaignSender")}
         value={value}
@@ -303,47 +359,39 @@ function SenderField({
   );
 }
 
-/** The languages the message has, as tabs, with a way to add the others. */
+/** The languages a message lacks, which "Translation" offers. */
+export const missingLocales = (message: CampaignMessage) =>
+  LOCALES.filter((one) => message.translations?.[one] === undefined);
+
+/** The message with a translation in `locale`, which starts as its own text. */
+export const withTranslation = (message: CampaignMessage, locale: Locale): CampaignMessage => {
+  const translation: Translation = { body: message.body };
+  return { ...message, translations: { ...message.translations, [locale]: translation } };
+};
+
+/** The languages the message has, as a small segmented control, once it has a translation. */
 function LanguageTabs({
   message,
   language,
   onLanguage,
-  onChange,
 }: {
   message: CampaignMessage;
   language: Language;
   onLanguage(language: Language): void;
-  onChange(message: CampaignMessage): void;
 }) {
   const translated = LOCALES.filter((one) => message.translations?.[one] !== undefined);
-  const missing = LOCALES.filter((one) => !translated.includes(one));
+  if (translated.length === 0) return null;
   return (
-    <div className="language-tabs">
-      <Choices<Language>
-        label={t("campaignLanguages")}
-        variant="tabs"
-        value={language}
-        options={[
-          { value: "default", label: "campaignDefaultLanguage" },
-          ...translated.map((one) => ({ value: one, label: LOCALE_TEXT[one] })),
-        ]}
-        onChange={onLanguage}
-      />
-      {missing.map((one) => (
-        <button
-          key={one}
-          type="button"
-          className="text-button"
-          onClick={() => {
-            const translation: Translation = { body: message.body };
-            onChange({ ...message, translations: { ...message.translations, [one]: translation } });
-            onLanguage(one);
-          }}
-        >
-          {t("campaignAddLanguage", { language: t(LOCALE_TEXT[one]) })}
-        </button>
-      ))}
-    </div>
+    <Choices<Language>
+      label={t("campaignLanguages")}
+      variant="outlined"
+      value={language}
+      options={[
+        { value: "default", label: "campaignDefaultLanguage" },
+        ...translated.map((one) => ({ value: one, label: LOCALE_TEXT[one] })),
+      ]}
+      onChange={onLanguage}
+    />
   );
 }
 
@@ -379,36 +427,39 @@ function TranslationFields({
         body={translation.body}
         trigger={trigger}
         onChange={(body) => set({ ...translation, body })}
-      />
-      <Switch
-        label={t("translationButtons")}
-        hint={t("translationButtonsHelp")}
-        checked={translation.buttons !== undefined}
-        onChange={(own) =>
-          set(withPart(translation, "buttons", own ? (message.buttons ?? []) : undefined))
-        }
-      />
-      {translation.buttons !== undefined && (
-        <ButtonsField
-          buttons={translation.buttons}
-          onChange={(buttons) => set(withPart(translation, "buttons", buttons ?? []))}
-        />
-      )}
-      <button
-        type="button"
-        className="text-button"
-        onClick={() => {
-          set(undefined);
-          onRemoved();
-        }}
       >
-        {t("campaignRemoveLanguage", { language: t(LOCALE_TEXT[locale]) })}
-      </button>
+        {translation.buttons !== undefined && (
+          <ButtonsField
+            buttons={translation.buttons}
+            onChange={(buttons) => set(withPart(translation, "buttons", buttons ?? []))}
+          />
+        )}
+      </BodyField>
+      <div className="composer-foot">
+        <Switch
+          label={t("translationButtons")}
+          hint={t("translationButtonsHelp")}
+          checked={translation.buttons !== undefined}
+          onChange={(own) =>
+            set(withPart(translation, "buttons", own ? (message.buttons ?? []) : undefined))
+          }
+        />
+        <button
+          type="button"
+          className="text-button"
+          onClick={() => {
+            set(undefined);
+            onRemoved();
+          }}
+        >
+          {t("campaignRemoveLanguage", { language: t(LOCALE_TEXT[locale]) })}
+        </button>
+      </div>
     </>
   );
 }
 
-/** Who sends the message, its text with variables, its buttons and its translations. */
+/** The composer: who sends the message, its text with variables, its buttons and its languages. */
 export function MessageFields({
   message,
   trigger,
@@ -428,30 +479,26 @@ export function MessageFields({
   // A variant may lack the language that the campaign's own message has.
   const shown = language !== "default" && message.translations?.[language] ? language : "default";
   return (
-    <div className="message-fields">
-      <SenderField
-        sender={message.sender}
-        members={members}
-        onChange={(sender) => onChange(withPart(message, "sender", sender))}
-      />
-      <LanguageTabs
-        message={message}
-        language={shown}
-        onLanguage={onLanguage}
-        onChange={onChange}
-      />
+    <div className="composer">
+      <div className="composer-head">
+        <SenderField
+          sender={message.sender}
+          members={members}
+          onChange={(sender) => onChange(withPart(message, "sender", sender))}
+        />
+        <LanguageTabs message={message} language={shown} onLanguage={onLanguage} />
+      </div>
       {shown === "default" ? (
-        <>
-          <BodyField
-            body={message.body}
-            trigger={trigger}
-            onChange={(body) => onChange({ ...message, body })}
-          />
+        <BodyField
+          body={message.body}
+          trigger={trigger}
+          onChange={(body) => onChange({ ...message, body })}
+        >
           <ButtonsField
             buttons={message.buttons ?? []}
             onChange={(buttons) => onChange(withPart(message, "buttons", buttons))}
           />
-        </>
+        </BodyField>
       ) : (
         <TranslationFields
           locale={shown}

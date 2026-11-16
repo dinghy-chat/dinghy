@@ -19,52 +19,10 @@ import {
   takesList,
   takesValue,
 } from "./campaign-conditions.ts";
+import { FIELD_TEXT, opText } from "./campaign-summary.ts";
 import { Icon } from "./icons.tsx";
 import { Select } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
-
-const FIELD_TEXT: Record<FieldChoice, TextId> = {
-  name: "conditionFieldName",
-  firstName: "conditionFieldFirstName",
-  email: "email",
-  userId: "conditionFieldUserId",
-  language: "conditionFieldLanguage",
-  country: "colCountry",
-  timeZone: "conditionFieldTimeZone",
-  signedIn: "conditionFieldSignedIn",
-  hasChatted: "conditionFieldHasChatted",
-  optedOut: "conditionFieldOptedOut",
-  conversationCount: "colConversations",
-  firstSeenAt: "sortFirstSeen",
-  lastSeenAt: "sortLastSeen",
-  attribute: "conditionFieldAttribute",
-  eventCount: "conditionFieldEventCount",
-  eventLastAt: "conditionFieldEventLastAt",
-  repliedToCampaign: "conditionFieldReplied",
-};
-
-const OP_TEXT: Record<Op, TextId> = {
-  eq: "conditionIs",
-  ne: "conditionIsNot",
-  in: "conditionIn",
-  not_in: "conditionNotIn",
-  exists: "conditionExists",
-  missing: "conditionMissing",
-  gt: "conditionGt",
-  gte: "conditionGte",
-  lt: "conditionLt",
-  lte: "conditionLte",
-  contains: "conditionContains",
-  older_than: "conditionOlderThan",
-};
-
-/** A time compares as before and after, not as more and less. */
-const TIME_OP_TEXT: Partial<Record<Op, TextId>> = {
-  gt: "conditionAfter",
-  gte: "conditionAfter",
-  lt: "conditionBefore",
-  lte: "conditionBefore",
-};
 
 const MATCHES: { value: GroupMatch; label: TextId }[] = [
   { value: "all", label: "conditionMatchAll" },
@@ -72,13 +30,70 @@ const MATCHES: { value: GroupMatch; label: TextId }[] = [
   { value: "none", label: "conditionMatchNone" },
 ];
 
-const opText = (rule: RuleDraft, op: Op) =>
-  t((kindOf(rule.field) === "time" ? TIME_OP_TEXT[op] : undefined) ?? OP_TEXT[op]);
+/** The words of the button that adds a rule, by how the group joins its rules. */
+const ADD_TEXT: Record<GroupMatch, TextId> = {
+  all: "conditionAndRule",
+  any: "conditionOrRule",
+  none: "conditionAddRule",
+};
+
+/** A list's values as typed, each once. */
+const valuesOf = (text: string) => [
+  ...new Set(
+    text
+      .split(",")
+      .map((one) => one.trim())
+      .filter((one) => one !== ""),
+  ),
+];
+
+/** A list's values as tokens, each removed with its ×, and a box that adds one on Enter or a comma. */
+function ValueTokens({ text, onChange }: { text: string; onChange(text: string): void }) {
+  const [typed, setTyped] = useState("");
+  const values = valuesOf(text);
+  const add = () => {
+    if (typed.trim() !== "") onChange([...values, ...valuesOf(typed)].join(", "));
+    setTyped("");
+  };
+  return (
+    <>
+      {values.map((value) => (
+        <span key={value} className="value-token">
+          {value}
+          <button
+            type="button"
+            className="token-remove"
+            aria-label={t("conditionRemoveValue", { value })}
+            onClick={() => onChange(values.filter((one) => one !== value).join(", "))}
+          >
+            <Icon name="close" size={12} />
+          </button>
+        </span>
+      ))}
+      <input
+        className="value-add"
+        aria-label={t("conditionValue")}
+        placeholder={t("conditionAddValue")}
+        value={typed}
+        // A list with no value matches nobody, so the form asks for one.
+        required={values.length === 0}
+        onChange={(event) => setTyped(event.target.value)}
+        onBlur={add}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" && event.key !== ",") return;
+          event.preventDefault();
+          add();
+        }}
+      />
+    </>
+  );
+}
 
 /** The box for a rule's value, by its field's kind and its operator. */
 function ValueInput({ rule, onChange }: { rule: RuleDraft; onChange(text: string): void }) {
   const kind = kindOf(rule.field);
   const label = t("conditionValue");
+  if (takesList(rule.op)) return <ValueTokens text={rule.text} onChange={onChange} />;
   if (kind === "boolean") {
     return (
       <Select
@@ -92,18 +107,13 @@ function ValueInput({ rule, onChange }: { rule: RuleDraft; onChange(text: string
       />
     );
   }
-  const type = takesList(rule.op)
-    ? "text"
-    : kind === "number"
+  const type =
+    kind === "number"
       ? "number"
       : kind === "time" && rule.op !== "older_than"
         ? "datetime-local"
         : "text";
-  const placeholder = takesList(rule.op)
-    ? t("conditionListPlaceholder")
-    : rule.op === "older_than"
-      ? t("durationPlaceholder")
-      : undefined;
+  const placeholder = rule.op === "older_than" ? t("durationPlaceholder") : undefined;
   return (
     <input
       aria-label={label}
@@ -151,14 +161,19 @@ function RuleRow({
       <Select<Op>
         label={t("conditionOp")}
         value={rule.op}
-        choices={opsFor(rule).map((op) => ({ value: op, label: opText(rule, op) }))}
+        choices={opsFor(rule).map((op) => ({ value: op, label: opText(rule.field, op) }))}
         onChange={(op) => onChange({ ...rule, op })}
       />
       {takesValue(rule.op) && (
         <ValueInput rule={rule} onChange={(text) => onChange({ ...rule, text })} />
       )}
-      <button type="button" className="round" aria-label={t("conditionRemove")} onClick={onRemove}>
-        <Icon name="close" size={16} />
+      <button
+        type="button"
+        className="condition-remove"
+        aria-label={t("conditionRemove")}
+        onClick={onRemove}
+      >
+        <Icon name="close" size={14} />
       </button>
     </li>
   );
@@ -235,15 +250,18 @@ function GroupBox({
       </ul>
       <div className="condition-adds">
         <button type="button" className="text-button" onClick={() => add(newRule())}>
-          {t("conditionAddRule")}
+          <Icon name="plus" size={14} />
+          {t(group.items.length === 0 ? "conditionAddRule" : ADD_TEXT[group.match])}
         </button>
         {!nested && (
           <button type="button" className="text-button" onClick={() => add(newGroup([newRule()]))}>
+            <Icon name="plus" size={14} />
             {t("conditionAddGroup")}
           </button>
         )}
         {quickRule !== null && (
           <button type="button" className="text-button" onClick={() => add(newRule(quickRule))}>
+            <Icon name="plus" size={14} />
             {t("conditionAddQuick", { field: t(FIELD_TEXT[quickRule]) })}
           </button>
         )}
