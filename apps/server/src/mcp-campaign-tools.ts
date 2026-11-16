@@ -1,6 +1,7 @@
 import { z } from "@hono/zod-openapi";
 import {
   CAMPAIGN_REFUSALS,
+  CAMPAIGN_SEND_REFUSALS,
   CampaignDefinitionSchema,
   CampaignKey,
   CampaignListQuery,
@@ -9,9 +10,8 @@ import {
   ResultsQuery,
 } from "./campaign-schemas.ts";
 import type { CampaignRef, Campaigns } from "./campaigns.ts";
-import { failure, NOT_FOUND } from "./errors.ts";
+import { failure, NOT_FOUND, zodFailure } from "./errors.ts";
 import { type Outcome, type Tool, tool } from "./mcp.ts";
-import { SEND_REFUSALS } from "./outbound-schemas.ts";
 import { type Tracking, TrackSchema } from "./track.ts";
 
 // Campaigns through MCP: every key reads them, sends them and tracks events, and a Setup key also
@@ -25,19 +25,16 @@ const Ref = z.object({
 const ONE_REF = failure("invalid_request", "Pass exactly one of id and key.");
 
 /** The campaign a tool's input names, or null when it names none or both. */
-const refOf = ({ id, key }: z.infer<typeof Ref>): CampaignRef | null =>
+const refFromInput = ({ id, key }: z.infer<typeof Ref>): CampaignRef | null =>
   id !== undefined && key === undefined
     ? { id }
     : key !== undefined && id === undefined
       ? { key }
       : null;
 
-const refused = (refusal: CampaignRefusal | z.ZodError): Outcome =>
-  refusal instanceof z.ZodError
-    ? {
-        error: failure("invalid_request", refusal.issues.map((issue) => issue.message).join(". ")),
-      }
-    : { error: CAMPAIGN_REFUSALS[refusal].body };
+const refused = (refusal: CampaignRefusal | z.ZodError): Outcome => ({
+  error: refusal instanceof z.ZodError ? zodFailure(refusal) : CAMPAIGN_REFUSALS[refusal].body,
+});
 
 /** A tool on one campaign, by ID or key. */
 function onCampaign<S extends z.ZodObject>(
@@ -49,7 +46,7 @@ function onCampaign<S extends z.ZodObject>(
     ...spec,
     input: spec.input,
     run(input, { workspaceId }) {
-      const ref = refOf(input as z.infer<typeof Ref>);
+      const ref = refFromInput(input as z.infer<typeof Ref>);
       return ref === null ? Promise.resolve({ error: ONE_REF }) : spec.run(ref, input, workspaceId);
     },
   });
@@ -112,8 +109,7 @@ export function campaignTools({
       idempotent: true,
       async run(ref, { clientId, visitor, data }, workspaceId) {
         const outcome = await campaigns.send(workspaceId, ref, { clientId, visitor, data });
-        if (outcome === "not_live") return refused(outcome);
-        if (typeof outcome === "string") return { error: SEND_REFUSALS[outcome].body };
+        if (typeof outcome === "string") return { error: CAMPAIGN_SEND_REFUSALS[outcome].body };
         return { data: { outboundMessage: outcome.outboundMessage } };
       },
     }),

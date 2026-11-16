@@ -12,6 +12,7 @@ import {
   type TemplateProblem,
   templateProblems,
 } from "../../../packages/widget/src/template.ts";
+import { CAMPAIGN_COUNTS, type CampaignCount, messagesOf } from "./campaign-parts.ts";
 import {
   ConditionSchema as AudienceCondition,
   CampaignConditionSchema as CampaignCondition,
@@ -193,26 +194,6 @@ function problemText(problem: TemplateProblem): string {
 }
 
 type Definition = z.infer<typeof DefinitionShape>;
-type Variant = NonNullable<Definition["variants"]>[number];
-type Goal = NonNullable<Definition["rules"]["goal"]>;
-
-/** A variant's own message, or undefined for one that uses the campaign's or gets none. */
-export const variantMessage = (variant: Variant | null) =>
-  variant !== null && "message" in variant ? variant.message : undefined;
-
-/** Every message of the campaign: its own, then each variant's own. */
-export const messagesOf = (definition: Pick<Definition, "message" | "variants">) => [
-  definition.message,
-  ...(definition.variants ?? []).flatMap((one) => variantMessage(one) ?? []),
-];
-
-/** Whether the campaign's messages may go by email: always, or once unread for a time. */
-export const sendsEmail = (delivery: Definition["delivery"]) =>
-  delivery.sendEmail || delivery.emailIfUnread !== undefined;
-
-/** A goal's condition, without the time it has. */
-export const goalCondition = ({ within: _, ...condition }: Goal) => condition;
-
 /** Why the parts of a definition do not fit together, one line each. */
 function definitionProblems(definition: Definition): string[] {
   const { trigger, presentation, variants = [] } = definition;
@@ -299,19 +280,11 @@ export const CampaignPatchSchema = DefinitionShape.extend({
   .partial()
   .openapi("CampaignPatch");
 
-const Counts = {
-  entered: z.number().int(),
-  sent: z.number().int(),
-  delivered: z.number().int(),
-  read: z.number().int(),
-  replied: z.number().int(),
-  dismissed: z.number().int(),
-  goalReached: z.number().int(),
-  conversationsStarted: z.number().int(),
-};
-
 const ResultCountsSchema = z.object({
-  ...Counts,
+  ...(Object.fromEntries(CAMPAIGN_COUNTS.map((count) => [count, z.number().int()])) as Record<
+    CampaignCount,
+    z.ZodNumber
+  >),
   clicks: z.record(z.string(), z.number().int()),
 });
 
@@ -414,3 +387,6 @@ export const CAMPAIGN_REFUSALS = {
   unknown_member: SEND_REFUSALS.unknown_member,
 } as const;
 export type CampaignRefusal = keyof typeof CAMPAIGN_REFUSALS;
+
+/** Why a send of a campaign did not happen: the send's own refusals, or a campaign not live. */
+export const CAMPAIGN_SEND_REFUSALS = { ...SEND_REFUSALS, not_live: CAMPAIGN_REFUSALS.not_live };

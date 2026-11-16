@@ -2,8 +2,9 @@ import { and, eq, sql } from "drizzle-orm";
 import type { Locale } from "../../../packages/widget/src/shared.ts";
 import { type CampaignRow, campaignRows } from "./campaign-checks.ts";
 import { composeMessage, enterCampaign, frequencyBlocker } from "./campaign-entry.ts";
-import { type Count, tally } from "./campaign-results.ts";
-import { sendsEmail } from "./campaign-schemas.ts";
+import type { CampaignCount } from "./campaign-parts.ts";
+import { sendsEmail } from "./campaign-parts.ts";
+import { tally } from "./campaign-results.ts";
 import { campaign } from "./db/schema.ts";
 import type { Transaction } from "./db/tenant.ts";
 import { lockVisitors } from "./journey.ts";
@@ -159,7 +160,7 @@ export async function countPageCampaign(
   const button = card.buttons[action.button];
   // A value button answers, which counts with the visitor's message.
   if (button === undefined || !("url" in button || "dismiss" in button)) return false;
-  const counts: Count[] = "dismiss" in button ? ["dismissed"] : [];
+  const counts: CampaignCount[] = "dismiss" in button ? ["dismissed"] : [];
   await tally(tx, workspaceId, counted, counts, button.value);
   return true;
 }

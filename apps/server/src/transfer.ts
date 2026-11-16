@@ -14,11 +14,8 @@ import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { BadArchiveError, readTar, tarEnd, tarEntry, tarEntryParts } from "./archive.ts";
 import { BusinessHoursSchema, readBusinessHours, saveBusinessHours } from "./business-hours.ts";
-import {
-  CampaignDefinitionSchema,
-  type CampaignMessage,
-  variantMessage,
-} from "./campaign-schemas.ts";
+import { variantMessage } from "./campaign-parts.ts";
+import { CampaignDefinitionSchema, type CampaignMessage } from "./campaign-schemas.ts";
 import { saveTriggerFields } from "./campaigns.ts";
 import { ConditionSchema, EVENT_NAME } from "./conditions.ts";
 import { newGeneration } from "./db/migrate.ts";

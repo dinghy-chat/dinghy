@@ -1,4 +1,5 @@
 import { and, eq, gte, inArray, lte, type SQL, sql } from "drizzle-orm";
+import { addCounts, type CampaignCount, type Counts, emptyCounts } from "./campaign-parts.ts";
 import { campaignDay, type OutboundEventKind, type outboundMessage } from "./db/schema.ts";
 import type { Transaction } from "./db/tenant.ts";
 
@@ -8,21 +9,8 @@ import type { Transaction } from "./db/tenant.ts";
 
 type Row = typeof outboundMessage.$inferSelect;
 
-/** Each count, by its column in campaign_day. */
-const COUNTS = {
-  entered: campaignDay.entered,
-  sent: campaignDay.sent,
-  delivered: campaignDay.delivered,
-  read: campaignDay.read,
-  replied: campaignDay.replied,
-  dismissed: campaignDay.dismissed,
-  goalReached: campaignDay.goalReached,
-  conversationsStarted: campaignDay.conversationsStarted,
-} as const;
-export type Count = keyof typeof COUNTS;
-
 /** The counts a message's first time in each of these columns adds. */
-const TIMES: [keyof Row & `${string}At`, Count][] = [
+const TIMES: [keyof Row & `${string}At`, CampaignCount][] = [
   ["sentAt", "sent"],
   ["deliveredAt", "delivered"],
   ["readAt", "read"],
@@ -50,7 +38,7 @@ export async function tally(
   tx: Transaction,
   workspaceId: string,
   { campaignId, variant, visitorId }: Tally,
-  counts: Count[],
+  counts: CampaignCount[],
   click?: string,
 ): Promise<void> {
   if (counts.length === 0 && click === undefined) return;
@@ -59,13 +47,13 @@ export async function tally(
     click === undefined ? sql`'{}'::jsonb` : sql`jsonb_build_object(${click}::text, 1)`;
   const added = counts.map(
     (count) =>
-      sql`${sql.identifier(COUNTS[count].name)} = campaign_day.${sql.identifier(COUNTS[count].name)} + 1`,
+      sql`${sql.identifier(campaignDay[count].name)} = campaign_day.${sql.identifier(campaignDay[count].name)} + 1`,
   );
   if (click !== undefined) {
     added.push(sql`clicks = jsonb_set(campaign_day.clicks, array[${click}::text],
       to_jsonb(coalesce((campaign_day.clicks ->> ${click}::text)::int, 0) + 1))`);
   }
-  const columns = counts.map((count) => sql.identifier(COUNTS[count].name));
+  const columns = counts.map((count) => sql.identifier(campaignDay[count].name));
   const notTest: SQL =
     visitorId === null
       ? sql`true`
@@ -99,31 +87,11 @@ export async function tallyChange(
   await tally(tx, workspaceId, { ...after, campaignId: after.campaignId }, counts, click);
 }
 
-export const emptyCounts = () => ({
-  entered: 0,
-  sent: 0,
-  delivered: 0,
-  read: 0,
-  replied: 0,
-  dismissed: 0,
-  goalReached: 0,
-  conversationsStarted: 0,
-  clicks: {} as Record<string, number>,
-});
-type Counts = ReturnType<typeof emptyCounts>;
 type DayRow = typeof campaignDay.$inferSelect;
 
-/** Adds one day's row to a running total. */
-function addTo(total: Counts, row: DayRow): Counts {
-  for (const count of Object.keys(COUNTS) as Count[]) total[count] += row[count];
-  for (const [value, clicks] of Object.entries(row.clicks)) {
-    total.clicks[value] = (total.clicks[value] ?? 0) + clicks;
-  }
-  return total;
-}
-
-const countsOf = (row: DayRow) => addTo(emptyCounts(), row);
-const variantOf = (row: Pick<DayRow, "variant">) => (row.variant === "" ? null : row.variant);
+const countsOf = (row: DayRow) => addCounts(emptyCounts(), row);
+/** A day's variant as the API names it: null for a campaign with no variants. */
+const variantKey = (row: Pick<DayRow, "variant">) => (row.variant === "" ? null : row.variant);
 
 /** A campaign's results per day and variant, and per variant over the days, oldest first. */
 export async function campaignResults(
@@ -146,11 +114,11 @@ export async function campaignResults(
     .orderBy(campaignDay.day, campaignDay.variant);
   const variants = new Map<string, Counts>();
   for (const row of rows)
-    variants.set(row.variant, addTo(variants.get(row.variant) ?? emptyCounts(), row));
+    variants.set(row.variant, addCounts(variants.get(row.variant) ?? emptyCounts(), row));
   return {
-    days: rows.map((row) => ({ day: row.day, variant: variantOf(row), ...countsOf(row) })),
+    days: rows.map((row) => ({ day: row.day, variant: variantKey(row), ...countsOf(row) })),
     variants: [...variants].map(([variant, counts]) => ({
-      variant: variantOf({ variant }),
+      variant: variantKey({ variant }),
       ...counts,
     })),
   };
@@ -166,6 +134,6 @@ export async function campaignTotals(tx: Transaction, workspaceId: string, campa
     .where(
       and(eq(campaignDay.workspaceId, workspaceId), inArray(campaignDay.campaignId, campaignIds)),
     );
-  for (const row of rows) addTo(totals.get(row.campaignId) ?? emptyCounts(), row);
+  for (const row of rows) addCounts(totals.get(row.campaignId) ?? emptyCounts(), row);
   return totals;
 }

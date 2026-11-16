@@ -3,12 +3,8 @@ import { and, eq, gt, isNotNull, or } from "drizzle-orm";
 import { LOCALES, type Locale, MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
 import { renderTemplate } from "../../../packages/widget/src/template.ts";
 import { type CampaignRow, newestMessage, reachedContact } from "./campaign-checks.ts";
-import {
-  type CampaignDefinition,
-  type CampaignMessage,
-  sendsEmail,
-  variantMessage,
-} from "./campaign-schemas.ts";
+import { sendsEmail, variantMessage } from "./campaign-parts.ts";
+import type { CampaignDefinition, CampaignMessage } from "./campaign-schemas.ts";
 import { outboundMessage, visitor } from "./db/schema.ts";
 import type { Transaction } from "./db/tenant.ts";
 import { toMs } from "./inputs.ts";

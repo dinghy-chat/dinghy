@@ -2,7 +2,8 @@ import { and, desc, eq, gt, isNotNull, ne, or, type SQL, sql } from "drizzle-orm
 import { type HoursState, hoursState } from "../../../packages/widget/src/hours.ts";
 import { type BusinessHours, WEEKDAYS } from "../../../packages/widget/src/shared.ts";
 import { readBusinessHours } from "./business-hours.ts";
-import { type CampaignDefinition, goalCondition } from "./campaign-schemas.ts";
+import { goalCondition } from "./campaign-parts.ts";
+import type { CampaignDefinition } from "./campaign-schemas.ts";
 import { matchesContact } from "./conditions.ts";
 import {
   type CampaignStatus,

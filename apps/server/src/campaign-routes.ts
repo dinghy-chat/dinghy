@@ -5,6 +5,7 @@ import type { App, AppEnv } from "./app.ts";
 import {
   CAMPAIGN_ID,
   CAMPAIGN_REFUSALS,
+  CAMPAIGN_SEND_REFUSALS,
   CampaignDefinitionSchema,
   CampaignKey,
   CampaignListQuery,
@@ -22,7 +23,6 @@ import type { CampaignRef, Campaigns } from "./campaigns.ts";
 import {
   errorAnswer,
   FORBIDDEN,
-  failure,
   INVALID,
   jsonAnswer,
   jsonBody,
@@ -31,9 +31,10 @@ import {
   MEMBER_WRITE_ERRORS,
   NOT_FOUND,
   ROLE_WRITE_ERRORS,
+  zodFailure,
 } from "./errors.ts";
 import { WORKSPACE_PREFIX, workspaceParams } from "./member.ts";
-import { OutboundMessageSchema, SEND_REFUSALS } from "./outbound-schemas.ts";
+import { OutboundMessageSchema } from "./outbound-schemas.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import { maySetUp } from "./team.ts";
 import { MINUTE_SECONDS } from "./time.ts";
@@ -71,7 +72,7 @@ const refPaths = (tail: string) =>
     },
   ] as const;
 
-const refOf = (ref: string): CampaignRef => (CAMPAIGN_ID.test(ref) ? { id: ref } : { key: ref });
+const parseRef = (ref: string): CampaignRef => (CAMPAIGN_ID.test(ref) ? { id: ref } : { key: ref });
 
 const listRoute = createRoute({
   method: "get",
@@ -294,10 +295,7 @@ const testRoutes = refPaths("/test").map(({ path, params }) =>
 
 /** What a refused change answers. */
 function refused(c: Context<AppEnv>, refusal: CampaignRefusal | z.ZodError) {
-  if (refusal instanceof z.ZodError) {
-    const message = refusal.issues.map((issue) => issue.message).join(". ");
-    return c.json(failure("invalid_request", message), 400);
-  }
+  if (refusal instanceof z.ZodError) return c.json(zodFailure(refusal), 400);
   const { status, body } = CAMPAIGN_REFUSALS[refusal];
   return c.json(body, status);
 }
@@ -357,7 +355,7 @@ export function registerCampaignRoutes(
     app.openapi(route, async (c) => {
       const found = await campaigns.get(
         c.get("memberWorkspaceId"),
-        refOf(c.req.valid("param").ref),
+        parseRef(c.req.valid("param").ref),
       );
       return found === null ? c.json(NOT_FOUND, 404) : c.json({ campaign: found }, 200);
     });
@@ -369,7 +367,7 @@ export function registerCampaignRoutes(
       const outcome = await campaigns.patch(
         c.get("memberWorkspaceId"),
         c.get("actor"),
-        refOf(c.req.valid("param").ref),
+        parseRef(c.req.valid("param").ref),
         c.req.valid("json"),
       );
       if (typeof outcome === "string" || outcome instanceof z.ZodError) return refused(c, outcome);
@@ -380,7 +378,7 @@ export function registerCampaignRoutes(
   for (const { action, route } of actionRoutes) {
     app.openapi(route, async (c) => {
       if (!mayChange(c)) return c.json(FORBIDDEN, 403);
-      const ref = refOf(c.req.valid("param").ref);
+      const ref = parseRef(c.req.valid("param").ref);
       const outcome = await campaigns.setStatus(c.get("memberWorkspaceId"), ref, action);
       if (typeof outcome === "string") return refused(c, outcome);
       return c.json({ campaign: outcome }, 200);
@@ -389,7 +387,7 @@ export function registerCampaignRoutes(
 
   for (const route of resultsRoutes) {
     app.openapi(route, async (c) => {
-      const ref = refOf(c.req.valid("param").ref);
+      const ref = parseRef(c.req.valid("param").ref);
       const found = await campaigns.results(c.get("memberWorkspaceId"), ref, c.req.valid("query"));
       return found === null ? c.json(NOT_FOUND, 404) : c.json(found, 200);
     });
@@ -407,11 +405,10 @@ export function registerCampaignRoutes(
         );
         if (wait !== null) return tooManyRequests(c, wait);
       }
-      const ref = refOf(c.req.valid("param").ref);
+      const ref = parseRef(c.req.valid("param").ref);
       const outcome = await campaigns.send(c.get("memberWorkspaceId"), ref, c.req.valid("json"));
-      if (outcome === "not_live") return refused(c, outcome);
       if (typeof outcome === "string") {
-        const { status, body } = SEND_REFUSALS[outcome];
+        const { status, body } = CAMPAIGN_SEND_REFUSALS[outcome];
         return c.json(body, status);
       }
       return c.json({ outboundMessage: outcome.outboundMessage }, outcome.created ? 201 : 200);
@@ -422,7 +419,7 @@ export function registerCampaignRoutes(
     app.openapi(route, async (c) => {
       const actor = c.get("actor");
       if (actor.kind !== "operator") return c.json(FORBIDDEN, 403);
-      const ref = refOf(c.req.valid("param").ref);
+      const ref = parseRef(c.req.valid("param").ref);
       const outcome = await campaigns.test(c.get("memberWorkspaceId"), actor, ref);
       if (outcome === "not_found" || outcome.outboundMessage === null) {
         return c.json(NOT_FOUND, 404);

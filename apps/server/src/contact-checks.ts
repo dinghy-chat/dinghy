@@ -7,7 +7,7 @@ import {
   reachedContact,
 } from "./campaign-checks.ts";
 import { enterCampaign, frequencyBlocker } from "./campaign-entry.ts";
-import { goalCondition } from "./campaign-schemas.ts";
+import { goalCondition } from "./campaign-parts.ts";
 import { matchesContact } from "./conditions.ts";
 import { upsertContact } from "./contact-fields.ts";
 import { campaign, campaignTrigger, outboundMessage } from "./db/schema.ts";

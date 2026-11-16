@@ -64,6 +64,8 @@ export interface Waiting {
   /** The campaign it comes from, or null. */
   campaignId: string | null;
   createdAt: string;
+  /** A page campaign's card, which has no ID of its own until the visitor answers: its campaign's. */
+  page?: true;
 }
 
 /**
@@ -234,13 +236,15 @@ export function createClient(
         body: JSON.stringify({ button }),
       }),
     /** A page campaign's card, shown now. The visitor may not exist yet. */
-    showPage: async (token: string | null, id: string, language: Locale) =>
-      (
+    showPage: async (token: string | null, id: string, language: Locale) => ({
+      ...(
         await call<{ outboundMessage: Waiting }>(`campaigns/${id}/show`, token, {
           method: "POST",
           body: JSON.stringify({ language }),
         })
       ).outboundMessage,
+      page: true as const,
+    }),
     /**
      * The visitor read a page campaign's card, or chose a button that opens a page or dismisses,
      * by its place in the card's language.

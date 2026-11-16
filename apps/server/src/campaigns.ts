@@ -3,7 +3,8 @@ import { and, eq, gt, inArray, or, type SQL, sql } from "drizzle-orm";
 import type { Actor } from "./api-keys.ts";
 import { type CampaignRow, campaignRows, closedNow } from "./campaign-checks.ts";
 import { campaignClientId, enterCampaign } from "./campaign-entry.ts";
-import { campaignResults, campaignTotals, emptyCounts } from "./campaign-results.ts";
+import { emptyCounts, goalCondition, messagesOf, sendsEmail } from "./campaign-parts.ts";
+import { campaignResults, campaignTotals } from "./campaign-results.ts";
 import type {
   CampaignDefinition,
   CampaignPatchSchema,
@@ -13,12 +14,7 @@ import type {
   EstimateSchema,
   ResultsQuery,
 } from "./campaign-schemas.ts";
-import {
-  CampaignDefinitionSchema,
-  goalCondition,
-  messagesOf,
-  sendsEmail,
-} from "./campaign-schemas.ts";
+import { CampaignDefinitionSchema } from "./campaign-schemas.ts";
 import { type Condition, fieldsOf, readsTime, toSql } from "./conditions.ts";
 import { TIME_FIELD } from "./contact-checks.ts";
 import {

@@ -150,6 +150,10 @@ type ErrorCode = (typeof ERROR_CODES)[number];
 /** The body of every error answer: a stable code for clients and a sentence for people. */
 export const failure = (code: ErrorCode, message: string) => ({ error: { code, message } });
 
+/** A request that its schema refused, with each problem in the message. */
+export const zodFailure = (error: z.ZodError) =>
+  failure("invalid_request", error.issues.map((issue) => issue.message).join(". "));
+
 export const NOT_FOUND = failure("not_found", "This does not exist.");
 /** A key's reply or send while an owner or admin paused the bots. */
 export const BOTS_PAUSED = failure(

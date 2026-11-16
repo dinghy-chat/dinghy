@@ -37,10 +37,9 @@ export const waitingLine = (one: Waiting): Line => ({
 });
 
 /** A message whose buttons the visitor can choose: one that waits, or one in the conversation. */
-export type Choosable = Pick<Waiting, "id" | "buttons"> & { campaignId?: string | null };
+export type Choosable = Pick<Waiting, "id" | "buttons" | "page"> & { campaignId?: string | null };
 
-/** A page campaign's card, which has no ID of its own until the visitor answers: its campaign's. */
-const isPage = (one: Choosable) => one.id === one.campaignId;
+const isPage = (one: Choosable) => one.page === true;
 
 /** The IDs the page events carry: a card's is null. */
 const idsOf = (one: Choosable) => ({

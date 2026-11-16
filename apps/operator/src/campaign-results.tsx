@@ -1,4 +1,10 @@
 /** @jsxImportSource react */
+import {
+  addCounts,
+  CAMPAIGN_COUNTS,
+  type CampaignCount,
+  emptyCounts,
+} from "../../server/src/campaign-parts.ts";
 import { Card, dayName, percent, ShareList, Stat, shareOf, Tipped } from "./analytics.tsx";
 import type { Campaign, CampaignCounts, WorkspaceApi } from "./api.ts";
 import { useLoad } from "./load.ts";
@@ -7,36 +13,20 @@ import { AnalyticsSkeleton } from "./skeleton.tsx";
 import { plural, type TextId, t } from "./text.ts";
 import { Loading } from "./ui.tsx";
 
-type Count = Exclude<keyof CampaignCounts, "clicks">;
-
-/** The counts a table shows, in the order a message goes through them. */
-const COLUMNS: { count: Count; label: TextId }[] = [
-  { count: "entered", label: "resultReached" },
-  { count: "sent", label: "resultSent" },
-  { count: "delivered", label: "resultDelivered" },
-  { count: "read", label: "resultRead" },
-  { count: "replied", label: "resultReplied" },
-  { count: "dismissed", label: "resultDismissed" },
-  { count: "goalReached", label: "resultGoal" },
-  { count: "conversationsStarted", label: "resultConversations" },
-];
-
-const COUNTS = COLUMNS.map((column) => column.count);
+/** Each count's column head. */
+const COUNT_TEXT: Record<CampaignCount, TextId> = {
+  entered: "resultReached",
+  sent: "resultSent",
+  delivered: "resultDelivered",
+  read: "resultRead",
+  replied: "resultReplied",
+  dismissed: "resultDismissed",
+  goalReached: "resultGoal",
+  conversationsStarted: "resultConversations",
+};
 
 /** Several rows' counts added up, clicks by value too. */
-function sum(rows: CampaignCounts[]): CampaignCounts {
-  const total: CampaignCounts = {
-    ...(Object.fromEntries(COUNTS.map((count) => [count, 0])) as Record<Count, number>),
-    clicks: {},
-  };
-  for (const row of rows) {
-    for (const count of COUNTS) total[count] += row[count];
-    for (const [value, clicks] of Object.entries(row.clicks)) {
-      total.clicks[value] = (total.clicks[value] ?? 0) + clicks;
-    }
-  }
-  return total;
-}
+const sum = (rows: CampaignCounts[]): CampaignCounts => rows.reduce(addCounts, emptyCounts());
 
 /** A share of the messages sent, as a number, its percent and a bar. */
 function RateStat({ title, count, sent }: { title: TextId; count: number; sent: number }) {
@@ -66,9 +56,9 @@ function CountsTable({
         <thead>
           <tr>
             <th scope="col">{t(head)}</th>
-            {COLUMNS.map((column) => (
-              <th key={column.count} scope="col" className="number-cell">
-                {t(column.label)}
+            {CAMPAIGN_COUNTS.map((count) => (
+              <th key={count} scope="col" className="number-cell">
+                {t(COUNT_TEXT[count])}
               </th>
             ))}
           </tr>
@@ -77,9 +67,9 @@ function CountsTable({
           {rows.map((row) => (
             <tr key={row.name}>
               <th scope="row">{row.name}</th>
-              {COLUMNS.map((column) => (
-                <td key={column.count} className="number-cell">
-                  {row.counts[column.count]}
+              {CAMPAIGN_COUNTS.map((count) => (
+                <td key={count} className="number-cell">
+                  {row.counts[count]}
                 </td>
               ))}
             </tr>
