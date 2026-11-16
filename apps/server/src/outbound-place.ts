@@ -43,13 +43,14 @@ export type Author = { kind: "key"; apiKeyId: string } | { kind: "operator"; ope
  * The campaign a message comes from, the schedule's run that made it, and its A/B variant. A
  * contact in the control group gets a row with no text, so the goal's results still count them. A
  * page campaign's card that the visitor answers comes in read: the widget showed it and counted
- * the show and the read in the results.
+ * the show and the read in the results. A send from code skips the campaign's audience.
  */
 interface FromCampaign {
   id: string;
   runId: string | null;
   variant: string | null;
   kind: "message" | "control" | "page";
+  fromCode: boolean;
 }
 
 /** A send that passed the author's checks, with the visitor and the sender it resolved to. */
@@ -187,6 +188,7 @@ async function insertOutbound(tx: Transaction, send: NewSend): Promise<Row> {
       campaignId: campaign?.id ?? null,
       campaignRunId: campaign?.runId ?? null,
       variant: campaign?.variant ?? null,
+      fromCode: campaign?.fromCode ?? false,
       ...(campaign !== null && STARTS[campaign.kind]()),
     })
     .returning();

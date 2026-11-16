@@ -1,4 +1,5 @@
 import { z } from "@hono/zod-openapi";
+import { BUTTONS_MAX } from "../../../packages/widget/src/shared.ts";
 import { ConditionSchema } from "./conditions.ts";
 import {
   IF_CONVERSATION_OPEN,
@@ -15,7 +16,6 @@ import { TimeCursor } from "./pages.ts";
 
 /** Messages that wait for one visitor at once. */
 export const WAITING_PER_VISITOR = 5;
-const BUTTONS_MAX = 4;
 const PAGE_SIZE_MAX = 100;
 const METADATA_KEYS_MAX = 20;
 const METADATA_KEY_LENGTH_MAX = 40;

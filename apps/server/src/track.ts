@@ -120,7 +120,7 @@ export function createTracking({ db, live }: { db: Database; live: Live }) {
           if (!(await inAudience(tx, workspaceId, visitorId, one.definition))) continue;
           await enterCampaign(tx, workspaceId, one, visitorId, {
             botsPaused,
-            input: { delay: trigger.delay, event: { properties: input.properties ?? {} } },
+            options: { delay: trigger.delay, event: { properties: input.properties ?? {} } },
           });
         }
         return { visitorId, counted: true };

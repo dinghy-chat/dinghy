@@ -3556,9 +3556,6 @@
                 "description": "An `on_reply` message still unread after this time goes in a conversation and out by email, to a visitor with an email address"
               }
             },
-            "default": {
-              "sendEmail": false
-            },
             "additionalProperties": false
           },
           "rules": {
@@ -3627,11 +3624,6 @@
                   "within": "7d"
                 }
               }
-            },
-            "default": {
-              "frequency": "once",
-              "businessHours": false,
-              "endsAt": null
             },
             "additionalProperties": false
           },
@@ -4736,6 +4728,10 @@
                   "pageCampaign": {
                     "type": "object",
                     "properties": {
+                      "language": {
+                        "type": "string",
+                        "enum": ["en", "fr", "es"]
+                      },
                       "id": {
                         "type": "string",
                         "format": "uuid"
@@ -6083,7 +6079,12 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "properties": {}
+                "properties": {
+                  "language": {
+                    "type": "string",
+                    "enum": ["en", "fr", "es"]
+                  }
+                }
               }
             }
           }
@@ -6209,6 +6210,10 @@
                     "type": "integer",
                     "minimum": 0,
                     "maximum": 3
+                  },
+                  "language": {
+                    "type": "string",
+                    "enum": ["en", "fr", "es"]
                   }
                 },
                 "required": ["button"]

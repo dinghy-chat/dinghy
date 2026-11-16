@@ -193,8 +193,9 @@ export interface KeyState {
 type Verdict =
   | { kind: "go" }
   | { kind: "join"; conversationId: string }
-  // `until` is when to look again: null waits for a change that wakes it, such as a resume.
-  | { kind: "wait"; reason: OutboundStatusReason; until?: Date | null }
+  // `until` is when to look again: null waits for a change that wakes it, such as a resume, and
+  // undefined looks again soon.
+  | { kind: "wait"; reason: OutboundStatusReason; until?: Date | null | undefined }
   | { kind: "cancel"; reason: OutboundStatusReason };
 
 type Message = Pick<
@@ -279,46 +280,65 @@ export async function visitorFlags(tx: Transaction, workspaceId: string, visitor
 }
 
 /**
- * Reads what decides a message now. `atSendTime` also checks its `unless` and its campaign, as it
- * is about to become sent. The caller holds the workspace lock.
+ * A message as the decision reads it: a row, or a page campaign's card, which has none until the
+ * visitor answers, for a visitor who may not exist yet.
  */
-export async function situation(
-  tx: Transaction,
-  workspaceId: string,
-  row: Row,
-  { botsPaused, atSendTime }: { botsPaused: boolean; atSendTime: boolean },
-): Promise<Situation> {
+export type Draft = Pick<
+  Row,
+  "authorApiKeyId" | "senderOperatorId" | "unless" | "campaignId" | "fromCode"
+> & { id: string | null; visitorId: string | null };
+
+/** The visitor's open conversation, or null. */
+async function openConversation(tx: Transaction, workspaceId: string, visitorId: string) {
   const [open] = await tx
     .select({ id: conversation.id, humanSince: conversation.humanSince })
     .from(conversation)
     .where(
       and(
         eq(conversation.workspaceId, workspaceId),
-        eq(conversation.visitorId, row.visitorId),
+        eq(conversation.visitorId, visitorId),
         eq(conversation.status, "open"),
       ),
     )
     .orderBy(desc(conversation.createdAt))
     .limit(1);
-  const { campaignId } = row;
-  const { blocked, optedOut, isTest } = await visitorFlags(tx, workspaceId, row.visitorId);
+  return open ?? null;
+}
+
+const NOBODY = { blocked: false, optedOut: false, isTest: false };
+
+/**
+ * Reads what decides a message now. `atSendTime` also checks its `unless` and its campaign, as it
+ * is about to become sent. The caller holds the workspace lock.
+ */
+export async function situation(
+  tx: Transaction,
+  workspaceId: string,
+  draft: Draft,
+  { botsPaused, atSendTime }: { botsPaused: boolean; atSendTime: boolean },
+): Promise<Situation> {
+  const { campaignId, visitorId } = draft;
+  const { blocked, optedOut, isTest } =
+    visitorId === null ? NOBODY : await visitorFlags(tx, workspaceId, visitorId);
   return {
     writable: writable(await workspaceAccess(tx, workspaceId)),
     blocked,
     optedOut,
     botsPaused,
-    key: row.authorApiKeyId === null ? null : await keyState(tx, workspaceId, row.authorApiKeyId),
+    key:
+      draft.authorApiKeyId === null ? null : await keyState(tx, workspaceId, draft.authorApiKeyId),
     senderActive:
-      row.senderOperatorId === null || (await isMember(tx, workspaceId, row.senderOperatorId)),
-    open: open ?? null,
+      draft.senderOperatorId === null || (await isMember(tx, workspaceId, draft.senderOperatorId)),
+    open: visitorId === null ? null : await openConversation(tx, workspaceId, visitorId),
     unlessMatched:
       atSendTime &&
-      row.unless !== null &&
-      (await matchesContact(tx, workspaceId, row.visitorId, row.unless)),
+      visitorId !== null &&
+      draft.unless !== null &&
+      (await matchesContact(tx, workspaceId, visitorId, draft.unless)),
     // A test visitor sees a campaign's message whatever its rules say, as "Send a test" shows it.
     campaign:
       atSendTime && campaignId !== null && !isTest
-        ? await campaignCheck(tx, workspaceId, { ...row, campaignId })
+        ? await campaignCheck(tx, workspaceId, { ...draft, campaignId })
         : null,
   };
 }

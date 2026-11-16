@@ -25,6 +25,8 @@ import {
 } from "drizzle-orm/pg-core";
 import {
   type BusinessHours,
+  CAMPAIGN_GAP_HOURS_DEFAULT,
+  CAMPAIGN_GAP_HOURS_MAX,
   HEADER_FACES_MAX,
   LABEL_NAME_MAX,
   LOCALES,
@@ -154,12 +156,15 @@ export const workspace = pgTable(
     campaignsPausedBy: text("campaigns_paused_by"),
     // The fewest hours between two campaign messages to one visitor, checked when one becomes sent.
     // 0 turns the rule off.
-    campaignGapHours: smallint("campaign_gap_hours").notNull().default(24),
+    campaignGapHours: smallint("campaign_gap_hours").notNull().default(CAMPAIGN_GAP_HOURS_DEFAULT),
     createdAt: createdAt(),
   },
   (table) => [
     index("workspace_deleted_idx").on(table.deletedAt).where(sql`${table.deletedAt} is not null`),
-    check("workspace_campaign_gap_hours", sql`${table.campaignGapHours} between 0 and 720`),
+    check(
+      "workspace_campaign_gap_hours",
+      sql`${table.campaignGapHours} between 0 and ${sql.raw(String(CAMPAIGN_GAP_HOURS_MAX))}`,
+    ),
     check(
       "workspace_waiting_inactive",
       sql`not (${table.active} and ${table.waitingSince} is not null)`,
@@ -1879,6 +1884,8 @@ export const outboundMessage = pgTable(
     campaignId: uuid("campaign_id"),
     campaignRunId: uuid("campaign_run_id"),
     variant: text("variant"),
+    // A campaign's send from code, which skips its audience whatever its trigger.
+    fromCode: boolean("from_code").notNull().default(false),
     // When it became sent, for the workspace's gap between two campaign messages.
     sentAt: timestamp("sent_at", { withTimezone: true }),
     // When the contact first matched the campaign's goal within its time.

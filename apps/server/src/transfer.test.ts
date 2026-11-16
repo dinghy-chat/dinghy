@@ -20,6 +20,7 @@ import {
   apiKey,
   attachment,
   businessHours,
+  campaign,
   conversation,
   conversationLabel,
   conversationRead,
@@ -245,6 +246,19 @@ async function makeSource(): Promise<Source> {
   });
   await write("POST", "/saved-replies", { shortcut: "hello", body: "Hi there!" });
   await write("PUT", "/business-hours", BUSINESS_HOURS);
+  // A campaign sent as a member, while every campaign is paused, with a gap of its own.
+  await write("PUT", "/campaigns/by-key/welcome", {
+    key: "welcome",
+    name: "Welcome",
+    trigger: { type: "api" },
+    message: { sender: { operatorId: agent.id }, body: "Welcome!" },
+    presentation: { startConversation: "on_reply", show: "badge", ifConversationOpen: "skip" },
+    variants: [
+      { key: "a", weight: 1, message: { sender: { operatorId: agent.id }, body: "Hi!" } },
+      { key: "b", weight: 1 },
+    ],
+  });
+  await write("PUT", "/campaign-settings", { paused: true, gapHours: 6 });
   const billing = (await (
     await write("POST", "/labels", { name: "Billing", color: "blue" })
   ).json()) as {
@@ -788,6 +802,28 @@ describe("a round trip onto a fresh install", () => {
     expect(before.dedupe).toHaveLength(1);
     expect(before.startedBy).toBe("team");
     expect(await pick(target)).toEqual(before);
+  });
+
+  test("the campaigns come along paused, with their gap, as this install's members", async () => {
+    const [space] = await target.owner
+      .select()
+      .from(workspace)
+      .where(eq(workspace.id, source.space.id));
+    expect(space).toMatchObject({ campaignsPausedBy: expect.any(String), campaignGapHours: 6 });
+    expect(space?.campaignsPausedAt).toBeInstanceOf(Date);
+    const [agent] = await target.owner
+      .select({ id: operator.id })
+      .from(operator)
+      .where(eq(operator.email, source.agentEmail));
+    expect(agent?.id).not.toBe(source.agentId);
+    const [row] = await target.owner
+      .select()
+      .from(campaign)
+      .where(eq(campaign.workspaceId, source.space.id));
+    expect(row?.definition).toMatchObject({
+      message: { sender: { operatorId: agent?.id } },
+      variants: [{ message: { sender: { operatorId: agent?.id } } }, { key: "b" }],
+    });
   });
 
   test("what the page sent comes along", async () => {

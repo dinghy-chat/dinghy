@@ -8684,11 +8684,6 @@ export interface components {
         /** @enum {string} */
         ifConversationOpen: "hold" | "join" | "skip";
       };
-      /**
-       * @default {
-       *       "sendEmail": false
-       *     }
-       */
       delivery?: {
         /** @default false */
         sendEmail?: boolean;
@@ -8704,13 +8699,6 @@ export interface components {
          */
         emailIfUnread?: string;
       };
-      /**
-       * @default {
-       *       "frequency": "once",
-       *       "businessHours": false,
-       *       "endsAt": null
-       *     }
-       */
       rules?: {
         /**
          * @description `"once"` per contact, or `{ "every": "7d" }` at most

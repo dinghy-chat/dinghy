@@ -113,7 +113,7 @@ With `delay`, the message is `scheduled` until then. At its send time, Dinghy ch
 | `endDate` | Optional. The last day it runs |
 | `timeZone` | An IANA time zone for `time` and the dates. `UTC` by default |
 
-Each time comes, the worker starts a run over the audience. A run goes through the contacts in batches of 50, and each batch commits its messages with its place in the list. A contact gets at most one message per run, so a crash or a restart resumes the run with no double and no gap. A run leaves out test visitors, blocked visitors and visitors who turned off automatic messages. A paused campaign's run waits, and goes on from where it stopped after the resume. A time that came before the campaign went live, or while it was paused, is skipped.
+Each time comes, the worker starts a run over the audience. A run goes through the contacts in batches of 50, and each batch commits its messages with its place in the list. A contact gets at most one message per run, so a crash or a restart resumes the run with no double and no gap. A run leaves out test visitors, blocked visitors and visitors who turned off automatic messages. A paused campaign's run waits, as do the runs of a workspace that paused every campaign, and goes on from where it stopped after the resume. A time that came before the campaign went live, or while it was paused, is skipped.
 
 ### event
 
@@ -131,7 +131,7 @@ When your server tracks `export.finished` for a contact who matches the audience
 
 `url` is a path or a full URL, up to 500 characters, where `*` matches any text. A path matches on any of your allowed sites. `seconds` is 0 to 3600.
 
-A page campaign runs in the visitor's browser. The loader's beat answers the live page campaigns for this visitor, and the loader matches the page's address. After `seconds` on a matching page, the widget shows the message as its `show` says. It shows each page campaign at most once per page load, and in a single-page app once per tab. The server stores nothing about the visitor until they answer. A show counts in `entered`, `sent` and `delivered`, a read in `read`, and a press of a button that opens a page or dismisses in `clicks` by its value, and a dismiss in `dismissed` too. When the visitor answers, the campaign's message goes in the conversation first, then their answer. [Add the chat to your website](add-to-your-site.md#page-campaigns) says what the browser keeps.
+A page campaign runs in the visitor's browser. The loader's beat answers the live page campaigns for this visitor, and the loader matches the page's address. After `seconds` on a matching page, the widget shows the message as its `show` says. It shows each page campaign at most once per page load, and in a single-page app once per tab. It shows only when a message of the campaign could be sent now: the [send-time checks](#when-a-message-goes) apply, such as business hours, `exitWhen`, the workspace's gap and an open conversation with `ifConversationOpen: "skip"`. A visitor who has never chatted sees only a campaign with no audience and no variants. The server stores nothing about the visitor until they answer. A show counts in `entered`, `sent` and `delivered`, a read in `read`, and a press of a button that opens a page or dismisses in `clicks` by its value, and a dismiss in `dismissed` too. When the visitor answers, the campaign's message goes in the conversation first, then their answer. [Add the chat to your website](add-to-your-site.md#page-campaigns) says what the browser keeps.
 
 A page campaign shows as `badge` or `preview`, never `chat`, and starts a conversation `on_reply`. A definition with another choice answers 400 `invalid_request`.
 
@@ -211,7 +211,7 @@ A message outside the business hours or the send window waits, with `statusReaso
 
 `exitWhen` and `goal` take the [condition grammar](outbound-messages.md#unless), plus a field of their own, `repliedToCampaign`: true when the contact answered one of this campaign's messages. `{ "field": "repliedToCampaign", "op": "eq", "value": true }` stops the campaign for a contact once they answer. A contact who exits has their waiting messages cancelled with `unless_matched`.
 
-`goal` is what the campaign is for, such as a verified domain. When a contact matches it within `within` after one of the campaign's messages reached them, the message counts `goalReached`, the contact's waiting messages from the campaign are cancelled with `goal_reached`, and the contact never enters the campaign again. Dinghy checks it when a field it reads changes, as for a `match` trigger.
+`goal` is what the campaign is for, such as a verified domain. When a contact matches it within `within` after one of the campaign's messages became sent to them, or for the control group after the time it would have, the message counts `goalReached`, the contact's waiting messages from the campaign are cancelled with `goal_reached`, and the contact never enters the campaign again. Dinghy checks it when a field it reads changes, as for a `match` trigger, and before `exitWhen`, so a change that matches both still counts the goal.
 
 ## Variants and the control group
 

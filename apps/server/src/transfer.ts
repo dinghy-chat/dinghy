@@ -3,6 +3,8 @@ import { Readable } from "node:stream";
 import { createRoute, z } from "@hono/zod-openapi";
 import { and, asc, eq, gt, inArray } from "drizzle-orm";
 import {
+  CAMPAIGN_GAP_HOURS_DEFAULT,
+  CAMPAIGN_GAP_HOURS_MAX,
   LABEL_NAME_MAX,
   LOCALES,
   SAVED_REPLY_BODY_MAX,
@@ -12,7 +14,11 @@ import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { BadArchiveError, readTar, tarEnd, tarEntry, tarEntryParts } from "./archive.ts";
 import { BusinessHoursSchema, readBusinessHours, saveBusinessHours } from "./business-hours.ts";
-import { CampaignDefinitionSchema } from "./campaign-schemas.ts";
+import {
+  CampaignDefinitionSchema,
+  type CampaignMessage,
+  variantMessage,
+} from "./campaign-schemas.ts";
 import { saveTriggerFields } from "./campaigns.ts";
 import { ConditionSchema, EVENT_NAME } from "./conditions.ts";
 import { newGeneration } from "./db/migrate.ts";
@@ -99,6 +105,15 @@ const ExportFile = z.strictObject({
     }),
     // A file from before business hours has none, and an install that never saved them has null.
     businessHours: BusinessHoursSchema.nullable().default(null),
+    // A file from before campaigns has none of these: they run, with the default gap.
+    campaignsPausedAt: nullableDate.default(null),
+    campaignsPausedBy: z.string().max(200).nullable().default(null),
+    campaignGapHours: z
+      .number()
+      .int()
+      .min(0)
+      .max(CAMPAIGN_GAP_HOURS_MAX)
+      .default(CAMPAIGN_GAP_HOURS_DEFAULT),
     // In base64, or null with no logo. A file from a release before logos has no key at all.
     logo: z
       .base64()
@@ -279,6 +294,7 @@ const ExportFile = z.strictObject({
       campaignId: id.nullable().default(null),
       campaignRunId: id.nullable().default(null),
       variant: z.string().max(64).nullable().default(null),
+      fromCode: z.boolean().default(false),
       sentAt: nullableDate.default(null),
       goalReachedAt: nullableDate.default(null),
       emailIfUnreadAt: nullableDate.default(null),
@@ -554,6 +570,9 @@ async function readWorkspace(
           feedGeneration: space.feedGeneration,
           widget: look,
           businessHours: hours ?? null,
+          campaignsPausedAt: isoOrNull(space.campaignsPausedAt),
+          campaignsPausedBy: space.campaignsPausedBy,
+          campaignGapHours: space.campaignGapHours,
           logo: logo === undefined ? null : Buffer.from(logo.data).toString("base64"),
           createdAt: iso(space.createdAt),
         },
@@ -902,6 +921,9 @@ async function insertWorkspace(
     // New and random, so a client's old cursor gets resync, even when one file is imported onto
     // two servers in turn at the same address. A count from the file would repeat there.
     feedGeneration: newGeneration(data.workspace.feedGeneration),
+    campaignsPausedAt: dateOrNull(data.workspace.campaignsPausedAt),
+    campaignsPausedBy: data.workspace.campaignsPausedBy,
+    campaignGapHours: data.workspace.campaignGapHours,
     createdAt: new Date(data.workspace.createdAt),
   });
   await tx.insert(widgetSettings).values({
@@ -946,12 +968,13 @@ async function insertWorkspace(
       createdAt: new Date(member.createdAt),
     });
   }
-  const mapOperator = (exported: string | null) => {
-    if (exported === null) return null;
+  const operatorOf = (exported: string) => {
     const mapped = operatorIds.get(exported);
     if (mapped === undefined) throw new ImportError("A row names an unknown operator.");
     return mapped;
   };
+  const mapOperator = (exported: string | null) =>
+    exported === null ? null : operatorOf(exported);
 
   // A key's token never travels, so each one comes in revoked, with a hash nothing matches.
   const importedAt = new Date();
@@ -1005,7 +1028,7 @@ async function insertWorkspace(
       })),
     );
   }
-  await importCampaigns(tx, workspaceId, data, mapOperator);
+  await importCampaigns(tx, workspaceId, data, operatorOf);
   for (const rows of batches(data.conversations)) {
     await tx.insert(conversation).values(
       rows.map((row) => ({
@@ -1113,12 +1136,31 @@ async function insertWorkspace(
   return created;
 }
 
+type Definition = ExportData["campaigns"][number]["definition"];
+
+/** A campaign's definition with each member it sends as named by this install's ID. */
+function withMappedSenders(definition: Definition, operatorOf: (exported: string) => string) {
+  const mapped = (message: CampaignMessage): CampaignMessage => {
+    const { sender } = message;
+    if (sender === undefined || sender === "team" || !("operatorId" in sender)) return message;
+    return { ...message, sender: { operatorId: operatorOf(sender.operatorId) } };
+  };
+  return {
+    ...definition,
+    message: mapped(definition.message),
+    variants: definition.variants?.map((one) => {
+      const message = variantMessage(one);
+      return message === undefined ? one : { ...one, message: mapped(message) };
+    }),
+  };
+}
+
 /** A file's campaigns, their runs and their days, with the fields each campaign reads. */
 async function importCampaigns(
   tx: Transaction,
   workspaceId: string,
   data: ExportData,
-  mapOperator: (exported: string | null) => string | null,
+  operatorOf: (exported: string) => string,
 ) {
   for (const rows of batches(data.campaigns)) {
     await tx.insert(campaign).values(
@@ -1127,9 +1169,10 @@ async function importCampaigns(
         return {
           workspaceId,
           ...row,
+          definition: withMappedSenders(row.definition, operatorOf),
           key,
           name,
-          authorOperatorId: mapOperator(row.authorOperatorId),
+          authorOperatorId: row.authorOperatorId === null ? null : operatorOf(row.authorOperatorId),
           createdAt: new Date(row.createdAt),
           updatedAt: new Date(row.updatedAt),
           liveAt: dateOrNull(row.liveAt),

@@ -1,4 +1,4 @@
-import { and, asc, eq, gt, inArray, isNotNull, isNull, lte, sql } from "drizzle-orm";
+import { type AnyColumn, and, asc, eq, gt, isNotNull, isNull, lte, or, sql } from "drizzle-orm";
 import { zonedDay, zonedTime } from "../../../packages/widget/src/hours.ts";
 import { WEEKDAYS } from "../../../packages/widget/src/shared.ts";
 import { type CampaignRow, campaignRow } from "./campaign-checks.ts";
@@ -37,6 +37,13 @@ function runsOn(trigger: Schedule, day: string): boolean {
   const weekday = WEEKDAYS[(new Date(`${day}T12:00:00Z`).getUTCDay() + 6) % 7];
   return weekday !== undefined && (trigger.days ?? []).includes(weekday);
 }
+
+/**
+ * A workspace that has not paused every campaign, as the worker's role may ask: it may not read the
+ * workspace rows of the others.
+ */
+const notPaused = (workspaceId: AnyColumn) =>
+  sql`${workspaceId} not in (select workspace_id from workspaces_with_paused_campaigns())`;
 
 /** The schedule's newest occurrence at or before `now`, or null. */
 export function latestOccurrence(trigger: Schedule, now: number): Date | null {
@@ -88,6 +95,7 @@ export async function openRuns(finder: Database, writer: Database): Promise<void
     .where(
       and(
         eq(campaign.status, "live"),
+        notPaused(campaign.workspaceId),
         sql`(${campaign.definition} #>> '{trigger,type}' = 'schedule'
           or (${campaign.definition} #>> '{delivery,sendEmail}' = 'true'
             and exists ${readsTime}))`,
@@ -141,6 +149,8 @@ function nextContacts(
  * when another worker holds the run or its campaign is paused.
  */
 async function runBatch(tx: Transaction, workspaceId: string, runId: string) {
+  // The run's lock comes first and skips a run that another worker holds, so it never waits. No
+  // transaction that holds the workspace's lock waits for a run's, which keeps this order safe.
   const [run] = await tx
     .select()
     .from(campaignRun)
@@ -154,13 +164,14 @@ async function runBatch(tx: Transaction, workspaceId: string, runId: string) {
     .for("update", { skipLocked: true });
   if (run === undefined) return null;
   const found = await campaignRow(tx, workspaceId, run.campaignId);
-  const finish = (cursor: string | null) =>
+  const save = (cursor: string | null, finished: boolean) =>
     tx
       .update(campaignRun)
-      .set({ cursor, finishedAt: new Date() })
+      .set({ cursor, ...(finished && { finishedAt: new Date() }) })
       .where(and(eq(campaignRun.workspaceId, workspaceId), eq(campaignRun.id, run.id)));
+  // An end leaves its runs to this, so it never waits for a run's lock.
   if (found === undefined || found.status === "ended") {
-    await finish(run.cursor);
+    await save(run.cursor, true);
     return [];
   }
   // A paused campaign's run waits for the resume, where it left off.
@@ -175,17 +186,10 @@ async function runBatch(tx: Transaction, workspaceId: string, runId: string) {
   for (const visitorId of ids) {
     await enterCampaign(tx, workspaceId, found, visitorId, {
       botsPaused,
-      input: { runId: run.id, delay },
+      options: { runId: run.id, delay },
     });
   }
-  const cursor = ids.at(-1) ?? run.cursor;
-  if (ids.length < RUN_BATCH) await finish(cursor);
-  else {
-    await tx
-      .update(campaignRun)
-      .set({ cursor })
-      .where(and(eq(campaignRun.workspaceId, workspaceId), eq(campaignRun.id, run.id)));
-  }
+  await save(ids.at(-1) ?? run.cursor, ids.length < RUN_BATCH);
   return ids;
 }
 
@@ -199,7 +203,8 @@ export async function runCampaignRuns(
   live: Signals,
   limit: number,
 ): Promise<boolean> {
-  // A paused campaign's run is left out, so it never holds back the others.
+  // A paused campaign's run, or one of a workspace that paused every campaign, is left out, so it
+  // never holds back the others.
   const open = await finder
     .select({ workspaceId: campaignRun.workspaceId, id: campaignRun.id })
     .from(campaignRun)
@@ -214,7 +219,10 @@ export async function runCampaignRuns(
       and(
         isNull(campaignRun.finishedAt),
         lte(campaignRun.occurrence, sql`now()`),
-        inArray(campaign.status, ["live", "ended"]),
+        or(
+          eq(campaign.status, "ended"),
+          and(eq(campaign.status, "live"), notPaused(campaignRun.workspaceId)),
+        ),
       ),
     )
     .orderBy(asc(campaignRun.createdAt))

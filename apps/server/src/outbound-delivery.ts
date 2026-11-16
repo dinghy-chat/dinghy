@@ -173,10 +173,11 @@ export async function advance(
     ? await becomeSent(tx, workspaceId, row, state.campaign?.emailIfUnread ?? null)
     : row;
   // An `on_reply` message is sent now and waits for the widget, with the reason it would not
-  // show yet, and the worker comes back when it would go by email.
+  // show yet, and the worker comes back when it would go by email. A read one never does.
   if (showsLater || verdict.kind === "wait") {
     const reason = verdict.kind === "wait" ? verdict.reason : null;
-    return change(tx, workspaceId, sent, { statusReason: reason, dueAt: sent.emailIfUnreadAt });
+    const dueAt = sent.readAt === null ? sent.emailIfUnreadAt : null;
+    return change(tx, workspaceId, sent, { statusReason: reason, dueAt });
   }
   // A `now` message that may go: in the visitor's conversation at once.
   await materializeOutbound(tx, workspaceId, row.id, row.visitorId, { answer: false });

@@ -4,12 +4,16 @@ import { pino } from "pino";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL } from "../test/env.ts";
+import { untilWaiting } from "../test/locks.ts";
 import { signedInOperator } from "../test/operators.ts";
 import { asOperator, callTool, withKey } from "../test/requests.ts";
-import { newVisitor, SITE } from "../test/visitors.ts";
+import { newVisitor, SITE, visitorSays } from "../test/visitors.ts";
 import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
+import { campaignRow } from "./campaign-checks.ts";
+import { enterCampaign } from "./campaign-entry.ts";
 import { latestOccurrence, openRuns, runCampaignRuns } from "./campaign-runs.ts";
+import { CampaignDefinitionSchema } from "./campaign-schemas.ts";
 import { endDueCampaigns } from "./campaigns.ts";
 import {
   apiKey,
@@ -20,10 +24,15 @@ import {
   outboundMessage,
   visitor,
   workspace,
+  workspaceMember,
 } from "./db/schema.ts";
-import type { Database } from "./db/tenant.ts";
+import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
+import { createReplyAddress } from "./inbound-email.ts";
+import { lockVisitors } from "./journey.ts";
 import { noLive } from "./live.ts";
+import { lockWorkspace } from "./messages.ts";
 import { runDueOutbound } from "./outbound.ts";
+import { signature } from "./webhooks.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
 const logger = pino({ level: "silent" });
@@ -941,6 +950,113 @@ describe("a page campaign", () => {
     expect(await listed(token)).toBe(false);
     expect((await widget(`campaigns/${made.id}/show`, {}, token)).status).toBe(404);
   });
+  test("shows only when the send's rules let a message go", async () => {
+    const pricing = {
+      trigger: { type: "page", url: "/pricing", seconds: 0 },
+      presentation: { startConversation: "on_reply", show: "preview", ifConversationOpen: "skip" },
+    };
+    const listed = async (id: string, token?: string) =>
+      ((await beat(token)).json.pages as { id: string }[]).some((one) => one.id === id);
+    const hours = await live(keyOf("page-hours"), { ...pricing, rules: { businessHours: true } });
+    const closed = { mon: [], tue: [], wed: [], thu: [], fri: [], sat: [], sun: [] };
+    await owner
+      .insert(businessHours)
+      .values({ workspaceId: space.id, enabled: true, timeZone: "UTC", week: closed });
+    expect(await listed(hours.id)).toBe(false);
+    expect((await widget(`campaigns/${hours.id}/show`, {})).status).toBe(404);
+    await withKey(app, admin.token, "POST", inSpace(`/campaigns/${hours.id}/end`));
+
+    // An open conversation and `skip`: no card, and an answer goes in alone.
+    const open = await live(keyOf("page-open"), pricing);
+    const { token } = await newVisitor(app, space.publicKey);
+    expect(await listed(open.id, token)).toBe(true);
+    await visitorSays(app, space.publicKey, token, "Hello");
+    expect(await listed(open.id, token)).toBe(false);
+    expect((await widget(`campaigns/${open.id}/show`, {}, token)).status).toBe(404);
+    const answer = await widget(
+      "messages",
+      { clientId: randomUUID(), body: "About pricing", pageCampaign: { id: open.id } },
+      token,
+    );
+    expect(answer.status).toBe(201);
+    expect(await campaignMessages(open.id)).toEqual([]);
+    await withKey(app, admin.token, "POST", inSpace(`/campaigns/${open.id}/end`));
+
+    // Another campaign message within the workspace's gap.
+    await owner.update(workspace).set({ campaignGapHours: 24 }).where(eq(workspace.id, space.id));
+    const capped = await live(keyOf("page-gap"), pricing);
+    const other = keyOf("page-gap-other");
+    await live(other);
+    const reached = await newVisitor(app, space.publicKey);
+    await sendCampaign(other, { visitor: { id: reached.visitorId } });
+    expect(await listed(capped.id, reached.token)).toBe(false);
+    await withKey(app, admin.token, "POST", inSpace(`/campaigns/${capped.id}/end`));
+  });
+
+  test("with A/B variants, waits for a visitor who exists, so the answer keeps the variant", async () => {
+    const made = await live(keyOf("page-ab"), {
+      trigger: { type: "page", url: "/pricing", seconds: 0 },
+      presentation: { startConversation: "on_reply", show: "preview", ifConversationOpen: "skip" },
+      variants: [
+        { key: "a", weight: 1, message: { body: "Variant A" } },
+        { key: "b", weight: 1, message: { body: "Variant B" } },
+      ],
+    });
+    expect((await beat()).json.pages).not.toContainEqual(expect.objectContaining({ id: made.id }));
+    expect((await widget(`campaigns/${made.id}/show`, {})).status).toBe(404);
+    const { token } = await newVisitor(app, space.publicKey);
+    const shown = await widget(`campaigns/${made.id}/show`, {}, token);
+    const body = (shown.json.outboundMessage as { body: string }).body;
+    await widget(
+      "messages",
+      { clientId: randomUUID(), body: "Hi", pageCampaign: { id: made.id } },
+      token,
+    );
+    expect(await campaignMessages(made.id)).toMatchObject([{ body }]);
+    await withKey(app, admin.token, "POST", inSpace(`/campaigns/${made.id}/end`));
+  });
+
+  test("counts and answers the buttons of the language the card showed in", async () => {
+    const made = await live(keyOf("page-fr"), {
+      trigger: { type: "page", url: "/pricing", seconds: 0 },
+      presentation: { startConversation: "on_reply", show: "preview", ifConversationOpen: "skip" },
+      message: {
+        body: "Need a hand?",
+        buttons: [
+          { label: "Yes", value: "yes" },
+          { label: "No thanks", dismiss: true, value: "no" },
+        ],
+        translations: {
+          fr: {
+            body: "Besoin d'aide ?",
+            buttons: [
+              { label: "Non merci", dismiss: true, value: "no" },
+              { label: "Oui", value: "yes" },
+            ],
+          },
+        },
+      },
+    });
+    const fr = { language: "fr" };
+    expect((await widget(`campaigns/${made.id}/press`, { ...fr, button: 0 })).status).toBe(200);
+    const { token } = await newVisitor(app, space.publicKey);
+    const answer = await widget(
+      "messages",
+      { clientId: randomUUID(), body: "x", pageCampaign: { id: made.id, button: 1, ...fr } },
+      token,
+    );
+    expect(answer.json).toMatchObject({ body: "Oui" });
+    expect(await campaignMessages(made.id)).toMatchObject([{ body: "Besoin d'aide ?" }]);
+    const results = await withKey(
+      app,
+      server.token,
+      "GET",
+      inSpace(`/campaigns/${made.id}/results`),
+    );
+    const { variants } = await json<{ variants: { dismissed: number }[] }>(results);
+    expect(variants).toEqual([expect.objectContaining({ dismissed: 1 })]);
+    await withKey(app, admin.token, "POST", inSpace(`/campaigns/${made.id}/end`));
+  });
 });
 
 describe("MCP", () => {
@@ -964,6 +1080,367 @@ describe("MCP", () => {
       name: "signup",
     });
     expect(tracked.structuredContent).toMatchObject({ counted: true });
+  });
+});
+
+describe("the definition's parts", () => {
+  test("a patch of the name keeps the saved rules and delivery", async () => {
+    const key = keyOf("patch-name");
+    const made = await live(
+      key,
+      {
+        delivery: { sendEmail: true, expiresIn: "3d" },
+        rules: { frequency: { every: "7d" }, businessHours: true, endsAt: null },
+      },
+      false,
+    );
+    const patched = await withKey(app, admin.token, "PATCH", inSpace(`/campaigns/${made.id}`), {
+      name: "Only the name",
+    });
+    const { campaign: after } = await json<{ campaign: CampaignView }>(patched);
+    expect(after.definition).toMatchObject({
+      name: "Only the name",
+      delivery: { sendEmail: true, expiresIn: "3d" },
+      rules: { frequency: { every: "7d" }, businessHours: true },
+    });
+  });
+});
+
+describe("a send from code to a campaign of another trigger", () => {
+  test("skips its audience at the send time too", async () => {
+    const key = keyOf("send-match");
+    await live(key, {
+      audience: { field: "attributes.plan", op: "eq", value: "never" },
+      trigger: { type: "match" },
+    });
+    const sent = await sendCampaign(key, { visitor: { userId: userId() } });
+    expect(sent.outboundMessage).toMatchObject({ status: "sent", statusReason: null });
+  });
+});
+
+describe("closed business hours", () => {
+  test("a week with no open hours keeps a message looking again, not stranded", async () => {
+    const closed = { mon: [], tue: [], wed: [], thu: [], fri: [], sat: [], sun: [] };
+    await owner
+      .insert(businessHours)
+      .values({ workspaceId: space.id, enabled: true, timeZone: "UTC", week: closed });
+    const key = keyOf("never-open");
+    await live(key, { rules: { businessHours: true } });
+    const held = await sendCampaign(key, { visitor: { userId: userId() } });
+    expect(held.outboundMessage).toMatchObject({ statusReason: "outside_business_hours" });
+    const dueAt = (await rowOf(held.outboundMessage.id))?.dueAt;
+    expect(dueAt?.getTime()).toBeLessThan(Date.now() + 5 * 60_000);
+  });
+});
+
+describe("a read message with an email fallback", () => {
+  test("leaves the worker's queue once its email time passes", async () => {
+    const key = keyOf("read-fallback");
+    await live(key, { delivery: { sendEmail: false, emailIfUnread: "1d" } });
+    const sent = await sendCampaign(key, { visitor: { userId: userId(), email: "r@example.com" } });
+    const past = new Date(Date.now() - 1000);
+    await owner
+      .update(outboundMessage)
+      .set({ status: "read", readAt: past, emailIfUnreadAt: past, dueAt: past })
+      .where(eq(outboundMessage.id, sent.outboundMessage.id));
+    await runDueOutbound(workerDb, db, noLive, 50);
+    expect(await rowOf(sent.outboundMessage.id)).toMatchObject({
+      status: "read",
+      conversationId: null,
+      dueAt: null,
+    });
+  });
+});
+
+describe("a goal", () => {
+  const paid = { field: "attributes.paid", op: "eq", value: true };
+
+  test("counts from the time the message became sent, not from when it was made", async () => {
+    const key = keyOf("goal-window");
+    const made = await live(key, {
+      audience: { field: "attributes.stage", op: "eq", value: "trial" },
+      trigger: { type: "match", delay: "2d" },
+      rules: { goal: { ...paid, within: "1d" } },
+    });
+    const user = userId();
+    await upsertContact(user, { attributes: { stage: "trial" } });
+    await upsertContact(user, { attributes: { paid: true } });
+    const [waiting] = await campaignMessages(made.id);
+    expect(waiting).toMatchObject({ status: "scheduled", goalReachedAt: null });
+    await owner
+      .update(outboundMessage)
+      .set({ status: "sent", sentAt: new Date(Date.now() - 3_600_000), dueAt: null })
+      .where(eq(outboundMessage.id, waiting?.id ?? ""));
+    await upsertContact(user, { attributes: { paid: false } });
+    await upsertContact(user, { attributes: { paid: true } });
+    expect((await rowOf(waiting?.id ?? ""))?.goalReachedAt).not.toBeNull();
+  });
+
+  test("counts when the same change also makes the contact exit", async () => {
+    const key = keyOf("goal-and-exit");
+    const made = await live(key, {
+      audience: { field: "attributes.stage", op: "eq", value: "onboarding" },
+      trigger: { type: "match" },
+      rules: { exitWhen: paid, goal: { ...paid, within: "7d" } },
+    });
+    const user = userId();
+    await upsertContact(user, { attributes: { stage: "onboarding" } });
+    await upsertContact(user, { attributes: { paid: true } });
+    const [sent] = await campaignMessages(made.id);
+    expect(sent?.goalReachedAt).not.toBeNull();
+  });
+});
+
+describe("the writes that check a contact's campaigns again", () => {
+  test("an answer by email counts a goal of repliedToCampaign", async () => {
+    const key = keyOf("replied");
+    const made = await live(key, {
+      presentation: { startConversation: "now", show: "chat", ifConversationOpen: "join" },
+      rules: { goal: { field: "repliedToCampaign", op: "eq", value: true, within: "7d" } },
+    });
+    const { visitorId } = await newVisitor(app, space.publicKey);
+    const sent = await sendCampaign(key, { visitor: { id: visitorId } });
+    const conversationId = (await rowOf(sent.outboundMessage.id))?.conversationId ?? "";
+    const domain = "reply.example.com";
+    const secret = "an-inbound-secret-of-at-least-32-characters";
+    const auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
+    const ok = async () => {};
+    const mail = createApp({
+      db,
+      logger,
+      auth,
+      inboundEmail: { domain, secret },
+      checks: { postgres: ok, valkey: ok },
+    });
+    const to = await withWorkspace(workerDb, space.id, (tx) =>
+      createReplyAddress(tx, space.id, visitorId, conversationId, domain),
+    );
+    const raw = [
+      "From: Ada <ada@example.com>",
+      `To: ${to}`,
+      "Subject: Re: Shipmail",
+      `Message-ID: <${randomUUID()}@mail.example.com>`,
+      "MIME-Version: 1.0",
+      "Content-Type: text/plain; charset=utf-8",
+      "",
+      "Yes, thanks",
+    ].join("\r\n");
+    const posted = await mail.request("/v1/inbound-email", {
+      method: "POST",
+      headers: {
+        "content-type": "message/rfc822",
+        "dinghy-inbound-signature": signature(secret, Math.floor(Date.now() / 1000), raw),
+        "content-length": String(Buffer.byteLength(raw)),
+      },
+      body: raw,
+    });
+    expect(posted.status).toBe(200);
+    const [row] = await campaignMessages(made.id);
+    expect(row?.goalReachedAt).not.toBeNull();
+  });
+
+  test("a new visitor, an email the visitor gives and the widget's language", async () => {
+    const domain = `${randomUUID().slice(0, 8)}.example`;
+    const byEmail = await live(keyOf("by-email"), {
+      audience: { field: "email", op: "contains", value: domain },
+      trigger: { type: "match" },
+    });
+    const forNewVisitors = await live(
+      keyOf("new-visitors"),
+      { audience: { field: "signedIn", op: "eq", value: false }, trigger: { type: "match" } },
+      false,
+    );
+    const widget = (path: string, method: string, token: string, body: unknown) =>
+      app.request(`/v1/widget/${space.publicKey}/${path}`, {
+        method,
+        headers: {
+          origin: SITE,
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+    const { token, visitorId } = await newVisitor(app, space.publicKey);
+    expect((await widget("me", "PATCH", token, { email: `ada@${domain}` })).status).toBe(200);
+    expect(await campaignMessages(byEmail.id)).toMatchObject([{ visitorId }]);
+    await withKey(app, admin.token, "POST", inSpace(`/campaigns/${byEmail.id}/end`));
+
+    const spanish = await live(keyOf("spanish"), {
+      audience: { field: "language", op: "eq", value: "es" },
+      trigger: { type: "match" },
+    });
+    await visitorSays(app, space.publicKey, token, "Hola");
+    expect(await campaignMessages(spanish.id)).toEqual([]);
+    expect((await widget("context", "POST", token, { locale: "es" })).status).toBe(200);
+    expect(await campaignMessages(spanish.id)).toMatchObject([{ visitorId }]);
+    await withKey(app, admin.token, "POST", inSpace(`/campaigns/${spanish.id}/end`));
+
+    // Every live campaign checks a new visitor, as it does a new contact from a server.
+    await withKey(app, admin.token, "POST", inSpace(`/campaigns/${forNewVisitors.id}/resume`));
+    const fresh = await newVisitor(app, space.publicKey);
+    expect(await campaignMessages(forNewVisitors.id)).toMatchObject([
+      { visitorId: fresh.visitorId },
+    ]);
+    await withKey(app, admin.token, "POST", inSpace(`/campaigns/${forNewVisitors.id}/end`));
+  });
+
+  test("a beat that changes nothing for a campaign takes no workspace lock", async () => {
+    const key = keyOf("beat-once");
+    const made = await live(key, {
+      audience: { field: "firstSeenAt", op: "exists" },
+      trigger: { type: "match" },
+      rules: { frequency: "once", exitWhen: { field: "country", op: "eq", value: "AQ" } },
+    });
+    const { token, visitorId } = await newVisitor(app, space.publicKey);
+    const beat = async () =>
+      await app.request(`/v1/widget/${space.publicKey}/beat`, {
+        method: "POST",
+        headers: {
+          origin: SITE,
+          authorization: `Bearer ${token}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ tab: "tab123456", page: `${SITE}/` }),
+      });
+    expect(await campaignMessages(made.id)).toMatchObject([{ visitorId }]);
+    // The first beat also notes that the widget loaded, which writes the workspace once.
+    await beat();
+    const held = holdWorkspace();
+    await held.locked;
+    const beating = beat().then((response) => response.status);
+    const waited = untilWaiting(db).then(
+      () => "waited",
+      () => "never",
+    );
+    const outcome = await Promise.race([beating, waited]);
+    held.release();
+    await held.done;
+    expect(outcome).toBe(200);
+    await withKey(app, admin.token, "POST", inSpace(`/campaigns/${made.id}/end`));
+  });
+});
+
+/** A transaction that holds the workspace's lock until `release`, as a contact's write does. */
+function holdWorkspace(then?: (tx: Transaction) => Promise<void>, visitorId?: string) {
+  let release = () => {};
+  let ready = () => {};
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const locked = new Promise<void>((resolve) => {
+    ready = resolve;
+  });
+  const done = withWorkspace(db, space.id, async (tx) => {
+    if (visitorId !== undefined) await lockVisitors(tx, space.id, [visitorId]);
+    await lockWorkspace(tx, space.id);
+    ready();
+    await released;
+    await then?.(tx);
+  });
+  return { locked, release, done };
+}
+
+describe("campaign operations that cross", () => {
+  test("a pause and a contact's change that sends its message take turns", async () => {
+    const key = keyOf("cross-pause");
+    const made = await live(key);
+    const { visitorId } = await newVisitor(app, space.publicKey);
+    // The contact's change holds the visitor and the workspace, then inserts the campaign's message.
+    const change = holdWorkspace(async (tx) => {
+      const found = await campaignRow(tx, space.id, made.id);
+      if (found === undefined) throw new Error("The campaign is missing");
+      await enterCampaign(tx, space.id, found, visitorId, { botsPaused: false, options: {} });
+    }, visitorId);
+    await change.locked;
+    const pausing = withKey(app, admin.token, "POST", inSpace(`/campaigns/${made.id}/pause`));
+    await untilWaiting(db);
+    change.release();
+    await change.done;
+    expect((await pausing).status).toBe(200);
+    expect(await campaignMessages(made.id)).toHaveLength(1);
+  });
+
+  test("an end and a batch of its run take turns", async () => {
+    const key = keyOf("cross-end");
+    const made = await live(key);
+    const [run] = await owner
+      .insert(campaignRun)
+      .values({ workspaceId: space.id, campaignId: made.id, occurrence: new Date() })
+      .returning();
+    let release = () => {};
+    const released = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let ready = () => {};
+    const locked = new Promise<void>((resolve) => {
+      ready = resolve;
+    });
+    // A batch holds its run, then takes the workspace's lock.
+    const batch = withWorkspace(db, space.id, async (tx) => {
+      await tx
+        .select()
+        .from(campaignRun)
+        .where(eq(campaignRun.id, run?.id ?? ""))
+        .for("update");
+      ready();
+      await released;
+      await lockWorkspace(tx, space.id);
+    });
+    await locked;
+    const ending = withKey(app, admin.token, "POST", inSpace(`/campaigns/${made.id}/end`));
+    await Promise.race([ending, untilWaiting(db).catch(() => undefined)]);
+    release();
+    await batch;
+    expect((await ending).status).toBe(200);
+    // The worker finishes an ended campaign's run.
+    while (await runCampaignRuns(workerDb, db, noLive, 5)) {
+      /* Each pass runs one batch. */
+    }
+    const [after] = await owner
+      .select()
+      .from(campaignRun)
+      .where(eq(campaignRun.id, run?.id ?? ""));
+    expect(after?.finishedAt).not.toBeNull();
+  });
+});
+
+describe("a workspace that paused every campaign", () => {
+  test("never holds back the runs of another workspace", async () => {
+    const other = await createWorkspace(db, "Paused company", [SITE]);
+    await owner
+      .insert(workspaceMember)
+      .values({ workspaceId: other.id, operatorId: boss.id, role: "owner" });
+    const [paused] = await owner
+      .insert(campaign)
+      .values({
+        workspaceId: other.id,
+        key: "paused-broadcast",
+        name: "Paused broadcast",
+        status: "live",
+        definition: CampaignDefinitionSchema.parse(definitionOf("paused-broadcast")),
+        authorOperatorId: boss.id,
+      })
+      .returning();
+    await owner
+      .update(workspace)
+      .set({ campaignsPausedAt: new Date() })
+      .where(eq(workspace.id, other.id));
+    await owner.insert(campaignRun).values({
+      workspaceId: other.id,
+      campaignId: paused?.id ?? "",
+      occurrence: new Date("2020-01-01T00:00:00Z"),
+      createdAt: new Date("2020-01-01T00:00:00Z"),
+    });
+    const key = keyOf("active-broadcast");
+    const made = await live(key, { audience: { field: "attributes.plan", op: "eq", value: key } });
+    await owner
+      .insert(campaignRun)
+      .values({ workspaceId: space.id, campaignId: made.id, occurrence: new Date() });
+    for (let pass = 0; pass < 20 && (await runCampaignRuns(workerDb, db, noLive, 1)); pass += 1) {
+      /* Each pass runs one batch. */
+    }
+    const [run] = await owner.select().from(campaignRun).where(eq(campaignRun.campaignId, made.id));
+    expect(run?.finishedAt).not.toBeNull();
   });
 });
 

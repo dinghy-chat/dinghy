@@ -1,5 +1,17 @@
 import { z } from "@hono/zod-openapi";
-import { LOCALES, WEEKDAYS } from "../../../packages/widget/src/shared.ts";
+import {
+  BUTTONS_MAX,
+  CAMPAIGN_GAP_HOURS_MAX,
+  CAMPAIGN_VARIANTS_MAX,
+  LOCALES,
+  PAGE_SECONDS_MAX,
+  WEEKDAYS,
+} from "../../../packages/widget/src/shared.ts";
+import {
+  knownVariable,
+  type TemplateProblem,
+  templateProblems,
+} from "../../../packages/widget/src/template.ts";
 import {
   ConditionSchema as AudienceCondition,
   CampaignConditionSchema as CampaignCondition,
@@ -14,16 +26,12 @@ import {
 import { failure } from "./errors.ts";
 import { Body, ClientId, DurationText, VisitorSelector } from "./inputs.ts";
 import { ButtonSchema, SEND_REFUSALS, SenderSchema } from "./outbound-schemas.ts";
-import { templateProblems } from "./template.ts";
 import { TimeZone } from "./time.ts";
 
 // A campaign as one JSON object, which the API, MCP, the SDK and the editor share. It holds no
 // status: only pause, resume and end change that, so an upsert from a deploy never resumes a
 // campaign that support paused. Durations stay as written, so "Copy as code" gives them back.
 
-const BUTTONS_MAX = 4;
-const VARIANTS_MAX = 5;
-const PAGE_SECONDS_MAX = 3600;
 const URL_PATTERN_MAX = 500;
 const DATA_KEYS_MAX = 20;
 const DATA_VALUE_LENGTH_MAX = 500;
@@ -170,33 +178,40 @@ const PresentationSchema = z.strictObject({
   ifConversationOpen: z.enum(IF_CONVERSATION_OPEN),
 });
 
-/** The variables a campaign's text may read, for its trigger. */
-function knownVariable(trigger: CampaignTrigger["type"]) {
-  const contact = new Set([
-    "name",
-    "firstName",
-    "email",
-    "userId",
-    "language",
-    "country",
-    "timeZone",
-  ]);
-  return (path: string) =>
-    contact.has(path) ||
-    /^attributes\.\w/.test(path) ||
-    (trigger === "api" && /^data\.\w/.test(path)) ||
-    (trigger === "event" && /^event\.properties\.\w/.test(path));
+/** A problem with a variable, in the words of the API's error detail. */
+function problemText(problem: TemplateProblem): string {
+  switch (problem.kind) {
+    case "noVariable":
+      return `"${problem.tag}" names no variable`;
+    case "unknownFilter":
+      return `Unknown filter "${problem.filter}"`;
+    case "filterArgument":
+      return `The filter ${problem.filter} ${problem.takesArgument ? "takes" : "takes no"} text in quotes`;
+    case "unknownVariable":
+      return `Unknown variable ${problem.path}`;
+  }
 }
 
 type Definition = z.infer<typeof DefinitionShape>;
+type Variant = NonNullable<Definition["variants"]>[number];
+type Goal = NonNullable<Definition["rules"]["goal"]>;
 
-/** Every message of the campaign: its own, each variant's, and each one's translations. */
-const messagesOf = (definition: Pick<Definition, "message" | "variants">) => [
+/** A variant's own message, or undefined for one that uses the campaign's or gets none. */
+export const variantMessage = (variant: Variant | null) =>
+  variant !== null && "message" in variant ? variant.message : undefined;
+
+/** Every message of the campaign: its own, then each variant's own. */
+export const messagesOf = (definition: Pick<Definition, "message" | "variants">) => [
   definition.message,
-  ...(definition.variants ?? []).flatMap((one) =>
-    "message" in one && one.message !== undefined ? [one.message] : [],
-  ),
+  ...(definition.variants ?? []).flatMap((one) => variantMessage(one) ?? []),
 ];
+
+/** Whether the campaign's messages may go by email: always, or once unread for a time. */
+export const sendsEmail = (delivery: Definition["delivery"]) =>
+  delivery.sendEmail || delivery.emailIfUnread !== undefined;
+
+/** A goal's condition, without the time it has. */
+export const goalCondition = ({ within: _, ...condition }: Goal) => condition;
 
 /** Why the parts of a definition do not fit together, one line each. */
 function definitionProblems(definition: Definition): string[] {
@@ -205,7 +220,7 @@ function definitionProblems(definition: Definition): string[] {
   const knows = knownVariable(trigger.type);
   for (const message of messagesOf(definition)) {
     const bodies = [message.body, ...Object.values(message.translations ?? {}).map((t) => t.body)];
-    problems.push(...bodies.flatMap((body) => templateProblems(body, knows)));
+    problems.push(...bodies.flatMap((body) => templateProblems(body, knows).map(problemText)));
   }
   if (trigger.type === "page" && presentation.show === "chat") {
     problems.push("A page campaign shows as badge or preview, so a reload never opens the chat");
@@ -243,7 +258,7 @@ const DefinitionShape = z.strictObject({
     businessHours: false,
     endsAt: null,
   }),
-  variants: z.array(VariantSchema).min(2).max(VARIANTS_MAX).optional().openapi({
+  variants: z.array(VariantSchema).min(2).max(CAMPAIGN_VARIANTS_MAX).optional().openapi({
     description:
       "A/B variants by weight, each with its own message or the campaign's, and at most one `control: true` group that gets nothing",
   }),
@@ -273,8 +288,16 @@ export const CampaignDefinitionSchema = DefinitionShape.superRefine((definition,
 });
 export type CampaignDefinition = z.infer<typeof CampaignDefinitionSchema>;
 
-/** A change to some parts of a definition. Each part given replaces that part whole. */
-export const CampaignPatchSchema = DefinitionShape.partial().openapi("CampaignPatch");
+/**
+ * A change to some parts of a definition. Each part given replaces that part whole, and a part left
+ * out keeps what was saved, so the defaults of `delivery` and `rules` apply only to a whole one.
+ */
+export const CampaignPatchSchema = DefinitionShape.extend({
+  delivery: DeliverySchema,
+  rules: RulesSchema,
+})
+  .partial()
+  .openapi("CampaignPatch");
 
 const Counts = {
   entered: z.number().int(),
@@ -351,7 +374,7 @@ export const CampaignSendSchema = z.object({
 export const CampaignSettingsSchema = z
   .object({
     paused: z.boolean().openapi({ description: "Every campaign's messages wait while true" }),
-    gapHours: z.number().int().min(0).max(720).openapi({
+    gapHours: z.number().int().min(0).max(CAMPAIGN_GAP_HOURS_MAX).openapi({
       description: "The fewest hours between two campaign messages to one visitor. 0 turns it off",
     }),
   })

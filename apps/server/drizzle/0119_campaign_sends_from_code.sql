@@ -1,0 +1,1 @@
+ALTER TABLE "outbound_message" ADD COLUMN "from_code" boolean DEFAULT false NOT NULL;

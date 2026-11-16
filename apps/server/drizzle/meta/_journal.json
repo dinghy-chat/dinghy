@@ -834,6 +834,20 @@
       "when": 1794835395643,
       "tag": "0118_campaigns_paused_by",
       "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "7",
+      "when": 1794839814451,
+      "tag": "0119_campaign_sends_from_code",
+      "breakpoints": true
+    },
+    {
+      "idx": 120,
+      "version": "7",
+      "when": 1794839815091,
+      "tag": "0120_campaigns_paused_workspaces",
+      "breakpoints": true
     }
   ]
 }

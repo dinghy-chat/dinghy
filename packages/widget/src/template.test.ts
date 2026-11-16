@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { renderTemplate, templateProblems } from "./template.ts";
+import { knownVariable, renderTemplate, templateProblems } from "./template.ts";
 
 const values: Record<string, unknown> = {
   firstName: "Ada",
@@ -35,14 +35,29 @@ describe("templateProblems", () => {
 
   test("names unknown variables, unknown filters and missing arguments", () => {
     expect(templateProblems("Hi {{ firstName | default: 'you' }}", knows)).toEqual([]);
-    expect(templateProblems("{{ nickname }}", knows)).toEqual(["Unknown variable nickname"]);
-    expect(templateProblems("{{ firstName | shout }}", knows)).toEqual(['Unknown filter "shout"']);
+    expect(templateProblems("{{ nickname }}", knows)).toEqual([
+      { kind: "unknownVariable", path: "nickname" },
+    ]);
+    expect(templateProblems("{{ firstName | shout }}", knows)).toEqual([
+      { kind: "unknownFilter", filter: "shout" },
+    ]);
     expect(templateProblems("{{ firstName | default }}", knows)).toEqual([
-      "The filter default takes text in quotes",
+      { kind: "filterArgument", filter: "default", takesArgument: true },
     ]);
     expect(templateProblems("{{ firstName | upcase: 'x' }}", knows)).toEqual([
-      "The filter upcase takes no text in quotes",
+      { kind: "filterArgument", filter: "upcase", takesArgument: false },
     ]);
-    expect(templateProblems("{{ }}", knows)).toEqual(['"{{ }}" names no variable']);
+    expect(templateProblems("{{ }}", knows)).toEqual([{ kind: "noVariable", tag: "{{ }}" }]);
+  });
+});
+
+describe("knownVariable", () => {
+  test("reads the contact, its attributes, and data or event properties by trigger", () => {
+    const match = knownVariable("match");
+    expect(["firstName", "timeZone", "attributes.plan"].every(match)).toBe(true);
+    expect(match("data.plan")).toBe(false);
+    expect(knownVariable("api")("data.plan")).toBe(true);
+    expect(knownVariable("event")("event.properties.rows")).toBe(true);
+    expect(match("nickname")).toBe(false);
   });
 });

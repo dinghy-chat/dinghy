@@ -1,5 +1,8 @@
+import { CONTACT_VARIABLES } from "./shared.ts";
+
 // Liquid-style variables in a campaign's text, such as `{{ firstName | default: "there" }}`. The
-// server renders a message with it, and the operator app's preview imports this same file.
+// server renders a message with it and checks a saved one, and the operator app's editor checks
+// and previews the text with this same file.
 
 const TAG = /\{\{(.*?)\}\}/g;
 const PATH = /^[A-Za-z_][\w.:-]*$/;
@@ -22,19 +25,27 @@ interface Tag {
   filters: { name: FilterName; arg: string }[];
 }
 
+/** Why a variable in the text does not read. */
+export type TemplateProblem =
+  | { kind: "noVariable"; tag: string }
+  | { kind: "unknownFilter"; filter: string }
+  | { kind: "filterArgument"; filter: string; takesArgument: boolean }
+  | { kind: "unknownVariable"; path: string };
+
 /** One `{{ ... }}`, or why it does not read. */
-function parseTag(inner: string): Tag | string {
+function parseTag(inner: string): Tag | TemplateProblem {
   const [path = "", ...rest] = inner.split("|");
   const variable = path.trim();
-  if (!PATH.test(variable)) return `"{{${inner}}}" names no variable`;
+  if (!PATH.test(variable)) return { kind: "noVariable", tag: `{{${inner}}}` };
   const filters: Tag["filters"] = [];
   for (const part of rest) {
     const [, name = "", double, single] = FILTER.exec(part) ?? [];
-    if (!Object.hasOwn(FILTERS, name)) return `Unknown filter "${part.trim()}"`;
+    if (!Object.hasOwn(FILTERS, name)) return { kind: "unknownFilter", filter: part.trim() };
     const arg = double ?? single;
     const filter = name as FilterName;
-    if (TAKES_ARGUMENT.includes(filter) !== (arg !== undefined)) {
-      return `The filter ${filter} ${TAKES_ARGUMENT.includes(filter) ? "takes" : "takes no"} text in quotes`;
+    const takesArgument = TAKES_ARGUMENT.includes(filter);
+    if (takesArgument !== (arg !== undefined)) {
+      return { kind: "filterArgument", filter, takesArgument };
     }
     filters.push({ name: filter, arg: arg ?? "" });
   }
@@ -51,7 +62,7 @@ const asText = (value: unknown) =>
 export function renderTemplate(text: string, lookup: (path: string) => unknown): string {
   return text.replace(TAG, (whole, inner: string) => {
     const tag = parseTag(inner);
-    if (typeof tag === "string") return whole;
+    if (!("filters" in tag)) return whole;
     return tag.filters.reduce(
       (value, { name, arg }) => FILTERS[name](value, arg),
       asText(lookup(tag.path)),
@@ -59,13 +70,25 @@ export function renderTemplate(text: string, lookup: (path: string) => unknown):
   });
 }
 
-/** Why the text's variables do not read, one line each, for the editor and the API. */
-export function templateProblems(text: string, knows: (path: string) => boolean): string[] {
-  const problems: string[] = [];
+/** Why the text's variables do not read, one problem each. */
+export function templateProblems(text: string, knows: (path: string) => boolean) {
+  const problems: TemplateProblem[] = [];
   for (const [, inner = ""] of text.matchAll(TAG)) {
     const tag = parseTag(inner);
-    if (typeof tag === "string") problems.push(tag);
-    else if (!knows(tag.path)) problems.push(`Unknown variable ${tag.path}`);
+    if (!("filters" in tag)) problems.push(tag);
+    else if (!knows(tag.path)) problems.push({ kind: "unknownVariable", path: tag.path });
   }
   return problems;
 }
+
+const CONTACT = new Set<string>(CONTACT_VARIABLES);
+
+/**
+ * Whether a campaign's text may read the variable, for its trigger: the contact's fields and
+ * attributes, a send's `data` from code, and a tracked event's properties.
+ */
+export const knownVariable = (trigger: string) => (path: string) =>
+  CONTACT.has(path) ||
+  /^attributes\.\w/.test(path) ||
+  (trigger === "api" && /^data\.\w/.test(path)) ||
+  (trigger === "event" && /^event\.properties\.\w/.test(path));

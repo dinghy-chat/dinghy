@@ -4,7 +4,12 @@ import type { Context, Input } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
 import type { Logger } from "pino";
-import { firstName, LOCALES, OUTBOUND_ANSWERED_MAX } from "../../../packages/widget/src/shared.ts";
+import {
+  firstName,
+  LOCALES,
+  type Locale,
+  OUTBOUND_ANSWERED_MAX,
+} from "../../../packages/widget/src/shared.ts";
 import { VISITOR_TOKEN } from "./api-security.ts";
 import type { App, AppEnv } from "./app.ts";
 import {
@@ -15,8 +20,9 @@ import {
 } from "./campaign-pages.ts";
 import { chatLinkVisitor, chatLinkWorkspace, isChatLinkToken } from "./chat-link.ts";
 import {
+  appendVisitorReply,
   BEAT_FIELDS,
-  CHAT_FIELDS,
+  contactChanged,
   recheckCampaigns,
   upsertContactAndRecheck,
 } from "./contact-checks.ts";
@@ -84,11 +90,7 @@ import {
 } from "./messages.ts";
 import { hashIp, isAddressBlocked, isBlocked, noteVisitorAddress } from "./moderation.ts";
 import type { Outbound } from "./outbound.ts";
-import {
-  appendVisitorMessage,
-  readInConversation,
-  type WidgetOutbound,
-} from "./outbound-delivery.ts";
+import { readInConversation, type WidgetOutbound } from "./outbound-delivery.ts";
 import { ButtonIndex, ButtonSchema, ChosenButtonSchema } from "./outbound-schemas.ts";
 import type { VisitorPresence } from "./presence.ts";
 import type { ImageUrls } from "./public-images.ts";
@@ -487,6 +489,9 @@ const SEND_REFUSED = {
   ),
 };
 
+/** The language the widget shows a page campaign's card in, so each count reads the same card. */
+const CardLanguage = z.object({ language: z.enum(LOCALES).optional() });
+
 const sendMessageRoute = createRoute({
   method: "post",
   path: "/v1/widget/{key}/messages",
@@ -514,8 +519,7 @@ const sendMessageRoute = createRoute({
                 description:
                   "A value button the visitor chose, by its place in the outbound message's buttons. The message's text becomes its label.",
               }),
-            pageCampaign: z
-              .object({ id: z.uuid(), button: ButtonIndex.optional() })
+            pageCampaign: CardLanguage.extend({ id: z.uuid(), button: ButtonIndex.optional() })
               .optional()
               .openapi({
                 description:
@@ -1128,7 +1132,7 @@ const pageShowRoute = createRoute({
     body: {
       required: true,
       content: {
-        "application/json": { schema: z.object({ language: z.enum(LOCALES).optional() }) },
+        "application/json": { schema: CardLanguage },
       },
     },
   },
@@ -1162,12 +1166,12 @@ const pageCountRoute = <B extends z.ZodObject>(path: "read" | "press", summary: 
 const pageReadRoute = pageCountRoute(
   "read",
   "The visitor read a page campaign's card: it counts in the campaign's results",
-  z.object({}),
+  CardLanguage,
 );
 const pagePressRoute = pageCountRoute(
   "press",
   "The visitor chose a page campaign's button that opens a page or dismisses, by its place",
-  ButtonPress,
+  ButtonPress.extend(CardLanguage.shape),
 );
 
 const outboundParams = params.extend({ id: z.uuid() });
@@ -1352,6 +1356,8 @@ export function registerWidgetRoutes(
           device: deviceLine(c.req.header("user-agent")),
         })
         .returning({ id: visitor.id });
+      // A new visitor is checked against every live campaign, as a new contact from a server is.
+      if (created !== undefined) await recheckCampaigns(tx, workspaceId, created.id, "all");
       return created;
     });
     if (row === "blocked") return c.json(BLOCKED, 403);
@@ -1379,12 +1385,15 @@ export function registerWidgetRoutes(
           const fromPage =
             pageCampaign === undefined
               ? null
-              : await answerPageCampaign(tx, found.id, pageCampaign.id, identified.visitorId);
+              : await answerPageCampaign(tx, found.id, pageCampaign.id, {
+                  visitorId: identified.visitorId,
+                  language: pageCampaign.language ?? null,
+                });
           const pressed =
             fromPage !== null && pageCampaign?.button !== undefined
               ? { outboundMessageId: fromPage, index: pageCampaign.button }
               : button;
-          const appended = await appendVisitorMessage(
+          return appendVisitorReply(
             tx,
             found.id,
             { kind: "visitor", visitorId: identified.visitorId },
@@ -1394,10 +1403,6 @@ export function registerWidgetRoutes(
               button: pressed,
             },
           );
-          if (appended.created) {
-            await recheckCampaigns(tx, found.id, identified.visitorId, CHAT_FIELDS);
-          }
-          return appended;
         }),
       ),
     );
@@ -1542,7 +1547,7 @@ export function registerWidgetRoutes(
             found.id,
             (attachment) =>
               withWorkspace(db, found.id, (tx) =>
-                appendVisitorMessage(
+                appendVisitorReply(
                   tx,
                   found.id,
                   { kind: "visitor", visitorId: identified.visitorId },
@@ -1660,24 +1665,28 @@ export function registerWidgetRoutes(
     return c.json({ outboundMessage: waitingView(urls, found.id, card.senders, card.one) }, 200);
   });
 
-  /** Counts a read or a press of a page campaign's card. */
+  /** Counts a read or a press of a page campaign's card, as it showed in this language. */
   const countPage = async <P extends string, I extends Input>(
     c: Context<AppEnv, P, I>,
-    campaignId: string,
+    { id, language }: { id: string; language?: Locale | undefined },
     action: Parameters<typeof countPageCampaign>[4],
   ) => {
     const found = c.get("workspace");
     const visitorId = await maybeVisitor(c);
+    const viewer = { visitorId, language: language ?? null };
     const counted = await withWorkspace(db, found.id, (tx) =>
-      countPageCampaign(tx, found.id, campaignId, visitorId, action),
+      countPageCampaign(tx, found.id, id, viewer, action),
     );
     return counted ? c.json({ ok: true as const }, 200) : c.json(NOT_FOUND, 404);
   };
 
-  app.openapi(pageReadRoute, (c) => countPage(c, c.req.valid("param").id, { read: true }));
-  app.openapi(pagePressRoute, (c) =>
-    countPage(c, c.req.valid("param").id, { button: c.req.valid("json").button }),
+  app.openapi(pageReadRoute, (c) =>
+    countPage(c, { ...c.req.valid("param"), ...c.req.valid("json") }, { read: true }),
   );
+  app.openapi(pagePressRoute, (c) => {
+    const { button, language } = c.req.valid("json");
+    return countPage(c, { ...c.req.valid("param"), language }, { button });
+  });
 
   app.openapi(saveEmailRoute, async (c) => {
     const found = c.get("workspace");
@@ -1688,12 +1697,13 @@ export function registerWidgetRoutes(
       return c.json(failure("signed_in", "The host site sets this visitor's email."), 403);
     }
     const { email } = c.req.valid("json");
-    await withWorkspace(db, found.id, (tx) =>
-      tx
+    await withWorkspace(db, found.id, async (tx) => {
+      await tx
         .update(visitor)
         .set({ email })
-        .where(and(eq(visitor.workspaceId, found.id), eq(visitor.id, identified.visitorId))),
-    );
+        .where(and(eq(visitor.workspaceId, found.id), eq(visitor.id, identified.visitorId)));
+      await contactChanged(tx, found.id, identified.visitorId, ["email"]);
+    });
     return c.json(await visitorView(db, found.id, identified), 200);
   });
 
@@ -1806,9 +1816,13 @@ export function registerWidgetRoutes(
     const visitorId = await knownVisitor(db, found, c.req.param("key"), token);
     if (visitorId === undefined) return c.json(UNAUTHORIZED, 401);
     if (visitorId === null) return c.json({ ok: true as const }, 200);
-    await withWorkspace(db, found.id, (tx) =>
-      recordVisitorContext(tx, found.id, visitorId, c.req.valid("json")),
-    );
+    const report = c.req.valid("json");
+    await withWorkspace(db, found.id, async (tx) => {
+      const kept = await recordVisitorContext(tx, found.id, visitorId, report);
+      if (kept && report.locale !== undefined) {
+        await contactChanged(tx, found.id, visitorId, ["language"]);
+      }
+    });
     return c.json({ ok: true as const }, 200);
   });
 

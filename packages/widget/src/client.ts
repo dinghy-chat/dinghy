@@ -73,7 +73,8 @@ export interface Waiting {
 export interface Answer {
   outboundIds: string[];
   button?: { outboundMessageId: string; index: number };
-  pageCampaign?: { id: string; button?: number };
+  /** The card's language, so its message comes in as the visitor read it. */
+  pageCampaign?: { id: string; language: Locale; button?: number };
 }
 
 /** A send's answer: the message, and whether it started a new conversation. */
@@ -240,11 +241,14 @@ export function createClient(
           body: JSON.stringify({ language }),
         })
       ).outboundMessage,
-    /** The visitor read a page campaign's card, or chose a button that opens a page or dismisses. */
-    countPage: (token: string | null, id: string, button?: number) =>
+    /**
+     * The visitor read a page campaign's card, or chose a button that opens a page or dismisses,
+     * by its place in the card's language.
+     */
+    countPage: (token: string | null, id: string, language: Locale, button?: number) =>
       call<{ ok: true }>(`campaigns/${id}/${button === undefined ? "read" : "press"}`, token, {
         method: "POST",
-        body: JSON.stringify(button === undefined ? {} : { button }),
+        body: JSON.stringify({ language, button }),
       }),
     /** Turns automatic messages off, or on again. */
     optOut: (token: string, optedOut: boolean) =>

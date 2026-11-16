@@ -1,4 +1,4 @@
-import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, type SQL, sql } from "drizzle-orm";
 import {
   type CampaignRow,
   campaignRows,
@@ -6,7 +6,8 @@ import {
   inAudience,
   reachedContact,
 } from "./campaign-checks.ts";
-import { enterCampaign } from "./campaign-entry.ts";
+import { enterCampaign, frequencyBlocker } from "./campaign-entry.ts";
+import { goalCondition } from "./campaign-schemas.ts";
 import { matchesContact } from "./conditions.ts";
 import { upsertContact } from "./contact-fields.ts";
 import { campaign, campaignTrigger, outboundMessage } from "./db/schema.ts";
@@ -14,8 +15,8 @@ import type { Transaction } from "./db/tenant.ts";
 import { type ContactFields, toMs } from "./inputs.ts";
 import { lockVisitors } from "./journey.ts";
 import { lockWorkspace } from "./messages.ts";
-import { recheckUnless } from "./outbound-delivery.ts";
-import { cancelWhere, change } from "./outbound-rules.ts";
+import { appendVisitorMessage, recheckUnless } from "./outbound-delivery.ts";
+import { cancelWhere, change, endable } from "./outbound-rules.ts";
 
 // What a change to a contact sets off: scheduled messages whose `unless` now matches end, and each
 // live campaign that reads a changed field checks the contact again for its exit, its goal and its
@@ -26,7 +27,7 @@ import { cancelWhere, change } from "./outbound-rules.ts";
 export const TIME_FIELD = "@time";
 
 /** The fields a new conversation or a visitor's answer changes. */
-export const CHAT_FIELDS = ["hasChatted", "conversationCount", "repliedToCampaign"];
+const CHAT_FIELDS = ["hasChatted", "conversationCount", "repliedToCampaign"];
 
 /**
  * The fields the widget's beat may change, each minute while a page is open, with time itself, so
@@ -48,6 +49,12 @@ function campaignsReading(tx: Transaction, workspaceId: string, fields: string[]
 }
 
 type Lock = () => Promise<{ botsPaused: boolean }>;
+
+/**
+ * When a message reached the contact: when it became sent, or for a place in the control group,
+ * when it would have.
+ */
+const reachedAt = sql`coalesce(${outboundMessage.sentAt}, case when ${outboundMessage.statusReason} = 'control_group' then ${outboundMessage.sendAt} end)`;
 
 /**
  * Records the goal on the campaign's messages that reached the contact within the goal's time, when
@@ -72,12 +79,13 @@ async function markGoal(
           eq(outboundMessage.campaignId, found.id),
           eq(outboundMessage.visitorId, visitorId),
           isNull(outboundMessage.goalReachedAt),
-          gt(outboundMessage.createdAt, new Date(Date.now() - toMs(goal.within))),
           reachedContact,
+          sql`${reachedAt} > ${new Date(Date.now() - toMs(goal.within))}`,
+          sql`${reachedAt} <= now()`,
         ),
       );
-  const { within: _, ...condition } = goal;
   if ((await counted()).length === 0) return false;
+  const condition = goalCondition(goal);
   if (!(await matchesContact(tx, workspaceId, visitorId, condition, { campaignId: found.id }))) {
     return false;
   }
@@ -89,11 +97,34 @@ async function markGoal(
   return true;
 }
 
+/** Whether a cancel could end one of the messages that `which` names, read with no lock. */
+async function hasEndable(tx: Transaction, workspaceId: string, which: SQL) {
+  const found = await tx
+    .select({ id: outboundMessage.id })
+    .from(outboundMessage)
+    .where(and(eq(outboundMessage.workspaceId, workspaceId), endable, which))
+    .limit(1);
+  return found.length > 0;
+}
+
+/** Whether the campaign takes the contact in now, read with no lock. */
+async function entersNow(
+  tx: Transaction,
+  workspaceId: string,
+  found: CampaignRow,
+  visitorId: string,
+) {
+  return (
+    (await inAudience(tx, workspaceId, visitorId, found.definition)) &&
+    (await frequencyBlocker(tx, workspaceId, found, visitorId)) === null
+  );
+}
+
 /**
- * Checks the contact against one campaign: an exit or a goal ends their waiting messages from it,
- * and a `match` campaign takes them in when they match its audience. `lock` takes the visitor's and
- * the workspace's locks the first time a write needs them, so a check that changes nothing takes
- * none.
+ * Checks the contact against one campaign: a goal, then an exit, ends their waiting messages from
+ * it, and a `match` campaign takes them in when they match its audience. A goal counts even when
+ * the same change makes them exit. `lock` takes the visitor's and the workspace's locks the first
+ * time a write needs them, so a check that changes nothing, as most beats do, takes none.
  */
 async function recheckCampaign(
   tx: Transaction,
@@ -103,22 +134,22 @@ async function recheckCampaign(
   lock: Lock,
 ) {
   const theirs = sql`${outboundMessage.campaignId} = ${found.id} and ${outboundMessage.visitorId} = ${visitorId}`;
-  if (await hasExited(tx, workspaceId, visitorId, found)) {
-    await lock();
-    await cancelWhere(tx, workspaceId, theirs, "unless_matched");
-    return;
-  }
   if (await markGoal(tx, workspaceId, found, visitorId, lock)) {
     await cancelWhere(tx, workspaceId, theirs, "goal_reached");
     return;
   }
-  const { trigger } = found.definition;
-  if (trigger.type !== "match" || !(await inAudience(tx, workspaceId, visitorId, found.definition)))
+  if (await hasExited(tx, workspaceId, visitorId, found)) {
+    if (!(await hasEndable(tx, workspaceId, theirs))) return;
+    await lock();
+    await cancelWhere(tx, workspaceId, theirs, "unless_matched");
     return;
+  }
+  const { trigger } = found.definition;
+  if (trigger.type !== "match" || !(await entersNow(tx, workspaceId, found, visitorId))) return;
   const { botsPaused } = await lock();
   await enterCampaign(tx, workspaceId, found, visitorId, {
     botsPaused,
-    input: { delay: trigger.delay },
+    options: { delay: trigger.delay },
   });
 }
 
@@ -150,6 +181,27 @@ export async function contactChanged(
 ): Promise<void> {
   await recheckUnless(tx, workspaceId, visitorId);
   await recheckCampaigns(tx, workspaceId, visitorId, fields);
+}
+
+type Reply = Parameters<typeof appendVisitorMessage>;
+
+/**
+ * A visitor's message, from the widget, an upload or an email, with the checks of the campaigns
+ * that read their chat, such as a goal of `repliedToCampaign`. Their lock comes first, as the
+ * checks' writes take it before the workspace's.
+ */
+export async function appendVisitorReply(
+  tx: Transaction,
+  workspaceId: string,
+  author: Reply[2],
+  input: Reply[3],
+  answering?: Reply[4],
+  limits?: Reply[5],
+) {
+  await lockVisitors(tx, workspaceId, [author.visitorId]);
+  const appended = await appendVisitorMessage(tx, workspaceId, author, input, answering, limits);
+  if (appended.created) await recheckCampaigns(tx, workspaceId, author.visitorId, CHAT_FIELDS);
+  return appended;
 }
 
 /**

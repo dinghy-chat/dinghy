@@ -159,7 +159,7 @@ export function useOutbound(
     for (const one of unseen) {
       const reading =
         token === null || isPage(one)
-          ? client.countPage(token, one.id)
+          ? client.countPage(token, one.id, language())
           : client.readOutbound(token, one.id);
       reading.then(
         () => emit(context, "outbound:read", { ...idsOf(one), button: null }),
@@ -203,7 +203,7 @@ export function useOutbound(
     readBy(one, button);
     const pressing =
       token === null || isPage(one)
-        ? client.countPage(token, one.id, index)
+        ? client.countPage(token, one.id, language(), index)
         : client.press(token, one.id, button.dismiss ? "dismiss" : "click", index);
     pressing.then(
       () => {
@@ -251,7 +251,11 @@ export function useOutbound(
           .slice(-OUTBOUND_ANSWERED_MAX),
         ...(button !== undefined && !onCard && { button }),
         ...(card !== undefined && {
-          pageCampaign: { id: card.id, ...(onCard && { button: button.index }) },
+          pageCampaign: {
+            id: card.id,
+            language: language(),
+            ...(onCard && { button: button.index }),
+          },
         }),
       };
     },

@@ -6,6 +6,7 @@ import PostalMime, { type Address, type Attachment, type Email } from "postal-mi
 import { MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
 import type { App } from "./app.ts";
 import { asUuid } from "./chat-link.ts";
+import { appendVisitorReply } from "./contact-checks.ts";
 import { conversation, replyAddress, visitor, widgetSettings } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { errorAnswer, failure, NOT_FOUND } from "./errors.ts";
@@ -19,7 +20,6 @@ import {
   type NewAttachment,
   WorkspaceClosedError,
 } from "./messages.ts";
-import { appendVisitorMessage } from "./outbound-delivery.ts";
 import { type RateLimit, TOO_MANY_REQUESTS } from "./rate-limit.ts";
 import { SIGNATURE_TOLERANCE_MINUTES, SIGNATURE_TOLERANCE_SECONDS } from "./setup-code.ts";
 import type { ShipmailInbound } from "./shipmail-inbound.ts";
@@ -540,7 +540,7 @@ async function addMessages(
   const { visitorId, conversationId } = address;
   const append = (clientId: string, input: { body: string } | { attachment: NewAttachment }) =>
     withWorkspace(db, workspaceId, (tx) =>
-      appendVisitorMessage(
+      appendVisitorReply(
         tx,
         workspaceId,
         { kind: "visitor", visitorId, conversationId },

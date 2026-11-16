@@ -1,7 +1,7 @@
 import type { z } from "@hono/zod-openapi";
-import { and, eq, gt, inArray, isNull, or, type SQL, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, or, type SQL, sql } from "drizzle-orm";
 import type { Actor } from "./api-keys.ts";
-import { type CampaignRow, campaignRow, closedNow } from "./campaign-checks.ts";
+import { type CampaignRow, campaignRows, closedNow } from "./campaign-checks.ts";
 import { campaignClientId, enterCampaign } from "./campaign-entry.ts";
 import { campaignResults, campaignTotals, emptyCounts } from "./campaign-results.ts";
 import type {
@@ -13,14 +13,18 @@ import type {
   EstimateSchema,
   ResultsQuery,
 } from "./campaign-schemas.ts";
-import { CampaignDefinitionSchema } from "./campaign-schemas.ts";
+import {
+  CampaignDefinitionSchema,
+  goalCondition,
+  messagesOf,
+  sendsEmail,
+} from "./campaign-schemas.ts";
 import { type Condition, fieldsOf, readsTime, toSql } from "./conditions.ts";
 import { TIME_FIELD } from "./contact-checks.ts";
 import {
   type CampaignPayload,
   type CampaignStatus,
   campaign,
-  campaignRun,
   campaignTrigger,
   contactEvent,
   event,
@@ -57,17 +61,38 @@ const LOOK_BACK_MS = 7 * DAY_MS;
 
 type Row = typeof campaign.$inferSelect;
 
-const refOf = (ref: CampaignRef) =>
+const whereRef = (ref: CampaignRef) =>
   "id" in ref ? eq(campaign.id, ref.id) : eq(campaign.key, ref.key);
 
-async function findCampaign(tx: Transaction, workspaceId: string, ref: CampaignRef) {
+async function readCampaign(tx: Transaction, workspaceId: string, ref: CampaignRef) {
   const [found] = await tx
     .select()
     .from(campaign)
-    .where(and(eq(campaign.workspaceId, workspaceId), refOf(ref)))
-    .for("update");
+    .where(and(eq(campaign.workspaceId, workspaceId), whereRef(ref)));
   return found;
 }
+
+/**
+ * Locks the workspace, then the campaign, for a change to it. Every campaign operation takes its
+ * locks in one order: the visitors, then the workspace, then the campaign, then a run. So a status
+ * read under the workspace's lock holds until commit, and a send needs no lock on the campaign.
+ * The campaign's lock is FOR NO KEY UPDATE, as only its other columns change: a message's insert
+ * takes KEY SHARE on it for its foreign key, and never waits for this one. An end leaves its runs to
+ * the worker, which takes a run's lock first but only with SKIP LOCKED, so nothing waits for it.
+ */
+async function lockCampaign(tx: Transaction, workspaceId: string, ref: CampaignRef) {
+  await lockWorkspace(tx, workspaceId);
+  const [found] = await tx
+    .select()
+    .from(campaign)
+    .where(and(eq(campaign.workspaceId, workspaceId), whereRef(ref)))
+    .for("no key update");
+  return found;
+}
+
+/** A campaign by `ref`, with the workspace's settings for every campaign. */
+const campaignOf = async (tx: Transaction, workspaceId: string, ref: CampaignRef) =>
+  (await campaignRows(tx, workspaceId, whereRef(ref)))[0];
 
 const iso = (value: Date | null) => value?.toISOString() ?? null;
 
@@ -126,16 +151,11 @@ function triggerFields(definition: CampaignDefinition): string[] {
   const conditions: Condition[] = [
     ...(trigger.type === "match" && audience !== undefined ? [audience] : []),
     ...(rules.exitWhen === undefined ? [] : [rules.exitWhen]),
-    ...(rules.goal === undefined ? [] : [withoutWithin(rules.goal)]),
+    ...(rules.goal === undefined ? [] : [goalCondition(rules.goal)]),
   ];
   const timed = trigger.type === "match" && audience !== undefined && readsTime(audience);
   return [...new Set([...conditions.flatMap(fieldsOf), ...(timed ? [TIME_FIELD] : [])])];
 }
-
-const withoutWithin = ({
-  within: _,
-  ...condition
-}: NonNullable<CampaignDefinition["rules"]["goal"]>) => condition;
 
 /** Writes the contact fields a campaign reads again, after a save or an import. */
 export async function saveTriggerFields(
@@ -165,16 +185,9 @@ async function authorRefusal(
   definition: CampaignDefinition,
 ): Promise<CampaignRefusal | null> {
   const key = actor.kind === "key" ? await keyState(tx, workspaceId, actor.apiKeyId) : null;
-  const { delivery } = definition;
-  const refused = keyRefusal(key, delivery.sendEmail || delivery.emailIfUnread !== undefined);
+  const refused = keyRefusal(key, sendsEmail(definition.delivery));
   if (refused !== null) return refused;
-  const messages = [
-    definition.message,
-    ...(definition.variants ?? []).flatMap((one) =>
-      "message" in one && one.message !== undefined ? [one.message] : [],
-    ),
-  ];
-  for (const { sender } of messages) {
+  for (const { sender } of messagesOf(definition)) {
     const as = await sendsAs(tx, workspaceId, actor, key, sender);
     if (typeof as === "string") return as;
   }
@@ -245,7 +258,10 @@ const ACTIONS: Record<Action, { from: CampaignStatus[]; to: CampaignStatus }> = 
   end: { from: ["draft", "live", "paused"], to: "ended" },
 };
 
-/** Moves a campaign to its next status, with what that sets off. Null when it is already there. */
+/**
+ * Moves a campaign to its next status, with what that sets off. Null when it is already there. The
+ * caller holds the campaign's lock.
+ */
 async function act(tx: Transaction, workspaceId: string, row: Row, action: Action) {
   const { from, to } = ACTIONS[action];
   if (row.status === "ended") return "ended" as const;
@@ -263,17 +279,6 @@ async function act(tx: Transaction, workspaceId: string, row: Row, action: Actio
   const theirs = eq(outboundMessage.campaignId, row.id);
   if (to === "live") await wakeHeld(tx, workspaceId, theirs);
   if (to !== "ended") return [];
-  await tx
-    .update(campaignRun)
-    .set({ finishedAt: now })
-    .where(
-      and(
-        eq(campaignRun.workspaceId, workspaceId),
-        eq(campaignRun.campaignId, row.id),
-        isNull(campaignRun.finishedAt),
-      ),
-    );
-  await lockWorkspace(tx, workspaceId);
   return cancelWhere(tx, workspaceId, sql`${theirs}`, "campaign_ended");
 }
 
@@ -317,7 +322,7 @@ export function createCampaigns({ db, live }: { db: Database; live: Live }) {
     build: (existing: Row | undefined) => CampaignDefinition | CampaignRefusal | z.ZodError,
   ) {
     const outcome = await withWorkspace(db, workspaceId, async (tx) => {
-      const existing = await findCampaign(tx, workspaceId, ref);
+      const existing = await lockCampaign(tx, workspaceId, ref);
       const definition = build(existing);
       if (typeof definition === "string" || definition instanceof Error) return definition;
       const row = await save(tx, workspaceId, actor, existing, definition);
@@ -347,7 +352,7 @@ export function createCampaigns({ db, live }: { db: Database; live: Live }) {
 
     get: (workspaceId: string, ref: CampaignRef) =>
       withWorkspace(db, workspaceId, async (tx) => {
-        const row = await findCampaign(tx, workspaceId, ref);
+        const row = await readCampaign(tx, workspaceId, ref);
         return row === undefined ? null : viewOf(tx, workspaceId, row);
       }),
 
@@ -372,11 +377,11 @@ export function createCampaigns({ db, live }: { db: Database; live: Live }) {
     /** Pauses, resumes or ends a campaign. Answers it as it is now, or why not. */
     async setStatus(workspaceId: string, ref: CampaignRef, action: Action) {
       const outcome = await withWorkspace(db, workspaceId, async (tx) => {
-        const row = await findCampaign(tx, workspaceId, ref);
+        const row = await lockCampaign(tx, workspaceId, ref);
         if (row === undefined) return "not_found" as const;
         const done = await act(tx, workspaceId, row, action);
         if (done === "ended") return done;
-        const now = await findCampaign(tx, workspaceId, ref);
+        const now = await readCampaign(tx, workspaceId, ref);
         if (now === undefined) throw new Error("The campaign is missing");
         return { view: await viewOf(tx, workspaceId, now), visitors: done ?? [] };
       });
@@ -388,7 +393,7 @@ export function createCampaigns({ db, live }: { db: Database; live: Live }) {
 
     async results(workspaceId: string, ref: CampaignRef, range: z.infer<typeof ResultsQuery>) {
       return withWorkspace(db, workspaceId, async (tx) => {
-        const row = await findCampaign(tx, workspaceId, ref);
+        const row = await readCampaign(tx, workspaceId, ref);
         return row === undefined ? null : campaignResults(tx, workspaceId, row.id, range);
       });
     },
@@ -400,10 +405,11 @@ export function createCampaigns({ db, live }: { db: Database; live: Live }) {
      */
     async send(workspaceId: string, ref: CampaignRef, input: SendInput) {
       const outcome = await withWorkspace(db, workspaceId, async (tx) => {
-        const row = await findCampaign(tx, workspaceId, ref);
-        if (row === undefined) return "not_found" as const;
-        if (row.status !== "live") return "not_live" as const;
-        const clientId = campaignClientId(row.id, input.clientId);
+        // Read with no lock: the send's decision checks the status again under the workspace's.
+        const found = await campaignOf(tx, workspaceId, ref);
+        if (found === undefined) return "not_found" as const;
+        if (found.status !== "live") return "not_live" as const;
+        const clientId = campaignClientId(found.id, input.clientId);
         const visitorId = await sendTarget(tx, workspaceId, input.visitor);
         if (visitorId === null) return "not_found" as const;
         await lockVisitors(tx, workspaceId, [visitorId]);
@@ -414,16 +420,14 @@ export function createCampaigns({ db, live }: { db: Database; live: Live }) {
           .where(
             and(
               eq(outboundMessage.workspaceId, workspaceId),
-              eq(outboundMessage.campaignId, row.id),
+              eq(outboundMessage.campaignId, found.id),
               eq(outboundMessage.clientId, clientId),
             ),
           );
         if (retry !== undefined) return { created: false, id: retry.id, visitorId };
-        const found = await campaignRow(tx, workspaceId, row.id);
-        if (found === undefined) throw new Error("The campaign is missing");
         const entry = await enterCampaign(tx, workspaceId, found, visitorId, {
           botsPaused,
-          input: { clientId: input.clientId, data: input.data },
+          options: { clientId: input.clientId, data: input.data },
         });
         if (entry.kind === "refused") return entry.refusal;
         if (entry.kind === "existing") return { created: false, id: entry.id, visitorId };
@@ -445,10 +449,8 @@ export function createCampaigns({ db, live }: { db: Database; live: Live }) {
      */
     async test(workspaceId: string, actor: Extract<Actor, { kind: "operator" }>, ref: CampaignRef) {
       return withWorkspace(db, workspaceId, async (tx) => {
-        const row = await findCampaign(tx, workspaceId, ref);
-        if (row === undefined) return "not_found" as const;
-        const found = await campaignRow(tx, workspaceId, row.id);
-        if (found === undefined) throw new Error("The campaign is missing");
+        const found = await campaignOf(tx, workspaceId, ref);
+        if (found === undefined) return "not_found" as const;
         const visitorId = await insertTestVisitor(tx, workspaceId, actor.name);
         const { botsPaused } = await lockWorkspace(tx, workspaceId);
         const now: CampaignRow = {
@@ -464,7 +466,7 @@ export function createCampaigns({ db, live }: { db: Database; live: Live }) {
         };
         const entry = await enterCampaign(tx, workspaceId, now, visitorId, {
           botsPaused,
-          input: {},
+          options: {},
         });
         if (entry.kind !== "entered") throw new Error("A test send did not go");
         return {
@@ -574,7 +576,7 @@ export async function endDueCampaigns(finder: Database, writer: Database, live: 
     );
   for (const { workspaceId, id } of due) {
     const visitors = await withWorkspace(writer, workspaceId, async (tx) => {
-      const row = await findCampaign(tx, workspaceId, { id });
+      const row = await lockCampaign(tx, workspaceId, { id });
       if (row === undefined) return [];
       const done = await act(tx, workspaceId, row, "end");
       return Array.isArray(done) ? done : [];

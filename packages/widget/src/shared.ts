@@ -401,6 +401,31 @@ export function forgetVisitor(publicKey: string): void {
 /** The longest message, in characters: the composers' limit, which the server checks too. */
 export const MESSAGE_MAX = 10_000;
 
+/** The most buttons on an outbound message, and on each of a campaign's. */
+export const BUTTONS_MAX = 4;
+
+/** The most A/B variants a campaign has. */
+export const CAMPAIGN_VARIANTS_MAX = 5;
+
+/** The longest a page campaign waits on a page before it shows, in seconds. */
+export const PAGE_SECONDS_MAX = 3600;
+
+/** The gap a workspace starts with between two campaign messages to one visitor, in hours. */
+export const CAMPAIGN_GAP_HOURS_DEFAULT = 24;
+/** The longest gap a workspace sets between two campaign messages to one visitor, in hours. */
+export const CAMPAIGN_GAP_HOURS_MAX = 720;
+
+/** The contact's fields that a campaign's text may read, beside `attributes.<key>`. */
+export const CONTACT_VARIABLES = [
+  "firstName",
+  "name",
+  "email",
+  "userId",
+  "language",
+  "country",
+  "timeZone",
+] as const;
+
 /** The most members one note mentions, which the operator app keeps to and the server checks. */
 export const MENTIONS_MAX = 10;
 

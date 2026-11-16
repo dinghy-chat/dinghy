@@ -2,7 +2,7 @@ import { and, desc, eq, gt, isNotNull, ne, or, type SQL, sql } from "drizzle-orm
 import { type HoursState, hoursState } from "../../../packages/widget/src/hours.ts";
 import { type BusinessHours, WEEKDAYS } from "../../../packages/widget/src/shared.ts";
 import { readBusinessHours } from "./business-hours.ts";
-import type { CampaignDefinition } from "./campaign-schemas.ts";
+import { type CampaignDefinition, goalCondition } from "./campaign-schemas.ts";
 import { matchesContact } from "./conditions.ts";
 import {
   type CampaignStatus,
@@ -19,12 +19,13 @@ import { HOUR_MS } from "./time.ts";
 // contact's audience, exit and goal, the hours it may go in, and the workspace's gap between two
 // campaign messages. The decision in outbound-rules.ts reads it.
 
-type Row = typeof outboundMessage.$inferSelect;
-
-/** A time window that keeps a message waiting, and when it opens, or null when it is not known. */
+/**
+ * A time window that keeps a message waiting, and when it opens. Undefined when that is not known,
+ * such as a week with no open hours, so the worker looks again soon rather than never.
+ */
 interface Closed {
   reason: Extract<OutboundStatusReason, "outside_business_hours" | "outside_send_window">;
-  until: Date | null;
+  until: Date | undefined;
 }
 
 export interface CampaignCheck {
@@ -83,7 +84,8 @@ function everyDay(from: string, to: string, timeZone: string): BusinessHours {
   };
 }
 
-const closedUntil = (state: HoursState) => (state.open ? null : state.reopensAt);
+const closedUntil = (state: HoursState) =>
+  state.open ? undefined : (state.reopensAt ?? undefined);
 
 /**
  * The window that keeps a message to the visitor waiting now, or null when it may go. With no
@@ -116,7 +118,12 @@ export async function closedNow(
 }
 
 /** Whether another campaign message became sent to this visitor within the gap. */
-async function withinGap(tx: Transaction, workspaceId: string, row: Row, gapHours: number) {
+async function withinGap(
+  tx: Transaction,
+  workspaceId: string,
+  { id, visitorId }: { id: string | null; visitorId: string },
+  gapHours: number,
+) {
   if (gapHours === 0) return false;
   const found = await tx
     .select({ id: outboundMessage.id })
@@ -124,10 +131,10 @@ async function withinGap(tx: Transaction, workspaceId: string, row: Row, gapHour
     .where(
       and(
         eq(outboundMessage.workspaceId, workspaceId),
-        eq(outboundMessage.visitorId, row.visitorId),
+        eq(outboundMessage.visitorId, visitorId),
         isNotNull(outboundMessage.campaignId),
         gt(outboundMessage.sentAt, new Date(Date.now() - gapHours * HOUR_MS)),
-        ne(outboundMessage.id, row.id),
+        id === null ? undefined : ne(outboundMessage.id, id),
       ),
     )
     .limit(1);
@@ -172,23 +179,22 @@ async function reachedGoal(
     { campaignId: found.id, visitorId },
     isNotNull(outboundMessage.goalReachedAt),
   );
-  const { within: _, ...condition } = goal;
   return (
     counted !== null ||
-    (await matchesContact(tx, workspaceId, visitorId, condition, { campaignId: found.id }))
+    (await matchesContact(tx, workspaceId, visitorId, goalCondition(goal), {
+      campaignId: found.id,
+    }))
   );
 }
 
-/** Whether the contact matches the campaign's audience. A send from code skips it. */
+/** Whether the contact matches the campaign's audience. */
 export async function inAudience(
   tx: Transaction,
   workspaceId: string,
   visitorId: string,
-  definition: CampaignDefinition,
+  { audience }: CampaignDefinition,
 ) {
-  const { audience, trigger } = definition;
-  if (audience === undefined || trigger.type === "api") return true;
-  return matchesContact(tx, workspaceId, visitorId, audience);
+  return audience === undefined || matchesContact(tx, workspaceId, visitorId, audience);
 }
 
 /** Whether the contact matches the campaign's exit condition. */
@@ -205,22 +211,50 @@ export async function hasExited(
   );
 }
 
+/**
+ * A campaign's message as its checks read it: a row, or a page campaign's card, which has none, for
+ * a visitor who may not exist yet. A send from code skips the audience.
+ */
+export interface CampaignDraft {
+  id: string | null;
+  visitorId: string | null;
+  campaignId: string;
+  fromCode: boolean;
+}
+
 /** What the message's campaign says now. The caller holds the workspace lock. */
 export async function campaignCheck(
   tx: Transaction,
   workspaceId: string,
-  row: Row & { campaignId: string },
+  draft: CampaignDraft,
 ): Promise<CampaignCheck> {
-  const found = await campaignRow(tx, workspaceId, row.campaignId);
+  const found = await campaignRow(tx, workspaceId, draft.campaignId);
   if (found === undefined) throw new Error("The message's campaign is missing");
   const { definition, allPaused, gapHours } = found;
+  const { id, visitorId } = draft;
+  const status = allPaused && found.status === "live" ? "paused" : found.status;
+  const closed = await closedNow(tx, workspaceId, visitorId, definition.rules);
+  const emailIfUnread = definition.delivery.emailIfUnread ?? null;
+  // A visitor who does not exist yet matches only an audience of everyone, and nothing else.
+  if (visitorId === null) {
+    const audienceMatched = draft.fromCode || definition.audience === undefined;
+    return {
+      status,
+      exited: false,
+      goalReached: false,
+      audienceMatched,
+      closed,
+      capped: false,
+      emailIfUnread,
+    };
+  }
   return {
-    status: allPaused && found.status === "live" ? "paused" : found.status,
-    exited: await hasExited(tx, workspaceId, row.visitorId, found),
-    goalReached: await reachedGoal(tx, workspaceId, row.visitorId, found),
-    audienceMatched: await inAudience(tx, workspaceId, row.visitorId, definition),
-    closed: await closedNow(tx, workspaceId, row.visitorId, definition.rules),
-    capped: await withinGap(tx, workspaceId, row, gapHours),
-    emailIfUnread: definition.delivery.emailIfUnread ?? null,
+    status,
+    exited: await hasExited(tx, workspaceId, visitorId, found),
+    goalReached: await reachedGoal(tx, workspaceId, visitorId, found),
+    audienceMatched: draft.fromCode || (await inAudience(tx, workspaceId, visitorId, definition)),
+    closed,
+    capped: await withinGap(tx, workspaceId, { id, visitorId }, gapHours),
+    emailIfUnread,
   };
 }
