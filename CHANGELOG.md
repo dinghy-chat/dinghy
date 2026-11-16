@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.37.0] - 2026-11-16
+
 ### Added
 
 - Campaigns: a saved rule that sends outbound messages, as one JSON object with an audience, a trigger, a message with variables, buttons and translations, a presentation, a delivery and rules. The trigger is `match` (when a contact starts to match the audience), `schedule` (once, daily, weekly or monthly), `event`, `page` (seconds on a page that matches a URL, in the browser) or `api`. The rules are a frequency, business hours, a send window on the visitor's clock, an end date, `exitWhen` and a goal, and `variants` adds A/B variants and a control group. `delivery.emailIfUnread` emails an unread message after a time. A new campaign is a draft, and only pause, resume and end change its status, so an upsert from a deploy never resumes a paused campaign. Results count per day and variant: contacts reached, sent, delivered, read, replied, dismissed, clicks by button value, goals reached and conversations started. [Campaigns](docs/campaigns.md) has the details and recipes. API: `/campaigns`, by ID or `by-key/{key}`, with `/pause`, `/resume`, `/end`, `/results`, `/send`, `/test` and `/estimate`, `/campaign-settings`, and the `campaign.updated` webhook and event.
@@ -635,7 +637,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.36.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.37.0...HEAD
+[0.37.0]: https://github.com/dinghy-chat/dinghy/compare/v0.36.0...v0.37.0
 [0.36.0]: https://github.com/dinghy-chat/dinghy/compare/v0.35.0...v0.36.0
 [0.35.0]: https://github.com/dinghy-chat/dinghy/compare/v0.34.0...v0.35.0
 [0.34.0]: https://github.com/dinghy-chat/dinghy/compare/v0.33.1...v0.34.0
