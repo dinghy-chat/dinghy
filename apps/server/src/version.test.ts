@@ -14,6 +14,7 @@ test("every place that names the release names the same version", () => {
     server: packageVersion("apps/server/package.json"),
     operator: packageVersion("apps/operator/package.json"),
     widget: packageVersion("packages/widget/package.json"),
+    sdk: packageVersion("packages/sdk/package.json"),
     ee: packageVersion("ee/package.json"),
     installer: /^version="([0-9.]+)"/m.exec(read("install.sh"))?.[1],
     // bun install --frozen-lockfile fails when the lockfile keeps an old workspace version.
@@ -29,6 +30,7 @@ test("every place that names the release names the same version", () => {
     server: release,
     operator: release,
     widget: release,
+    sdk: release,
     ee: release,
     installer: release,
     lockfile: release,

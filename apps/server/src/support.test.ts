@@ -302,7 +302,7 @@ describe("page journey", () => {
     const subject = randomUUID();
     const signedIn = await hostToken({ name: "Never chatted" }, subject);
     expect((await report(signedIn, "/account")).status).toBe(200);
-    const rows = await owner.select().from(visitor).where(eq(visitor.externalId, subject));
+    const rows = await owner.select().from(visitor).where(eq(visitor.userId, subject));
     expect(rows).toEqual([]);
     expect(
       await owner

@@ -1,38 +1,25 @@
 import { createHash, randomBytes } from "node:crypto";
 import { errors, jwtVerify } from "jose";
 import { z } from "zod";
+import { Attributes, UserId, VisitorEmail, VisitorName } from "./inputs.ts";
 
 const BROWSER_TOKEN_PREFIX = "dbt_";
 // A token in a browser should be short-lived, and the widget can ask for a new one.
 const MAX_TOKEN_LIFETIME_SECONDS = 24 * 60 * 60;
 const CLOCK_TOLERANCE_SECONDS = 60;
-const MAX_ATTRIBUTES_BYTES = 2048;
-const MAX_NAME_LENGTH = 100;
 
 const hostTokenPayload = z.object({
-  sub: z.string().min(1).max(255),
+  sub: UserId,
   exp: z.number(),
   iat: z.number(),
-  // A bad email is dropped, not refused, because it must not decide whether a user can chat. It must
-  // be one address: a mail server sends to every address in a list such as "a@x.com, b@y.com".
-  email: z.email().max(320).optional().catch(undefined),
-  // Dropped the same way: one line of text, so a name cannot add lines of its own.
-  name: z
-    .string()
-    .trim()
-    .min(1)
-    .max(MAX_NAME_LENGTH)
-    .regex(/^[^\p{Cc}\p{Zl}\p{Zp}]*$/u)
-    .optional()
-    .catch(undefined),
-  attributes: z
-    .record(z.string(), z.unknown())
-    .refine((value) => Buffer.byteLength(JSON.stringify(value)) <= MAX_ATTRIBUTES_BYTES)
-    .optional(),
+  // A bad email or name is dropped, not refused, because it must not decide whether a user can chat.
+  email: VisitorEmail.optional().catch(undefined),
+  name: VisitorName.optional().catch(undefined),
+  attributes: Attributes.optional(),
 });
 
 export interface HostIdentity {
-  externalId: string;
+  userId: string;
   email: string | undefined;
   name: string | undefined;
   attributes: Record<string, unknown> | undefined;
@@ -62,7 +49,7 @@ export async function verifyHostToken(
     if (exp - iat > MAX_TOKEN_LIFETIME_SECONDS) return null;
     if (iat > now.getTime() / 1000 + CLOCK_TOLERANCE_SECONDS) return null;
     return {
-      externalId: parsed.data.sub,
+      userId: parsed.data.sub,
       email: parsed.data.email,
       name: parsed.data.name,
       attributes: parsed.data.attributes,

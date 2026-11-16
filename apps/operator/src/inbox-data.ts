@@ -115,9 +115,10 @@ function useConversationList({
   const [hasMore, setHasMore] = useState(false);
   const { status, label } = filter;
   const assignee = WHO_ASSIGNEE[who];
-  const shown = useRef({ status, assignee, label, limit });
+  const startedByTeam = filter.started === "team";
+  const shown = useRef({ status, assignee, label, startedByTeam, limit });
   useLayoutEffect(() => {
-    shown.current = { status, assignee, label, limit };
+    shown.current = { status, assignee, label, startedByTeam, limit };
   });
   const firstList = useRef(true);
   const welcomeKey = `dinghy.welcome-opened.${workspaceId}`;
@@ -127,11 +128,13 @@ function useConversationList({
       const moved = () =>
         wanted.status !== shown.current.status ||
         wanted.assignee !== shown.current.assignee ||
-        wanted.label !== shown.current.label;
+        wanted.label !== shown.current.label ||
+        wanted.startedByTeam !== shown.current.startedByTeam;
       const page = await api.list(
         wanted.status,
         wanted.assignee,
         wanted.label,
+        wanted.startedByTeam,
         wanted.limit,
         moved,
       );

@@ -299,7 +299,7 @@ A suspended workspace cannot send messages or images, its widget answers as if i
 
 ## Moving a workspace
 
-An export holds a workspace's conversations, visitors, team, settings and images. It moves a workspace from one Dinghy server to another, such as from the cloud to your own server.
+An export holds a workspace's conversations, visitors, outbound messages, team, settings and images. It moves a workspace from one Dinghy server to another, such as from the cloud to your own server.
 
 1. On the old server, an owner selects **Download an export** in **Settings > Workspace**. Or run the export command from the table above.
 2. Install the new server. If you sign up there with the same email as on the old one, your account joins the imported workspace.

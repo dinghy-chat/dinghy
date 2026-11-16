@@ -68,6 +68,8 @@ test("open({ message }) fills the composer without sending, and the events follo
     open: false,
     unread: 0,
     conversation: false,
+    visitorId: null,
+    nudging: false,
   });
   const sends: string[] = [];
   page.on("request", (request) => {
@@ -83,6 +85,8 @@ test("open({ message }) fills the composer without sending, and the events follo
     open: true,
     unread: 0,
     conversation: false,
+    visitorId: null,
+    nudging: false,
   });
 
   await sendMessage(page, "I need help with my order");
@@ -100,7 +104,15 @@ test("open({ message }) fills the composer without sending, and the events follo
       "open",
       ["message:sent", { body: "I need help with my order" }],
       "conversation:started",
-      ["message:received", { body: "Which order?" }],
+      [
+        "message:received",
+        {
+          id: expect.any(String),
+          body: "Which order?",
+          sender: { name: "Seed", pictureUrl: null },
+          outbound: null,
+        },
+      ],
       "close",
       "open",
     ]);

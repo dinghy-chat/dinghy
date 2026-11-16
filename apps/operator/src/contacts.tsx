@@ -4,6 +4,7 @@ import type { Contact, ContactDetail, ContactSort, Role, WorkspaceApi } from "./
 import { duration, shortDate } from "./format.ts";
 import { Icon } from "./icons.tsx";
 import { useLoad } from "./load.ts";
+import { MessageButton, OutboundList } from "./outbound.tsx";
 import { countryName, flag, zoneCity, zoneClock } from "./place.ts";
 import { Confirm, Menu, type MenuItem, Select } from "./popup.tsx";
 import { EmptyArt } from "./scene.tsx";
@@ -42,6 +43,12 @@ import {
 } from "./visitor-panel.tsx";
 
 const SEARCH_WAIT_MS = 250;
+/** Who the list shows: people with a conversation, or also those your server created or messaged. */
+type Shown = "chatted" | "everyone";
+const SHOWN: { value: Shown; label: TextId }[] = [
+  { value: "chatted", label: "contactsHasChatted" },
+  { value: "everyone", label: "contactsEveryone" },
+];
 const SORTS: { value: ContactSort; label: TextId }[] = [
   { value: "lastSeen", label: "sortLastSeen" },
   { value: "firstSeen", label: "sortFirstSeen" },
@@ -103,9 +110,14 @@ function ContactList({ api, onOpen }: { api: WorkspaceApi; onOpen(visitorId: str
   const [typed, setTyped] = useState("");
   const q = useSettled(typed);
   const [sort, setSort] = useState<ContactSort>("lastSeen");
+  const [shownFilter, setShownFilter] = useState<Shown>("chatted");
+  const hasChatted = shownFilter === "chatted";
   const [pages, setPages] = useState<{ contacts: Contact[]; next: string | null } | null>(null);
   const [failure, setFailure] = useState<TextId | null>(null);
-  const first = useLoad(() => api.contacts({ q, sort, before: null }), [api, q, sort]);
+  const first = useLoad(
+    () => api.contacts({ q, sort, before: null, hasChatted }),
+    [api, q, sort, hasChatted],
+  );
   // A new search or sort starts at its first page.
   const [shown, setShown] = useState(first.data);
   if (shown !== first.data) {
@@ -116,7 +128,7 @@ function ContactList({ api, onOpen }: { api: WorkspaceApi; onOpen(visitorId: str
     if (pages?.next == null) return;
     setFailure(null);
     try {
-      const page = await api.contacts({ q, sort, before: pages.next });
+      const page = await api.contacts({ q, sort, before: pages.next, hasChatted });
       setPages({ contacts: [...pages.contacts, ...page.contacts], next: page.next });
     } catch (error) {
       setFailure(failureText(error, {}, "actionFailed"));
@@ -145,6 +157,13 @@ function ContactList({ api, onOpen }: { api: WorkspaceApi; onOpen(visitorId: str
             onChange={(event) => setTyped(event.target.value)}
           />
         </div>
+        <Select<Shown>
+          label={t("contactsShown")}
+          value={shownFilter}
+          choices={SHOWN.map((one) => ({ value: one.value, label: t(one.label) }))}
+          onChange={setShownFilter}
+          side="end"
+        />
         <Select<ContactSort>
           label={t("contactsSort")}
           value={sort}
@@ -435,7 +454,13 @@ function ConversationCards({
   );
 }
 
-type ContactTab = "conversations" | "pages";
+type ContactTab = "conversations" | "outbound" | "pages";
+
+const TAB_LABEL: Record<ContactTab, TextId> = {
+  conversations: "contactConversations",
+  outbound: "contactOutbound",
+  pages: "pagesVisited",
+};
 
 /** The conversation to open from the page: the newest open one, or else the newest. */
 const conversationToOpen = (conversations: ContactConversation[]) =>
@@ -459,6 +484,8 @@ function ContactView({
 }) {
   // biome-ignore lint/correctness/useExhaustiveDependencies: version asks for a load.
   const loaded = useLoad(() => api.contact(visitorId), [api, visitorId, version]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: version asks for a load.
+  const outbound = useLoad(() => api.outboundMessages(visitorId), [api, visitorId, version]);
   const { reload } = loaded;
   useEffect(() => {
     const timer = setInterval(reload, ONLINE_EVERY_MS);
@@ -534,7 +561,7 @@ function ContactView({
         ]),
   ];
   const details = {
-    userId: contact.externalId,
+    userId: contact.userId,
     attributes: contact.attributes,
     pageContext: contact.pageContext,
   };
@@ -548,6 +575,7 @@ function ContactView({
         contact={contact}
         actions={
           <>
+            <MessageButton api={api} visitorId={visitorId} name={name} onSent={outbound.reload} />
             {newest !== undefined && (
               <button
                 type="button"
@@ -568,10 +596,7 @@ function ContactView({
       <ErrorNote text={failure} />
       <ContactTiles contact={contact} />
       <div className="contact-columns">
-        <section
-          className="contact-main"
-          aria-label={t(tab === "pages" ? "pagesVisited" : "contactConversations")}
-        >
+        <section className="contact-main" aria-label={t(TAB_LABEL[tab])}>
           <Choices<ContactTab>
             label={t("contactViewTabs")}
             variant="tabs"
@@ -579,15 +604,29 @@ function ContactView({
             options={[
               {
                 value: "conversations",
-                label: "contactConversations",
+                label: TAB_LABEL.conversations,
                 count: contact.conversations.length,
               },
-              { value: "pages", label: "pagesVisited", count: contact.pages.length },
+              {
+                value: "outbound",
+                label: TAB_LABEL.outbound,
+                count: outbound.data?.outboundMessages.length ?? 0,
+              },
+              { value: "pages", label: TAB_LABEL.pages, count: contact.pages.length },
             ]}
             onChange={setTab}
           />
           {tab === "conversations" ? (
             <ConversationCards conversations={contact.conversations} onOpen={onOpenConversation} />
+          ) : tab === "outbound" ? (
+            <OutboundList
+              messages={outbound.data?.outboundMessages ?? []}
+              onCancel={(id) =>
+                void api.cancelOutbound(id).then(outbound.reload, (error: unknown) => {
+                  setFailure(failureText(error, {}, "actionFailed"));
+                })
+              }
+            />
           ) : contact.pages.length === 0 ? (
             <p className="quiet">{t("contactNoPages")}</p>
           ) : (

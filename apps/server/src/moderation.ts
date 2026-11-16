@@ -22,7 +22,7 @@ import {
   okContent,
   ROLE_WRITE_ERRORS,
 } from "./errors.ts";
-import { forgetPagesWithoutChat, lockVisitors } from "./journey.ts";
+import { forgetPagesWithoutChat, forgetVisitor, lockVisitors } from "./journey.ts";
 import { type Live, OPERATORS } from "./live.ts";
 import { conversationParams, workspaceParams } from "./member.ts";
 import {
@@ -31,6 +31,7 @@ import {
   recordConversationChanges,
   recordTeamChange,
 } from "./messages.ts";
+import { conversationsDeleted } from "./outbound-delivery.ts";
 import { allowed } from "./team.ts";
 
 // Long enough to stop someone who clears their browser, and short enough for an address that a
@@ -96,6 +97,7 @@ export async function noteVisitorAddress(
 }
 
 async function block(tx: Transaction, workspaceId: string, visitorId: string): Promise<void> {
+  await forgetVisitor(tx, workspaceId, [visitorId]);
   const [row] = await tx
     .update(visitor)
     .set({ blockedAt: new Date() })
@@ -143,6 +145,7 @@ export async function deleteConversations(
   // conversation with a foreign key would deadlock with a delete that took the conversation first.
   // One that waits here finds the conversation gone, and goes to another of the visitor's, or a new one.
   await recordConversationChanges(tx, workspaceId, ids, "conversation.deleted");
+  await conversationsDeleted(tx, workspaceId, ids);
   // A draft names the messages it quotes or became, so it goes before them.
   await tx
     .delete(draftReply)
@@ -215,7 +218,7 @@ const blockedList = createRoute({
               z.object({
                 id: z.string(),
                 email: z.string().nullable(),
-                externalId: z.string().nullable(),
+                userId: z.string().nullable(),
                 name: z.string().nullable(),
                 blockedAt: z.string(),
               }),
@@ -287,7 +290,7 @@ export function registerModerationRoutes(app: App, db: Database, live: Live): vo
         .select({
           id: visitor.id,
           email: visitor.email,
-          externalId: visitor.externalId,
+          userId: visitor.userId,
           name: visitor.name,
           blockedAt: visitor.blockedAt,
         })

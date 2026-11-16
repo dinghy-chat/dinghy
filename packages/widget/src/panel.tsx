@@ -21,6 +21,7 @@ import { FAR, MIDDLE, NEAR, type SeaOptions, startSea } from "./sea.ts";
 import {
   DEFAULT_COLORS,
   MESSAGE_MAX,
+  type OutboundButton,
   type SavedAppearance,
   type TeamFace,
   type WidgetSettings,
@@ -40,7 +41,8 @@ const { primary: PRIMARY, accent: ACCENT } = DEFAULT_COLORS;
 // no white edge where the browser blends the panel with the head it clips.
 export const CSS = `
 *{box-sizing:border-box}
-.panel{--primary:var(--d-primary,${PRIMARY});--paper:#fff;--ink:#0b2239;--fog:#f1f3f6;--sand:#faf8f2;--line:#e6e8ec;--mute:#5f6e80;--bad:#c62a21;position:absolute;right:0;bottom:0;display:flex;flex-direction:column;width:370px;max-width:calc(100vw - var(--d-x,16px) - 16px);height:560px;max-height:calc(100vh - var(--d-y,16px) - 16px);background:linear-gradient(var(--primary) 0 40px,var(--paper) 40px);color:var(--ink);font:14.5px/21px var(--dinghy-font,system-ui,-apple-system,Segoe UI,Roboto,sans-serif);border-radius:var(--dinghy-radius,var(--d-radius,16px));overflow:hidden;box-shadow:0 2px 6px rgb(13 34 64/.08),0 24px 56px rgb(13 34 64/.22)}
+.panel,.preview{--primary:var(--d-primary,${PRIMARY});--paper:#fff;--ink:#0b2239;--fog:#f1f3f6;--sand:#faf8f2;--line:#e6e8ec;--mute:#5f6e80;--bad:#c62a21;color:var(--ink);font:14.5px/21px var(--dinghy-font,system-ui,-apple-system,Segoe UI,Roboto,sans-serif)}
+.panel{position:absolute;right:0;bottom:0;display:flex;flex-direction:column;width:370px;max-width:calc(100vw - var(--d-x,16px) - 16px);height:560px;max-height:calc(100vh - var(--d-y,16px) - 16px);background:linear-gradient(var(--primary) 0 40px,var(--paper) 40px);border-radius:var(--dinghy-radius,var(--d-radius,16px));overflow:hidden;box-shadow:0 2px 6px rgb(13 34 64/.08),0 24px 56px rgb(13 34 64/.22)}
 .head{display:flex;align-items:center;gap:8px;padding:10px 8px 10px 14px;background:var(--primary);color:var(--d-primary-text,#fff)}
 .scene{flex:1;min-width:0;display:flex;align-items:center;gap:10px}
 .scene>div{min-width:0}
@@ -144,8 +146,19 @@ dialog img{display:block;max-width:95vw;max-height:95svh}
 .faces i{position:absolute;z-index:1;right:-1px;bottom:-1px;width:8px;height:8px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 2px var(--primary)}
 .brand{display:block;padding:0 12px 8px;font-size:11px;line-height:14px;color:var(--mute);opacity:.75;text-align:center;text-decoration:none}
 .brand:hover{opacity:1}
-:host([data-theme=dark]) .panel{${DARK}}
-@media (prefers-color-scheme:dark){:host([data-theme=auto]) .panel{${DARK}}}
+:host([data-theme=dark]) :is(.panel,.preview){${DARK}}
+@media (prefers-color-scheme:dark){:host([data-theme=auto]) :is(.panel,.preview){${DARK}}}
+.preview{position:absolute;right:0;bottom:76px;display:flex;flex-direction:column;gap:6px;width:300px;max-width:calc(100vw - var(--d-x,16px) - 16px);padding:10px 12px 12px;border-radius:16px;background:var(--sand);box-shadow:0 2px 6px rgb(13 34 64/.08),0 16px 40px rgb(13 34 64/.2)}
+.launcher[style*=none]~div .preview{bottom:0}
+:host([data-side=left]) .preview{right:auto;left:0}
+.preview .x{position:absolute;top:4px;right:4px;width:28px;height:28px;color:var(--mute)}
+.peek{display:flex;flex-direction:column;gap:6px;padding-right:24px;cursor:pointer}
+.peek .msg{max-width:100%;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.choices{display:flex;flex-wrap:wrap;gap:6px}
+.choices button{padding:6px 12px;border:1px solid var(--primary);border-radius:16px;background:var(--paper);color:var(--primary);font:inherit;font-size:13.5px;cursor:pointer}
+.choices button:hover{background:var(--fog)}
+@media (prefers-reduced-motion:no-preference){.preview{animation:rise .2s ease-out}}
+@keyframes rise{from{transform:translateY(8px);opacity:0}}
 ${BOAT_CSS}
 `;
 
@@ -207,6 +220,10 @@ export interface Line {
   quote?: Quote | null;
   /** Deleted by the team: its body is the placeholder, and it cannot be quoted. */
   gone?: boolean;
+  /** The visitor's answer with an outbound message's button, kept for a retry. */
+  button?: { outboundMessageId: string; index: number };
+  /** The outbound message with buttons that this reply came from. */
+  outbound?: { id: string; buttons: OutboundButton[] };
 }
 
 export type SceneState = "waiting" | "sending" | "reply" | "away" | "lost" | "empty";
@@ -319,6 +336,22 @@ export function emailLayout(
   }
   // After the first message, so it takes no space from someone who is only looking.
   return { form: ask === "after_first" && chatted, composer: true };
+}
+
+/** A cross that closes what it sits on: the chat, or a message's card. */
+export function CloseButton({ label, onClick }: { label: string; onClick(): void }) {
+  return (
+    <button type="button" class="x" aria-label={label} onClick={onClick}>
+      <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
+        <path
+          d="M18 6 6 18M6 6l12 12"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+        />
+      </svg>
+    </button>
+  );
 }
 
 /** A person's picture, a bot's icon, or an initial. */
@@ -451,18 +484,7 @@ export function ChatHead({
           ))}
         </span>
       )}
-      {onClose !== undefined && (
-        <button type="button" class="x" aria-label={t("close")} onClick={onClose}>
-          <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
-            <path
-              d="M18 6 6 18M6 6l12 12"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-            />
-          </svg>
-        </button>
-      )}
+      {onClose !== undefined && <CloseButton label={t("close")} onClick={onClose} />}
     </div>
   );
 }

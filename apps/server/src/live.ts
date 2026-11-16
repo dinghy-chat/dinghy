@@ -34,8 +34,11 @@ export type OperatorNotice =
   | { kind: "bot_typing"; conversationId: string; name: string; typing: boolean }
   | { kind: "receipts"; visitorId: string };
 
-/** Something live for one visitor's chat, that nothing stores: a bot types a reply, or stopped. */
-type VisitorNotice = { kind: "typing"; name: string; typing: boolean };
+/**
+ * Something live for one visitor's chat, that nothing stores: a bot types a reply, or stopped, or
+ * an outbound message waits, which the widget then fetches.
+ */
+type VisitorNotice = { kind: "typing"; name: string; typing: boolean } | { kind: "outbound" };
 
 export interface Live {
   /** `subscriber` is a visitor's ID, or OPERATORS. */

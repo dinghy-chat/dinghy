@@ -60,6 +60,14 @@ export const PAGES: Page[] = [
       "Connect Claude Code or your own bot with OAuth or an API key, install the chat, answer chats with drafts first, and hand off to people.",
   },
   {
+    source: "outbound-messages.md",
+    slug: "outbound-messages",
+    nav: "Outbound messages",
+    group: "Use it",
+    description:
+      "Send a visitor a message from your server, an AI agent or the operator app, before any chat: once, later, unless a condition matches, with buttons.",
+  },
+  {
     source: "troubleshooting.md",
     slug: "troubleshooting",
     nav: "Troubleshooting",

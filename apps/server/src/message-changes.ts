@@ -8,6 +8,7 @@ import {
   event,
   type MessagePayload,
   message,
+  outboundMessage,
   storageDeletion,
   visitor,
   workspace,
@@ -78,9 +79,14 @@ async function emailCoverage(
   );
 }
 
-/** The emails that carried the message at this position. */
-const carrying = (coverage: EmailCoverage[], seq: bigint) =>
-  coverage.filter((email) => email.fromSeq <= seq && seq <= email.toSeq);
+/**
+ * The emails that carried this message. An email's range can hold an outbound message sent with
+ * `sendEmail: false`, which it left out, so none carried that one.
+ */
+const carrying = (coverage: EmailCoverage[], line: { seq: bigint; metadata: unknown }) =>
+  (line.metadata as { outbound?: { sendEmail: boolean } } | null)?.outbound?.sendEmail === false
+    ? []
+    : coverage.filter((email) => email.fromSeq <= line.seq && line.seq <= email.toSeq);
 
 /**
  * How far the visitor has seen the replies in one conversation: read in the chat up to `readSeq`,
@@ -91,14 +97,37 @@ export async function replyReceipts(
   workspaceId: string,
   conversationId: string,
   visitorId: string,
-): Promise<{ readSeq: bigint; emails: { fromSeq: bigint; toSeq: bigint; sent: boolean }[] }> {
+): Promise<{
+  readSeq: bigint;
+  emails: { fromSeq: bigint; toSeq: bigint; sent: boolean }[];
+  notEmailed: bigint[];
+}> {
   const [reader] = await tx
     .select({ lastReadSeq: visitor.lastReadSeq })
     .from(visitor)
     .where(and(eq(visitor.workspaceId, workspaceId), eq(visitor.id, visitorId)));
   const coverage = await emailCoverage(tx, workspaceId, conversationId, visitorId);
+  // The outbound messages that no email may carry, though an email's range holds them.
+  const leftOut = await tx
+    .select({ seq: message.seq })
+    .from(outboundMessage)
+    .innerJoin(
+      message,
+      and(
+        eq(message.workspaceId, outboundMessage.workspaceId),
+        eq(message.id, outboundMessage.messageId),
+      ),
+    )
+    .where(
+      and(
+        eq(outboundMessage.workspaceId, workspaceId),
+        eq(outboundMessage.conversationId, conversationId),
+        eq(outboundMessage.sendEmail, false),
+      ),
+    );
   return {
     readSeq: reader?.lastReadSeq ?? 0n,
+    notEmailed: leftOut.map((one) => one.seq),
     emails: coverage
       .filter((email) => email.state !== "sending")
       .map(({ fromSeq, toSeq, state }) => ({ fromSeq, toSeq, sent: state === "sent" })),
@@ -195,12 +224,12 @@ async function visitorMaySee(
   workspaceId: string,
   conversationId: string,
   reader: { id: string; lastReadSeq: bigint },
-  line: { seq: bigint; createdAt: Date },
+  line: { seq: bigint; createdAt: Date; metadata: unknown },
 ): Promise<boolean> {
   if (reader.lastReadSeq >= line.seq) return true;
   if (Date.now() - line.createdAt.getTime() >= RETENTION_MS) return true;
   const coverage = await emailCoverage(tx, workspaceId, conversationId, reader.id);
-  return carrying(coverage, line.seq).some((email) => email.state !== "failed");
+  return carrying(coverage, line).some((email) => email.state !== "failed");
 }
 
 type EditOutcome =
@@ -317,6 +346,13 @@ export async function deleteMessage(
       .insert(storageDeletion)
       .values(files.map(({ storageKey }) => ({ workspaceId, storageKey })));
   }
+  // The outbound message it came from loses its text too.
+  await tx
+    .update(outboundMessage)
+    .set({ body: null })
+    .where(
+      and(eq(outboundMessage.workspaceId, workspaceId), eq(outboundMessage.messageId, messageId)),
+    );
   await recordMessageChange(tx, workspaceId, seq, "message.deleted", line, []);
   await resendQuotes(tx, workspaceId, messageId);
   return deleted;
@@ -327,10 +363,13 @@ export async function emailedAt(
   tx: Transaction,
   workspaceId: string,
   visitorId: string,
-  line: { conversationId: string; seq: bigint },
+  line: { conversationId: string; seq: bigint; outbound: { sendEmail: boolean } | null },
 ): Promise<Date | null> {
   const coverage = await emailCoverage(tx, workspaceId, line.conversationId, visitorId);
-  const times = carrying(coverage, line.seq).flatMap((email) =>
+  const times = carrying(coverage, {
+    seq: line.seq,
+    metadata: { outbound: line.outbound },
+  }).flatMap((email) =>
     email.state === "sent" && email.finishedAt !== null ? [email.finishedAt.getTime()] : [],
   );
   return times.length === 0 ? null : new Date(Math.min(...times));

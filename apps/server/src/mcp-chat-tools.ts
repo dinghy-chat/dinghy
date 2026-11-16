@@ -17,13 +17,16 @@ import { handOff, setTyping } from "./handling.ts";
 import { type Inbox, messageView, type ReplyOutcome, refusedReply } from "./inbox.ts";
 import {
   Body,
+  ContactFields,
   clientId,
   conversationId,
+  DedupeKey,
   HandoffReason,
   HandoffSummary,
   Mentions,
   replyToMessageId,
   UNTRUSTED_TEXT,
+  UserId,
 } from "./inputs.ts";
 import { type Limits, STREAM_LIMIT } from "./limits.ts";
 import { type Live, OPERATORS, type Session } from "./live.ts";
@@ -40,6 +43,9 @@ import {
   parseCursor,
   stored,
 } from "./messages.ts";
+import type { Outbound } from "./outbound.ts";
+import { upsertContactAndRecheck } from "./outbound-delivery.ts";
+import { ListQuery, SEND_REFUSALS, SendSchema, VisitorRef } from "./outbound-schemas.ts";
 import type { Presence, VisitorPresence } from "./presence.ts";
 import { listSavedReplies } from "./saved-replies.ts";
 import { listMembers } from "./team.ts";
@@ -53,6 +59,12 @@ const WAIT_LEASE_MS = MINUTE_MS;
 /** Events read per pass of a long poll. */
 const WAIT_PAGE = 100;
 
+/** cancel_outbound_message takes an ID, or a visitor and a `dedupeKey`. */
+const ONE_OUTBOUND_TARGET = failure(
+  "invalid_request",
+  "Pass outboundMessageId, or visitor and dedupeKey.",
+);
+
 /** get_contact takes one of its two IDs. */
 const ONE_CONTACT_ID = failure(
   "invalid_request",
@@ -63,6 +75,7 @@ export interface ChatToolsOptions {
   db: Database;
   uploads: Uploads | undefined;
   inbox: Inbox;
+  outbound: Outbound;
   limits: Limits;
   live: Live;
   liveVisitors: LiveVisitors;
@@ -257,7 +270,7 @@ async function waitForMessages(
 
 /** The tools that answer chats and read the workspace, for every key. */
 export function chatTools(options: ChatToolsOptions): Tool[] {
-  const { db, inbox, live } = options;
+  const { db, inbox, outbound, live } = options;
   return [
     tool({
       name: "get_conversation",
@@ -477,7 +490,7 @@ export function chatTools(options: ChatToolsOptions): Tool[] {
     tool({
       name: "list_contacts",
       title: "List contacts",
-      description: `Lists the people who have a conversation, newest first by \`sort\`. \`q\` matches the name, email or user ID. Pass \`next\` back as \`before\` for the next page. ${UNTRUSTED_TEXT}`,
+      description: `Lists contacts, newest first by \`sort\`: the people who have a conversation, and with \`hasChatted: false\` also those your server created or sent an outbound message to. \`q\` matches the name, email or user ID, and \`filter\` is a condition on their fields, such as \`{ "field": "attributes.plan", "op": "eq", "value": "pro" }\`. Pass \`next\` back as \`before\` for the next page. ${UNTRUSTED_TEXT}`,
       input: ContactListQuery,
       readOnly: true,
       run: async (input, { workspaceId }) => ({
@@ -492,9 +505,67 @@ export function chatTools(options: ChatToolsOptions): Tool[] {
       readOnly: true,
       run: async ({ q }, { workspaceId }) => ({
         data: await withWorkspace(db, workspaceId, (tx) =>
-          listContacts(tx, workspaceId, { q, sort: "lastSeen", limit: 20 }),
+          listContacts(tx, workspaceId, { q, sort: "lastSeen", limit: 20, hasChatted: true }),
         ),
       }),
+    }),
+    tool({
+      name: "upsert_contact",
+      title: "Create or update a contact",
+      description:
+        "Creates or updates a signed-in person by your own `userId`, before or after any chat: `name`, `email`, and `attributes`, which merge key by key (a null value removes one). The later write wins for each field, whether from here or from the page's host token. A change cancels their scheduled outbound messages whose `unless` now matches.",
+      input: ContactFields.extend({ userId: UserId }),
+      idempotent: true,
+      async run({ userId, ...fields }, { workspaceId }) {
+        const { visitorId, created } = await withWorkspace(db, workspaceId, (tx) =>
+          upsertContactAndRecheck(tx, workspaceId, userId, fields, Date.now()),
+        );
+        live.wake(workspaceId, OPERATORS);
+        return { data: { visitorId, created } };
+      },
+    }),
+    tool({
+      name: "send_outbound_message",
+      title: "Send a message to a visitor",
+      description: `Sends a message to one visitor, who may have no conversation yet. \`visitor\` is \`{ userId, name?, email?, attributes? }\`, which creates or updates them, or \`{ id }\`. With \`startConversation: "on_reply"\` (the default) it waits on the contact and goes in a conversation only when they answer. With \`"now"\` it goes in one at once: the answer's \`conversationId\` is set, and wait_for_messages picks up their answer. \`dedupeKey\` is a key of your own, unique per visitor, such as \`order-1042-shipped\`: a repeat answers the first message, and cancel_outbound_message takes it. \`metadata\` holds up to 20 string keys and values of your own, which come back on the message and its events, and never reach the visitor. \`delay\` (such as \`"1h"\`) or \`sendAt\` holds it, and \`unless\`, a condition on the contact, cancels it when it matches then. \`expiresIn\` (such as \`"7d"\` after the send time) or \`expiresAt\` ends it unread. \`show\` is \`badge\`, \`preview\` or \`chat\`. \`ifConversationOpen\` says what happens while they have an open conversation: \`hold\` (wait), \`join\` or \`skip\`. \`sendEmail: true\` needs the key's permission May email visitors. Errors: \`send_mode_required\` when this key drafts, \`send_as_member_required\`, \`send_email_required\`, \`bots_paused\`, \`blocked\`, \`too_many_waiting\`. Pass the same \`clientId\` on a retry: it never expires, and a retry answers the first result.`,
+      input: SendSchema,
+      idempotent: true,
+      async run(input, { workspaceId, actor }) {
+        const outcome = await outbound.send(workspaceId, actor, input, "mcp");
+        if (outcome.kind === "refused") return { error: SEND_REFUSALS[outcome.refusal].body };
+        return { data: { outboundMessage: outcome.outboundMessage } };
+      },
+    }),
+    tool({
+      name: "cancel_outbound_message",
+      title: "Cancel an outbound message",
+      description:
+        "Cancels an outbound message that the visitor has not read, by `outboundMessageId`, or by `visitor` (`{ userId }` or `{ id }`) and the `dedupeKey` it was sent with. A cancel frees the `dedupeKey`. A message read, answered or ended stays as it is: the answer's `status` says. `outboundMessage` is null when nothing matched.",
+      input: z.object({
+        outboundMessageId: z.uuid().optional(),
+        visitor: VisitorRef.optional(),
+        dedupeKey: DedupeKey.optional(),
+      }),
+      destructive: true,
+      async run(input, { workspaceId }) {
+        const target =
+          input.outboundMessageId !== undefined
+            ? { id: input.outboundMessageId }
+            : input.visitor !== undefined && input.dedupeKey !== undefined
+              ? { visitor: input.visitor, dedupeKey: input.dedupeKey }
+              : null;
+        if (target === null) return { error: ONE_OUTBOUND_TARGET };
+        return { data: { outboundMessage: await outbound.cancel(workspaceId, target) } };
+      },
+    }),
+    tool({
+      name: "list_outbound_messages",
+      title: "List outbound messages",
+      description:
+        "Lists outbound messages, newest first, with their `status` (`scheduled`, `sent`, `delivered`, `read`, `replied`, `dismissed`, `cancelled` or `expired`) and `statusReason`, which says why one waits or was cancelled. Filter by `visitorId`, `userId`, `dedupeKey`, `status` or `apiKeyId`. Pass `next` back as `cursor` for the next page.",
+      input: ListQuery,
+      readOnly: true,
+      run: async (input, { workspaceId }) => ({ data: await outbound.list(workspaceId, input) }),
     }),
     tool({
       name: "get_live_visitors",

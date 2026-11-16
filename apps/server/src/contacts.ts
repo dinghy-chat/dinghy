@@ -1,25 +1,36 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { SESSION } from "./api-security.ts";
+import { and, desc, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
+import { SESSION, SESSION_OR_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
-import { CHAT_KINDS, conversation, visitor } from "./db/schema.ts";
+import {
+  type Condition,
+  ConditionSchema,
+  conversationCount,
+  hasChatted,
+  toSql,
+} from "./conditions.ts";
+import { CHAT_KINDS, conversation, outboundMessage, visitor } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import {
   errorAnswer,
   FORBIDDEN,
   failure,
   INVALID,
+  KEY_LIMITED,
   MEMBER_ERRORS,
   MEMBER_WRITE_ERRORS,
   NOT_FOUND,
   okContent,
   ROLE_WRITE_ERRORS,
 } from "./errors.ts";
-import { PageContextSchema, visitorPages } from "./journey.ts";
+import { ContactFields, UserId } from "./inputs.ts";
+import { forgetVisitor, PageContextSchema, visitorPages } from "./journey.ts";
 import { type Live, OPERATORS } from "./live.ts";
 import { WORKSPACE_PREFIX as PREFIX, workspaceParams } from "./member.ts";
 import { containing, isChat, previewBody } from "./messages.ts";
 import { deleteConversations } from "./moderation.ts";
+import { upsertContactAndRecheck } from "./outbound-delivery.ts";
+import { beforeCursor, cursorTime, TimeCursor } from "./pages.ts";
 import type { VisitorPresence } from "./presence.ts";
 import { allowed } from "./team.ts";
 
@@ -39,7 +50,7 @@ const ContactSchema = z
     id: z.string(),
     name: z.string().nullable(),
     email: z.string().nullable(),
-    externalId: z.string().nullable(),
+    userId: z.string().nullable(),
     // The host site signed who this is, so the name and email are read-only here.
     signedIn: z.boolean(),
     // The signed `company` attribute, when it is text.
@@ -94,35 +105,60 @@ const ContactDetailSchema = ContactSchema.extend({
 const SORTS = ["lastSeen", "firstSeen"] as const;
 type Sort = (typeof SORTS)[number];
 
-// A page's position: the sort key's time, as CURSOR_TIME_FORMAT writes it, and the visitor's ID.
-const CURSOR =
-  /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z,[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/;
-
-/** The pattern lets through a day that does not exist, such as February 30, which Postgres refuses. */
-function isRealTime(cursor: string): boolean {
-  const second = cursor.slice(0, "YYYY-MM-DDTHH:MM:SS".length);
-  const time = new Date(`${second}Z`);
-  return !Number.isNaN(time.getTime()) && time.toISOString().startsWith(second);
-}
-
-/** A page of the contact list: the route's query, and MCP's `list_contacts` arguments. */
-export const ContactListQuery = z.object({
+/** A page of the contact list, as the route's query and MCP's `list_contacts` share it. */
+const ContactPage = z.object({
   q: z.string().trim().max(100).optional().openapi({
     description: "Matches the name, email or user ID, ignoring case.",
   }),
   sort: z.enum(SORTS).default("lastSeen"),
-  before: z.string().regex(CURSOR).refine(isRealTime).optional().openapi({
+  before: TimeCursor.optional().openapi({
     description: "The `next` of the page before.",
   }),
   limit: z.coerce.number().int().min(1).max(PAGE_SIZE_MAX).default(50),
+});
+
+const HAS_CHATTED_TEXT =
+  "True by default: only people who have a conversation. False adds the people your server created or sent an outbound message to.";
+
+/** MCP's `list_contacts` arguments. */
+export const ContactListQuery = ContactPage.extend({
+  hasChatted: z.boolean().default(true).describe(HAS_CHATTED_TEXT),
+  filter: ConditionSchema.optional().describe("Only the contacts that match this condition."),
+});
+
+/** The route's query: the same, with the condition as JSON text. */
+const ContactListParams = ContactPage.extend({
+  hasChatted: z
+    .enum(["true", "false"])
+    .default("true")
+    .transform((value) => value === "true")
+    .openapi({ description: HAS_CHATTED_TEXT }),
+  filter: z
+    .string()
+    .max(10_000)
+    .transform((text, context) => {
+      try {
+        return JSON.parse(text) as unknown;
+      } catch {
+        context.addIssue("Not JSON");
+        return z.NEVER;
+      }
+    })
+    .pipe(ConditionSchema)
+    .optional()
+    .openapi({
+      type: "string",
+      description: "Only the contacts that match this condition, as JSON text.",
+      example: '{"field":"attributes.plan","op":"eq","value":"pro"}',
+    }),
 });
 
 const listRoute = createRoute({
   method: "get",
   path: `${PREFIX}/{workspaceId}/contacts`,
   security: SESSION,
-  summary: "List the people who have a conversation, newest first",
-  request: { params: workspaceParams, query: ContactListQuery },
+  summary: "List contacts, newest first",
+  request: { params: workspaceParams, query: ContactListParams },
   responses: {
     200: {
       description: "A page of contacts",
@@ -206,6 +242,31 @@ const changeRoute = createRoute({
   },
 });
 
+const upsertRoute = createRoute({
+  method: "put",
+  path: `${PREFIX}/{workspaceId}/contacts/by-user/{userId}`,
+  security: SESSION_OR_KEY,
+  summary: "Create or update a signed-in contact by your user ID, before or after any chat",
+  description:
+    "Sets the name and email, and merges the attributes key by key. Each write carries its time, from this route or from a host token, and the later write wins for each field and each attribute. A change cancels the person's scheduled outbound messages whose `unless` now matches.",
+  request: {
+    params: workspaceParams.extend({ userId: UserId }),
+    body: { required: true, content: { "application/json": { schema: ContactFields } } },
+  },
+  responses: {
+    ...KEY_LIMITED,
+    200: {
+      description: "The contact after the change",
+      content: { "application/json": { schema: ContactDetailSchema } },
+    },
+    201: {
+      description: "The new contact",
+      content: { "application/json": { schema: ContactDetailSchema } },
+    },
+    ...MEMBER_WRITE_ERRORS,
+  },
+});
+
 const deleteRoute = createRoute({
   method: "delete",
   path: `${PREFIX}/{workspaceId}/contacts/{visitorId}`,
@@ -219,7 +280,7 @@ const contactColumns = {
   id: visitor.id,
   name: visitor.name,
   email: visitor.email,
-  externalId: visitor.externalId,
+  userId: visitor.userId,
   company: sql<string | null>`"visitor"."attributes"->>${COMPANY_ATTRIBUTE}`,
   country: visitor.country,
   timeZone: visitor.timeZone,
@@ -228,17 +289,14 @@ const contactColumns = {
   lastSeenAt: visitor.lastSeenAt,
   createdAt: visitor.createdAt,
   blockedAt: visitor.blockedAt,
-  // Qualified by hand: in a select list, the builder writes a column without its table.
-  conversationCount: sql<number>`(
-    select count(*)::int from conversation as c
-    where c.workspace_id = "visitor"."workspace_id" and c.visitor_id = "visitor"."id")`,
+  conversationCount,
 };
 
 interface ContactRow {
   id: string;
   name: string | null;
   email: string | null;
-  externalId: string | null;
+  userId: string | null;
   company: string | null;
   country: string | null;
   timeZone: string | null;
@@ -252,20 +310,19 @@ interface ContactRow {
 
 const contactView = ({ blockedAt, lastSeenAt, createdAt, ...row }: ContactRow) => ({
   ...row,
-  signedIn: row.externalId !== null,
+  signedIn: row.userId !== null,
   blocked: blockedAt !== null,
   lastSeenAt: lastSeenAt?.toISOString() ?? null,
   createdAt: createdAt.toISOString(),
 });
-
-// An ISO time in UTC to the microsecond, as the cursor carries it.
-const CURSOR_TIME_FORMAT = 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"';
 
 /** The sort key, which an index of each sort holds in this exact form. */
 const sortKey = (sort: Sort) =>
   sort === "lastSeen"
     ? sql`coalesce(${visitor.lastSeenAt}, ${visitor.createdAt})`
     : sql`${visitor.createdAt}`;
+
+const wasSentTo = sql`exists (select 1 from ${outboundMessage} where ${outboundMessage.workspaceId} = ${visitor.workspaceId} and ${outboundMessage.visitorId} = ${visitor.id})`;
 
 /**
  * A page of contacts, newest first by the sort, in one statement: a bounded scan of the sort's
@@ -274,17 +331,21 @@ const sortKey = (sort: Sort) =>
 export async function listContacts(
   tx: Transaction,
   workspaceId: string,
-  options: { q?: string | undefined; sort: Sort; before?: string | undefined; limit: number },
+  options: {
+    q?: string | undefined;
+    sort: Sort;
+    before?: string | undefined;
+    limit: number;
+    hasChatted: boolean;
+    filter?: Condition | undefined;
+  },
 ) {
   const key = sortKey(options.sort);
-  const [time, id] = options.before?.split(",") ?? [];
   const pattern = options.q === undefined || options.q === "" ? null : containing(options.q);
   const rows = await tx
     .select({
       ...contactColumns,
-      // As text, because Postgres keeps microseconds and a JavaScript date only milliseconds, so
-      // a cursor from a date would skip the rows that share its millisecond.
-      sortedAt: sql<string>`to_char(${key} at time zone 'UTC', ${CURSOR_TIME_FORMAT})`,
+      sortedAt: cursorTime(key),
     })
     .from(visitor)
     .where(
@@ -292,13 +353,12 @@ export async function listContacts(
         eq(visitor.workspaceId, workspaceId),
         // A bot's test visitors are not people.
         eq(visitor.isTest, false),
-        sql`exists (select 1 from ${conversation} where ${conversation.workspaceId} = ${visitor.workspaceId} and ${conversation.visitorId} = ${visitor.id})`,
+        options.hasChatted ? hasChatted : or(hasChatted, isNotNull(visitor.userId), wasSentTo),
+        options.filter === undefined ? undefined : toSql(options.filter),
         pattern === null
           ? undefined
-          : sql`(${visitor.name} ilike ${pattern} or ${visitor.email} ilike ${pattern} or ${visitor.externalId} ilike ${pattern})`,
-        time === undefined
-          ? undefined
-          : sql`(${key}, ${visitor.id}) < (${time}::timestamptz, ${id}::uuid)`,
+          : sql`(${visitor.name} ilike ${pattern} or ${visitor.email} ilike ${pattern} or ${visitor.userId} ilike ${pattern})`,
+        beforeCursor(options.before, key, visitor.id),
       ),
     )
     .orderBy(desc(key), desc(visitor.id))
@@ -420,7 +480,7 @@ const csvLine = (contact: ReturnType<typeof contactView>) =>
   `${[
     contact.name,
     contact.email,
-    contact.externalId,
+    contact.userId,
     contact.company,
     contact.country,
     contact.timeZone,
@@ -447,6 +507,7 @@ export async function deleteContacts(
       and(eq(conversation.workspaceId, workspaceId), inArray(conversation.visitorId, visitorIds)),
     );
   await deleteConversations(tx, workspaceId, conversations);
+  await forgetVisitor(tx, workspaceId, visitorIds);
   const deleted = await tx
     .delete(visitor)
     .where(and(eq(visitor.workspaceId, workspaceId), inArray(visitor.id, visitorIds)))
@@ -484,7 +545,12 @@ export function registerContactRoutes(
           controller.enqueue(encoder.encode(`${CSV_COLUMNS.join(",")}\r\n`));
         }
         const page = await withWorkspace(db, id, (tx) =>
-          listContacts(tx, id, { q: undefined, sort: "firstSeen", before, limit: EXPORT_BATCH }),
+          listContacts(tx, id, {
+            sort: "firstSeen",
+            before,
+            limit: EXPORT_BATCH,
+            hasChatted: true,
+          }),
         );
         controller.enqueue(encoder.encode(page.contacts.map(csvLine).join("")));
         if (page.next === null) controller.close();
@@ -511,12 +577,12 @@ export function registerContactRoutes(
     const { note, name, email } = c.req.valid("json");
     const result = await withWorkspace(db, id, async (tx) => {
       const [row] = await tx
-        .select({ externalId: visitor.externalId })
+        .select({ userId: visitor.userId })
         .from(visitor)
         .where(and(eq(visitor.workspaceId, id), eq(visitor.id, visitorId)));
       if (row === undefined) return "missing" as const;
       const identity = name !== undefined || email !== undefined;
-      if (identity && row.externalId !== null) return "signed_in" as const;
+      if (identity && row.userId !== null) return "signed_in" as const;
       const change = {
         ...(note !== undefined && { note: note?.trim() === "" ? null : note }),
         ...(name !== undefined && { name: name === "" ? null : name }),
@@ -533,6 +599,18 @@ export function registerContactRoutes(
     if (result === "missing" || result === null) return c.json(NOT_FOUND, 404);
     if (result === "signed_in") return c.json(SIGNED_IN, 409);
     return c.json(await withPresence(id, result), 200);
+  });
+
+  app.openapi(upsertRoute, async (c) => {
+    const id = c.get("memberWorkspaceId");
+    const { userId } = c.req.valid("param");
+    const { visitorId, created } = await withWorkspace(db, id, (tx) =>
+      upsertContactAndRecheck(tx, id, userId, c.req.valid("json"), Date.now()),
+    );
+    const found = await withWorkspace(db, id, (tx) => readContact(tx, id, visitorId));
+    if (found === null) return c.json(NOT_FOUND, 404);
+    live.wake(id, OPERATORS);
+    return c.json(await withPresence(id, found), created ? 201 : 200);
   });
 
   app.openapi(deleteRoute, async (c) => {

@@ -27,6 +27,8 @@ const Analytics = z
     timeZone: z.string(),
     // Conversations that started in the period. The other numbers are about these.
     started: z.number().int(),
+    // Of those, the ones an outbound message started, not the visitor.
+    startedByTeam: z.number().int(),
     // Of those, the ones closed now.
     closed: z.number().int(),
     // Of those, the ones with an operator's reply.
@@ -89,7 +91,7 @@ const analyticsRoute = createRoute({
   security: SESSION_OR_KEY,
   summary: "Support numbers for the last 7, 30 or 90 days",
   description:
-    "Computed from the stored conversations and messages, for any member. A period runs from the start of the day, `days - 1` days ago, in `tz`, to now. Every number is about the conversations that started in it: a conversation's first reply time runs from its start to its first reply from an operator or an API key, and `repliers` counts conversations by who sent that reply, and `fast` counts those whose first reply came within 5 minutes. `labels` counts them by the labels they have now. `previous` gives `started` and the first reply numbers for a period of the same length just before, which ends `days` days ago. A welcome chat on Dinghy Cloud counts nowhere.",
+    "Computed from the stored conversations and messages, for any member. A period runs from the start of the day, `days - 1` days ago, in `tz`, to now. Every number is about the conversations that started in it: a conversation's first reply time runs from the visitor's first message to the next reply from an operator or an API key, and `startedByTeam` counts those that an outbound message started, and `repliers` counts conversations by who sent that reply, and `fast` counts those whose first reply came within 5 minutes. `labels` counts them by the labels they have now. `previous` gives `started` and the first reply numbers for a period of the same length just before, which ends `days` days ago. A welcome chat on Dinghy Cloud counts nowhere.",
   request: {
     params: workspaceParams,
     query: AnalyticsQuery,
@@ -105,6 +107,7 @@ const analyticsRoute = createRoute({
             days: 7,
             timeZone: "Europe/Paris",
             started: 12,
+            startedByTeam: 2,
             closed: 9,
             answered: 11,
             firstReply: { medianSeconds: 140, p90Seconds: 1260, fast: 8 },
@@ -184,6 +187,7 @@ async function nameRepliers(
 interface Row extends Record<string, unknown> {
   current: PeriodRow | null;
   previous: PeriodRow | null;
+  by_team: number;
   closed: number;
   answered: number;
   p90: number | null;
@@ -195,18 +199,26 @@ interface Row extends Record<string, unknown> {
 
 /**
  * Each conversation started since `since`, with its first reply: how long it waited, in seconds,
- * and who sent it. A conversation with no reply yet has a null wait. The welcome chat and a bot's
- * test visitor's chats are not ones.
+ * and who sent it. A conversation that the team started waits from the visitor's first message, and
+ * has a null wait until a reply follows it, as does one with no reply yet. The welcome chat and a
+ * bot's test visitor's chats are not ones.
  */
 const firstReplies = (workspaceId: string, since: SQL) => sql`
-  SELECT c.id, c.status, c.created_at,
-         extract(epoch FROM reply.created_at - c.created_at) AS wait,
+  SELECT c.id, c.status, c.created_at, c.started_by = 'team' AS by_team,
+         extract(epoch FROM reply.created_at - coalesce(asked.created_at, c.created_at)) AS wait,
          reply.author_operator_id AS operator_id,
          reply.author_api_key_id AS api_key_id
   FROM conversation AS c
   LEFT JOIN LATERAL (
+    SELECT m.seq, m.created_at FROM message AS m
+    WHERE m.workspace_id = c.workspace_id AND m.conversation_id = c.id
+      AND m.author_visitor_id IS NOT NULL AND ${isChat(sql`m.kind`)}
+    ORDER BY m.seq LIMIT 1
+  ) AS asked ON c.started_by = 'team'
+  LEFT JOIN LATERAL (
     SELECT m.created_at, m.author_operator_id, m.author_api_key_id FROM message AS m
     WHERE m.workspace_id = c.workspace_id AND m.conversation_id = c.id
+      AND (c.started_by = 'visitor' OR m.seq > asked.seq)
       AND m.author_visitor_id IS NULL AND ${isChat(sql`m.kind`)}
     ORDER BY m.seq LIMIT 1
   ) AS reply ON true
@@ -266,6 +278,7 @@ export async function readAnalytics(
     SELECT
       (SELECT numbers FROM periods WHERE is_current) AS current,
       (SELECT numbers FROM periods WHERE NOT is_current) AS previous,
+      (SELECT count(*) FROM started WHERE by_team)::int AS by_team,
       (SELECT count(*) FROM started WHERE status = 'closed')::int AS closed,
       (SELECT count(wait) FROM started)::int AS answered,
       (SELECT percentile_cont(0.9) WITHIN GROUP (ORDER BY wait) FROM started) AS p90,
@@ -307,6 +320,7 @@ export async function readAnalytics(
     days,
     timeZone,
     started: current.started,
+    startedByTeam: row.by_team,
     closed: row.closed,
     answered: row.answered,
     firstReply: { ...current.firstReply, p90Seconds: row.p90 },

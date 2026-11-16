@@ -37,10 +37,13 @@ const mine = (kind: "text" | "note"): Line => ({
   via: null,
   handoff: null,
   mentions: [],
+  outboundId: null,
+  sender: null,
+  button: null,
 });
 const who = { meId: "me", mayDeleteAnyone: false, canWrite: true, canReply: true };
 // The visitor read past the line.
-const readPast = { readSeq: "9", emails: [] };
+const readPast = { readSeq: "9", emails: [], notEmailed: [] };
 const noop = () => {};
 const act = { reply: noop, copyText: noop, edit: noop, info: noop, copyLink: noop, remove: noop };
 const menuOf = (line: Line) =>

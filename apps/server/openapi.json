@@ -94,6 +94,9 @@
                   "removal_not_needed",
                   "saved_reply_limit",
                   "saved_reply_shortcut_taken",
+                  "send_as_member_required",
+                  "send_email_required",
+                  "send_mode_required",
                   "signed_in",
                   "sign_in_again",
                   "site_limit",
@@ -105,6 +108,7 @@
                   "too_many_pixels",
                   "too_many_requests",
                   "too_many_streams",
+                  "too_many_waiting",
                   "too_slow",
                   "two_factor_off",
                   "two_factor_on",
@@ -556,6 +560,82 @@
         },
         "required": ["id", "authorName", "fromVisitor", "text", "hasImage"]
       },
+      "OutboundButton": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              "value": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              }
+            },
+            "required": ["label", "value"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              "url": {
+                "type": "string",
+                "format": "uri"
+              },
+              "value": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              }
+            },
+            "required": ["label", "url"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 40
+              },
+              "dismiss": {
+                "type": "boolean",
+                "enum": [true]
+              },
+              "value": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              }
+            },
+            "required": ["label", "dismiss"],
+            "additionalProperties": false
+          }
+        ],
+        "description": "`{ label, value }` answers with the label, and the visitor's message carries `button: { value, label }`. `{ label, url }` opens a page. `{ label, dismiss: true }` ends the message as `dismissed`."
+      },
+      "ChosenButton": {
+        "type": ["object", "null"],
+        "properties": {
+          "value": {
+            "type": ["string", "null"]
+          },
+          "label": {
+            "type": "string"
+          }
+        },
+        "required": ["value", "label"]
+      },
       "Message": {
         "type": "object",
         "properties": {
@@ -602,6 +682,18 @@
           "authorId": {
             "type": ["string", "null"]
           },
+          "outboundId": {
+            "type": ["string", "null"]
+          },
+          "buttons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OutboundButton"
+            }
+          },
+          "button": {
+            "$ref": "#/components/schemas/ChosenButton"
+          },
           "createdAt": {
             "type": "string"
           }
@@ -621,6 +713,9 @@
           "authorName",
           "authorPictureUrl",
           "authorId",
+          "outboundId",
+          "buttons",
+          "button",
           "createdAt"
         ],
         "example": {
@@ -661,6 +756,57 @@
           }
         },
         "required": ["messages", "cursor", "hasMore", "resync"]
+      },
+      "WaitingMessage": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "buttons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OutboundButton"
+            }
+          },
+          "show": {
+            "type": "string",
+            "enum": ["badge", "preview", "chat"]
+          },
+          "read": {
+            "type": "boolean"
+          },
+          "fromBot": {
+            "type": "boolean"
+          },
+          "authorName": {
+            "type": ["string", "null"]
+          },
+          "authorPictureUrl": {
+            "type": ["string", "null"]
+          },
+          "authorId": {
+            "type": ["string", "null"]
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "body",
+          "buttons",
+          "show",
+          "read",
+          "fromBot",
+          "authorName",
+          "authorPictureUrl",
+          "authorId",
+          "createdAt"
+        ]
       },
       "Visitor": {
         "type": "object",
@@ -884,6 +1030,10 @@
           "startedPage": {
             "type": ["string", "null"]
           },
+          "startedBy": {
+            "type": "string",
+            "enum": ["visitor", "team"]
+          },
           "welcome": {
             "type": "boolean"
           },
@@ -921,7 +1071,7 @@
               "email": {
                 "type": ["string", "null"]
               },
-              "externalId": {
+              "userId": {
                 "type": ["string", "null"]
               },
               "name": {
@@ -963,7 +1113,7 @@
             "required": [
               "id",
               "email",
-              "externalId",
+              "userId",
               "name",
               "attributes",
               "blocked",
@@ -1015,6 +1165,7 @@
           "updatedAt",
           "assigneeOperatorId",
           "startedPage",
+          "startedBy",
           "welcome",
           "handler",
           "bot",
@@ -1157,6 +1308,35 @@
                   "type": "string"
                 }
               },
+              "outboundId": {
+                "type": ["string", "null"]
+              },
+              "sender": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": ["team"]
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "operatorId": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": ["string", "null"]
+                      }
+                    },
+                    "required": ["operatorId", "name"]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "button": {
+                "$ref": "#/components/schemas/ChosenButton"
+              },
               "createdAt": {
                 "type": "string"
               }
@@ -1179,6 +1359,9 @@
               "readAt",
               "handoff",
               "mentions",
+              "outboundId",
+              "sender",
+              "button",
               "createdAt"
             ]
           },
@@ -1236,6 +1419,9 @@
           "via": null,
           "handoff": null,
           "mentions": [],
+          "outboundId": null,
+          "sender": null,
+          "button": null,
           "createdAt": "2026-11-08T09:31:00.000Z"
         }
       },
@@ -1331,9 +1517,15 @@
               },
               "required": ["fromSeq", "toSeq", "sent"]
             }
+          },
+          "notEmailed": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
           }
         },
-        "required": ["readSeq", "emails"]
+        "required": ["readSeq", "emails", "notEmailed"]
       },
       "Draft": {
         "type": "object",
@@ -1424,6 +1616,13 @@
             "type": "string",
             "enum": ["send", "draft"]
           },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["send_as_member", "send_email"]
+            }
+          },
           "client": {
             "type": ["object", "null"],
             "properties": {
@@ -1456,6 +1655,7 @@
           "level",
           "source",
           "replyMode",
+          "permissions",
           "client",
           "createdByName",
           "createdAt",
@@ -1541,7 +1741,15 @@
                 "conversation.assigned",
                 "conversation.handoff",
                 "conversation.given_back",
-                "conversation.labeled"
+                "conversation.labeled",
+                "outbound_message.sent",
+                "outbound_message.delivered",
+                "outbound_message.read",
+                "outbound_message.clicked",
+                "outbound_message.replied",
+                "outbound_message.dismissed",
+                "outbound_message.cancelled",
+                "outbound_message.expired"
               ]
             }
           },
@@ -1588,7 +1796,15 @@
               "conversation.assigned",
               "conversation.handoff",
               "conversation.given_back",
-              "conversation.labeled"
+              "conversation.labeled",
+              "outbound_message.sent",
+              "outbound_message.delivered",
+              "outbound_message.read",
+              "outbound_message.clicked",
+              "outbound_message.replied",
+              "outbound_message.dismissed",
+              "outbound_message.cancelled",
+              "outbound_message.expired"
             ]
           },
           "status": {
@@ -1830,6 +2046,9 @@
           "started": {
             "type": "integer"
           },
+          "startedByTeam": {
+            "type": "integer"
+          },
           "closed": {
             "type": "integer"
           },
@@ -1981,6 +2200,7 @@
           "days",
           "timeZone",
           "started",
+          "startedByTeam",
           "closed",
           "answered",
           "firstReply",
@@ -2003,7 +2223,7 @@
           "email": {
             "type": ["string", "null"]
           },
-          "externalId": {
+          "userId": {
             "type": ["string", "null"]
           },
           "signedIn": {
@@ -2041,7 +2261,7 @@
           "id",
           "name",
           "email",
-          "externalId",
+          "userId",
           "signedIn",
           "company",
           "country",
@@ -2157,6 +2377,392 @@
           }
         ]
       },
+      "OutboundMessage": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "scheduled",
+              "sent",
+              "delivered",
+              "read",
+              "replied",
+              "dismissed",
+              "cancelled",
+              "expired"
+            ]
+          },
+          "statusReason": {
+            "type": ["string", "null"],
+            "enum": [
+              "open_conversation",
+              "open_conversation_skipped",
+              "human_handling",
+              "bots_paused",
+              "blocked",
+              "permission_revoked",
+              "workspace_inactive",
+              "unless_matched",
+              "cancelled_by_request",
+              "conversation_deleted",
+              null
+            ]
+          },
+          "visitorId": {
+            "type": "string"
+          },
+          "body": {
+            "type": ["string", "null"]
+          },
+          "buttons": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OutboundButton"
+            }
+          },
+          "button": {
+            "$ref": "#/components/schemas/ChosenButton"
+          },
+          "metadata": {
+            "$ref": "#/components/schemas/OutboundMetadata"
+          },
+          "sender": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": ["team"]
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "operatorId": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  }
+                },
+                "required": ["operatorId", "name"]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "author": {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["operator", "key"]
+              },
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "via": {
+                "type": ["string", "null"],
+                "enum": ["mcp", null]
+              }
+            },
+            "required": ["kind", "id", "name", "via"]
+          },
+          "show": {
+            "type": "string",
+            "enum": ["badge", "preview", "chat"]
+          },
+          "ifConversationOpen": {
+            "type": "string",
+            "enum": ["hold", "join", "skip"]
+          },
+          "startConversation": {
+            "type": "string",
+            "enum": ["on_reply", "now"]
+          },
+          "assignOnReply": {
+            "type": "boolean"
+          },
+          "sendEmail": {
+            "type": "boolean"
+          },
+          "conversationId": {
+            "type": ["string", "null"]
+          },
+          "messageId": {
+            "type": ["string", "null"]
+          },
+          "dedupeKey": {
+            "type": ["string", "null"]
+          },
+          "sendAt": {
+            "type": "string"
+          },
+          "expiresAt": {
+            "type": ["string", "null"]
+          },
+          "deliveredAt": {
+            "type": ["string", "null"]
+          },
+          "readAt": {
+            "type": ["string", "null"]
+          },
+          "repliedAt": {
+            "type": ["string", "null"]
+          },
+          "dismissedAt": {
+            "type": ["string", "null"]
+          },
+          "cancelledAt": {
+            "type": ["string", "null"]
+          },
+          "createdAt": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "status",
+          "statusReason",
+          "visitorId",
+          "body",
+          "buttons",
+          "button",
+          "metadata",
+          "sender",
+          "author",
+          "show",
+          "ifConversationOpen",
+          "startConversation",
+          "assignOnReply",
+          "sendEmail",
+          "conversationId",
+          "messageId",
+          "dedupeKey",
+          "sendAt",
+          "expiresAt",
+          "deliveredAt",
+          "readAt",
+          "repliedAt",
+          "dismissedAt",
+          "cancelledAt",
+          "createdAt"
+        ]
+      },
+      "OutboundMetadata": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "description": "Up to 20 keys of up to 40 characters, each with text of up to 500 characters, such as `{ \"orderId\": \"1042\" }`. It comes back on the outbound message, its webhooks and the event stream. The visitor never sees it"
+      },
+      "VisitorSelector": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100,
+                "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$/u"
+              },
+              "email": {
+                "type": "string",
+                "maxLength": 320,
+                "format": "email"
+              },
+              "attributes": {
+                "type": "object",
+                "additionalProperties": {},
+                "description": "Merged key by key into the contact's attributes. A null value removes the key."
+              },
+              "userId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              }
+            },
+            "required": ["userId"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": ["id"],
+            "additionalProperties": false
+          }
+        ],
+        "example": {
+          "userId": "42",
+          "name": "Ada Lovelace",
+          "email": "ada@example.com"
+        }
+      },
+      "OutboundSender": {
+        "anyOf": [
+          {
+            "type": "string",
+            "enum": ["team"]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "operatorId": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": ["operatorId"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "email": {
+                "type": "string",
+                "format": "email"
+              }
+            },
+            "required": ["email"],
+            "additionalProperties": false
+          }
+        ],
+        "description": "`\"team\"`: the workspace's name and logo. `{ operatorId }` or `{ email }`: a member, with their name and picture; a key needs the permission `send_as_member`. Left out: the key's name, or the member who sends it."
+      },
+      "Condition": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "field": {
+                "type": "string"
+              },
+              "op": {
+                "type": "string",
+                "enum": [
+                  "eq",
+                  "ne",
+                  "in",
+                  "not_in",
+                  "exists",
+                  "missing",
+                  "gt",
+                  "gte",
+                  "lt",
+                  "lte",
+                  "contains",
+                  "older_than"
+                ]
+              },
+              "value": {
+                "oneOf": [
+                  {
+                    "type": ["string", "number", "boolean"]
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": ["string", "number", "boolean"]
+                    }
+                  }
+                ]
+              }
+            },
+            "required": ["field", "op"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "all": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Condition"
+                }
+              }
+            },
+            "required": ["all"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "any": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Condition"
+                }
+              }
+            },
+            "required": ["any"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "not": {
+                "$ref": "#/components/schemas/Condition"
+              }
+            },
+            "required": ["not"],
+            "additionalProperties": false
+          }
+        ],
+        "description": "A rule `{ field, op, value }`, or a group `{ all: [...] }`, `{ any: [...] }` or `{ not: ... }`, which nest. Fields: name, firstName, email, userId, language, country, timeZone, signedIn, firstSeenAt, lastSeenAt, hasChatted, conversationCount, attributes.<key>. Ops: eq, ne, in, not_in, exists, missing, gt, gte, lt, lte, contains, older_than; older_than takes a duration such as 7d.",
+        "example": {
+          "all": [
+            {
+              "field": "attributes.plan",
+              "op": "in",
+              "value": ["trial", "pro"]
+            },
+            {
+              "field": "attributes.onboarded",
+              "op": "ne",
+              "value": true
+            }
+          ]
+        }
+      },
+      "VisitorRef": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "userId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              }
+            },
+            "required": ["userId"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            },
+            "required": ["id"],
+            "additionalProperties": false
+          }
+        ]
+      },
       "LiveVisitor": {
         "type": "object",
         "properties": {
@@ -2196,14 +2802,14 @@
               "email": {
                 "type": ["string", "null"]
               },
-              "externalId": {
+              "userId": {
                 "type": ["string", "null"]
               },
               "conversationId": {
                 "type": ["string", "null"]
               }
             },
-            "required": ["id", "name", "email", "externalId", "conversationId"]
+            "required": ["id", "name", "email", "userId", "conversationId"]
           }
         },
         "required": [
@@ -3048,6 +3654,32 @@
                     "minLength": 1,
                     "maxLength": 10000,
                     "pattern": "^[^\\0]*$"
+                  },
+                  "outboundIds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "maxItems": 50,
+                    "default": [],
+                    "description": "The outbound messages the visitor read and this answers. They go in the conversation first, in the order read."
+                  },
+                  "button": {
+                    "type": "object",
+                    "properties": {
+                      "outboundMessageId": {
+                        "type": "string",
+                        "format": "uuid"
+                      },
+                      "index": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 3
+                      }
+                    },
+                    "required": ["outboundMessageId", "index"],
+                    "description": "A value button the visitor chose, by its place in the outbound message's buttons. The message's text becomes its label."
                   }
                 },
                 "required": ["clientId", "body"]
@@ -3706,6 +4338,422 @@
         }
       }
     },
+    "/v1/widget/{key}/outbound-messages": {
+      "get": {
+        "security": [
+          {
+            "visitorToken": []
+          }
+        ],
+        "summary": "The outbound messages that wait to show to this visitor, oldest first",
+        "description": "Each is checked again now. One that would join the open conversation goes in it and arrives on the stream instead. Fetching one delivers it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^wk_[0-9a-f]{32}$"
+            },
+            "required": true,
+            "name": "key",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The waiting messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "outboundMessages": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/WaitingMessage"
+                      }
+                    }
+                  },
+                  "required": ["outboundMessages"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: the browser token or host token is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed: the key is unknown, the Origin is not an allowed site, or the workspace's widget is off: it is suspended, waits for payment, is read-only or was deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over the rate limit. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/widget/{key}/outbound-messages/{id}/read": {
+      "post": {
+        "security": [
+          {
+            "visitorToken": []
+          }
+        ],
+        "summary": "Say that the visitor read an outbound message. A repeat changes nothing",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^wk_[0-9a-f]{32}$"
+            },
+            "required": true,
+            "name": "key",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [true]
+                    }
+                  },
+                  "required": ["ok"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: the browser token or host token is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed: the key is unknown, the Origin is not an allowed site, or the workspace's widget is off: it is suspended, waits for payment, is read-only or was deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: not this visitor's, or it ended",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over the rate limit. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/widget/{key}/outbound-messages/{id}/dismiss": {
+      "post": {
+        "security": [
+          {
+            "visitorToken": []
+          }
+        ],
+        "summary": "The visitor chose a dismiss button, by its place: the message ends as dismissed",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^wk_[0-9a-f]{32}$"
+            },
+            "required": true,
+            "name": "key",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "button": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 3
+                  }
+                },
+                "required": ["button"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [true]
+                    }
+                  },
+                  "required": ["ok"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: the browser token or host token is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed: the key is unknown, the Origin is not an allowed site, or the workspace's widget is off: it is suspended, waits for payment, is read-only or was deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: not this visitor's, it ended, or it has no such button",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over the rate limit. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/widget/{key}/outbound-messages/{id}/click": {
+      "post": {
+        "security": [
+          {
+            "visitorToken": []
+          }
+        ],
+        "summary": "The visitor chose a button that opens a page, by its place",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^wk_[0-9a-f]{32}$"
+            },
+            "required": true,
+            "name": "key",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "button": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 3
+                  }
+                },
+                "required": ["button"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [true]
+                    }
+                  },
+                  "required": ["ok"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: the browser token or host token is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed: the key is unknown, the Origin is not an allowed site, or the workspace's widget is off: it is suspended, waits for payment, is read-only or was deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: not this visitor's, it ended, or it has no such button",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over the rate limit. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/widget/{key}/me": {
       "patch": {
         "security": [
@@ -4035,7 +5083,7 @@
         },
         "responses": {
           "200": {
-            "description": "Noted, or dropped",
+            "description": "Noted, or dropped. `waiting` counts the visitor's outbound messages that wait to show, so the loader fetches the chat only then",
             "content": {
               "application/json": {
                 "schema": {
@@ -4044,9 +5092,12 @@
                     "ok": {
                       "type": "boolean",
                       "enum": [true]
+                    },
+                    "waiting": {
+                      "type": "integer"
                     }
                   },
-                  "required": ["ok"]
+                  "required": ["ok", "waiting"]
                 }
               }
             }
@@ -6277,6 +7328,17 @@
           {
             "schema": {
               "type": "string",
+              "enum": ["team"],
+              "description": "`team`: only the conversations an outbound message started, while the visitor has not answered."
+            },
+            "required": false,
+            "description": "`team`: only the conversations an outbound message started, while the visitor has not answered.",
+            "name": "startedBy",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
               "format": "date-time"
             },
             "required": false,
@@ -6317,6 +7379,7 @@
                       "updatedAt": "2026-11-08T09:30:00.000Z",
                       "assigneeOperatorId": null,
                       "startedPage": "https://www.example.com/pricing",
+                      "startedBy": "visitor",
                       "welcome": false,
                       "handler": null,
                       "bot": null,
@@ -6326,7 +7389,7 @@
                       "visitor": {
                         "id": "0b6f1c6e-2f4a-4c1e-9a57-3f1b8f0e6d21",
                         "email": "ana@example.com",
-                        "externalId": null,
+                        "userId": null,
                         "name": "Ana Lima",
                         "attributes": {
                           "plan": "pro"
@@ -8141,6 +9204,15 @@
                     "type": "string",
                     "enum": ["send", "draft"],
                     "default": "draft"
+                  },
+                  "permissions": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": ["send_as_member", "send_email"]
+                    },
+                    "maxItems": 2,
+                    "default": []
                   }
                 },
                 "required": ["name"]
@@ -8252,7 +9324,7 @@
             "sessionCookie": []
           }
         ],
-        "summary": "Change an API key's or a connected app's name, reply mode or level",
+        "summary": "Change an API key's or a connected app's name, reply mode, level or permissions",
         "parameters": [
           {
             "schema": {
@@ -8293,6 +9365,14 @@
                   "level": {
                     "type": "string",
                     "enum": ["conversations", "setup"]
+                  },
+                  "permissions": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "enum": ["send_as_member", "send_email"]
+                    },
+                    "maxItems": 2
                   }
                 }
               }
@@ -9399,11 +10479,19 @@
                         "conversation.assigned",
                         "conversation.handoff",
                         "conversation.given_back",
-                        "conversation.labeled"
+                        "conversation.labeled",
+                        "outbound_message.sent",
+                        "outbound_message.delivered",
+                        "outbound_message.read",
+                        "outbound_message.clicked",
+                        "outbound_message.replied",
+                        "outbound_message.dismissed",
+                        "outbound_message.cancelled",
+                        "outbound_message.expired"
                       ]
                     },
                     "minItems": 1,
-                    "maxItems": 10
+                    "maxItems": 18
                   },
                   "enabled": {
                     "type": "boolean",
@@ -9588,11 +10676,19 @@
                         "conversation.assigned",
                         "conversation.handoff",
                         "conversation.given_back",
-                        "conversation.labeled"
+                        "conversation.labeled",
+                        "outbound_message.sent",
+                        "outbound_message.delivered",
+                        "outbound_message.read",
+                        "outbound_message.clicked",
+                        "outbound_message.replied",
+                        "outbound_message.dismissed",
+                        "outbound_message.cancelled",
+                        "outbound_message.expired"
                       ]
                     },
                     "minItems": 1,
-                    "maxItems": 10
+                    "maxItems": 18
                   },
                   "enabled": {
                     "type": "boolean"
@@ -12371,10 +13467,10 @@
           {
             "schema": {
               "type": "string",
-              "description": "A comma list of conversation.created, message.created, message.updated, message.deleted, conversation.closed, conversation.reopened, conversation.assigned, conversation.handoff, conversation.given_back, conversation.labeled. All by default."
+              "description": "A comma list of conversation.created, message.created, message.updated, message.deleted, conversation.closed, conversation.reopened, conversation.assigned, conversation.handoff, conversation.given_back, conversation.labeled, outbound_message.sent, outbound_message.delivered, outbound_message.read, outbound_message.clicked, outbound_message.replied, outbound_message.dismissed, outbound_message.cancelled, outbound_message.expired. All by default."
             },
             "required": false,
-            "description": "A comma list of conversation.created, message.created, message.updated, message.deleted, conversation.closed, conversation.reopened, conversation.assigned, conversation.handoff, conversation.given_back, conversation.labeled. All by default.",
+            "description": "A comma list of conversation.created, message.created, message.updated, message.deleted, conversation.closed, conversation.reopened, conversation.assigned, conversation.handoff, conversation.given_back, conversation.labeled, outbound_message.sent, outbound_message.delivered, outbound_message.read, outbound_message.clicked, outbound_message.replied, outbound_message.dismissed, outbound_message.cancelled, outbound_message.expired. All by default.",
             "name": "types",
             "in": "query"
           },
@@ -12463,7 +13559,7 @@
           }
         ],
         "summary": "Support numbers for the last 7, 30 or 90 days",
-        "description": "Computed from the stored conversations and messages, for any member. A period runs from the start of the day, `days - 1` days ago, in `tz`, to now. Every number is about the conversations that started in it: a conversation's first reply time runs from its start to its first reply from an operator or an API key, and `repliers` counts conversations by who sent that reply, and `fast` counts those whose first reply came within 5 minutes. `labels` counts them by the labels they have now. `previous` gives `started` and the first reply numbers for a period of the same length just before, which ends `days` days ago. A welcome chat on Dinghy Cloud counts nowhere.",
+        "description": "Computed from the stored conversations and messages, for any member. A period runs from the start of the day, `days - 1` days ago, in `tz`, to now. Every number is about the conversations that started in it: a conversation's first reply time runs from the visitor's first message to the next reply from an operator or an API key, and `startedByTeam` counts those that an outbound message started, and `repliers` counts conversations by who sent that reply, and `fast` counts those whose first reply came within 5 minutes. `labels` counts them by the labels they have now. `previous` gives `started` and the first reply numbers for a period of the same length just before, which ends `days` days ago. A welcome chat on Dinghy Cloud counts nowhere.",
         "parameters": [
           {
             "schema": {
@@ -12502,6 +13598,7 @@
                   "days": 7,
                   "timeZone": "Europe/Paris",
                   "started": 12,
+                  "startedByTeam": 2,
                   "closed": 9,
                   "answered": 11,
                   "firstReply": {
@@ -13211,7 +14308,7 @@
                           "email": {
                             "type": ["string", "null"]
                           },
-                          "externalId": {
+                          "userId": {
                             "type": ["string", "null"]
                           },
                           "name": {
@@ -13221,7 +14318,7 @@
                             "type": "string"
                           }
                         },
-                        "required": ["id", "email", "externalId", "name", "blockedAt"]
+                        "required": ["id", "email", "userId", "name", "blockedAt"]
                       }
                     }
                   },
@@ -13399,7 +14496,7 @@
             "sessionCookie": []
           }
         ],
-        "summary": "List the people who have a conversation, newest first",
+        "summary": "List contacts, newest first",
         "parameters": [
           {
             "schema": {
@@ -13451,6 +14548,29 @@
             },
             "required": false,
             "name": "limit",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": ["true", "false"],
+              "default": "true",
+              "description": "True by default: only people who have a conversation. False adds the people your server created or sent an outbound message to."
+            },
+            "required": false,
+            "description": "True by default: only people who have a conversation. False adds the people your server created or sent an outbound message to.",
+            "name": "hasChatted",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "description": "Only the contacts that match this condition, as JSON text.",
+              "example": "{\"field\":\"attributes.plan\",\"op\":\"eq\",\"value\":\"pro\"}"
+            },
+            "required": false,
+            "description": "Only the contacts that match this condition, as JSON text.",
+            "name": "filter",
             "in": "query"
           }
         ],
@@ -13898,6 +15018,963 @@
           },
           "413": {
             "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: the workspace is busy. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/contacts/by-user/{userId}": {
+      "put": {
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "summary": "Create or update a signed-in contact by your user ID, before or after any chat",
+        "description": "Sets the name and email, and merges the attributes key by key. Each write carries its time, from this route or from a host token, and the later write wins for each field and each attribute. A change cancels the person's scheduled outbound messages whose `unless` now matches.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "required": true,
+            "name": "userId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 100,
+                    "pattern": "^[^\\p{Cc}\\p{Zl}\\p{Zp}]*$/u"
+                  },
+                  "email": {
+                    "type": "string",
+                    "maxLength": 320,
+                    "format": "email"
+                  },
+                  "attributes": {
+                    "type": "object",
+                    "additionalProperties": {},
+                    "description": "Merged key by key into the contact's attributes. A null value removes the key."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The contact after the change",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactDetail"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The new contact",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactDetail"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: the workspace is busy. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/outbound-messages": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "summary": "Send an outbound message to one visitor, who may have no conversation yet",
+        "description": "The message waits on the contact. With `startConversation: on_reply`, it goes in a conversation when the visitor answers it. With `now`, it goes in one at once. `sendAt` or `delay` holds it until then, and `unless` cancels it when the contact matches at that time. A retry with the same `clientId`, and a send with a `dedupeKey` that this visitor already has, answer 200 with the first outbound message.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "clientId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{1,64}$",
+                    "description": "Your own ID for this send, unique per author. It never expires: a retry with the same one answers the first result"
+                  },
+                  "visitor": {
+                    "$ref": "#/components/schemas/VisitorSelector"
+                  },
+                  "body": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 10000,
+                    "pattern": "^[^\\0]*$"
+                  },
+                  "buttons": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/OutboundButton"
+                    },
+                    "maxItems": 4
+                  },
+                  "sender": {
+                    "$ref": "#/components/schemas/OutboundSender"
+                  },
+                  "assignOnReply": {
+                    "type": "boolean",
+                    "description": "Assign the conversation to the member sender when the visitor answers. True by default with a member sender"
+                  },
+                  "startConversation": {
+                    "type": "string",
+                    "enum": ["on_reply", "now"],
+                    "default": "on_reply"
+                  },
+                  "show": {
+                    "type": "string",
+                    "enum": ["badge", "preview", "chat"],
+                    "default": "badge"
+                  },
+                  "ifConversationOpen": {
+                    "type": "string",
+                    "enum": ["hold", "join", "skip"],
+                    "default": "hold"
+                  },
+                  "dedupeKey": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "pattern": "^[^\\p{Cc}]*$/u",
+                    "description": "A key of your own, unique per visitor. A repeat answers the first outbound message. It also names the message for a cancel, which frees it"
+                  },
+                  "metadata": {
+                    "$ref": "#/components/schemas/OutboundMetadata"
+                  },
+                  "sendAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "delay": {
+                    "type": "string",
+                    "example": "1h",
+                    "description": "A number with m, h or d, such as 1h"
+                  },
+                  "unless": {
+                    "$ref": "#/components/schemas/Condition"
+                  },
+                  "expiresAt": {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  "expiresIn": {
+                    "type": "string",
+                    "example": "1h",
+                    "description": "How long after the send time it stops waiting, as `expiresAt` says it as a time"
+                  },
+                  "sendEmail": {
+                    "type": "boolean",
+                    "default": false
+                  }
+                },
+                "required": ["clientId", "visitor", "body"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "A retry, or a `dedupeKey` already used: the first outbound message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "outboundMessage": {
+                      "$ref": "#/components/schemas/OutboundMessage"
+                    }
+                  },
+                  "required": ["outboundMessage"]
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The new outbound message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "outboundMessage": {
+                      "$ref": "#/components/schemas/OutboundMessage"
+                    }
+                  },
+                  "required": ["outboundMessage"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid, the sender is not a member, or expiresAt comes before the send time",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "send_mode_required: the key drafts replies. send_as_member_required: the key may not send as a member. send_email_required: the key may not send with `sendEmail: true`. blocked: the team blocked this visitor. suspended: the server's admin suspended the workspace",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: no visitor has this `id`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "bots_paused: an owner or admin paused every bot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over the key's rate limit. too_many_waiting: the visitor has 5 outbound messages waiting",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: the workspace is busy. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "summary": "List outbound messages, newest first",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "visitorId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255,
+              "description": "The messages of the contact with your user ID"
+            },
+            "required": false,
+            "description": "The messages of the contact with your user ID",
+            "name": "userId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200,
+              "pattern": "^[^\\p{Cc}]*$/u"
+            },
+            "required": false,
+            "name": "dedupeKey",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "scheduled",
+                "sent",
+                "delivered",
+                "read",
+                "replied",
+                "dismissed",
+                "cancelled",
+                "expired"
+              ]
+            },
+            "required": false,
+            "name": "status",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "apiKeyId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{6}Z,[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$",
+              "description": "The `next` of the page before"
+            },
+            "required": false,
+            "description": "The `next` of the page before",
+            "name": "cursor",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 50
+            },
+            "required": false,
+            "name": "limit",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of outbound messages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "outboundMessages": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/OutboundMessage"
+                      }
+                    },
+                    "next": {
+                      "type": ["string", "null"]
+                    }
+                  },
+                  "required": ["outboundMessages", "next"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/outbound-messages/{id}": {
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "summary": "Get one outbound message",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The outbound message",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "outboundMessage": {
+                      "$ref": "#/components/schemas/OutboundMessage"
+                    }
+                  },
+                  "required": ["outboundMessage"]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/outbound-messages/{id}/cancel": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "summary": "Cancel an outbound message",
+        "description": "A message that the visitor has not read ends as `cancelled`, with `statusReason: cancelled_by_request`, and its `dedupeKey` is free again. A message already read, answered or ended stays as it is: read its `status`.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "id",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The outbound message after the cancel",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "outboundMessage": {
+                      "$ref": "#/components/schemas/OutboundMessage"
+                    }
+                  },
+                  "required": ["outboundMessage"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: the workspace is busy. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/outbound-messages/cancel": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "summary": "Cancel the outbound message that a visitor's `dedupeKey` names",
+        "description": "A message that the visitor has not read ends as `cancelled`, with `statusReason: cancelled_by_request`, and its `dedupeKey` is free again. A message already read, answered or ended stays as it is: read its `status`. With no such message, `outboundMessage` is null.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "visitor": {
+                    "$ref": "#/components/schemas/VisitorRef"
+                  },
+                  "dedupeKey": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "pattern": "^[^\\p{Cc}]*$/u"
+                  }
+                },
+                "required": ["visitor", "dedupeKey"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The outbound message after the cancel, or null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "outboundMessage": {
+                      "allOf": [
+                        {
+                          "$ref": "#/components/schemas/OutboundMessage"
+                        },
+                        {
+                          "type": ["object", "null"]
+                        }
+                      ]
+                    }
+                  },
+                  "required": ["outboundMessage"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after`",
             "content": {
               "application/json": {
                 "schema": {

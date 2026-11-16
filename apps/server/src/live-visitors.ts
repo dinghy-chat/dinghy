@@ -162,7 +162,7 @@ const LiveVisitorSchema = z
         id: z.string(),
         name: z.string().nullable(),
         email: z.string().nullable(),
-        externalId: z.string().nullable(),
+        userId: z.string().nullable(),
         // Their newest conversation, open first.
         conversationId: z.string().nullable(),
       })
@@ -225,7 +225,7 @@ export async function liveVisitorList(
               id: visitor.id,
               name: visitor.name,
               email: visitor.email,
-              externalId: visitor.externalId,
+              userId: visitor.userId,
             })
             .from(visitor)
             .where(and(eq(visitor.workspaceId, id), inArray(visitor.id, ids))),

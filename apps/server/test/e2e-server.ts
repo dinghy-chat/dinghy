@@ -20,9 +20,11 @@ import { saveBusinessHours } from "../src/business-hours.ts";
 import { chatLinkUrl, createChatLink } from "../src/chat-link.ts";
 import { ensureRoles } from "../src/db/roles.ts";
 import {
+  apiKey,
   businessHours,
   conversation,
   operator,
+  outboundMessage,
   session,
   visitor,
   widgetSettings,
@@ -30,10 +32,13 @@ import {
   workspace as workspaceTable,
 } from "../src/db/schema.ts";
 import { type Database, withWorkspace } from "../src/db/tenant.ts";
+import { sha256Hex } from "../src/identity.ts";
 import { createLive, createSignals, OPERATORS } from "../src/live.ts";
 import { createLiveVisitors, type LiveVisitors } from "../src/live-visitors.ts";
 import { appendMessage } from "../src/messages.ts";
 import type { FetchClientDocument } from "../src/oauth-client.ts";
+import { newToken, STATIC_KEY_PREFIX } from "../src/oauth-grants.ts";
+import { runDueOutbound } from "../src/outbound.ts";
 import { createPush } from "../src/push.ts";
 import { localStore } from "../src/storage.ts";
 import { setSuspended, signalSuspension } from "../src/suspension.ts";
@@ -236,7 +241,7 @@ export async function startE2EServer(
         await withWorkspace(db, workspace.id, async (tx) => {
           const [row] = await tx
             .insert(visitor)
-            .values({ workspaceId: workspace.id, externalId: `${prefix}-${i}`, country })
+            .values({ workspaceId: workspace.id, userId: `${prefix}-${i}`, country })
             .returning({ id: visitor.id });
           await appendMessage(
             tx,
@@ -320,6 +325,27 @@ export async function startE2EServer(
         await client.end();
       }
       signalSuspension(createSignals(publisher, logger), workspace.id, suspend);
+    },
+    /** A key that sends directly and may send as a member, as recipe 1's setup line makes. */
+    async sendingKey(name: string) {
+      const token = newToken(STATIC_KEY_PREFIX, workspace.id);
+      await owner.insert(apiKey).values({
+        workspaceId: workspace.id,
+        name,
+        tokenHash: sha256Hex(token),
+        replyMode: "send",
+        permissions: ["send_as_member"],
+        createdBy: OPERATOR,
+      });
+      return token;
+    },
+    /** Time passes for every outbound message that waits, and one worker pass moves them on. */
+    async outboundTimePasses() {
+      await owner
+        .update(outboundMessage)
+        .set({ dueAt: sql`now()` })
+        .where(sql`${outboundMessage.dueAt} is not null`);
+      await runDueOutbound(workerDb, db, live, 50);
     },
     /** A token the host backend would sign. */
     hostToken(subject: string, expiresInSeconds = 3600) {

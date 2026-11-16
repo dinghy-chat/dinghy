@@ -1,14 +1,21 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { and, desc, eq, gt, isNull, lt, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, isNull, sql } from "drizzle-orm";
 import type { Context, Input } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { createMiddleware } from "hono/factory";
 import type { Logger } from "pino";
-import { firstName, LOCALES } from "../../../packages/widget/src/shared.ts";
+import { firstName, LOCALES, OUTBOUND_ANSWERED_MAX } from "../../../packages/widget/src/shared.ts";
 import { VISITOR_TOKEN } from "./api-security.ts";
 import type { App, AppEnv } from "./app.ts";
 import { chatLinkVisitor, chatLinkWorkspace, isChatLinkToken } from "./chat-link.ts";
-import { conversation, VISITOR_KINDS, visitor, widgetSettings, workspace } from "./db/schema.ts";
+import {
+  conversation,
+  OUTBOUND_SHOWS,
+  VISITOR_KINDS,
+  visitor,
+  widgetSettings,
+  workspace,
+} from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { deviceLine } from "./device.ts";
 import {
@@ -16,6 +23,7 @@ import {
   errorAnswer,
   failure,
   INVALID,
+  NOT_FOUND,
   okContent,
   UPLOAD_ERRORS,
   WIDGET_ERRORS,
@@ -43,7 +51,6 @@ import { type Limits, STREAM_LIMIT, STREAM_RETRY_SECONDS } from "./limits.ts";
 import { type Live, wakeConversation } from "./live.ts";
 import type { LiveVisitors } from "./live-visitors.ts";
 import {
-  appendMessage,
   CURSOR_PATTERN,
   type Cursor,
   catchClosed,
@@ -51,7 +58,9 @@ import {
   InvalidReplyToError,
   listVisitorMessages,
   type MessageAuthor,
+  type MessageAuthorIds,
   markRead,
+  memberSender,
   messageAuthors,
   parseCursor,
   QuoteSchema,
@@ -62,6 +71,14 @@ import {
   WorkspaceClosedError,
 } from "./messages.ts";
 import { hashIp, isAddressBlocked, isBlocked, noteVisitorAddress } from "./moderation.ts";
+import type { Outbound } from "./outbound.ts";
+import {
+  appendVisitorMessage,
+  readInConversation,
+  upsertContactAndRecheck,
+  type WidgetOutbound,
+} from "./outbound-delivery.ts";
+import { ButtonIndex, ButtonSchema, ChosenButtonSchema } from "./outbound-schemas.ts";
 import type { VisitorPresence } from "./presence.ts";
 import type { ImageUrls } from "./public-images.ts";
 import { type RateLimit, type Slots, tooManyRequests } from "./rate-limit.ts";
@@ -69,7 +86,12 @@ import type { SiteSignals } from "./setup.ts";
 import { CLOSE_REASONS_TEXT, openLiveStream, type StreamOptions, streamLeaseMs } from "./stream.ts";
 import { canonicalTimeZone, isTimeZone } from "./time.ts";
 import { AttachmentSchema, attachmentView, refuseUpload, type Uploads } from "./uploads.ts";
-import { PUBLIC_KEY, type WidgetWorkspace, widgetWorkspace } from "./workspaces.ts";
+import {
+  PUBLIC_KEY,
+  readWorkspaceFace,
+  type WidgetWorkspace,
+  widgetWorkspace,
+} from "./workspaces.ts";
 
 const params = z.object({ key: z.string().regex(PUBLIC_KEY) });
 
@@ -289,7 +311,15 @@ const beatRoute = createRoute({
     },
   },
   responses: {
-    200: { description: "Noted, or dropped", content: okContent },
+    200: {
+      description:
+        "Noted, or dropped. `waiting` counts the visitor's outbound messages that wait to show, so the loader fetches the chat only then",
+      content: {
+        "application/json": {
+          schema: z.object({ ok: z.literal(true), waiting: z.number().int() }),
+        },
+      },
+    },
     ...WIDGET_WRITE_ERRORS,
   },
 });
@@ -379,6 +409,12 @@ const MessageSchema = z
     // A hash of the operator's or the key's ID, so a widget can tell two authors with one name
     // apart. It names neither. Null for the visitor's own.
     authorId: z.string().nullable(),
+    // The outbound message this reply came from, so the widget drops its own copy of it.
+    outboundId: z.string().nullable(),
+    // That outbound message's buttons, which the visitor chooses in the chat. Empty otherwise.
+    buttons: z.array(ButtonSchema),
+    // The button of an outbound message that the visitor answered with, or null.
+    button: ChosenButtonSchema.nullable(),
     createdAt: z.string(),
   })
   .openapi("Message", {
@@ -427,6 +463,17 @@ const sendMessageRoute = createRoute({
             page: PAGE,
             replyToMessageId: REPLY_TO,
             body: Body,
+            outboundIds: z.array(z.uuid()).max(OUTBOUND_ANSWERED_MAX).default([]).openapi({
+              description:
+                "The outbound messages the visitor read and this answers. They go in the conversation first, in the order read.",
+            }),
+            button: z
+              .object({ outboundMessageId: z.uuid(), index: ButtonIndex })
+              .optional()
+              .openapi({
+                description:
+                  "A value button the visitor chose, by its place in the outbound message's buttons. The message's text becomes its label.",
+              }),
           }),
           example: {
             clientId: "m_4f9a2c",
@@ -555,20 +602,68 @@ const shownName = (author: MessageAuthor, isKey: boolean) =>
   isKey || author.isDeleted ? author.name : firstName(author.name);
 
 /** A message as the widget shows it. `authors` holds the reply authors by operator or key ID. */
+/** The reply authors a page names, and the workspace's face when a reply shows as the team. */
+interface Senders {
+  authors: Map<string, MessageAuthor>;
+  team: { name: string; logoUrl: string | null } | null;
+}
+
+/** The authors of these messages, in one read, and the workspace's face only when one needs it. */
+async function sendersOf(
+  tx: Transaction,
+  urls: ImageUrls,
+  workspaceId: string,
+  messages: MessageAuthorIds[],
+): Promise<Senders> {
+  const authors = await messageAuthors(tx, workspaceId, messages);
+  const showsTeam = messages.some((one) => one.outbound?.sender === "team");
+  const team = showsTeam ? ((await readWorkspaceFace(tx, urls, workspaceId)) ?? null) : null;
+  return { authors, team };
+}
+
+/**
+ * Who the visitor sees on a reply: its author, or the member or the workspace that an outbound
+ * message shows as. A visitor learns a first name and a picture, never an email. Only the picture's
+ * address names the operator, as an <img> needs one.
+ */
+function visitorSender(
+  urls: ImageUrls,
+  workspaceId: string,
+  { authors, team }: Senders,
+  { authorOperatorId, authorApiKeyId, outbound }: MessageAuthorIds,
+) {
+  if (outbound?.sender === "team") {
+    return {
+      fromBot: false,
+      authorName: team?.name ?? null,
+      authorPictureUrl: team?.logoUrl ?? null,
+      authorId: visitorAuthorId(workspaceId),
+    };
+  }
+  const operatorId = memberSender(outbound ?? null) ?? authorOperatorId;
+  const isKey = operatorId === null && authorApiKeyId !== null;
+  const authorId = operatorId ?? authorApiKeyId;
+  const author = authorId === null ? undefined : authors.get(authorId);
+  return {
+    fromBot: isKey,
+    authorName: author === undefined ? null : shownName(author, isKey),
+    authorPictureUrl:
+      operatorId === null ? null : urls.picture(operatorId, author?.pictureUpdatedAt ?? null),
+    authorId: authorId === null || author === undefined ? null : visitorAuthorId(authorId),
+  };
+}
+
+/** A message as the widget shows it. */
 function messageView(
   uploads: Uploads | undefined,
   urls: ImageUrls,
   workspaceId: string,
-  authors: Map<string, MessageAuthor>,
-  // A visitor learns a reply author's first name and picture, never an email. Only the picture's
-  // address names the operator, as an <img> needs one.
+  senders: Senders,
   {
     seq,
     createdAt,
     clientId,
     attachment,
-    authorOperatorId,
-    authorApiKeyId,
     replyTo,
     changeSeq: _change,
     editedAt: _edited,
@@ -577,24 +672,20 @@ function messageView(
     fromAddress: _fromAddress,
     handoff: _handoff,
     mentions: _mentions,
+    outbound,
     ...message
   }: VisitorMessage,
 ) {
-  const authorId = authorOperatorId ?? authorApiKeyId;
-  const author = authorId === null ? undefined : authors.get(authorId);
+  const { authorOperatorId: _operator, authorApiKeyId: _key, ...shown } = message;
   return {
-    ...message,
+    ...shown,
+    ...visitorSender(urls, workspaceId, senders, { ...message, outbound }),
     replyTo: visitorQuote(replyTo),
     // A visitor gets only its own client IDs, to match a stream copy to a pending line.
     clientId: message.fromVisitor ? clientId : null,
     seq: seq.toString(),
-    fromBot: authorApiKeyId !== null,
-    authorName: author === undefined ? null : shownName(author, authorApiKeyId !== null),
-    authorPictureUrl:
-      authorOperatorId === null
-        ? null
-        : urls.picture(authorOperatorId, author?.pictureUpdatedAt ?? null),
-    authorId: authorId === null || author === undefined ? null : visitorAuthorId(authorId),
+    outboundId: outbound?.id ?? null,
+    buttons: message.deleted ? [] : (outbound?.buttons ?? []),
     createdAt: createdAt.toISOString(),
     attachment: attachmentView(uploads, workspaceId, attachment),
   };
@@ -660,53 +751,26 @@ function widgetAccess(db: Database, ownOrigin: string | undefined, sites: SiteSi
   });
 }
 
-/** Finds or updates a signed-in visitor. The first request for a user creates its row. */
-async function signedInVisitor(
+/**
+ * Finds or updates a signed-in visitor. The first request for a user creates its row. The token's
+ * fields are a write at its issue time, so an older tab's token never overwrites newer data.
+ */
+function signedInVisitor(
   db: Database,
   workspaceId: string,
-  identity: HostIdentity,
+  { userId, name, email, attributes, issuedAt }: HostIdentity,
 ): Promise<string> {
-  // A token's iat can be fractional, as `Date.now() / 1000` makes it.
-  const issuedAt = BigInt(Math.floor(identity.issuedAt));
-  const context = {
-    ...(identity.email === undefined ? {} : { email: identity.email }),
-    ...(identity.name === undefined ? {} : { name: identity.name }),
-    ...(identity.attributes === undefined ? {} : { attributes: identity.attributes }),
-    identityIssuedAt: issuedAt,
+  const fields = {
+    ...(name !== undefined && { name }),
+    ...(email !== undefined && { email }),
+    ...(attributes !== undefined && { attributes }),
   };
-  const isThisUser = and(
-    eq(visitor.workspaceId, workspaceId),
-    eq(visitor.externalId, identity.externalId),
+  return withWorkspace(
+    db,
+    workspaceId,
+    async (tx) =>
+      (await upsertContactAndRecheck(tx, workspaceId, userId, fields, issuedAt * 1000)).visitorId,
   );
-  const columns = { id: visitor.id, identityIssuedAt: visitor.identityIssuedAt };
-  return withWorkspace(db, workspaceId, async (tx) => {
-    let [existing] = await tx.select(columns).from(visitor).where(isThisUser);
-    if (existing === undefined) {
-      const [created] = await tx
-        .insert(visitor)
-        .values({ workspaceId, externalId: identity.externalId, ...context })
-        .onConflictDoNothing()
-        .returning({ id: visitor.id });
-      if (created !== undefined) return created.id;
-      // Two first requests arrived together, and the other one created the row.
-      [existing] = await tx.select(columns).from(visitor).where(isThisUser);
-      if (existing === undefined) throw new Error("The visitor row is missing");
-    }
-    // Only a newer token updates this, or a request from an older tab would overwrite newer data.
-    // The check is in the update too, because two requests can both pass the one above.
-    if (issuedAt > (existing.identityIssuedAt ?? -1n)) {
-      await tx
-        .update(visitor)
-        .set(context)
-        .where(
-          and(
-            isThisUser,
-            or(isNull(visitor.identityIssuedAt), lt(visitor.identityIssuedAt, issuedAt)),
-          ),
-        );
-    }
-    return existing.id;
-  });
 }
 
 interface Identified {
@@ -824,7 +888,7 @@ async function knownVisitor(
     tx
       .select({ id: visitor.id })
       .from(visitor)
-      .where(and(eq(visitor.workspaceId, found.id), eq(visitor.externalId, identity.externalId))),
+      .where(and(eq(visitor.workspaceId, found.id), eq(visitor.userId, identity.userId))),
   );
   return row?.id ?? null;
 }
@@ -981,11 +1045,107 @@ function limitFor(method: string, path: string): [string, number, number] {
   return ["widget-write", 120, 60];
 }
 
+const WaitingSchema = z
+  .object({
+    id: z.string(),
+    body: z.string(),
+    buttons: z.array(ButtonSchema),
+    // How it asks to show: the launcher's badge, a card above it, or the open chat.
+    show: z.enum(OUTBOUND_SHOWS),
+    // The visitor read it already, in this tab or another.
+    read: z.boolean(),
+    fromBot: z.boolean(),
+    authorName: z.string().nullable(),
+    authorPictureUrl: z.string().nullable(),
+    authorId: z.string().nullable(),
+    createdAt: z.string(),
+  })
+  .openapi("WaitingMessage");
+
+const outboundParams = params.extend({ id: z.uuid() });
+
+const waitingRoute = createRoute({
+  method: "get",
+  path: "/v1/widget/{key}/outbound-messages",
+  security: VISITOR_TOKEN,
+  summary: "The outbound messages that wait to show to this visitor, oldest first",
+  description:
+    "Each is checked again now. One that would join the open conversation goes in it and arrives on the stream instead. Fetching one delivers it.",
+  request: { params },
+  responses: {
+    200: {
+      description: "The waiting messages",
+      content: {
+        "application/json": { schema: z.object({ outboundMessages: z.array(WaitingSchema) }) },
+      },
+    },
+    ...WIDGET_TOKEN_ERRORS,
+  },
+});
+
+const outboundReadRoute = createRoute({
+  method: "post",
+  path: "/v1/widget/{key}/outbound-messages/{id}/read",
+  security: VISITOR_TOKEN,
+  summary: "Say that the visitor read an outbound message. A repeat changes nothing",
+  request: { params: outboundParams },
+  responses: {
+    200: { description: "Read", content: okContent },
+    ...WIDGET_TOKEN_ERRORS,
+    404: errorAnswer("not_found: not this visitor's, or it ended"),
+  },
+});
+
+const ButtonPress = z.object({ button: ButtonIndex });
+
+const pressRoute = (path: "dismiss" | "click", summary: string) =>
+  createRoute({
+    method: "post",
+    path: `/v1/widget/{key}/outbound-messages/{id}/${path}`,
+    security: VISITOR_TOKEN,
+    summary,
+    request: {
+      params: outboundParams,
+      body: { required: true, content: { "application/json": { schema: ButtonPress } } },
+    },
+    responses: {
+      200: { description: "Recorded", content: okContent },
+      ...WIDGET_WRITE_ERRORS,
+      404: errorAnswer("not_found: not this visitor's, it ended, or it has no such button"),
+    },
+  });
+
+const dismissRoute = pressRoute(
+  "dismiss",
+  "The visitor chose a dismiss button, by its place: the message ends as dismissed",
+);
+const clickRoute = pressRoute(
+  "click",
+  "The visitor chose a button that opens a page, by its place",
+);
+
+/** A waiting message as the widget shows it. */
+const waitingView = (
+  urls: ImageUrls,
+  workspaceId: string,
+  senders: Senders,
+  one: WidgetOutbound,
+) => ({
+  id: one.id,
+  body: one.body ?? "",
+  buttons: one.buttons,
+  show: one.show,
+  read: one.readAt !== null,
+  ...visitorSender(urls, workspaceId, senders, one),
+  createdAt: one.createdAt.toISOString(),
+});
+
 /** A visitor's own message has no author to look up. */
-const NO_AUTHORS = new Map<string, MessageAuthor>();
+const NO_SENDERS: Senders = { authors: new Map(), team: null };
 
 interface WidgetOptions {
   db: Database;
+  outbound: Outbound;
   uploads: Uploads | undefined;
   imageUrls: ImageUrls;
   ipSecret: string;
@@ -1021,6 +1181,7 @@ export function registerWidgetRoutes(
   app: App,
   {
     db,
+    outbound,
     uploads,
     imageUrls: urls,
     ipSecret,
@@ -1037,8 +1198,8 @@ export function registerWidgetRoutes(
     sites,
   }: WidgetOptions,
 ): void {
-  const view = (workspaceId: string, message: VisitorMessage, authors = NO_AUTHORS) =>
-    messageView(uploads, urls, workspaceId, authors, message);
+  const view = (workspaceId: string, message: VisitorMessage, senders = NO_SENDERS) =>
+    messageView(uploads, urls, workspaceId, senders, message);
 
   /** A page of the visitor's messages, with the authors of its replies. */
   const readPage = (
@@ -1049,7 +1210,7 @@ export function registerWidgetRoutes(
   ) =>
     withWorkspace(db, workspaceId, async (tx) => {
       const page = await listVisitorMessages(tx, workspaceId, visitorId, after, limit);
-      return { ...page, authors: await messageAuthors(tx, workspaceId, page.messages) };
+      return { ...page, senders: await sendersOf(tx, urls, workspaceId, page.messages) };
     });
 
   /**
@@ -1107,12 +1268,13 @@ export function registerWidgetRoutes(
         withWorkspace(db, found.id, async (tx) => {
           if (await isBlocked(tx, found.id, identified, ipHash)) return null;
           await noteVisitorAddress(tx, found.id, identified.visitorId, ipHash);
-          const { page, ...input } = c.req.valid("json");
-          return appendMessage(
+          const { page, outboundIds, button, ...input } = c.req.valid("json");
+          return appendVisitorMessage(
             tx,
             found.id,
             { kind: "visitor", visitorId: identified.visitorId },
             { ...input, page: identified.link ? null : sitePage(page, c.req.header("origin")) },
+            { outboundIds, button },
           );
         }),
       ),
@@ -1209,7 +1371,7 @@ export function registerWidgetRoutes(
           items: page.messages.map((message) => ({
             event: "message",
             seq: message.seq,
-            data: view(found.id, message, page.authors),
+            data: view(found.id, message, page.senders),
           })),
         };
       },
@@ -1229,7 +1391,7 @@ export function registerWidgetRoutes(
     );
     return c.json(
       {
-        messages: page.messages.map((message) => view(found.id, message, page.authors)),
+        messages: page.messages.map((message) => view(found.id, message, page.senders)),
         cursor: formatCursor(page.cursor),
         hasMore: page.hasMore,
         resync: page.resync,
@@ -1258,7 +1420,7 @@ export function registerWidgetRoutes(
             found.id,
             (attachment) =>
               withWorkspace(db, found.id, (tx) =>
-                appendMessage(
+                appendVisitorMessage(
                   tx,
                   found.id,
                   { kind: "visitor", visitorId: identified.visitorId },
@@ -1268,6 +1430,7 @@ export function registerWidgetRoutes(
                     page: identified.link ? null : sitePage(page, c.req.header("origin")),
                     replyToMessageId,
                   },
+                  undefined,
                   limits,
                 ),
               ),
@@ -1299,14 +1462,53 @@ export function registerWidgetRoutes(
     const identified = await identify(c);
     if (identified === null) return c.json(UNAUTHORIZED, 401);
     const { seq } = c.req.valid("json");
-    const passedReply = await withWorkspace(db, found.id, (tx) =>
-      markRead(tx, found.id, identified.visitorId, BigInt(seq)),
-    );
+    const passed = await withWorkspace(db, found.id, async (tx) => {
+      const replies = await markRead(tx, found.id, identified.visitorId, BigInt(seq));
+      await readInConversation(tx, found.id, replies);
+      return replies;
+    });
     // After the commit, so an operator's thread shows "Read in chat". A lost notice only waits
     // for the thread's next load. A read of the visitor's own messages changes no receipt.
-    if (passedReply) live.tell(found.id, { kind: "receipts", visitorId: identified.visitorId });
+    if (passed.length > 0)
+      live.tell(found.id, { kind: "receipts", visitorId: identified.visitorId });
     return c.json({ ok: true as const }, 200);
   });
+
+  app.openapi(waitingRoute, async (c) => {
+    const found = c.get("workspace");
+    const identified = await identify(c);
+    if (identified === null) return c.json(UNAUTHORIZED, 401);
+    const waiting = await outbound.waiting(found.id, identified.visitorId);
+    const senders = await withWorkspace(db, found.id, (tx) =>
+      sendersOf(tx, urls, found.id, waiting),
+    );
+    return c.json(
+      { outboundMessages: waiting.map((one) => waitingView(urls, found.id, senders, one)) },
+      200,
+    );
+  });
+
+  app.openapi(outboundReadRoute, async (c) => {
+    const identified = await identify(c);
+    if (identified === null) return c.json(UNAUTHORIZED, 401);
+    const { id } = c.req.valid("param");
+    const read = await outbound.read(c.get("workspace").id, identified.visitorId, id);
+    return read ? c.json({ ok: true as const }, 200) : c.json(NOT_FOUND, 404);
+  });
+
+  for (const [route, kind] of [
+    [dismissRoute, "dismiss"],
+    [clickRoute, "url"],
+  ] as const) {
+    app.openapi(route, async (c) => {
+      const identified = await identify(c);
+      if (identified === null) return c.json(UNAUTHORIZED, 401);
+      const { id } = c.req.valid("param");
+      const button = { outboundMessageId: id, index: c.req.valid("json").button };
+      const done = await outbound.press(c.get("workspace").id, identified.visitorId, button, kind);
+      return done ? c.json({ ok: true as const }, 200) : c.json(NOT_FOUND, 404);
+    });
+  }
 
   app.openapi(saveEmailRoute, async (c) => {
     const found = c.get("workspace");
@@ -1353,8 +1555,9 @@ export function registerWidgetRoutes(
     const token = c.get("widgetToken");
     const { tab, page, title, referrer, timeZone } = c.req.valid("json");
     const path = sitePage(page, c.req.header("origin"));
+    const nothing = { ok: true as const, waiting: 0 };
     // A chat link's page is this server's, not the site's.
-    if (path === null || token.kind === "link") return c.json({ ok: true as const }, 200);
+    if (path === null || token.kind === "link") return c.json(nothing, 200);
     if (!seenWidget.has(found.id)) {
       // The first step of Get started. It matches no row once set, so it takes no lock then.
       await withWorkspace(db, found.id, (tx) =>
@@ -1390,7 +1593,11 @@ export function registerWidgetRoutes(
       visitorId: visitorId ?? null,
       conversationId,
     });
-    return c.json({ ok: true as const }, 200);
+    if (visitorId === null || visitorId === undefined) return c.json(nothing, 200);
+    return c.json(
+      { ok: true as const, waiting: await outbound.shownCount(found.id, visitorId) },
+      200,
+    );
   });
 
   app.openapi(leaveRoute, async (c) => {

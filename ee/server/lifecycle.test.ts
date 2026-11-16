@@ -221,7 +221,7 @@ async function paidWorkspace({ onboarding = false } = {}) {
   await withWorkspace(db, workspaceId, async (tx) => {
     const [row] = await tx
       .insert(visitor)
-      .values({ workspaceId, externalId: "visitor-1" })
+      .values({ workspaceId, userId: "visitor-1" })
       .returning({ id: visitor.id });
     const author = { kind: "visitor" as const, visitorId: row?.id ?? "" };
     await appendMessage(tx, workspaceId, author, { clientId: "c1", body: "Hello there" });
@@ -905,6 +905,7 @@ describe("the subscription lifecycle", () => {
     };
     const worker = startWorker({
       db: workerDb,
+      appDb: db,
       logger,
       mailer: slow,
       cloud: { billing: { ...keys(), apiBase: stripe.apiBase } },
@@ -1542,6 +1543,7 @@ async function purgeUntilGone(workspaceId: string) {
   clock = new Date(clock.getTime() + BILLING_CLEAR_DELAY_MS);
   const worker = startWorker({
     db: workerDb,
+    appDb: db,
     logger,
     publicUrl: PUBLIC_URL,
     secret: AUTH_SECRET,

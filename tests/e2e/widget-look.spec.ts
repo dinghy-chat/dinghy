@@ -238,6 +238,8 @@ test("outside business hours, the header says when the team is back and asks for
   await context.close();
 });
 
+const SLOW_SEND_MS = 300;
+
 test("outside business hours, a visitor who already chatted gets the email form after the messages", async ({
   browser,
 }) => {
@@ -249,9 +251,16 @@ test("outside business hours, a visitor who already chatted gets the email form 
   await visitor.goto(`${server.hostOrigin}/plain`);
   await launcher(visitor).click();
   const box = visitor.getByRole("textbox", { name: "Your message" });
+  // A slow send, as on a busy machine.
+  await visitor.route("**/messages", async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, SLOW_SEND_MS));
+    await route.continue();
+  });
   await box.fill("Hello");
   await box.press("Enter");
   await expect(visitor.getByText("Hello")).toBeVisible();
+  // The line shows before the server has it, and a reload during the send would abort it.
+  await expect(visitor.locator(".state", { hasText: "Sending" })).toHaveCount(0);
   await expect(visitor.getByRole("textbox", { name: "Your email" })).toHaveCount(0);
   // Monday 21:00 in Paris, on the next page, where the chat stays open.
   await visitor.clock.setFixedTime(new Date("2026-11-16T20:00:00Z"));

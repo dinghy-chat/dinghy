@@ -110,6 +110,9 @@ export interface SavedAppearance extends WidgetSettings {
   hours: BusinessHours | null;
 }
 
+/** The outbound messages one answer may name: the newest the visitor read and did not answer. */
+export const OUTBOUND_ANSWERED_MAX = 50;
+
 /** The longest title an owner can save. */
 export const TITLE_MAX = 40;
 /** The longest greeting or away text. */
@@ -190,7 +193,42 @@ export interface DinghyState {
   unread: number;
   /** The visitor has an open conversation. Known once the chat has asked the server, false before. */
   conversation: boolean;
+  /** The visitor's ID, or null before the visitor exists. */
+  visitorId: string | null;
+  /** The launcher pulses, after nudge() or for a message that waits. */
+  nudging: boolean;
 }
+
+/** How an outbound message asks to show: the launcher's badge, a card above it, or the open chat. */
+export type OutboundShow = "badge" | "preview" | "chat";
+
+/** A button on an outbound message: it answers with its label, opens a page, or dismisses. */
+export type OutboundButton =
+  | { label: string; value: string; url?: never; dismiss?: never }
+  | { label: string; url: string; value?: string; dismiss?: never }
+  | { label: string; dismiss: true; value?: string; url?: never };
+
+/** A message from the team, as the page's `message:received` event carries it. */
+export interface ReceivedMessage {
+  /** Null until the message is in a conversation. */
+  id: string | null;
+  body: string | null;
+  sender: { name: string | null; pictureUrl: string | null };
+  /** An outbound message that waits outside a conversation, or null for a reply. */
+  outbound: { id: string; show: OutboundShow; buttons: OutboundButton[] } | null;
+}
+
+/** An outbound message the visitor read or dismissed, with the button they chose, if any. */
+export interface OutboundChange {
+  id: string;
+  button: { value: string | null; label: string } | null;
+}
+
+/** A button the visitor chose, as their message, the events and the API carry it. */
+export const chosenButton = (button: { label: string; value?: string | undefined }) => ({
+  value: button.value ?? null,
+  label: button.label,
+});
 
 /** Each event and what its callback receives. */
 export interface DinghyEvents {
@@ -202,9 +240,15 @@ export interface DinghyEvents {
   conversation: boolean;
   /** The visitor's message reached the server. `body` is null for an image. */
   "message:sent": { body: string | null };
-  /** A reply arrived while the page was open. `body` is null for an image. */
-  "message:received": { body: string | null };
+  /** A message from the team arrived while the page was open. `body` is null for an image. */
+  "message:received": ReceivedMessage;
   "conversation:started": undefined;
+  /** The visitor now exists, with this ID, or null after reset() or identify() until it is known. */
+  visitor: string | null;
+  /** The launcher started or stopped pulsing. */
+  nudge: boolean;
+  "outbound:read": OutboundChange;
+  "outbound:dismissed": OutboundChange;
 }
 
 export type DinghyEvent = keyof DinghyEvents;
@@ -221,6 +265,8 @@ export interface DinghyApi {
   reset(): void;
   setContext(data: PageContext): void;
   configure(options: Appearance): void;
+  /** Pulses the launcher until the next open, or with false stops it. */
+  nudge(on?: boolean): void;
   /** Calls `callback` on each event, and returns a function that removes it. */
   on<E extends DinghyEvent>(event: E, callback: (data: DinghyEvents[E]) => void): () => void;
   readonly state: DinghyState;
@@ -237,6 +283,8 @@ interface ChatHandlers {
   session(): void;
   /** setContext() was called. */
   context(): void;
+  /** The loader's beat says outbound messages wait for this visitor. */
+  outbound(): void;
 }
 
 /** Each event's callbacks. The loader keeps them, and the chat bundle calls them. */
@@ -247,7 +295,7 @@ export type Listeners = { [E in DinghyEvent]?: Set<(data: DinghyEvents[E]) => vo
  * bundle: a tab keeps the loader it started with for days, and the chat bundle replaces a loader
  * with another number instead of reading a context it does not know.
  */
-export const CONTEXT_VERSION = 2;
+export const CONTEXT_VERSION = 3;
 
 /** What the loader hands to the chat bundle. */
 export interface WidgetContext {
@@ -278,6 +326,8 @@ export interface WidgetContext {
   /** The loader's `Dinghy.state`, which the chat bundle keeps up to date. */
   state: DinghyState;
   listeners: Listeners;
+  /** Starts or stops the launcher's pulse, as Dinghy.nudge() does. */
+  nudge(on: boolean): void;
 }
 
 const TOKEN_PREFIX = "dinghy:token:";

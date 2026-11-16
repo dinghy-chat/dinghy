@@ -28,6 +28,8 @@ import {
   label,
   message,
   operator,
+  outboundDedupe,
+  outboundMessage,
   pageView,
   savedReply,
   visitor,
@@ -205,6 +207,19 @@ async function makeSource(): Promise<Source> {
     token: string;
   };
   await setReplyMode(owner, key.id, "send");
+  // An outbound message that waits, with its `dedupeKey`.
+  await app.request(`${inSpace}/outbound-messages`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${key.token}`, "content-type": "application/json" },
+    body: JSON.stringify({
+      clientId: "welcome",
+      visitor: { id: visitorId },
+      body: "Need a hand with the setup?",
+      buttons: [{ label: "Yes", value: "yes" }],
+      delay: "1h",
+      dedupeKey: "welcome",
+    }),
+  });
   // The owner's reply took the conversation, so it goes back to the bot first.
   await write("POST", `/conversations/${conversationId}/give-back`, {});
   await app.request(`${inSpace}/conversations/${conversationId}/messages`, {
@@ -254,7 +269,7 @@ async function makeSource(): Promise<Source> {
     .where(eq(workspaceMember.operatorId, gone.id));
   await owner
     .update(conversation)
-    .set({ snoozedAt: SNOOZED_AT, snoozedUntil: SNOOZED_UNTIL })
+    .set({ snoozedAt: SNOOZED_AT, snoozedUntil: SNOOZED_UNTIL, startedBy: "team" })
     .where(eq(conversation.id, conversationId));
   await owner.insert(emailStop).values({ workspaceId: space.id, addressHash: "a".repeat(64) });
   await owner
@@ -751,6 +766,30 @@ describe("a round trip onto a fresh install", () => {
     expect(read.status).toBe(401);
   });
 
+  test("the outbound messages, their dedupe keys and who started the conversation come along", async () => {
+    const pick = async (from: Install) => ({
+      outbound: await from.owner
+        .select()
+        .from(outboundMessage)
+        .where(eq(outboundMessage.workspaceId, source.space.id)),
+      dedupe: await from.owner
+        .select()
+        .from(outboundDedupe)
+        .where(eq(outboundDedupe.workspaceId, source.space.id)),
+      startedBy: (
+        await from.owner
+          .select({ startedBy: conversation.startedBy })
+          .from(conversation)
+          .where(eq(conversation.id, source.conversationId))
+      )[0]?.startedBy,
+    });
+    const before = await pick(source.install);
+    expect(before.outbound).toHaveLength(1);
+    expect(before.dedupe).toHaveLength(1);
+    expect(before.startedBy).toBe("team");
+    expect(await pick(target)).toEqual(before);
+  });
+
   test("what the page sent comes along", async () => {
     const [after] = await target.owner
       .select()
@@ -951,6 +990,8 @@ describe("a bad file changes nothing", () => {
   test("JSON of the wrong shape", async () => {
     await refuses(await edited((data) => Object.assign(data, { version: 99 })), "format");
     await refuses(await edited((data) => Object.assign(data, { extra: true })), "format");
+    // A file from before outbound messages: the import takes only the current format.
+    await refuses(await edited((data) => delete data.outboundMessages), "format");
     await refuses(
       Buffer.concat([...tarEntry("export.json", Buffer.from("{nope")), tarEnd()]),
       "valid JSON",
@@ -987,6 +1028,31 @@ describe("a bad file changes nothing", () => {
         if (mentioning !== undefined) mentioning.metadata.mentions = [randomUUID()];
       }),
       "unknown operator",
+    );
+  });
+
+  test("a message whose handoff or outbound sender names an unknown operator", async () => {
+    for (const metadata of [
+      { handoff: { operatorId: randomUUID() } },
+      { outbound: { id: randomUUID(), sendEmail: false, sender: { operatorId: randomUUID() } } },
+    ]) {
+      await refuses(
+        await edited((data) => {
+          const first = (data.messages as { metadata: object }[])[0];
+          if (first !== undefined) first.metadata = metadata;
+        }),
+        "unknown operator",
+      );
+    }
+  });
+
+  test("an outbound message with a condition of the wrong shape", async () => {
+    await refuses(
+      await edited((data) => {
+        const first = (data.outboundMessages as { unless: unknown }[])[0];
+        if (first !== undefined) first.unless = { field: "plan", op: "nope" };
+      }),
+      "format",
     );
   });
 

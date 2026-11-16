@@ -114,6 +114,9 @@ export const ERROR_CODES = [
   "removal_not_needed",
   "saved_reply_limit",
   "saved_reply_shortcut_taken",
+  "send_as_member_required",
+  "send_email_required",
+  "send_mode_required",
   "signed_in",
   "sign_in_again",
   "site_limit",
@@ -125,6 +128,7 @@ export const ERROR_CODES = [
   "too_many_pixels",
   "too_many_requests",
   "too_many_streams",
+  "too_many_waiting",
   "too_slow",
   "two_factor_off",
   "two_factor_on",
@@ -143,6 +147,11 @@ type ErrorCode = (typeof ERROR_CODES)[number];
 export const failure = (code: ErrorCode, message: string) => ({ error: { code, message } });
 
 export const NOT_FOUND = failure("not_found", "This does not exist.");
+/** A key's reply or send while an owner or admin paused the bots. */
+export const BOTS_PAUSED = failure(
+  "bots_paused",
+  "An owner or admin paused every bot of this workspace. Only people write until they resume.",
+);
 export const FORBIDDEN = failure("forbidden", "Your role does not allow this.");
 export const CONVERSATION_CLOSED = failure(
   "conversation_closed",

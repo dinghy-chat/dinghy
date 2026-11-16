@@ -41,18 +41,26 @@ export function useUnread(
   /** The newest position the stream has delivered. */
   delivered: bigint,
   saved: SavedAppearance | undefined,
+  /** Outbound messages the visitor has not read, which count too. */
+  waiting: number,
 ) {
   const [lastRead, setLastRead] = useState(0n);
   // The server's count, with the read position it was computed from.
   const [serverRead, setServerRead] = useState({ unread: 0, position: 0n });
-  const unread = counting
-    ? lines.filter(
-        (line) =>
-          !line.fromVisitor && !line.note && !line.gone && line.seq !== null && line.seq > lastRead,
-      ).length
-    : lastRead > serverRead.position
-      ? 0
-      : serverRead.unread;
+  const unread =
+    waiting +
+    (counting
+      ? lines.filter(
+          (line) =>
+            !line.fromVisitor &&
+            !line.note &&
+            !line.gone &&
+            line.seq !== null &&
+            line.seq > lastRead,
+        ).length
+      : lastRead > serverRead.position
+        ? 0
+        : serverRead.unread);
   useEffect(() => reportUnread(context, unread), [context, unread]);
   // After the saved look arrives, because the loader draws the launcher only then, and a returning
   // visitor's count can come first.

@@ -17,7 +17,11 @@ export type {
   DinghyState,
   Identity,
   OpenOptions,
+  OutboundButton,
+  OutboundChange,
+  OutboundShow,
   PageContext,
+  ReceivedMessage,
 } from "./shared.ts";
 
 export interface InitOptions extends Appearance {
@@ -58,7 +62,14 @@ function forward<M extends Exclude<keyof DinghyApi, "on" | "state">>(
   else (api[method] as (...values: unknown[]) => void)(...args);
 }
 
-const NOT_READY: DinghyState = { ready: false, open: false, unread: 0, conversation: false };
+const NOT_READY: DinghyState = {
+  ready: false,
+  open: false,
+  unread: 0,
+  conversation: false,
+  visitorId: null,
+  nudging: false,
+};
 
 /** The same `Dinghy` as the loader's, usable before the loader runs. */
 export const Dinghy: DinghyApi = {
@@ -71,6 +82,7 @@ export const Dinghy: DinghyApi = {
   reset: () => forward("reset"),
   setContext: (data) => forward("setContext", data),
   configure: (options) => forward("configure", options),
+  nudge: (on) => forward("nudge", ...(on === undefined ? [] : [on])),
   on<E extends DinghyEvent>(event: E, callback: (data: DinghyEvents[E]) => void) {
     // A call queued before the loader ran has no way back to its unsubscribe, so this flag stops it.
     let active = true;

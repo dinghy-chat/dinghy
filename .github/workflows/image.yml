@@ -114,8 +114,9 @@ jobs:
           GH_TOKEN: ${{ steps.app.outputs.token }}
         run: gh api repos/dinghy-chat/dinghy-internal/dispatches -f event_type=deploy -f "client_payload[version]=${GITHUB_REF_NAME#v}"
 
-  # The @dinghy-chat/widget npm package, at the release's version. npm trusts this workflow file
-  # (trusted publishing), so no token is stored, and the package says which commit built it.
+  # The @dinghy-chat/widget and @dinghy-chat/sdk npm packages, at the release's version. npm trusts
+  # this workflow file (trusted publishing), so no token is stored, and each package says which
+  # commit built it.
   npm:
     needs: publish
     if: github.repository == 'dinghy-chat/dinghy'
@@ -140,6 +141,14 @@ jobs:
           version="${GITHUB_REF_NAME#v}"
           if npm view "@dinghy-chat/widget@$version" version >/dev/null 2>&1; then
             echo "@dinghy-chat/widget@$version is already on npm"
+          else
+            npm publish --access public --provenance
+          fi
+      - working-directory: packages/sdk
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          if npm view "@dinghy-chat/sdk@$version" version >/dev/null 2>&1; then
+            echo "@dinghy-chat/sdk@$version is already on npm"
           else
             npm publish --access public --provenance
           fi

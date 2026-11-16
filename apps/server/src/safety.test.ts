@@ -579,6 +579,7 @@ describe("deleting a conversation", () => {
   const worker = (store: ObjectStore) =>
     startWorker({
       db: workerDb,
+      appDb: db,
       logger,
       store,
       publicUrl: PUBLIC_URL,
@@ -669,6 +670,7 @@ describe("deleting a conversation", () => {
     await asOperator(server, cookie, "DELETE", path);
     const running = startWorker({
       db: workerDb,
+      appDb: db,
       logger,
       store: stalled,
       publicUrl: PUBLIC_URL,

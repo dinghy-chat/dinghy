@@ -333,7 +333,7 @@ describe("chat migrate", () => {
       { channel: "transcript", covered_from_seq: "0", covered_to_seq: "3" },
     ]);
     const app = database.connect("app").db;
-    const line = { conversationId: conversation, seq: 2n };
+    const line = { conversationId: conversation, seq: 2n, outbound: null };
     const after = await withWorkspace(app, workspace, async (tx) => ({
       sentAt: await emailedAt(tx, workspace, visitor, line),
       edit: await editMessage(tx, workspace, conversation, reply, anna, {

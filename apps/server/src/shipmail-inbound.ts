@@ -331,15 +331,22 @@ export function mailboxSweep({
     if (Date.now() - sweptAt < everyMs && !(await heldOpened())) return;
     sweptAt = Date.now();
     const client = await db.$client.connect();
+    let isUnlocked = false;
     try {
       const lock = await client.query<{ locked: boolean }>(
         "SELECT pg_try_advisory_lock(hashtext($1)) AS locked",
         [SWEEP_LOCK],
       );
-      if (lock.rows[0]?.locked === true) await sweep(stopping);
+      if (lock.rows[0]?.locked === true) {
+        await sweep(stopping);
+        // A closed connection frees the lock only once Postgres ends its session, and a sweep that
+        // starts at once on another connection can come first and find it still taken.
+        await client.query("SELECT pg_advisory_unlock(hashtext($1))", [SWEEP_LOCK]);
+      }
+      isUnlocked = true;
     } finally {
-      // Closing the connection frees the lock, even after a failure.
-      client.release(true);
+      // After a failure, closing the connection frees the lock.
+      client.release(!isUnlocked);
     }
   };
 }

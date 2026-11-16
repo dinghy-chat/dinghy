@@ -11,6 +11,8 @@ import {
   event,
   message,
   operator,
+  outboundDedupe,
+  outboundMessage,
   stripeEvent,
   subscription,
   visitor,
@@ -44,6 +46,8 @@ const TENANT_TABLES = [
   apiKeyCredential,
   draftReply,
   widgetSiteSeen,
+  outboundMessage,
+  outboundDedupe,
 ];
 
 let database: TestDatabase;
@@ -61,7 +65,7 @@ async function seed(workspaceId: string): Promise<void> {
     signingSecret: "test-secret",
   });
   await owner.insert(workspaceMember).values({ workspaceId, operatorId: OPERATOR, role: "owner" });
-  await owner.insert(visitor).values({ workspaceId, id: visitorId, externalId: "user-1" });
+  await owner.insert(visitor).values({ workspaceId, id: visitorId, userId: "user-1" });
   await owner.insert(conversation).values({ workspaceId, id: conversationId, visitorId });
   await owner.insert(message).values({
     workspaceId,
@@ -108,6 +112,26 @@ async function seed(workspaceId: string): Promise<void> {
     body: `draft of ${workspaceId}`,
   });
   await owner.insert(widgetSiteSeen).values({ workspaceId, origin: "https://app.example.com" });
+  const outboundMessageId = uuidFor(workspaceId, 7);
+  await owner.insert(outboundMessage).values({
+    workspaceId,
+    id: outboundMessageId,
+    visitorId,
+    authorApiKeyId: apiKeyId,
+    senderKind: "author",
+    body: `outbound secret of ${workspaceId}`,
+    startConversation: "on_reply",
+    show: "badge",
+    ifConversationOpen: "hold",
+    assignOnReply: false,
+    sendEmail: false,
+    dedupeKey: "welcome",
+    clientId: "outbound",
+    status: "sent",
+  });
+  await owner
+    .insert(outboundDedupe)
+    .values({ workspaceId, visitorId, dedupeKey: "welcome", outboundMessageId });
   const webhookId = uuidFor(workspaceId, 4);
   await owner.insert(webhook).values({
     workspaceId,
@@ -184,6 +208,7 @@ describe("migrations", () => {
       webhook_created_by_operator_fk: "a member's removal, at most 5 webhooks per workspace",
       webhook_created_by_api_key_fk: "a key's delete, at most 5 webhooks per workspace",
       draft_reply_resolved_by_fk: "a member's removal, which only the purge does",
+      outbound_message_sender_fk: "a member's removal, which only the purge does",
     };
     const result = await owner.execute<{ name: string }>(sql`
       select c.conname as name from pg_constraint c
@@ -248,9 +273,7 @@ describe("reads", () => {
 describe("writes", () => {
   test("an insert for another workspace fails", async () => {
     await expect(
-      withWorkspace(app, A, (tx) =>
-        tx.insert(visitor).values({ workspaceId: B, externalId: "cross" }),
-      ),
+      withWorkspace(app, A, (tx) => tx.insert(visitor).values({ workspaceId: B, userId: "cross" })),
     ).rejects.toThrow();
   });
 

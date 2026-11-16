@@ -30,7 +30,7 @@ export function visitorName(visitor: VisitorIdentity): string {
 }
 
 function shownName(visitor: Omit<VisitorIdentity, "id">): string | null {
-  return visitor.name ?? visitor.email ?? visitor.externalId;
+  return visitor.name ?? visitor.email ?? visitor.userId;
 }
 
 /** Online now, or when the visitor was last seen, or nothing when unknown. */

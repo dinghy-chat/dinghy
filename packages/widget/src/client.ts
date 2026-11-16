@@ -1,5 +1,5 @@
 import type { Quote } from "./quote.ts";
-import type { Locale, PageContext } from "./shared.ts";
+import type { Locale, OutboundButton, OutboundShow, PageContext } from "./shared.ts";
 import { readStream, retryAfterMs } from "./stream.ts";
 
 /** The presence answer. */
@@ -42,7 +42,32 @@ export interface ChatMessage {
   replyTo: Quote | null;
   /** The team deleted it, so it shows a placeholder. */
   deleted: boolean;
+  /** The outbound message this reply came from, which the widget showed apart before. */
+  outboundId: string | null;
+  /** That outbound message's buttons. Empty otherwise. */
+  buttons: OutboundButton[];
   createdAt: string;
+}
+
+/** An outbound message that waits to show, outside any conversation. */
+export interface Waiting {
+  id: string;
+  body: string;
+  buttons: OutboundButton[];
+  show: OutboundShow;
+  /** The visitor read it already, in this tab or another. */
+  read: boolean;
+  fromBot: boolean;
+  authorId: string | null;
+  authorName: string | null;
+  authorPictureUrl: string | null;
+  createdAt: string;
+}
+
+/** What a visitor's message answers: the outbound messages they read, and a button they chose. */
+export interface Answer {
+  outboundIds: string[];
+  button?: { outboundMessageId: string; index: number };
 }
 
 /** A send's answer: the message, and whether it started a new conversation. */
@@ -178,10 +203,26 @@ export function createClient(
       if (!response.ok) throw await refused(response);
       return (await response.json()) as SentMessage;
     },
-    send: (token: string, clientId: string, body: string, replyToMessageId?: string) =>
+    send: (
+      token: string,
+      clientId: string,
+      body: string,
+      replyToMessageId?: string,
+      answer: Answer = { outboundIds: [] },
+    ) =>
       call<SentMessage>("messages", token, {
         method: "POST",
-        body: JSON.stringify({ clientId, body, page: page(), replyToMessageId }),
+        body: JSON.stringify({ clientId, body, page: page(), replyToMessageId, ...answer }),
+      }),
+    waiting: async (token: string) =>
+      (await call<{ outboundMessages: Waiting[] }>("outbound-messages", token)).outboundMessages,
+    readOutbound: (token: string, id: string) =>
+      call<{ ok: true }>(`outbound-messages/${id}/read`, token, { method: "POST" }),
+    /** A button that dismisses the message, or opens a page, by its place. */
+    press: (token: string, id: string, action: "dismiss" | "click", button: number) =>
+      call<{ ok: true }>(`outbound-messages/${id}/${action}`, token, {
+        method: "POST",
+        body: JSON.stringify({ button }),
       }),
 
     /** Reads the stream until it ends. See readStream. */

@@ -12,6 +12,7 @@ import { MINUTE_MS } from "./format.ts";
 import { Icon } from "./icons.tsx";
 import { useTabVisible } from "./live.ts";
 import { useLatestLoad } from "./load.ts";
+import { MessageButton } from "./outbound.tsx";
 import { countryName, flag, localTime } from "./place.ts";
 import { EmptyArt } from "./scene.tsx";
 import { VisitorsSkeleton } from "./skeleton.tsx";
@@ -364,6 +365,7 @@ function personName(one: LiveVisitor): string {
 }
 
 function PersonRow({
+  api,
   one,
   now,
   isLit,
@@ -371,6 +373,7 @@ function PersonRow({
   onOpenConversation,
   onOpenContact,
 }: {
+  api: WorkspaceApi;
   one: LiveVisitor;
   now: number;
   isLit: boolean;
@@ -437,6 +440,7 @@ function PersonRow({
             <button type="button" className="pill small" onClick={() => onOpenContact(person.id)}>
               {t("viewContact")}
             </button>
+            <MessageButton api={api} visitorId={person.id} name={personName(one)} small />
           </div>
         )}
       </div>
@@ -481,12 +485,14 @@ function listTitle(show: Show, country: string | null): string {
 
 /** Who is on the site now: a map, each open tab, and which pages and sites they came through. */
 function LiveVisitors({
+  api,
   visitors,
   now,
   show,
   onOpenConversation,
   onOpenContact,
 }: {
+  api: WorkspaceApi;
   visitors: LiveVisitor[];
   now: number;
   show: Show;
@@ -534,6 +540,7 @@ function LiveVisitors({
             {listed.map((one) => (
               <PersonRow
                 key={one.tab}
+                api={api}
                 one={one}
                 now={now}
                 isLit={lit?.from === "map" && lit.country === one.country}
@@ -621,6 +628,7 @@ export function VisitorsPage({
         <p className="hint">{t("visitorsUnknown")}</p>
       ) : (
         <LiveVisitors
+          api={api}
           visitors={list.visitors}
           now={now}
           show={show}

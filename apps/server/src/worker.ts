@@ -20,6 +20,7 @@ import type { Database } from "./db/tenant.ts";
 import { noLive, type Signals } from "./live.ts";
 import { MAIL_CONNECTIONS, type Mailer } from "./mailer.ts";
 import { pruneOAuth } from "./oauth-grants.ts";
+import { expireOutbound, runDueOutbound } from "./outbound.ts";
 import type { Push } from "./push.ts";
 import {
   type ClaimedDeletion,
@@ -63,6 +64,11 @@ export interface Worker {
 
 interface WorkerOptions {
   db: Database;
+  /**
+   * The app's role, which writes the outbound messages whose time came, as they write messages and
+   * the worker's own role writes none.
+   */
+  appDb: Database;
   logger: Logger;
   push?: Push | undefined;
   mailer?: Mailer | undefined;
@@ -155,6 +161,7 @@ function boundedMailer(mailer: Mailer, stopping: AbortSignal, timeoutMs: number)
 
 export function startWorker({
   db,
+  appDb,
   logger,
   push,
   mailer,
@@ -363,6 +370,13 @@ export function startWorker({
     return deletions.length > 0;
   };
 
+  const outboundStep = async () => {
+    // Expiry first, so a message whose send time and expiry both passed while the worker was down
+    // never goes.
+    const expired = await expireOutbound(db, appDb, signals, BATCH);
+    return (await runDueOutbound(db, appDb, signals, BATCH)) || expired;
+  };
+
   let beatAt = 0;
   const heartbeat = async () => {
     if (Date.now() < beatAt) return;
@@ -382,6 +396,7 @@ export function startWorker({
         busy = (await stage("file deletions", deleteFiles)) || busy;
         // Each pass, so a removal request's first warning goes out within seconds.
         busy = (await stage("two-factor removal", removalStep)) || busy;
+        busy = (await stage("outbound messages", outboundStep)) || busy;
       }
       if (Date.now() >= pruneAt) {
         pruneAt = Date.now() + PRUNE_EVERY_MS;

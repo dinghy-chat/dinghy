@@ -12,19 +12,29 @@ import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { BadArchiveError, readTar, tarEnd, tarEntry, tarEntryParts } from "./archive.ts";
 import { BusinessHoursSchema, readBusinessHours, saveBusinessHours } from "./business-hours.ts";
+import { ConditionSchema } from "./conditions.ts";
 import { newGeneration } from "./db/migrate.ts";
 import {
   apiKey,
   attachment,
+  CONVERSATION_STARTERS,
   conversation,
   conversationLabel,
   emailStop,
+  IF_CONVERSATION_OPEN,
   LABEL_COLORS,
   label,
   MESSAGE_KINDS,
   message,
+  OUTBOUND_SHOWS,
+  OUTBOUND_STATUS_REASONS,
+  OUTBOUND_STATUSES,
   operator,
+  outboundDedupe,
+  outboundMessage,
   pageView,
+  SENDER_KINDS,
+  START_CONVERSATION,
   savedReply,
   visitor,
   widgetLanguage,
@@ -37,9 +47,11 @@ import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { errorAnswer, failure, MEMBER_ERRORS } from "./errors.ts";
 import { allowedFileName, FILE_TYPE, FILENAME_INPUT_MAX } from "./files.ts";
 import { sha256Hex } from "./identity.ts";
+import { ClientId, DedupeKey } from "./inputs.ts";
 import { PAGE_PATH_MAX, PAGE_TITLE_MAX, PageContextSchema } from "./journey.ts";
 import { workspaceParams } from "./member.ts";
 import { markHistoryRead } from "./messages.ts";
+import { ButtonSchema, ChosenButtonSchema, OutboundMetadataSchema } from "./outbound-schemas.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import type { ObjectStore } from "./storage.ts";
 import { PUBLIC_IMAGE_MAX_BYTES, processImage, processLogo } from "./uploads.ts";
@@ -114,13 +126,12 @@ const ExportFile = z.strictObject({
   visitors: z.array(
     z.strictObject({
       id,
-      externalId: z.string().max(512).nullable(),
+      userId: z.string().max(512).nullable(),
       tokenHash: z.string().max(128).nullable(),
       email: z.string().max(320).nullable(),
       name: z.string().max(100).nullable(),
       attributes: z.unknown(),
       pageContext: PageContextSchema.nullable(),
-      identityIssuedAt: seq.nullable(),
       lastReadSeq: seq,
       blockedAt: nullableDate,
       device: z.string().max(100).nullable(),
@@ -153,6 +164,7 @@ const ExportFile = z.strictObject({
       // A file from before bot handoffs has neither.
       humanSince: nullableDate.default(null),
       handoffByApiKeyId: id.nullable().default(null),
+      startedBy: z.enum(CONVERSATION_STARTERS),
       createdAt: date,
       updatedAt: date,
     }),
@@ -221,6 +233,45 @@ const ExportFile = z.strictObject({
   conversationLabels: z
     .array(z.strictObject({ conversationId: id, labelId: id, createdAt: date }))
     .default([]),
+  outboundMessages: z.array(
+    z.strictObject({
+      id,
+      visitorId: id,
+      authorOperatorId: id.nullable(),
+      authorApiKeyId: id.nullable(),
+      via: z.literal("mcp").nullable(),
+      senderKind: z.enum(SENDER_KINDS),
+      senderOperatorId: id.nullable(),
+      body: z.string().max(100_000).nullable(),
+      buttons: z.array(ButtonSchema),
+      chosenButton: ChosenButtonSchema.nullable(),
+      metadata: OutboundMetadataSchema,
+      startConversation: z.enum(START_CONVERSATION),
+      show: z.enum(OUTBOUND_SHOWS),
+      ifConversationOpen: z.enum(IF_CONVERSATION_OPEN),
+      assignOnReply: z.boolean(),
+      sendEmail: z.boolean(),
+      dedupeKey: DedupeKey.nullable(),
+      clientId: ClientId,
+      status: z.enum(OUTBOUND_STATUSES),
+      statusReason: z.enum(OUTBOUND_STATUS_REASONS).nullable(),
+      sendAt: date,
+      unless: ConditionSchema.nullable(),
+      expiresAt: nullableDate,
+      dueAt: nullableDate,
+      deliveredAt: nullableDate,
+      readAt: nullableDate,
+      repliedAt: nullableDate,
+      dismissedAt: nullableDate,
+      cancelledAt: nullableDate,
+      conversationId: id.nullable(),
+      messageId: id.nullable(),
+      createdAt: date,
+    }),
+  ),
+  outboundDedupe: z.array(
+    z.strictObject({ visitorId: id, dedupeKey: DedupeKey, outboundMessageId: id }),
+  ),
   pageViews: z.array(
     z.strictObject({
       visitorId: id,
@@ -239,10 +290,35 @@ const dateOrNull = (value: string | null | undefined) => (value == null ? null :
 type MessageRow = typeof message.$inferSelect;
 
 /** A note's metadata with the members it mentions named by their IDs on this server. */
-function withMappedMentions(metadata: unknown, mapOperator: (exported: string) => string | null) {
-  const { mentions, ...rest } = metadata as { mentions?: unknown };
-  if (!Array.isArray(mentions)) return metadata;
-  return { ...rest, mentions: mentions.map((one) => mapOperator(String(one))) };
+type OperatorRefs = {
+  mentions?: unknown;
+  handoff?: { operatorId?: unknown };
+  outbound?: { sender?: unknown };
+};
+
+/** A message's metadata with every operator it names moved to the operator's ID here. */
+function withMappedOperators(metadata: unknown, mapOperator: (exported: string) => string | null) {
+  const { mentions, handoff, outbound, ...rest } = metadata as OperatorRefs;
+  const sender = outbound?.sender;
+  return {
+    ...rest,
+    ...(Array.isArray(mentions) && { mentions: mentions.map((one) => mapOperator(String(one))) }),
+    ...(handoff !== undefined && {
+      handoff: {
+        ...handoff,
+        operatorId: typeof handoff.operatorId === "string" ? mapOperator(handoff.operatorId) : null,
+      },
+    }),
+    ...(outbound !== undefined && {
+      outbound: {
+        ...outbound,
+        sender:
+          typeof sender === "object" && sender !== null && "operatorId" in sender
+            ? { operatorId: mapOperator(String(sender.operatorId)) }
+            : sender,
+      },
+    }),
+  };
 }
 
 const messageJson = (row: MessageRow): ExportData["messages"][number] => ({
@@ -385,6 +461,8 @@ async function readWorkspace(
         | "savedReplies"
         | "labels"
         | "conversationLabels"
+        | "outboundMessages"
+        | "outboundDedupe"
         | "pageViews"
       > = {
         version: VERSION,
@@ -416,13 +494,12 @@ async function readWorkspace(
         })),
         visitors: visitors.map((row) => ({
           id: row.id,
-          externalId: row.externalId,
+          userId: row.userId,
           tokenHash: row.tokenHash,
           email: row.email,
           name: row.name,
           attributes: row.attributes,
           pageContext: PageContextSchema.nullable().catch(null).parse(row.pageContext),
-          identityIssuedAt: row.identityIssuedAt?.toString() ?? null,
           lastReadSeq: row.lastReadSeq.toString(),
           blockedAt: isoOrNull(row.blockedAt),
           device: row.device,
@@ -445,13 +522,28 @@ async function readWorkspace(
           startedPage: row.startedPage,
           humanSince: isoOrNull(row.humanSince),
           handoffByApiKeyId: row.handoffByApiKeyId,
+          startedBy: row.startedBy,
           createdAt: iso(row.createdAt),
           updatedAt: iso(row.updatedAt),
         })),
       };
+      const outbound = await tx
+        .select()
+        .from(outboundMessage)
+        .where(eq(outboundMessage.workspaceId, workspaceId));
+      const dedupeKeys = await tx
+        .select()
+        .from(outboundDedupe)
+        .where(eq(outboundDedupe.workspaceId, workspaceId));
       const tail: Pick<
         ExportData,
-        "attachments" | "emailStops" | "savedReplies" | "labels" | "conversationLabels"
+        | "attachments"
+        | "emailStops"
+        | "savedReplies"
+        | "labels"
+        | "conversationLabels"
+        | "outboundMessages"
+        | "outboundDedupe"
       > = {
         attachments: attachments.map((row) => ({
           id: row.id,
@@ -482,6 +574,19 @@ async function readWorkspace(
           labelId: row.labelId,
           createdAt: iso(row.createdAt),
         })),
+        outboundMessages: outbound.map(({ workspaceId: _workspace, ...row }) => ({
+          ...row,
+          sendAt: iso(row.sendAt),
+          expiresAt: isoOrNull(row.expiresAt),
+          dueAt: isoOrNull(row.dueAt),
+          deliveredAt: isoOrNull(row.deliveredAt),
+          readAt: isoOrNull(row.readAt),
+          repliedAt: isoOrNull(row.repliedAt),
+          dismissedAt: isoOrNull(row.dismissedAt),
+          cancelledAt: isoOrNull(row.cancelledAt),
+          createdAt: iso(row.createdAt),
+        })),
+        outboundDedupe: dedupeKeys.map(({ workspaceId: _workspace, ...row }) => row),
       };
       const json = [
         Buffer.from(`${JSON.stringify(head).slice(0, -1)},"messages":[`),
@@ -747,13 +852,12 @@ async function insertWorkspace(
       rows.map((row) => ({
         workspaceId,
         id: row.id,
-        externalId: row.externalId,
+        userId: row.userId,
         tokenHash: row.tokenHash,
         email: row.email,
         name: row.name,
         attributes: row.attributes,
         pageContext: row.pageContext,
-        identityIssuedAt: row.identityIssuedAt === null ? null : BigInt(row.identityIssuedAt),
         lastReadSeq: BigInt(row.lastReadSeq),
         blockedAt: dateOrNull(row.blockedAt),
         device: row.device,
@@ -781,6 +885,7 @@ async function insertWorkspace(
         startedPage: row.startedPage,
         humanSince: dateOrNull(row.humanSince),
         handoffByApiKeyId: row.handoffByApiKeyId,
+        startedBy: row.startedBy,
         createdAt: new Date(row.createdAt),
         updatedAt: new Date(row.updatedAt),
       })),
@@ -799,7 +904,7 @@ async function insertWorkspace(
         authorApiKeyId: row.authorApiKeyId,
         clientId: row.clientId,
         body: row.body,
-        metadata: withMappedMentions(row.metadata ?? {}, mapOperator),
+        metadata: withMappedOperators(row.metadata ?? {}, mapOperator),
         // Messages go in commit order, so a quoted one is always in already.
         replyToMessageId: row.replyToMessageId ?? null,
         editedAt: dateOrNull(row.editedAt),
@@ -810,6 +915,29 @@ async function insertWorkspace(
     );
   }
   for (const rows of batches(uploads)) await tx.insert(attachment).values(rows);
+  // After the messages, which they name.
+  for (const rows of batches(data.outboundMessages)) {
+    await tx.insert(outboundMessage).values(
+      rows.map((row) => ({
+        workspaceId,
+        ...row,
+        authorOperatorId: mapOperator(row.authorOperatorId),
+        senderOperatorId: mapOperator(row.senderOperatorId),
+        sendAt: new Date(row.sendAt),
+        expiresAt: dateOrNull(row.expiresAt),
+        dueAt: dateOrNull(row.dueAt),
+        deliveredAt: dateOrNull(row.deliveredAt),
+        readAt: dateOrNull(row.readAt),
+        repliedAt: dateOrNull(row.repliedAt),
+        dismissedAt: dateOrNull(row.dismissedAt),
+        cancelledAt: dateOrNull(row.cancelledAt),
+        createdAt: new Date(row.createdAt),
+      })),
+    );
+  }
+  for (const rows of batches(data.outboundDedupe)) {
+    await tx.insert(outboundDedupe).values(rows.map((row) => ({ workspaceId, ...row })));
+  }
   for (const rows of batches(data.pageViews)) {
     await tx.insert(pageView).values(
       rows.map((row) => ({

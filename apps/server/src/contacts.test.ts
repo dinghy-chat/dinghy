@@ -1,16 +1,28 @@
+import { randomUUID } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
 import { SignJWT } from "jose";
 import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL } from "../test/env.ts";
+import { hostToken } from "../test/host-tokens.ts";
 import { signedInOperator } from "../test/operators.ts";
 import { SITE, visitorStarts } from "../test/visitors.ts";
 import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
+import { upsertContact } from "./contact-fields.ts";
 import { csvCell } from "./contacts.ts";
-import { apiKey, conversation, draftReply, message, operator, visitor } from "./db/schema.ts";
-import type { Database } from "./db/tenant.ts";
+import {
+  apiKey,
+  conversation,
+  draftReply,
+  message,
+  operator,
+  outboundMessage,
+  visitor,
+} from "./db/schema.ts";
+import { type Database, withWorkspace } from "./db/tenant.ts";
+import type { ContactFields } from "./inputs.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
 const ORIGIN = new URL(PUBLIC_URL).origin;
@@ -359,5 +371,117 @@ describe("ties", () => {
     }
     const csv = await (await list("/export")).text();
     expect(csv.trim().split("\r\n")).toHaveLength(503);
+  });
+});
+
+describe("the upsert by user ID", () => {
+  const upsert = (user: string, body: unknown) =>
+    send("PUT", path(`/by-user/${encodeURIComponent(user)}`), body);
+  const contactOf = async (user: string) =>
+    (await owner.select().from(visitor).where(eq(visitor.userId, user)))[0];
+
+  test("creates a contact with no conversation, then merges attributes key by key", async () => {
+    const user = `upsert-${randomUUID()}`;
+    const created = await upsert(user, {
+      name: "Grace Hopper",
+      email: "grace@example.com",
+      attributes: { plan: "trial", seats: 3 },
+    });
+    expect(created.status).toBe(201);
+    expect(await created.json()).toMatchObject({ name: "Grace Hopper", conversationCount: 0 });
+    const changed = await upsert(user, { attributes: { plan: "pro", seats: null } });
+    expect(changed.status).toBe(200);
+    expect((await contactOf(user))?.attributes).toEqual({ plan: "pro" });
+    expect((await contactOf(user))?.name).toBe("Grace Hopper");
+  });
+
+  test("a host token signed before the server's write does not overwrite it", async () => {
+    const user = `upsert-${randomUUID()}`;
+    await upsert(user, { attributes: { plan: "pro" } });
+    const older = await hostToken(
+      space,
+      user,
+      { attributes: { plan: "trial", team: "a" } },
+      Math.floor(Date.now() / 1000) - 60,
+    );
+    const me = await app.request(`/v1/widget/${space.publicKey}/me`, {
+      headers: { origin: SITE, authorization: `Bearer ${older}` },
+    });
+    expect(me.status).toBe(200);
+    // The plan is the server's, newer. The new key had no write yet, so the token sets it.
+    expect((await contactOf(user))?.attributes).toEqual({ plan: "pro", team: "a" });
+    const newer = await hostToken(
+      space,
+      user,
+      { attributes: { plan: "enterprise" } },
+      Math.floor(Date.now() / 1000) + 1,
+    );
+    await app.request(`/v1/widget/${space.publicKey}/me`, {
+      headers: { origin: SITE, authorization: `Bearer ${newer}` },
+    });
+    expect((await contactOf(user))?.attributes).toEqual({ plan: "enterprise", team: "a" });
+  });
+
+  test("the list leaves contacts with no conversation out, until Has chatted is off", async () => {
+    const user = `upsert-${randomUUID()}`;
+    await upsert(user, { name: "Never Chatted", attributes: { plan: "pro" } });
+    const listed = async (query: string) =>
+      ((await (await get(path(`?q=Never%20Chatted&${query}`))).json()) as { contacts: Contact[] })
+        .contacts;
+    expect(await listed("")).toEqual([]);
+    expect((await listed("hasChatted=false")).map((one) => one.name)).toEqual(["Never Chatted"]);
+    const pro = encodeURIComponent(
+      JSON.stringify({ field: "attributes.plan", op: "eq", value: "pro" }),
+    );
+    const trial = encodeURIComponent(
+      JSON.stringify({ field: "attributes.plan", op: "eq", value: "trial" }),
+    );
+    expect(await listed(`hasChatted=false&filter=${pro}`)).toHaveLength(1);
+    expect(await listed(`hasChatted=false&filter=${trial}`)).toEqual([]);
+    expect((await get(path(`?filter=${encodeURIComponent("{not json")}`))).status).toBe(400);
+  });
+
+  test("a delete forgets the contact's outbound messages", async () => {
+    const user = `upsert-${randomUUID()}`;
+    const created = (await (await upsert(user, {})).json()) as { id: string };
+    await send("POST", `/v1/operator/workspaces/${space.id}/outbound-messages`, {
+      clientId: randomUUID(),
+      visitor: { id: created.id },
+      body: "Hello",
+    });
+    expect((await send("DELETE", path(`/${created.id}`))).status).toBe(200);
+    expect(
+      await owner.select().from(outboundMessage).where(eq(outboundMessage.visitorId, created.id)),
+    ).toEqual([]);
+  });
+});
+
+describe("upsertContact", () => {
+  test("a later write wins for each field, and the same write again changes nothing", async () => {
+    const userId = `merge-${randomUUID()}`;
+    const write = (fields: ContactFields, at: number) =>
+      withWorkspace(db, space.id, (tx) => upsertContact(tx, space.id, userId, fields, at));
+    expect(await write({ name: "Ada", attributes: { plan: "pro" } }, 100)).toMatchObject({
+      created: true,
+      changed: true,
+    });
+    expect(await write({ name: "Ada", attributes: { plan: "pro" } }, 100)).toMatchObject({
+      changed: false,
+    });
+    expect(await write({ name: "Old" }, 50)).toMatchObject({ changed: false });
+    expect(await write({ attributes: { plan: null } }, 200)).toMatchObject({ changed: true });
+    const [row] = await owner
+      .select({
+        name: visitor.name,
+        attributes: visitor.attributes,
+        fieldTimes: visitor.fieldTimes,
+      })
+      .from(visitor)
+      .where(eq(visitor.userId, userId));
+    expect(row).toEqual({
+      name: "Ada",
+      attributes: null,
+      fieldTimes: { name: 100, "attributes.plan": 200 },
+    });
   });
 });

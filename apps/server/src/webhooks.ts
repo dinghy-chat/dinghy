@@ -18,6 +18,7 @@ import {
   label,
   type MessagePayload,
   operator,
+  outboundMessage,
   RESPONSE_EXCERPT_MAX,
   WEBHOOK_EVENTS,
   type WebhookEvent,
@@ -50,6 +51,7 @@ import {
   findMessage,
   findMessages,
 } from "./messages.ts";
+import { outboundViews } from "./outbound.ts";
 import { retryDelayMs } from "./retry.ts";
 import { requireSetUp, SETUP_DENIED } from "./team.ts";
 import { DAY_MS } from "./time.ts";
@@ -721,7 +723,8 @@ export function createWebhooks({
             ),
           );
         if (found === undefined) return [];
-        const { eventId, type, conversationId, messageId, labelId, labelAdded } = found;
+        const { eventId, type, conversationId, messageId, outboundMessageId, labelId, labelAdded } =
+          found;
         return tx
           .insert(webhookDelivery)
           .values({
@@ -731,6 +734,7 @@ export function createWebhooks({
             type,
             conversationId,
             messageId,
+            outboundMessageId,
             labelId,
             labelAdded,
             replayOf: deliveryId,
@@ -846,22 +850,46 @@ export function webhookTypes(kind: string, payload: unknown): WebhookEvent[] {
 export const isWebhookEvent = (name: string): name is WebhookEvent =>
   WEBHOOK_EVENTS.some((one) => one === name);
 
-/** What one webhook event names: its conversation, its message, and the label it changed. */
-interface WebhookSubject {
+/**
+ * What one webhook event names: its conversation, its message and the label it changed, or an
+ * outbound message, which may be in no conversation.
+ */
+type WebhookSubject = ConversationSubject | { outboundMessageId: string };
+
+interface ConversationSubject {
   conversationId: string;
   messageId: string | null;
   label: { labelId: string; added: boolean } | null;
 }
 
+/**
+ * What a feed event's webhook of this type names, from its payload, or null when it names nothing
+ * a webhook sends. The fan-out and the key event stream both read it.
+ */
+export function subjectOf(type: WebhookEvent, payload: unknown): WebhookSubject | null {
+  const ids = payload as {
+    conversationId?: string;
+    messageId?: string;
+    outboundMessageId?: string;
+  };
+  if (ids.outboundMessageId !== undefined) return { outboundMessageId: ids.outboundMessageId };
+  if (ids.conversationId === undefined) return null;
+  return {
+    conversationId: ids.conversationId,
+    messageId: type.startsWith("message.") ? (ids.messageId ?? null) : null,
+    label: labelChange(type, payload),
+  };
+}
+
 /** The label a `conversation.labeled` event changed, from its feed payload. Null for other types. */
-export function labelChange(type: WebhookEvent, payload: unknown): WebhookSubject["label"] {
+function labelChange(type: WebhookEvent, payload: unknown): ConversationSubject["label"] {
   if (type !== "conversation.labeled") return null;
   const { labelId, added } = payload as LabeledPayload;
   return { labelId, added };
 }
 
 /** The labels the subjects name, by ID, as `{ id, name, color }`. */
-async function findLabels(tx: Transaction, workspaceId: string, subjects: WebhookSubject[]) {
+async function findLabels(tx: Transaction, workspaceId: string, subjects: ConversationSubject[]) {
   const ids = [
     ...new Set(subjects.flatMap((one) => (one.label === null ? [] : [one.label.labelId]))),
   ];
@@ -887,19 +915,29 @@ export async function webhookData(
   workspaceId: string,
   subjects: WebhookSubject[],
 ): Promise<(Record<string, unknown> | string)[]> {
+  const inConversations = subjects.filter((one) => "conversationId" in one);
   const conversations = await findConversations(
     tx,
     workspaceId,
-    subjects.map((one) => one.conversationId),
+    inConversations.map((one) => one.conversationId),
   );
   const messages = await findMessages(
     tx,
     workspaceId,
-    subjects.flatMap((one) => (one.messageId === null ? [] : [one.messageId])),
+    inConversations.flatMap((one) => (one.messageId === null ? [] : [one.messageId])),
   );
   const names = await authorNames(tx, workspaceId, [...messages.values()]);
-  const labels = await findLabels(tx, workspaceId, subjects);
+  const labels = await findLabels(tx, workspaceId, inConversations);
+  const outbound = await outboundViews(
+    tx,
+    workspaceId,
+    subjects.flatMap((one) => ("outboundMessageId" in one ? [one.outboundMessageId] : [])),
+  );
   return subjects.map((subject) => {
+    if ("outboundMessageId" in subject) {
+      const sent = outbound.get(subject.outboundMessageId);
+      return sent === undefined ? "The outbound message was deleted." : { outboundMessage: sent };
+    }
     const found = conversations.get(subject.conversationId);
     if (found === undefined) return "The conversation was deleted.";
     const data: Record<string, unknown> = { conversation: conversationView(found, null) };
@@ -938,41 +976,28 @@ export function fanOutWebhooksOne(db: Database): Promise<boolean> {
     if (found === undefined) return false;
     const { workspaceId, seq } = found;
     await enterWorkspace(tx, workspaceId);
-    const payload = found.payload as {
-      conversationId?: string;
-      messageId?: string;
-    };
-    const types = webhookTypes(found.kind, found.payload);
     const hooks = await tx
       .select({ id: webhook.id, events: webhook.events })
       .from(webhook)
       .where(and(eq(webhook.workspaceId, workspaceId), eq(webhook.enabled, true)));
     const rows: (typeof webhookDelivery.$inferInsert)[] = [];
-    if (payload.conversationId !== undefined) {
-      for (const type of types) {
-        const eventId = randomUUID();
-        const labelChanged = labelChange(type, found.payload);
-        for (const hook of hooks.filter((one) => one.events.includes(type))) {
-          rows.push({
-            workspaceId,
-            webhookId: hook.id,
-            eventId,
-            type,
-            conversationId: payload.conversationId,
-            messageId: type.startsWith("message.") ? (payload.messageId ?? null) : null,
-            labelId: labelChanged?.labelId ?? null,
-            labelAdded: labelChanged?.added ?? null,
-            createdAt: found.createdAt,
-          });
-        }
+    for (const type of webhookTypes(found.kind, found.payload)) {
+      const subject = subjectOf(type, found.payload);
+      // A conversation, message or outbound message deleted before this step has nothing to send.
+      if (subject === null || !(await stillThere(tx, workspaceId, subject))) continue;
+      const eventId = randomUUID();
+      for (const hook of hooks.filter((one) => one.events.includes(type))) {
+        rows.push({
+          workspaceId,
+          webhookId: hook.id,
+          eventId,
+          type,
+          createdAt: found.createdAt,
+          ...deliverySubject(subject),
+        });
       }
     }
-    // A conversation or message deleted before this step has nothing to send.
-    const live =
-      rows.length === 0
-        ? []
-        : await liveRows(tx, workspaceId, payload.conversationId ?? "", payload.messageId, rows);
-    if (live.length > 0) await tx.insert(webhookDelivery).values(live);
+    if (rows.length > 0) await tx.insert(webhookDelivery).values(rows);
     await tx
       .update(event)
       .set({ needsWebhook: false })
@@ -981,19 +1006,36 @@ export function fanOutWebhooksOne(db: Database): Promise<boolean> {
   });
 }
 
-/** Keeps the rows whose conversation and message still exist, so their foreign keys hold. */
-async function liveRows(
-  tx: Transaction,
-  workspaceId: string,
-  conversationId: string,
-  messageId: string | undefined,
-  rows: (typeof webhookDelivery.$inferInsert)[],
-) {
-  if ((await findConversation(tx, workspaceId, conversationId)) === null) return [];
-  if (messageId === undefined) return rows;
-  const kept = await findMessage(tx, workspaceId, messageId);
-  return kept === null ? rows.filter((row) => row.messageId === null) : rows;
+/** Whether what a delivery names still exists, so its foreign keys hold. */
+async function stillThere(tx: Transaction, workspaceId: string, subject: WebhookSubject) {
+  if ("outboundMessageId" in subject) {
+    const [found] = await tx
+      .select({ id: outboundMessage.id })
+      .from(outboundMessage)
+      .where(
+        and(
+          eq(outboundMessage.workspaceId, workspaceId),
+          eq(outboundMessage.id, subject.outboundMessageId),
+        ),
+      );
+    return found !== undefined;
+  }
+  if ((await findConversation(tx, workspaceId, subject.conversationId)) === null) return false;
+  return (
+    subject.messageId === null || (await findMessage(tx, workspaceId, subject.messageId)) !== null
+  );
 }
+
+/** A delivery's columns for what it names. */
+const deliverySubject = (subject: WebhookSubject) =>
+  "outboundMessageId" in subject
+    ? { outboundMessageId: subject.outboundMessageId }
+    : {
+        conversationId: subject.conversationId,
+        messageId: subject.messageId,
+        labelId: subject.label?.labelId ?? null,
+        labelAdded: subject.label?.added ?? null,
+      };
 
 interface ClaimedWebhook {
   workspaceId: string;
@@ -1054,6 +1096,7 @@ async function planWebhook(
         type: webhookDelivery.type,
         conversationId: webhookDelivery.conversationId,
         messageId: webhookDelivery.messageId,
+        outboundMessageId: webhookDelivery.outboundMessageId,
         labelId: webhookDelivery.labelId,
         labelAdded: webhookDelivery.labelAdded,
         createdAt: webhookDelivery.createdAt,
@@ -1075,12 +1118,15 @@ async function planWebhook(
     if (!delivery.enabled) {
       return "Dinghy stopped this delivery because the webhook is off. Turn it on to receive future events.";
     }
-    const { labelId, labelAdded } = delivery;
-    const subject = {
-      conversationId: delivery.conversationId,
-      messageId: delivery.messageId,
-      label: labelId === null || labelAdded === null ? null : { labelId, added: labelAdded },
-    };
+    const { labelId, labelAdded, conversationId, outboundMessageId } = delivery;
+    const subject: WebhookSubject =
+      conversationId === null
+        ? { outboundMessageId: outboundMessageId ?? "" }
+        : {
+            conversationId,
+            messageId: delivery.messageId,
+            label: labelId === null || labelAdded === null ? null : { labelId, added: labelAdded },
+          };
     const [data] = await webhookData(tx, uploads, row.workspaceId, [subject]);
     // One subject has one answer.
     if (typeof data !== "object") return data ?? "The conversation was deleted.";

@@ -640,7 +640,7 @@ describe("access", () => {
     await client.until(() => client.messages().length === 1, "the wake");
     await new Promise((resolve) => setTimeout(resolve, 50));
     const [row] = await withWorkspace(db, a.id, (tx) =>
-      tx.select().from(visitor).where(eq(visitor.externalId, "two-tabs")),
+      tx.select().from(visitor).where(eq(visitor.userId, "two-tabs")),
     );
     expect(row?.attributes).toEqual({ plan: "pro" });
   });

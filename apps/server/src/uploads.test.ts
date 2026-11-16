@@ -479,7 +479,7 @@ describe.each([
       const visitorId = await withWorkspace(db, doomed.id, async (tx) => {
         const [row] = await tx
           .insert(visitor)
-          .values({ workspaceId: doomed.id, externalId: "v" })
+          .values({ workspaceId: doomed.id, userId: "v" })
           .returning({ id: visitor.id });
         return row?.id ?? "";
       });

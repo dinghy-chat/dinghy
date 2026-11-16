@@ -1,0 +1,1 @@
+ALTER TABLE "visitor" DROP COLUMN "identity_issued_at";

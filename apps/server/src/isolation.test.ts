@@ -32,6 +32,7 @@ import {
   operator,
   operatorPicture,
   operatorTwoFactor,
+  outboundMessage,
   pageView,
   pushSubscription,
   savedReply,
@@ -138,6 +139,9 @@ interface World {
   /** A label in each workspace. */
   labelA: { id: string; name: string };
   labelB: { id: string; name: string };
+  /** An outbound message for visitor two, in the first workspace, and one in the other. */
+  outboundTwo: { id: string };
+  outboundB: { id: string };
   /** Strings that belong to someone else, for each kind of caller. */
   secrets: { two: string; b: string };
   widget(
@@ -174,6 +178,10 @@ async function refusedInBoth(
 }
 
 const savedReplyRow = (id: string) => owner.select().from(savedReply).where(eq(savedReply.id, id));
+const outboundRow = (id: string) =>
+  owner.select().from(outboundMessage).where(eq(outboundMessage.id, id));
+/** A widget request about another visitor's outbound message. */
+const outboundPath = (id: string, action: string) => `outbound-messages/${id}/${action}`;
 const labelRow = (id: string) => owner.select().from(label).where(eq(label.id, id));
 const webhookRow = (id: string) => owner.select().from(webhook).where(eq(webhook.id, id));
 
@@ -1251,6 +1259,117 @@ const ATTACKS: Record<string, Attack> = {
     expect((await as(anna, "PUT", inWorkspace(a.id, path), { enabled: false })).status).toBe(200);
     expect(await widgetSettingsOf(b.id)).toEqual(before);
     await as(anna, "PUT", inWorkspace(a.id, path), { enabled: true });
+  },
+  "PUT /v1/operator/workspaces/:workspaceId/contacts/by-user/:userId": async (world) => {
+    const { operator: as, withKey, anna, a, b, keyA } = world;
+    const theirs = () => owner.select().from(visitor).where(eq(visitor.workspaceId, b.id));
+    const before = await theirs();
+    const path = "/contacts/by-user/crossing";
+    const body = { name: "Crossing over" };
+    expect((await as(anna, "PUT", inWorkspace(b.id, path), body)).status).toBe(404);
+    expect((await withKey(keyA.token, "PUT", inWorkspace(b.id, path), body)).status).toBe(404);
+    expect((await withKey(keyA.token, "PUT", inWorkspace(a.id, path), body)).status).toBe(201);
+    expect(await theirs()).toEqual(before);
+  },
+  "POST /v1/operator/workspaces/:workspaceId/outbound-messages": async (world) => {
+    const { operator: as, withKey, anna, a, b, other, keyA } = world;
+    const body = { clientId: randomUUID(), visitor: { id: other.id }, body: "Crossing over" };
+    expect((await as(anna, "POST", inWorkspace(b.id, "/outbound-messages"), body)).status).toBe(
+      404,
+    );
+    // Another workspace's visitor is nobody here.
+    expect((await as(anna, "POST", inWorkspace(a.id, "/outbound-messages"), body)).status).toBe(
+      404,
+    );
+    const key = await withKey(keyA.token, "POST", inWorkspace(b.id, "/outbound-messages"), body);
+    expect(key.status).toBe(404);
+    const rows = await owner
+      .select()
+      .from(outboundMessage)
+      .where(eq(outboundMessage.body, "Crossing over"));
+    expect(rows).toEqual([]);
+  },
+  "GET /v1/operator/workspaces/:workspaceId/outbound-messages": async (world) => {
+    const { operator: as, withKey, anna, a, b, keyA, outboundB } = world;
+    expect((await as(anna, "GET", inWorkspace(b.id, "/outbound-messages"))).status).toBe(404);
+    const own = await withKey(keyA.token, "GET", inWorkspace(a.id, "/outbound-messages"));
+    expect(own.status).toBe(200);
+    expect(await own.text()).not.toContain(outboundB.id);
+  },
+  "GET /v1/operator/workspaces/:workspaceId/outbound-messages/:id": (world) =>
+    refusedInBoth(world, "GET", `/outbound-messages/${world.outboundB.id}`, () =>
+      outboundRow(world.outboundB.id),
+    ),
+  "POST /v1/operator/workspaces/:workspaceId/outbound-messages/:id/cancel": (world) =>
+    refusedInBoth(world, "POST", `/outbound-messages/${world.outboundB.id}/cancel`, () =>
+      outboundRow(world.outboundB.id),
+    ),
+  "POST /v1/operator/workspaces/:workspaceId/outbound-messages/cancel": async (world) => {
+    const { operator: as, anna, a, b, other, outboundB } = world;
+    const before = await outboundRow(outboundB.id);
+    const body = { visitor: { id: other.id }, dedupeKey: "secret" };
+    expect(
+      (await as(anna, "POST", inWorkspace(b.id, "/outbound-messages/cancel"), body)).status,
+    ).toBe(404);
+    const own = await as(anna, "POST", inWorkspace(a.id, "/outbound-messages/cancel"), body);
+    expect(await own.json()).toEqual({ outboundMessage: null });
+    expect(await outboundRow(outboundB.id)).toEqual(before);
+  },
+  "GET /v1/widget/:key/outbound-messages": async ({
+    widget,
+    a,
+    b,
+    one,
+    outboundTwo,
+    outboundB,
+  }) => {
+    const own = await widget(a.publicKey, "GET", "outbound-messages", one.token, SITE_A);
+    expect(own.status).toBe(200);
+    const text = await own.text();
+    expect(text).not.toContain(outboundTwo.id);
+    expect(text).not.toContain(outboundB.id);
+    expect((await widget(b.publicKey, "GET", "outbound-messages", one.token, SITE_B)).status).toBe(
+      401,
+    );
+  },
+  "POST /v1/widget/:key/outbound-messages/:id/read": async ({ widget, a, one, outboundTwo }) => {
+    const before = await outboundRow(outboundTwo.id);
+    const read = await widget(
+      a.publicKey,
+      "POST",
+      outboundPath(outboundTwo.id, "read"),
+      one.token,
+      SITE_A,
+    );
+    expect(read.status).toBe(404);
+    expect(await outboundRow(outboundTwo.id)).toEqual(before);
+  },
+  "POST /v1/widget/:key/outbound-messages/:id/dismiss": async ({
+    widget,
+    a,
+    b,
+    one,
+    outboundTwo,
+    outboundB,
+  }) => {
+    const before = await outboundRow(outboundTwo.id);
+    const path = outboundPath(outboundTwo.id, "dismiss");
+    expect((await widget(a.publicKey, "POST", path, one.token, SITE_A, { button: 0 })).status).toBe(
+      404,
+    );
+    expect(await outboundRow(outboundTwo.id)).toEqual(before);
+    const theirs = outboundPath(outboundB.id, "dismiss");
+    expect(
+      (await widget(b.publicKey, "POST", theirs, one.token, SITE_B, { button: 0 })).status,
+    ).toBe(401);
+  },
+  "POST /v1/widget/:key/outbound-messages/:id/click": async ({ widget, a, one, outboundTwo }) => {
+    const before = await outboundRow(outboundTwo.id);
+    const path = outboundPath(outboundTwo.id, "click");
+    expect((await widget(a.publicKey, "POST", path, one.token, SITE_A, { button: 1 })).status).toBe(
+      404,
+    );
+    expect(await outboundRow(outboundTwo.id)).toEqual(before);
   },
   "GET /v1/operator/workspaces/:workspaceId/contacts": async ({
     operator: as,
@@ -2405,6 +2524,19 @@ async function buildWorld(db: Database): Promise<World> {
   const two = await visitorIn(a, SITE_A, "written by two, in the same workspace");
   const other = await visitorIn(b, SITE_B, "written in the other workspace");
   const labelB = await madeLabel(bea, b, "Their secret label");
+  const madeOutbound = async (as: { cookie: string }, space: NewWorkspace, visitorId: string) => {
+    const made = await operatorCall(as, "POST", inWorkspace(space.id, "/outbound-messages"), {
+      clientId: randomUUID(),
+      visitor: { id: visitorId },
+      body: "An outbound secret",
+      dedupeKey: "secret",
+      buttons: [
+        { label: "Not now", dismiss: true },
+        { label: "Read more", url: "https://example.com/more" },
+      ],
+    });
+    return ((await made.json()) as { outboundMessage: { id: string } }).outboundMessage;
+  };
   const onTheirs = `/conversations/${other.conversationId}/labels/${labelB.id}`;
   await operatorCall(bea, "PUT", inWorkspace(b.id, onTheirs));
   return {
@@ -2429,6 +2561,8 @@ async function buildWorld(db: Database): Promise<World> {
     replyB: (await madeReply.json()) as { id: string; body: string },
     labelA: await madeLabel(anna, a, "Ours"),
     labelB,
+    outboundTwo: await madeOutbound(anna, a, two.id),
+    outboundB: await madeOutbound(bea, b, other.id),
     secrets: { two: "written by two", b: "written in the other workspace" },
     widget,
     operator: operatorCall,
@@ -2569,7 +2703,7 @@ describe.each([
       body: "same user, second workspace",
     });
     expect(inB.status).toBeLessThan(300);
-    const rows = await owner.select().from(visitor).where(eq(visitor.externalId, "same-user"));
+    const rows = await owner.select().from(visitor).where(eq(visitor.userId, "same-user"));
     const here = rows.filter((row) => row.workspaceId === a.id);
     const there = rows.filter((row) => row.workspaceId === b.id);
     expect(here).toHaveLength(1);

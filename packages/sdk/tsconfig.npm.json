@@ -1,0 +1,15 @@
+{
+  // The npm package's type declarations. `prepack` runs this, and `bun run typecheck` never does.
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "declaration": true,
+    "emitDeclarationOnly": true,
+    "rewriteRelativeImportExtensions": true,
+    "rootDir": "src",
+    "outDir": "dist",
+    "lib": ["ES2022", "DOM"],
+    "types": []
+  },
+  "include": ["src/index.ts"]
+}

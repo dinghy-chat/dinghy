@@ -100,6 +100,7 @@ async function leftovers(workspaceId: string): Promise<string[]> {
 async function purgeUntilGone(workspaceId: string) {
   const worker = startWorker({
     db: workerDb,
+    appDb: db,
     logger,
     publicUrl: PUBLIC_URL,
     secret: AUTH_SECRET,
@@ -285,6 +286,7 @@ describe("a self-hosted install", () => {
     const created = await createWorkspace(db, "Forever", []);
     const worker = startWorker({
       db: workerDb,
+      appDb: db,
       logger,
       publicUrl: PUBLIC_URL,
       secret: AUTH_SECRET,

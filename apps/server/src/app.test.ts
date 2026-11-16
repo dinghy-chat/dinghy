@@ -73,6 +73,7 @@ describe("health", () => {
 
       const running = startWorker({
         db: workerDb,
+        appDb: db,
         logger,
         publicUrl: "http://localhost",
         secret: "a-test-secret",

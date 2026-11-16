@@ -1,10 +1,12 @@
 import "./globals.ts";
 import { LAUNCHER_CSS, LAUNCHER_ICONS, type LauncherKind, textOn } from "./launcher.ts";
+import { emit } from "./page-events.ts";
 import {
   type Appearance,
   CONTEXT_VERSION,
   type DinghyApi,
   type DinghyEvents,
+  type DinghyState,
   forgetVisitor,
   type Listeners,
   loadAppearance,
@@ -18,8 +20,9 @@ import { DEFAULT_TITLE, LAUNCHER_LABEL } from "./text.ts";
 
 // This file runs on every page of the host site, so it stays small. It asks once for the saved
 // look, which the browser caches for 5 minutes, and sends a small beat a minute for the live view.
-// The chat bundle loads when the visitor opens the chat, the page calls identify(), or the visitor
-// already has a token. Everything else lives in the chat bundle.
+// The chat bundle loads when the visitor opens the chat, the page calls identify(), the visitor
+// already has a token, or the beat says an outbound message waits. Everything else lives in the
+// chat bundle.
 
 // How often a tab that shows tells the live view it is still there.
 const BEAT_EVERY_MS = 60_000;
@@ -88,8 +91,21 @@ if (script && publicKey) {
   shadow.append(launcher);
 
   const appearance = loadAppearance(base, publicKey);
-  const state = { ready: false, open: false, unread: 0, conversation: false };
+  const state: DinghyState = {
+    ready: false,
+    open: false,
+    unread: 0,
+    conversation: false,
+    visitorId: null,
+    nudging: false,
+  };
   const listeners: Listeners = {};
+  const nudge = (on = true) => {
+    if (state.nudging === on) return;
+    state.nudging = on;
+    launcher.classList.toggle("nudge", on);
+    emit(context, "nudge", on);
+  };
   const context: WidgetContext = {
     version: CONTEXT_VERSION,
     publicKey,
@@ -103,6 +119,7 @@ if (script && publicKey) {
     pageContext: null,
     state,
     listeners,
+    nudge,
   };
   globalThis.__dinghy = context;
 
@@ -137,6 +154,7 @@ if (script && publicKey) {
 
   const api: DinghyApi = {
     open(options) {
+      nudge(false);
       if (context.chat) return context.chat.open(options?.message);
       context.wanted = [options?.message];
       load();
@@ -173,15 +191,20 @@ if (script && publicKey) {
       context.chat?.context();
     },
     configure,
+    nudge,
     on(event, callback) {
       // biome-ignore lint/suspicious/noAssignInExpressions: the shortest form, and this file has no bytes to spare.
       const set = ((listeners as Record<string, Set<typeof callback>>)[event] ??= new Set());
       set.add(callback);
       // Right away, as a badge needs the count now. In a microtask, so a throw cannot stop the
       // queue below.
-      if (event === "unread" || event === "conversation")
+      if (event === "unread" || event === "conversation" || event === "nudge")
         queueMicrotask(() =>
-          callback((state as Record<string, unknown>)[event] as DinghyEvents[typeof event]),
+          callback(
+            (event === "nudge"
+              ? state.nudging
+              : state[event as "unread"]) as DinghyEvents[typeof event],
+          ),
         );
       return () => set.delete(callback);
     },
@@ -241,7 +264,11 @@ if (script && publicKey) {
           referrer,
           timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
         }),
-      }).catch(() => {});
+      })
+        .then((answer) => answer.json())
+        // A message waits, so the chat loads, or asks for it at once.
+        .then(({ waiting }) => waiting > 0 && (context.chat ? context.chat.outbound() : load()))
+        .catch(() => {});
       referrer = undefined;
     };
     // At once, as on() calls back right away, and again when a chat starts, so the operators see
