@@ -14,7 +14,7 @@ import {
 import { Icon } from "./icons.tsx";
 import { Keys, useShortcutsOn, withKey } from "./shortcuts.tsx";
 import { t } from "./text.ts";
-import { useModal } from "./ui.tsx";
+import { Modal } from "./ui.tsx";
 
 type Side = "start" | "end";
 /** Where a menu opens: under its button, over it, or placed in the window, out of any scrolling area. */
@@ -658,45 +658,38 @@ export function Confirm({
   /** More, between the text and the buttons, such as a field or an error. */
   children?: ReactNode;
 }) {
-  const dialog = useModal();
+  const form = useRef<HTMLFormElement>(null);
   const titleId = useId();
   // A field is what the confirm waits for, so it takes the focus from a link or a button above it.
+  // The modal opens in its own effect, which runs first.
   useEffect(() => {
-    dialog.current?.querySelector("input")?.focus();
-  }, [dialog]);
+    form.current?.querySelector("input")?.focus();
+  }, []);
   return (
-    // biome-ignore lint/a11y/useKeyWithClickEvents: Escape closes a dialog.
-    <dialog
-      ref={dialog}
-      className="dialog"
-      role="alertdialog"
-      aria-labelledby={titleId}
-      onClose={onCancel}
-      onClick={(event) => {
-        // A click on the backdrop lands on the dialog itself.
-        if (event.target === event.currentTarget) dialog.current?.close();
-      }}
-    >
-      <form
-        className="dialog-body"
-        onSubmit={(event) => {
-          event.preventDefault();
-          onConfirm();
-        }}
-      >
-        <h2 id={titleId}>{title}</h2>
-        <div className="dialog-text">{text}</div>
-        {children}
-        <div className="dialog-actions">
-          <button type="button" className="pill" onClick={() => dialog.current?.close()}>
-            {cancel}
-          </button>
-          <button type="submit" className="pill danger" disabled={disabled}>
-            {confirm}
-          </button>
-        </div>
-      </form>
-    </dialog>
+    <Modal role="alertdialog" labelledBy={titleId} onClose={onCancel}>
+      {(close) => (
+        <form
+          ref={form}
+          className="dialog-body"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onConfirm();
+          }}
+        >
+          <h2 id={titleId}>{title}</h2>
+          <div className="dialog-text">{text}</div>
+          {children}
+          <div className="dialog-actions">
+            <button type="button" className="pill" onClick={close}>
+              {cancel}
+            </button>
+            <button type="submit" className="pill danger" disabled={disabled}>
+              {confirm}
+            </button>
+          </div>
+        </form>
+      )}
+    </Modal>
   );
 }
 

@@ -3,7 +3,7 @@ import { Fragment, useEffect, useId, useRef, useSyncExternalStore } from "react"
 import { Icon } from "./icons.tsx";
 import { readStored, store } from "./stored.ts";
 import { type TextId, t } from "./text.ts";
-import { DocLink, useModal } from "./ui.tsx";
+import { DocLink, Modal } from "./ui.tsx";
 
 // Single keys run the app, as in Gmail. A button with `data-shortcut` runs on its key, so the key
 // and the button that shows it cannot drift apart. Speech input types letters too, so the operator
@@ -168,68 +168,55 @@ const GROUPS: { title: TextId; rows: [keys: string, text: TextId][] }[] = [
 
 /** Every key, and the switch that turns the single keys off. */
 export function ShortcutsDialog({ onClose }: { onClose(): void }) {
-  const dialog = useModal();
   const titleId = useId();
   const on = useShortcutsOn();
   return (
-    // biome-ignore lint/a11y/useKeyWithClickEvents: Escape closes a dialog.
-    <dialog
-      ref={dialog}
-      className="dialog shortcuts"
-      aria-labelledby={titleId}
-      onClose={onClose}
-      onClick={(event) => {
-        if (event.target === event.currentTarget) dialog.current?.close();
-      }}
-    >
-      <div className="dialog-body">
-        <div className="shortcuts-head">
-          <h2 id={titleId}>{t("keysTitle")}</h2>
-          <DocLink path="operator-guide#keyboard-shortcuts" text="keysDocsLink" />
-          <button
-            type="button"
-            className="icon-button"
-            aria-label={t("close")}
-            onClick={() => dialog.current?.close()}
-          >
-            <Icon name="close" size={18} />
-          </button>
+    <Modal className="dialog shortcuts" labelledBy={titleId} onClose={onClose}>
+      {(close) => (
+        <div className="dialog-body">
+          <div className="shortcuts-head">
+            <h2 id={titleId}>{t("keysTitle")}</h2>
+            <DocLink path="operator-guide#keyboard-shortcuts" text="keysDocsLink" />
+            <button type="button" className="icon-button" aria-label={t("close")} onClick={close}>
+              <Icon name="close" size={18} />
+            </button>
+          </div>
+          <div className={on ? "keys-groups" : "keys-groups off"}>
+            {GROUPS.map((group) => (
+              <section key={group.title}>
+                <h3>{t(group.title)}</h3>
+                <dl>
+                  {group.rows.map(([keys, text]) => (
+                    <div key={keys + text}>
+                      <dt>{t(text)}</dt>
+                      <dd>
+                        {/* The Keys chip hides with the keys off, so the sheet keeps its own. */}
+                        {keys.split(" ").map((key, index) => (
+                          <Fragment key={key}>
+                            {index > 0 && <span className="then">{t("keysThen")}</span>}
+                            <kbd>{keyName(key)}</kbd>
+                          </Fragment>
+                        ))}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              </section>
+            ))}
+          </div>
+          <label className="check keys-switch">
+            <span className="setting-label">
+              {t("keysOn")}
+              <small className="hint">{t("keysOnHelp")}</small>
+            </span>
+            <input
+              type="checkbox"
+              checked={on}
+              onChange={(event) => setShortcutsOn(event.target.checked)}
+            />
+          </label>
         </div>
-        <div className={on ? "keys-groups" : "keys-groups off"}>
-          {GROUPS.map((group) => (
-            <section key={group.title}>
-              <h3>{t(group.title)}</h3>
-              <dl>
-                {group.rows.map(([keys, text]) => (
-                  <div key={keys + text}>
-                    <dt>{t(text)}</dt>
-                    <dd>
-                      {/* The Keys chip hides with the keys off, so the sheet keeps its own. */}
-                      {keys.split(" ").map((key, index) => (
-                        <Fragment key={key}>
-                          {index > 0 && <span className="then">{t("keysThen")}</span>}
-                          <kbd>{keyName(key)}</kbd>
-                        </Fragment>
-                      ))}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            </section>
-          ))}
-        </div>
-        <label className="check keys-switch">
-          <span className="setting-label">
-            {t("keysOn")}
-            <small className="hint">{t("keysOnHelp")}</small>
-          </span>
-          <input
-            type="checkbox"
-            checked={on}
-            onChange={(event) => setShortcutsOn(event.target.checked)}
-          />
-        </label>
-      </div>
-    </dialog>
+      )}
+    </Modal>
   );
 }
