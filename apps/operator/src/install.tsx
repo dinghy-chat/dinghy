@@ -35,7 +35,7 @@ function codeNodes(value: string, language: CodeLanguage): ReactNode[] {
 }
 
 /** Code to paste, colored as in the docs. Copy copies the exact text. */
-function CodeBlock({
+export function CodeBlock({
   value,
   language,
   title,

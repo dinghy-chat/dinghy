@@ -72,6 +72,32 @@ await dinghy.outboundMessages.cancel({
 
 The `dedupeKey` names the message, so the cancel needs no stored ID. `cancel` also takes `{ id }`. `get(id)` and `list({ visitorId, userId, dedupeKey, status })` read sent messages. `metadata` comes back on the message and its webhooks, and the visitor never sees it.
 
+## Run a campaign from your code
+
+Support writes the campaign `onboarding-done` in the operator app. Your server picks the moment:
+
+```ts
+await dinghy.campaigns.send("onboarding-done", {
+  visitor: { userId: user.id },
+  data: { plan: user.plan },
+});
+```
+
+`send` skips the campaign's audience and trigger, and keeps its frequency and the visitor's opt-out. `data` fills `{{ data.plan }}` in its text. A campaign is named by its key, or by `{ id }`. To keep campaigns in your repository, save each one with `dinghy.campaigns.upsert(definition)`, which never changes its status. See the [campaigns guide](https://dinghy.chat/docs/campaigns).
+
+## Track what happened
+
+```ts
+await dinghy.track({
+  visitor: { userId: user.id },
+  name: "export.finished",
+  properties: { rows: 1200 },
+  id: exportJob.id,
+});
+```
+
+Each contact keeps a count and the first and last time for each name, which conditions read as `events.export.finished.count` and `events.export.finished.lastAt`. A campaign with the trigger `{ type: "event", name: "export.finished" }` runs for the contact, with `{{ event.properties.rows }}` in its text. Properties are never stored. A repeat of a recent `id` counts once.
+
 ## Sign users in to the chat
 
 `identity.sign` makes the token for `Dinghy.identify` on your page. It needs `signingSecret` and `publicKey`.
@@ -122,6 +148,7 @@ It reconnects when the server ends the stream or the connection drops, and resum
 | `conversations`    | `list`, `search`, `messages`, `reply`, `note`, `upload`, `receipt`, `close`, `reopen`, `snooze`, `assign`, `addLabel`, `removeLabel`, `handoff`, `typing`                                 |
 | `contacts`         | `upsert`                                                                                                                                                                                  |
 | `outboundMessages` | `send`, `get`, `list`, `cancel`                                                                                                                                                           |
+| `campaigns`        | `list`, `get`, `create`, `upsert`, `update`, `pause`, `resume`, `end`, `results`, `send`                                                                                                  |
 | `labels`           | `list`                                                                                                                                                                                    |
 | `savedReplies`     | `list`                                                                                                                                                                                    |
 | `analytics`        | `get`                                                                                                                                                                                     |
@@ -129,7 +156,7 @@ It reconnects when the server ends the stream or the connection drops, and resum
 | `webhooks`         | `list`, `create`, `update`, `delete`, `rotateSecret`, `test`, `deliveries`, `replay`, `verify`                                                                                            |
 | `setup`            | `snippet`, `checkInstall`, `identitySetup`, `sites`, `addSite`, `removeSite`, `widget`, `updateWidget`, `businessHours`, `updateBusinessHours`, `testVisitorMessage`, `clearTestVisitors` |
 
-`webhooks` and `setup` need a key with Full access. `request` reaches any route a key may call, with the same types:
+`webhooks`, `setup` and the campaign methods that change a campaign (`create`, `upsert`, `update`, `pause`, `resume`, `end`) need a key with Full access. `track` is a method of its own. `request` reaches any route a key may call, with the same types:
 
 ```ts
 await dinghy.request("get", "/v1/operator/workspaces/{workspaceId}/labels");

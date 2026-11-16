@@ -463,13 +463,18 @@ describe("upsertContact", () => {
       withWorkspace(db, space.id, (tx) => upsertContact(tx, space.id, userId, fields, at));
     expect(await write({ name: "Ada", attributes: { plan: "pro" } }, 100)).toMatchObject({
       created: true,
-      changed: true,
     });
     expect(await write({ name: "Ada", attributes: { plan: "pro" } }, 100)).toMatchObject({
-      changed: false,
+      changed: [],
     });
-    expect(await write({ name: "Old" }, 50)).toMatchObject({ changed: false });
-    expect(await write({ attributes: { plan: null } }, 200)).toMatchObject({ changed: true });
+    expect(await write({ name: "Old" }, 50)).toMatchObject({ changed: [] });
+    // The fields that changed, as conditions name them, so only campaigns that read them check.
+    expect(await write({ name: "Ada L", attributes: { plan: null, seats: 2 } }, 200)).toMatchObject(
+      {
+        created: false,
+        changed: ["name", "firstName", "attributes.plan", "attributes.seats"],
+      },
+    );
     const [row] = await owner
       .select({
         name: visitor.name,
@@ -479,9 +484,9 @@ describe("upsertContact", () => {
       .from(visitor)
       .where(eq(visitor.userId, userId));
     expect(row).toEqual({
-      name: "Ada",
-      attributes: null,
-      fieldTimes: { name: 100, "attributes.plan": 200 },
+      name: "Ada L",
+      attributes: { seats: 2 },
+      fieldTimes: { name: 200, "attributes.plan": 200, "attributes.seats": 200 },
     });
   });
 });

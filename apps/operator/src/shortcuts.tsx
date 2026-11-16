@@ -132,6 +132,7 @@ const GROUPS: { title: TextId; rows: [keys: string, text: TextId][] }[] = [
       ["g c", "keysGoContacts"],
       ["g v", "keysGoVisitors"],
       ["g a", "keysGoAnalytics"],
+      ["g m", "keysGoCampaigns"],
       ["g s", "keysGoSettings"],
     ],
   },

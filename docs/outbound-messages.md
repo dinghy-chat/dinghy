@@ -4,6 +4,8 @@ An outbound message is a message from your team to one visitor, which can exist 
 
 Dinghy does not track what visitors do on your site. Your own code knows when something happened, such as a signup or a finished import, and it calls the API to send the message. It can also store facts about a person on their contact, such as `plan` or `onboarded`, and a message can check them before it goes.
 
+To send the same message to many people by a rule, with no code or with the text kept out of your code, use a [campaign](campaigns.md). Each message a campaign makes is an outbound message, as this page describes.
+
 The examples use `https://chat.example.com` and `WORKSPACE_ID`. Put your own Dinghy address and workspace ID there. Code marked `// server` runs in your backend, and code marked `// page` runs in your site's pages.
 
 ## Set up a key
@@ -105,6 +107,7 @@ The answer's `outboundMessage` has:
 | `author` | Who sent it: `{ kind, id, name, via }`, with `kind` `operator` or `key`, and `via` `mcp` for a send through MCP, else null |
 | `show`, `ifConversationOpen`, `startConversation`, `assignOnReply`, `sendEmail`, `dedupeKey` | As sent, with their defaults |
 | `conversationId`, `messageId` | The conversation and the message it became, or null before that |
+| `campaignId`, `campaignRunId`, `variant` | The [campaign](campaigns.md) that made it, the schedule's run, and its A/B variant, or null |
 | `sendAt`, `expiresAt` | When it goes out, and when it stops waiting. `expiresAt` is null until it is sent, unless you set it |
 | `deliveredAt`, `readAt`, `repliedAt`, `dismissedAt`, `cancelledAt` | When each happened, or null |
 | `createdAt` | When Dinghy took the send |
@@ -179,9 +182,9 @@ In the operator app, the message shows "Julien, via Welcome bot" and an **Automa
 | `cancelled` | A cancel, `unless` or a check ended it before it was read. `statusReason` says which |
 | `expired` | `expiresAt` passed before the visitor read it |
 
-At the send time, Dinghy checks the message again: a blocked visitor, the key's permissions, the workspace's access, paused bots and `unless`. It checks the open conversation when the message would join it: at once with `startConversation: "now"`, and when the widget fetches it with `on_reply`. A check that can change makes the message wait: it keeps its status, `statusReason` says why, and Dinghy checks it again about once a minute. A check that holds for good cancels it. The widget's fetch checks it again too.
+At the send time, Dinghy checks the message again: a blocked visitor, the visitor's [opt-out](#turned-off-by-the-visitor), the key's permissions, the workspace's access, paused bots and `unless`. It checks the open conversation when the message would join it: at once with `startConversation: "now"`, and when the widget fetches it with `on_reply`. A check that can change makes the message wait: it keeps its status, `statusReason` says why, and Dinghy checks it again about once a minute. A check that holds for good cancels it. The widget's fetch checks it again too.
 
-`statusReason` is null when nothing holds the message. Part of the list is for campaigns, which come in a later release, so a client can switch on every value from the start. Dinghy sets these now:
+`statusReason` is null when nothing holds the message. These values hold for every outbound message:
 
 | `statusReason` | Waits or cancels | Why |
 |---|---|---|
@@ -195,6 +198,9 @@ At the send time, Dinghy checks the message again: a blocked visitor, the key's 
 | `unless_matched` | Cancels | `unless` matched the contact |
 | `cancelled_by_request` | Cancels | A cancel through the API, MCP or the operator app |
 | `conversation_deleted` | Cancels | A member deleted the conversation it was in before the visitor answered. Its text goes with it |
+| `opted_out` | Cancels | The visitor turned off automatic messages, and the message came from a key or a campaign |
+
+A campaign's message can also have `audience_unmatched`, `frequency_capped`, `goal_reached`, `outside_business_hours`, `outside_send_window`, `campaign_paused`, `campaign_ended` or `control_group`. [Status reasons](campaigns.md#status-reasons) says what each one means.
 
 The contact page in the operator app lists the person's outbound messages with their status and reason, such as "read 10:02, not answered" or "waiting: open conversation".
 
@@ -243,7 +249,10 @@ A condition is a rule, `{ field, op, value }`, or a group, `{ all: [...] }`, `{ 
 | `hasChatted` | Boolean | True when the contact has a conversation |
 | `conversationCount` | Number | How many conversations they have |
 | `firstSeenAt`, `lastSeenAt` | Time | When they first came, and when they were last seen |
+| `optedOut` | Boolean | True when the visitor [turned off automatic messages](#turned-off-by-the-visitor) |
 | `attributes.<key>` | Any | One of the contact's attributes, such as `attributes.plan` |
+| `events.<name>.count` | Number | How often your server [tracked](campaigns.md#server-events) the event `name` for the contact, 0 when never |
+| `events.<name>.lastAt` | Time | When it last happened, such as `{ "field": "events.export.finished.lastAt", "op": "older_than", "value": "30d" }` |
 
 | Kind | `op` |
 |---|---|
@@ -304,7 +313,7 @@ A cancel ends only a message that the visitor has not read and that is in no con
 
 ## List and read
 
-`GET .../outbound-messages` lists them, newest first. It takes `visitorId`, `userId`, `dedupeKey`, `status` and `apiKeyId` as filters, and `limit`, 1 to 100, 50 by default. It answers `{ outboundMessages, next }`. Pass `next` as `cursor` for the next page. `GET .../outbound-messages/{id}` reads one.
+`GET .../outbound-messages` lists them, newest first. It takes `visitorId`, `userId`, `dedupeKey`, `status`, `apiKeyId` and `campaignId` as filters, and `limit`, 1 to 100, 50 by default. It answers `{ outboundMessages, next }`. Pass `next` as `cursor` for the next page. `GET .../outbound-messages/{id}` reads one.
 
 ## Limits and errors
 
@@ -315,11 +324,22 @@ A cancel ends only a message that the visitor has not read and that is in no con
 | 403 | `send_as_member_required` | The key may not send as a member. Turn on **May send as a member** |
 | 403 | `blocked` | The team blocked this visitor |
 | 404 | `not_found` | No visitor has this `id` |
+| 409 | `opted_out` | The visitor turned off automatic messages. Only a member who sends by hand can reach them |
 | 409 | `bots_paused` | An owner or admin paused every bot. A message with a later send time waits for the resume instead |
 | 429 | `too_many_waiting` | The visitor has 5 outbound messages that wait, in no conversation yet. Cancel one, or wait for them to end |
 | 429 | `too_many_requests` | The key sent more than 60 outbound messages in a minute, or made more than 300 requests in a minute. Wait for the `Retry-After` header's seconds |
 
-A member who sends by hand is never refused with `bots_paused` or `send_mode_required`.
+A member who sends by hand is never refused with `bots_paused`, `send_mode_required` or `opted_out`.
+
+## Turned off by the visitor
+
+The chat's menu has **Turn off automatic messages**, and the same item turns them back on. Off, every outbound message from an API key or a campaign skips the visitor:
+
+- a key's send answers 409 `opted_out`, and so does a campaign's send;
+- their messages from keys and campaigns that wait are cancelled, with `statusReason: "opted_out"`;
+- a campaign makes none for them.
+
+A member who sends by hand still reaches them. The condition field `optedOut` is true for them, so the contacts filter finds them and an `unless` or an audience can leave them out. The widget calls `POST /v1/widget/{key}/opt-out` with `{ "optedOut": true }` or `false`.
 
 ## Contacts
 
@@ -343,7 +363,7 @@ curl -X PUT https://chat.example.com/v1/operator/workspaces/WORKSPACE_ID/contact
   -d '{ "name": "Ada Lovelace", "email": "ada@example.com", "attributes": { "plan": "pro", "onboarded": false } }'
 ```
 
-It answers 201 with the new contact, or 200 with the contact after the change. Each write carries its time, and the later write wins for each field and each attribute. A host token's write counts at its `iat`, so a token signed before your upsert does not undo it. A change cancels the person's scheduled messages whose `unless` now matches.
+It answers 201 with the new contact, or 200 with the contact after the change. Each write carries its time, and the later write wins for each field and each attribute. A host token's write counts at its `iat`, so a token signed before your upsert does not undo it. A change cancels the person's scheduled messages whose `unless` now matches, and checks them against the live [campaigns](campaigns.md#match) that read a changed field.
 
 A send's `visitor` takes the same fields, so one call can create the contact and send the message. Contacts with no conversation are hidden in the operator app's **Contacts** until you turn off **Has chatted**. The API has the [details](api.md#outbound-messages-and-contacts).
 
@@ -432,7 +452,7 @@ curl -X POST https://chat.example.com/v1/operator/workspaces/WORKSPACE_ID/outbou
   }'
 ```
 
-The page already calls `Dinghy.identify()`, and it needs no other change. `GET .../outbound-messages?status=replied` counts the answers.
+The page already calls `Dinghy.identify()`, and it needs no other change. `GET .../outbound-messages?status=replied` counts the answers. The same with no code is a [campaign](campaigns.md#a-welcome-with-no-code) for signed-in users, whose results show the read and reply rates.
 
 ### An invoice still unpaid after three days
 

@@ -3,7 +3,7 @@ import { type ReactNode, useEffect, useState } from "react";
 import type { Contact, ContactDetail, ContactSort, Role, WorkspaceApi } from "./api.ts";
 import { duration, shortDate } from "./format.ts";
 import { Icon } from "./icons.tsx";
-import { useLoad } from "./load.ts";
+import { useLoad, useSettled } from "./load.ts";
 import { MessageButton, OutboundList } from "./outbound.tsx";
 import { countryName, flag, zoneCity, zoneClock } from "./place.ts";
 import { Confirm, Menu, type MenuItem, Select } from "./popup.tsx";
@@ -42,7 +42,6 @@ import {
   useNow,
 } from "./visitor-panel.tsx";
 
-const SEARCH_WAIT_MS = 250;
 /** Who the list shows: people with a conversation, or also those your server created or messaged. */
 type Shown = "chatted" | "everyone";
 const SHOWN: { value: Shown; label: TextId }[] = [
@@ -93,16 +92,6 @@ function ContactRow({ contact, onOpen }: { contact: Contact; onOpen(): void }) {
       </td>
     </tr>
   );
-}
-
-/** The search box's words, once the operator pauses. */
-function useSettled(value: string): string {
-  const [settled, setSettled] = useState(value);
-  useEffect(() => {
-    const timer = setTimeout(() => setSettled(value), SEARCH_WAIT_MS);
-    return () => clearTimeout(timer);
-  }, [value]);
-  return settled;
 }
 
 /** Everyone who chatted: a table to search, sort and page through, and a CSV of them all. */

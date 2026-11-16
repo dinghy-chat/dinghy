@@ -56,7 +56,8 @@ function format(source: string): string {
 /** The text of src/openapi.ts for the current OpenAPI file. */
 async function generateTypes(): Promise<string> {
   const document = JSON.parse(readFileSync(SOURCE, "utf8")) as Document;
-  const ast = await openapiTS(JSON.stringify(keyRoutes(document)));
+  // A default fills a field the caller left out, so a request body may leave it out too.
+  const ast = await openapiTS(JSON.stringify(keyRoutes(document)), { defaultNonNullable: false });
   return format(HEADER + astToString(ast));
 }
 

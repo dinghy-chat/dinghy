@@ -214,13 +214,23 @@ export interface ReceivedMessage {
   id: string | null;
   body: string | null;
   sender: { name: string | null; pictureUrl: string | null };
-  /** An outbound message that waits outside a conversation, or null for a reply. */
-  outbound: { id: string; show: OutboundShow; buttons: OutboundButton[] } | null;
+  /**
+   * An outbound message that waits outside a conversation, or null for a reply. A page campaign's
+   * card has no ID until the visitor answers it.
+   */
+  outbound: {
+    id: string | null;
+    campaignId: string | null;
+    show: OutboundShow;
+    buttons: OutboundButton[];
+  } | null;
 }
 
 /** An outbound message the visitor read or dismissed, with the button they chose, if any. */
 export interface OutboundChange {
-  id: string;
+  /** Null for a page campaign's card, which has no ID until the visitor answers it. */
+  id: string | null;
+  campaignId: string | null;
   button: { value: string | null; label: string } | null;
 }
 
@@ -321,6 +331,8 @@ export interface WidgetContext {
   pageContext: unknown;
   /** The chat bundle sets this when it runs, then opens the chat if `wanted` asks for it. */
   chat?: ChatHandlers;
+  /** The page campaigns whose time on this page came, by ID, which the chat shows once each. */
+  pages?: string[];
   /** An open() made before the chat bundle ran, with its message. */
   wanted?: [string | undefined] | undefined;
   /** The loader's `Dinghy.state`, which the chat bundle keeps up to date. */
@@ -388,6 +400,51 @@ export function forgetVisitor(publicKey: string): void {
 
 /** The longest message, in characters: the composers' limit, which the server checks too. */
 export const MESSAGE_MAX = 10_000;
+
+/** The most buttons on an outbound message, and on each of a campaign's. */
+export const BUTTONS_MAX = 4;
+
+/** The most A/B variants a campaign has. */
+export const CAMPAIGN_VARIANTS_MAX = 5;
+
+/** The longest a page campaign waits on a page before it shows, in seconds. */
+export const PAGE_SECONDS_MAX = 3600;
+/** The wait a new page campaign starts with, in seconds. */
+export const PAGE_SECONDS_DEFAULT = 20;
+
+/**
+ * A campaign's key, as a pattern without anchors: lowercase letters, digits, - and _. The `-` is
+ * escaped, as an input's `pattern` attribute reads it with the `v` flag.
+ */
+export const CAMPAIGN_KEY_PATTERN = "[a-z0-9][a-z0-9_\\-]{0,63}";
+/** The longest campaign name, in characters. */
+export const CAMPAIGN_NAME_MAX = 100;
+/** The range of an A/B variant's weight, its share of the contacts against the others'. */
+export const VARIANT_WEIGHT_MIN = 1;
+export const VARIANT_WEIGHT_MAX = 100;
+
+/** The longest label and value of a message's button, in characters. */
+export const BUTTON_LABEL_MAX = 40;
+export const BUTTON_VALUE_MAX = 100;
+
+/** The gap a workspace starts with between two campaign messages to one visitor, in hours. */
+export const CAMPAIGN_GAP_HOURS_DEFAULT = 24;
+/** The longest gap a workspace sets between two campaign messages to one visitor, in hours. */
+export const CAMPAIGN_GAP_HOURS_MAX = 720;
+
+/** What sets a campaign off, as its definition's `trigger.type` names it. */
+export type CampaignTriggerType = "match" | "schedule" | "event" | "page" | "api";
+
+/** The contact's fields that a campaign's text may read, beside `attributes.<key>`. */
+export const CONTACT_VARIABLES = [
+  "firstName",
+  "name",
+  "email",
+  "userId",
+  "language",
+  "country",
+  "timeZone",
+] as const;
 
 /** The most members one note mentions, which the operator app keeps to and the server checks. */
 export const MENTIONS_MAX = 10;

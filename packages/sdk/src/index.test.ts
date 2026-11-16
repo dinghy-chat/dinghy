@@ -155,6 +155,54 @@ describe("outbound messages", () => {
 const decode = (part: string) =>
   JSON.parse(Buffer.from(part, "base64url").toString("utf8")) as Record<string, unknown>;
 
+describe("campaigns", () => {
+  const at = (path: string) => `${URL_BASE}/v1/operator/workspaces/${WORKSPACE_ID}${path}`;
+
+  test("name a campaign by its key or by its ID, and a send gets a client ID", async () => {
+    const id = randomUUID();
+    const { fetch, sent } = fakeFetch([json(200, {}), json(200, {}), json(201, OUTBOUND)]);
+    const dinghy = client(fetch);
+    await dinghy.campaigns.pause("onboarding-done");
+    await dinghy.campaigns.results({ id }, { from: "2026-11-01" });
+    await dinghy.campaigns.send("onboarding-done", {
+      visitor: { userId: "42" },
+      data: { plan: "Pro" },
+    });
+    expect(sent.map((one) => [one.method, one.url])).toEqual([
+      ["POST", at("/campaigns/by-key/onboarding-done/pause")],
+      ["GET", at(`/campaigns/${id}/results?from=2026-11-01`)],
+      ["POST", at("/campaigns/by-key/onboarding-done/send")],
+    ]);
+    expect(sent[2]?.body).toMatchObject({
+      visitor: { userId: "42" },
+      clientId: expect.any(String),
+    });
+  });
+
+  test("upsert by the definition's key, and track an event", async () => {
+    const { fetch, sent } = fakeFetch([json(200, {}), json(200, { counted: true })]);
+    const dinghy = client(fetch);
+    const definition = {
+      key: "dns-help",
+      name: "DNS help",
+      trigger: { type: "api" as const },
+      message: { body: "Hi" },
+      presentation: {
+        startConversation: "on_reply" as const,
+        show: "badge" as const,
+        ifConversationOpen: "skip" as const,
+      },
+    };
+    await dinghy.campaigns.upsert(definition);
+    await dinghy.track({ visitor: { userId: "42" }, name: "export.finished", id: "e-1" });
+    expect(sent.map((one) => [one.method, one.url])).toEqual([
+      ["PUT", at("/campaigns/by-key/dns-help")],
+      ["POST", at("/track")],
+    ]);
+    expect(sent[0]?.body).toEqual(definition);
+  });
+});
+
 describe("identity.sign", () => {
   const options = { signingSecret: "s3cret", publicKey: "wk_test" };
 

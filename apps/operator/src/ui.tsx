@@ -893,7 +893,7 @@ export type Option<T> = {
   label: TextId;
   icon?: IconName;
   /** A number after the words, such as the open conversations. */
-  count?: number;
+  count?: number | undefined;
 };
 
 /**
@@ -910,7 +910,8 @@ export function Choices<T extends string>({
   onChange,
 }: {
   label: string;
-  variant?: "outlined" | "tabs";
+  /** Outlined is one segmented control, tabs a row over a line, and pills a row of filled pills. */
+  variant?: "outlined" | "tabs" | "pills";
   /** Fills the width, in equal parts. */
   full?: boolean;
   /** The ID of a hint that says more about the choice. */
@@ -937,6 +938,50 @@ export function Choices<T extends string>({
           {option.icon !== undefined && <Icon name={option.icon} size={16} />}
           {t(option.label)}
           {option.count !== undefined && <span className="choice-count">{option.count}</span>}
+        </label>
+      ))}
+    </fieldset>
+  );
+}
+
+/** One card of OptionCards: a small drawing or icon, its words and a line of help. */
+export type OptionCard<T> = { value: T; label: TextId; hint: TextId; art: ReactNode };
+
+/**
+ * A choice among a few options drawn as cards side by side, such as a campaign's trigger. Each
+ * radio is named by its words alone, and described by its help.
+ */
+export function OptionCards<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: T;
+  options: readonly OptionCard<T>[];
+  onChange(value: T): void;
+}) {
+  const name = useId();
+  return (
+    <fieldset className="option-cards">
+      <legend className="visually-hidden">{label}</legend>
+      {options.map((option) => (
+        <label key={option.value} className="option-card">
+          <input
+            type="radio"
+            className="option-radio"
+            name={name}
+            aria-labelledby={`${name}-${option.value}`}
+            aria-describedby={`${name}-${option.value}-hint`}
+            checked={value === option.value}
+            onChange={() => onChange(option.value)}
+          />
+          <span className="option-art" aria-hidden="true">
+            {option.art}
+          </span>
+          <b id={`${name}-${option.value}`}>{t(option.label)}</b>
+          <small id={`${name}-${option.value}-hint`}>{t(option.hint)}</small>
         </label>
       ))}
     </fieldset>

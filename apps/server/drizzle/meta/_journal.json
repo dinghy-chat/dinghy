@@ -827,6 +827,27 @@
       "when": 1794855633878,
       "tag": "0117_transcript_sent_seq_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "7",
+      "when": 1794858714504,
+      "tag": "0118_campaigns",
+      "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "7",
+      "when": 1794858715118,
+      "tag": "0119_campaigns_grants",
+      "breakpoints": true
+    },
+    {
+      "idx": 120,
+      "version": "7",
+      "when": 1794858715701,
+      "tag": "0120_campaigns_paused_workspaces",
+      "breakpoints": true
     }
   ]
 }

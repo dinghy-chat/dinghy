@@ -326,12 +326,16 @@ export async function startE2EServer(
       }
       signalSuspension(createSignals(publisher, logger), workspace.id, suspend);
     },
-    /** A key that sends directly and may send as a member, as recipe 1's setup line makes. */
-    async sendingKey(name: string) {
+    /**
+     * A key that sends directly and may send as a member, as recipe 1's setup line makes. A Full
+     * access one also saves campaigns.
+     */
+    async sendingKey(name: string, level: "conversations" | "setup" = "conversations") {
       const token = newToken(STATIC_KEY_PREFIX, workspace.id);
       await owner.insert(apiKey).values({
         workspaceId: workspace.id,
         name,
+        level,
         tokenHash: sha256Hex(token),
         replyMode: "send",
         permissions: ["send_as_member"],

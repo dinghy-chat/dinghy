@@ -68,6 +68,9 @@ export const ERROR_CODES = [
   "blocked",
   "bots_paused",
   "busy",
+  "campaign_ended",
+  "campaign_key_taken",
+  "campaign_not_live",
   "check_unavailable",
   "checkout_retry_later",
   "conversation_closed",
@@ -105,6 +108,7 @@ export const ERROR_CODES = [
   "not_an_image",
   "not_found",
   "operator_limit",
+  "opted_out",
   "origin_not_allowed",
   "payment_pending",
   "payment_required",
@@ -145,6 +149,10 @@ type ErrorCode = (typeof ERROR_CODES)[number];
 
 /** The body of every error answer: a stable code for clients and a sentence for people. */
 export const failure = (code: ErrorCode, message: string) => ({ error: { code, message } });
+
+/** A request that its schema refused, with each problem in the message. */
+export const zodFailure = (error: z.ZodError) =>
+  failure("invalid_request", error.issues.map((issue) => issue.message).join(". "));
 
 export const NOT_FOUND = failure("not_found", "This does not exist.");
 /** A key's reply or send while an owner or admin paused the bots. */

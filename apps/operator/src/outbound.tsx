@@ -22,10 +22,22 @@ const REASON_TEXT: Record<OutboundStatusReason, TextId> = {
   unless_matched: "outboundReasonUnless",
   cancelled_by_request: "outboundReasonCancelled",
   conversation_deleted: "outboundReasonConversationDeleted",
+  opted_out: "outboundReasonOptedOut",
+  audience_unmatched: "outboundReasonAudience",
+  frequency_capped: "outboundReasonFrequency",
+  goal_reached: "outboundReasonGoal",
+  outside_business_hours: "outboundReasonBusinessHours",
+  outside_send_window: "outboundReasonSendWindow",
+  campaign_paused: "outboundReasonCampaignPaused",
+  campaign_ended: "outboundReasonCampaignEnded",
+  control_group: "outboundReasonControl",
 };
 
+/** Why a message waits or was cancelled, in a few words. */
+export const reasonText = (reason: OutboundStatusReason) => t(REASON_TEXT[reason]);
+
 const reasonOf = (one: OutboundMessage) =>
-  one.statusReason === null ? "" : t(REASON_TEXT[one.statusReason]);
+  one.statusReason === null ? "" : reasonText(one.statusReason);
 
 /** What became of a message, in a few words: "Read 10:02, not answered", "Waiting: ...". */
 function outboundState(one: OutboundMessage): string {

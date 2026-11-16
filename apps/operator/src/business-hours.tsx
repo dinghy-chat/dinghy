@@ -24,7 +24,7 @@ const END_OF_DAY = "24:00";
 const DEFAULT_RANGE: Range = ["09:00", "17:00"];
 
 /** Every zone the browser knows, and the saved one first when the browser does not know it. */
-function zoneChoices(saved: string) {
+export function zoneChoices(saved: string) {
   // An older browser cannot list them, and then offers the saved zone only.
   const known = Intl.supportedValuesOf?.("timeZone") ?? [];
   return (known.includes(saved) ? known : [saved, ...known]).map((zone) => ({

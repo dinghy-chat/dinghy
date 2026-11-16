@@ -42,9 +42,12 @@ test("a new workspace shows Get started, whose steps open settings, until it is 
   await email.click();
   await expect(email).toBeChecked();
   await button.click();
-  await expect(
-    steps.getByRole("listitem").filter({ hasText: "Turn on notifications" }),
-  ).toHaveClass("done");
+  const done = steps.getByRole("listitem").filter({ hasText: "Turn on notifications" });
+  await expect(done).toHaveClass("done");
+  // A step's mark is a circle, filled green once the step is done.
+  const mark = done.locator(".step-mark");
+  await expect(mark).toHaveCSS("border-radius", "50%");
+  await expect(mark).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
   await expect(button).toContainText("1/6");
 
   await steps.getByRole("button", { name: "Hide for good" }).click();

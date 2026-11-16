@@ -1,4 +1,9 @@
 import { z } from "@hono/zod-openapi";
+import {
+  BUTTON_LABEL_MAX,
+  BUTTON_VALUE_MAX,
+  BUTTONS_MAX,
+} from "../../../packages/widget/src/shared.ts";
 import { ConditionSchema } from "./conditions.ts";
 import {
   IF_CONVERSATION_OPEN,
@@ -15,7 +20,6 @@ import { TimeCursor } from "./pages.ts";
 
 /** Messages that wait for one visitor at once. */
 export const WAITING_PER_VISITOR = 5;
-const BUTTONS_MAX = 4;
 const PAGE_SIZE_MAX = 100;
 const METADATA_KEYS_MAX = 20;
 const METADATA_KEY_LENGTH_MAX = 40;
@@ -31,8 +35,8 @@ export const OutboundMetadataSchema = z
     description: `Up to ${METADATA_KEYS_MAX} keys of up to ${METADATA_KEY_LENGTH_MAX} characters, each with text of up to ${METADATA_VALUE_LENGTH_MAX} characters, such as \`{ "orderId": "1042" }\`. It comes back on the outbound message, its webhooks and the event stream. The visitor never sees it`,
   });
 
-const ButtonLabel = z.string().trim().min(1).max(40);
-const ButtonValue = z.string().min(1).max(100);
+const ButtonLabel = z.string().trim().min(1).max(BUTTON_LABEL_MAX);
+const ButtonValue = z.string().min(1).max(BUTTON_VALUE_MAX);
 
 export const ButtonSchema = z
   .union([
@@ -61,7 +65,7 @@ export const ChosenButtonSchema = z
   .object({ value: z.string().nullable(), label: z.string() })
   .openapi("ChosenButton");
 
-const SenderSchema = z
+export const SenderSchema = z
   .union([
     z.literal("team"),
     z.strictObject({ operatorId: z.uuid() }),
@@ -147,6 +151,10 @@ export const OutboundMessageSchema = z
     sendEmail: z.boolean(),
     conversationId: z.string().nullable(),
     messageId: z.string().nullable(),
+    // The campaign that made it, the schedule's run, and its A/B variant. Null otherwise.
+    campaignId: z.string().nullable(),
+    campaignRunId: z.string().nullable(),
+    variant: z.string().nullable(),
     dedupeKey: z.string().nullable(),
     sendAt: z.string(),
     expiresAt: z.string().nullable(),
@@ -168,6 +176,7 @@ export const ListQuery = z.object({
   dedupeKey: DedupeKey.optional(),
   status: z.enum(OUTBOUND_STATUSES).optional(),
   apiKeyId: z.uuid().optional(),
+  campaignId: z.uuid().optional(),
   cursor: TimeCursor.optional().openapi({ description: "The `next` of the page before" }),
   limit: z.coerce.number().int().min(1).max(PAGE_SIZE_MAX).default(50),
 });
@@ -179,6 +188,7 @@ type SendRefusal =
   | "send_email_required"
   | "bots_paused"
   | "blocked"
+  | "opted_out"
   | "too_many_waiting"
   | "not_found"
   | "unknown_member"
@@ -208,6 +218,13 @@ export const SEND_REFUSALS = {
   },
   bots_paused: { status: 409, body: BOTS_PAUSED },
   blocked: { status: 403, body: failure("blocked", "The team blocked this visitor.") },
+  opted_out: {
+    status: 409,
+    body: failure(
+      "opted_out",
+      "This visitor turned off automatic messages in the chat's menu. A member can still write by hand.",
+    ),
+  },
   too_many_waiting: {
     status: 429,
     body: failure(

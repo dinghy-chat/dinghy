@@ -61,13 +61,22 @@ export interface Waiting {
   authorId: string | null;
   authorName: string | null;
   authorPictureUrl: string | null;
+  /** The campaign it comes from, or null. */
+  campaignId: string | null;
   createdAt: string;
+  /** A page campaign's card, which has no ID of its own until the visitor answers: its campaign's. */
+  page?: true;
 }
 
-/** What a visitor's message answers: the outbound messages they read, and a button they chose. */
+/**
+ * What a visitor's message answers: the outbound messages they read, a button they chose, and a
+ * page campaign's card they read, with its button.
+ */
 export interface Answer {
   outboundIds: string[];
   button?: { outboundMessageId: string; index: number };
+  /** The card's language, so its message comes in as the visitor read it. */
+  pageCampaign?: { id: string; language: Locale; button?: number };
 }
 
 /** A send's answer: the message, and whether it started a new conversation. */
@@ -108,6 +117,8 @@ interface Me {
   unread: number;
   /** A stream from here reads only what follows the read position. */
   readCursor: string;
+  /** The visitor turned off automatic messages. */
+  optedOut: boolean;
 }
 
 /**
@@ -224,6 +235,28 @@ export function createClient(
         method: "POST",
         body: JSON.stringify({ button }),
       }),
+    /** A page campaign's card, shown now. The visitor may not exist yet. */
+    showPage: async (token: string | null, id: string, language: Locale) => ({
+      ...(
+        await call<{ outboundMessage: Waiting }>(`campaigns/${id}/show`, token, {
+          method: "POST",
+          body: JSON.stringify({ language }),
+        })
+      ).outboundMessage,
+      page: true as const,
+    }),
+    /**
+     * The visitor read a page campaign's card, or chose a button that opens a page or dismisses,
+     * by its place in the card's language.
+     */
+    countPage: (token: string | null, id: string, language: Locale, button?: number) =>
+      call<{ ok: true }>(`campaigns/${id}/${button === undefined ? "read" : "press"}`, token, {
+        method: "POST",
+        body: JSON.stringify({ language, button }),
+      }),
+    /** Turns automatic messages off, or on again. */
+    optOut: (token: string, optedOut: boolean) =>
+      call<Me>("opt-out", token, { method: "POST", body: JSON.stringify({ optedOut }) }),
 
     /** Reads the stream until it ends. See readStream. */
     async stream(

@@ -71,21 +71,23 @@ type Simulated =
   | { kind: "limited"; waitSeconds: number }
   | { kind: "closed"; access: WorkspaceAccess };
 
+/** A new test visitor: signed out, with a token nobody holds, so no browser can read its chat. */
+export async function insertTestVisitor(
+  tx: Transaction,
+  workspaceId: string,
+  name: string | undefined,
+): Promise<string> {
+  const [made] = await tx
+    .insert(visitor)
+    .values({ workspaceId, tokenHash: sha256Hex(newBrowserToken()), isTest: true, name })
+    .returning({ id: visitor.id });
+  if (made === undefined) throw new Error("The test visitor's insert returned no row");
+  return made.id;
+}
+
 /** The test visitor of a test conversation, or a new one. Null for a conversation that is not a test's. */
 async function testVisitor(tx: Transaction, workspaceId: string, input: TestMessage) {
-  if (input.conversationId === undefined) {
-    const [made] = await tx
-      .insert(visitor)
-      // Signed out, with a token nobody holds, so no browser can read this chat.
-      .values({
-        workspaceId,
-        tokenHash: sha256Hex(newBrowserToken()),
-        isTest: true,
-        name: input.name,
-      })
-      .returning({ id: visitor.id });
-    return made?.id ?? null;
-  }
+  if (input.conversationId === undefined) return insertTestVisitor(tx, workspaceId, input.name);
   const [found] = await tx
     .select({ id: visitor.id })
     .from(conversation)

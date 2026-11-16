@@ -35,6 +35,7 @@ Branch on `code`, which is stable, and show `message` only to people. The OpenAP
 | 403 | `send_mode_required`, `send_as_member_required`, `send_email_required` | For an API key's [outbound message](#outbound-messages-and-contacts): the key drafts replies, it may not send as a member, or it may not send with `sendEmail: true` |
 | 404 | `not_found` | It does not exist, or it is in another workspace |
 | 409 | `conversation_closed`, `webhook_limit`, `site_limit`, `grant_limit`, `message_seen` | Reopen the conversation to reply or to snooze it, the workspace has 5 webhooks, 20 allowed sites or 50 connected apps already, or the visitor has seen the reply you tried to edit |
+| 409 | `campaign_key_taken`, `campaign_ended`, `campaign_not_live`, `opted_out` | For a [campaign](#campaigns): another campaign has the key, the campaign ended, or a send names a campaign that is not live. `opted_out`: the visitor turned off automatic messages, so a key's or a campaign's send does not go |
 | 409 | `human_handling`, `bots_paused`, `drafts_text_only` | For an API key: a person handles the conversation and the key sends directly, an owner or admin paused every bot, or a key in draft mode sent an image or a file. See [Bots](#bots-reply-modes-drafts-notes-and-handoff) |
 | 413 | `too_large` | The body is too large |
 | 429 | `too_many_requests`, `too_many_streams` | A rate limit. Wait for the `Retry-After` header's seconds |
@@ -77,7 +78,7 @@ A message, an image or a file carries a `clientId` that the client makes, such a
 
 A widget send also answers `conversationStarted`: true when that message started a new conversation. A retry of that message answers true too. A visitor who has no open conversation but a closed one writes into their newest closed one: the send reopens it, with its assignee, and answers false. Its status line and `conversation.reopened` event come before the message, with the visitor as the author. Only a visitor's first message starts a conversation.
 
-The widget's send also takes `outboundIds`, up to 5 IDs of [outbound messages](#outbound-messages-and-contacts) that the visitor read and this message answers, and `button`, `{ outboundMessageId, index }`, for a value button the visitor chose, by its place from 0. The outbound messages go in the conversation first, in the order the visitor read them, then the message, whose `body` becomes the button's label. An outbound message that is not this visitor's, was cancelled or expired, or was not read, is left out, and the message still goes in.
+The widget's send also takes `outboundIds`, up to 5 IDs of [outbound messages](#outbound-messages-and-contacts) that the visitor read and this message answers, and `button`, `{ outboundMessageId, index }`, for a value button the visitor chose, by its place from 0. The outbound messages go in the conversation first, in the order the visitor read them, then the message, whose `body` becomes the button's label. An outbound message that is not this visitor's, was cancelled or expired, or was not read, is left out, and the message still goes in. `pageCampaign`, `{ id, button? }`, answers a [page campaign](campaigns.md#page)'s card: the campaign's message goes in the conversation first, then the visitor's.
 
 ### Close, reopen and snooze
 
@@ -174,7 +175,7 @@ The operator API's `Conversation` describes the visitor: `name`, `email`, `userI
 
 `POST /v1/widget/{key}/context` with `{ "locale", "context": { ... } }` sends the widget's language, `en`, `fr` or `es`, and what the page set with `Dinghy.setContext()`. Either may be left out, but not both. `context` holds at most 20 keys of 1 to 40 characters, each with a string of up to 200 characters, a number, `true`, `false` or `null`. Each report replaces the last one. The widget sends it on each page load for a visitor who has chatted, and again after the first message, and the server keeps it only for a visitor who has a conversation. It goes with the visitor's last conversation, as the page journey does. The visitor's `locale` sets the language of their reply emails, transcripts and chat page, and the inbox shows it on the conversation's `visitor`.
 
-`POST /v1/widget/{key}/beat` with `{ "tab", "page", "title", "referrer", "timeZone" }` says a tab of the site is open, for the live view. The loader sends it on load, once a minute while the tab shows, and when a chat starts, with the visitor's token when they have one. `tab` is 6 to 32 lowercase letters and digits that the page keeps in memory only. The server keeps the page's origin and path, the title, the referrer's origin unless it is the site's own and a known time zone, looks up the country of the request's address and drops the address, and keeps the tab in Valkey for 90 seconds after its last beat, at most 2,000 tabs a workspace. For a visitor with a token, it saves `country` and `timeZone` on the visitor. It answers `{ "ok": true, "waiting" }`, where `waiting` counts the visitor's [outbound messages](#outbound-messages-and-contacts) that wait to show, so the loader fetches the chat only when one waits. A beat never creates a visitor. `POST /v1/widget/{key}/leave?tab=` drops a tab at once, and the loader sends it with `sendBeacon`. `GET /v1/operator/workspaces/{workspaceId}/visitors/live` lists the open tabs, newest first, with `visitor` (`id`, `name`, `email`, `userId` and `conversationId`) for a visitor who has chatted, and `/visitors/live/count` counts them. Both answer null when Valkey cannot tell.
+`POST /v1/widget/{key}/beat` with `{ "tab", "page", "title", "referrer", "timeZone" }` says a tab of the site is open, for the live view. The loader sends it on load, once a minute while the tab shows, and when a chat starts, with the visitor's token when they have one. `tab` is 6 to 32 lowercase letters and digits that the page keeps in memory only. The server keeps the page's origin and path, the title, the referrer's origin unless it is the site's own and a known time zone, looks up the country of the request's address and drops the address, and keeps the tab in Valkey for 90 seconds after its last beat, at most 2,000 tabs a workspace. For a visitor with a token, it saves `country` and `timeZone` on the visitor. It answers `{ "ok": true, "waiting", "pages" }`, where `waiting` counts the visitor's [outbound messages](#outbound-messages-and-contacts) that wait to show, so the loader fetches the chat only when one waits, and `pages` lists the live [page campaigns](campaigns.md#page) for this visitor, each `{ id, url, seconds }`. A beat never creates a visitor. `POST /v1/widget/{key}/leave?tab=` drops a tab at once, and the loader sends it with `sendBeacon`. `GET /v1/operator/workspaces/{workspaceId}/visitors/live` lists the open tabs, newest first, with `visitor` (`id`, `name`, `email`, `userId` and `conversationId`) for a visitor who has chatted, and `/visitors/live/count` counts them. Both answer null when Valkey cannot tell.
 
 `POST /v1/widget/{key}/typing` with `{ "draft" }`, up to 2,000 characters, passes a visitor's unsent words to the workspace's open operator apps, which get it as a `notice`. It stores nothing, and does nothing for a visitor with no open conversation, a blocked visitor, or a workspace whose `typingPreview` is off. Owners and admins change that with `PUT /v1/operator/workspaces/{workspaceId}/widget/typing-preview` and `{ "enabled" }`, and the appearance answers `typingPreview`, so the widget sends nothing when it is off.
 
@@ -248,6 +249,7 @@ A client receives with server-sent events. `GET /v1/widget/{key}/stream` and `GE
 - `ready` once the stream has caught up,
 - `resync` when the client must load everything again, such as after a restore,
 - `close`, with a reason, before the server ends the stream,
+- on the operator stream, a `campaign.updated` `change` when a [campaign](#campaigns) is created, saved, paused, resumed or ended,
 - on the operator stream, `notice` events with no `id`: `{ "kind": "typing", conversationId, visitorId, draft }` while a visitor types, with an empty `draft` when they stop, `{ "kind": "bot_typing", conversationId, name, typing }` while an API key's bot writes, and `{ "kind": "receipts", visitorId }` when a visitor read replies or a reply email went out. A notice can be lost, so treat it as a hint to load again,
 - on the widget stream, `notice` events with no `id`: `{ "kind": "typing", name, typing }` while an API key's bot writes a reply, and with `typing: false` when it stops, and `{ "kind": "outbound" }` when the visitor's [outbound messages](#outbound-messages-and-contacts) change.
 
@@ -270,9 +272,10 @@ A key works in its own workspace only, at the access level chosen when it was ma
 - reply with text or an image, as its reply mode says, write notes, hand a conversation to people and show that it types (see [Bots](#bots-reply-modes-drafts-notes-and-handoff)),
 - close, reopen, snooze, assign and label a conversation,
 - send [outbound messages](#outbound-messages-and-contacts) and create or update contacts by user ID,
+- read [campaigns](#campaigns) and their results, send a live campaign to one person, and track server events,
 - read contacts, the visitors on the site now, the analytics, the [saved replies](#saved-replies) and the [labels](#labels), and stream events from [`GET /v1/events`](#events-for-api-keys).
 
-**Full access** can do all of that, and set the workspace up: the [webhooks](#webhooks) (list, add, change, delete, replace a secret, send a test, read and replay the deliveries), the widget's look, and the [install routes and test visitors](#install-and-test-visitors). It lets an agent, such as a coding agent working on your site, connect Dinghy by itself. To let an agent set up Dinghy, create a Full access key.
+**Full access** can do all of that, and set the workspace up: the [campaigns](#campaigns) and their settings, the [webhooks](#webhooks) (list, add, change, delete, replace a secret, send a test, read and replay the deliveries), the widget's look, and the [install routes and test visitors](#install-and-test-visitors). It lets an agent, such as a coding agent working on your site, connect Dinghy by itself. To let an agent set up Dinghy, create a Full access key.
 
 A route that every key can call lists `apiKey` in its OpenAPI `security`, and a route that only a Full access key can call lists `setupKey`. A Chats key on such a route answers 403 `forbidden`. Every other route, such as members, keys, billing, export, deleting the workspace, sending or discarding a draft, giving a conversation back, pausing bots or `/v1/operator/me`, answers 403 `forbidden` to any key: no key can create, list or revoke keys, and no key reads the signing secret. Another workspace's routes answer 404. An unknown, expired or revoked key answers 401. Each key may send 300 requests a minute, across the API, MCP and the event stream, and over that it gets 429 with `Retry-After`.
 
@@ -398,7 +401,7 @@ An outbound message is a message from the team to one visitor, which may exist b
 | Route | What it does |
 |---|---|
 | `POST /outbound-messages` | Sends one to one visitor. It answers 201 with `{ outboundMessage }`, and 200 with the first one for a retry with the same `clientId` or a `dedupeKey` the visitor already has |
-| `GET /outbound-messages` | Lists them, newest first, by `visitorId`, `userId`, `dedupeKey`, `status` and `apiKeyId`, with `limit` (1 to 100, 50 by default). It answers `{ outboundMessages, next }`, and `next` goes in `cursor` |
+| `GET /outbound-messages` | Lists them, newest first, by `visitorId`, `userId`, `dedupeKey`, `status`, `apiKeyId` and `campaignId`, with `limit` (1 to 100, 50 by default). It answers `{ outboundMessages, next }`, and `next` goes in `cursor` |
 | `GET /outbound-messages/{id}` | Reads one |
 | `POST /outbound-messages/{id}/cancel` | Cancels one that the visitor has not read, and answers it as it is now |
 | `POST /outbound-messages/cancel` | `{ "visitor": { "userId" } or { "id" }, "dedupeKey" }` cancels the one that the visitor's `dedupeKey` names. `outboundMessage` is null when there is none |
@@ -406,11 +409,11 @@ An outbound message is a message from the team to one visitor, which may exist b
 
 A send's body has `clientId`, `visitor` (`{ userId, name?, email?, attributes? }`, which creates or updates the contact, or `{ id }`), `body`, and the optional `buttons`, `sender`, `assignOnReply`, `startConversation` (`on_reply` by default), `show` (`badge` by default), `ifConversationOpen` (`hold` by default), `dedupeKey`, `metadata`, `sendAt` or `delay`, `unless`, `expiresAt` or `expiresIn`, and `sendEmail` (`false` by default). A `clientId` is unique per author and never expires: a retry with it answers the first result. `metadata` is up to 20 keys of your own with text values, which come back on the message, its webhooks and the event stream, and never reach the visitor. [Send one](outbound-messages.md#send-one) describes each field and the answer.
 
-`status` is `scheduled`, `sent`, `delivered`, `read`, `replied`, `dismissed`, `cancelled` or `expired`. `statusReason` says why a message waits or was cancelled, and is null otherwise: `open_conversation`, `open_conversation_skipped`, `human_handling`, `bots_paused`, `blocked`, `permission_revoked`, `workspace_inactive`, `unless_matched`, `cancelled_by_request` and `conversation_deleted`.
+`status` is `scheduled`, `sent`, `delivered`, `read`, `replied`, `dismissed`, `cancelled` or `expired`. `statusReason` says why a message waits or was cancelled, and is null otherwise: `open_conversation`, `open_conversation_skipped`, `human_handling`, `bots_paused`, `blocked`, `permission_revoked`, `workspace_inactive`, `unless_matched`, `cancelled_by_request`, `conversation_deleted` and `opted_out`, and for a [campaign](#campaigns)'s message also `audience_unmatched`, `frequency_capped`, `goal_reached`, `outside_business_hours`, `outside_send_window`, `campaign_paused`, `campaign_ended` and `control_group`. [Status reasons](campaigns.md#status-reasons) says what each campaign value means.
 
-A send answers 403 `send_mode_required` for a key in draft mode, 403 `send_as_member_required` for a member `sender` from a key without the `send_as_member` permission, 403 `send_email_required` for `sendEmail: true` from a key without the `send_email` permission, 403 `blocked`, 404 `not_found` for an unknown visitor `id`, 409 `bots_paused` for a key's send with no later send time while bots are paused, and 429 `too_many_waiting` when the visitor already has 5 that wait in no conversation. Each key may send 60 a minute, on top of its 300 requests a minute, and over that it gets 429 `too_many_requests` with `Retry-After`.
+A send answers 403 `send_mode_required` for a key in draft mode, 403 `send_as_member_required` for a member `sender` from a key without the `send_as_member` permission, 403 `send_email_required` for `sendEmail: true` from a key without the `send_email` permission, 403 `blocked`, 404 `not_found` for an unknown visitor `id`, 409 `opted_out` for a key's send to a visitor who turned off automatic messages, 409 `bots_paused` for a key's send with no later send time while bots are paused, and 429 `too_many_waiting` when the visitor already has 5 that wait in no conversation. Each key may send 60 a minute, on top of its 300 requests a minute, and over that it gets 429 `too_many_requests` with `Retry-After`.
 
-The contact upsert sets `name` and `email`, and merges `attributes` key by key, up to 2 KB of JSON: a `null` value removes a key, and a key you leave out stays. Each write carries its time, and the later write wins for each field and each attribute, whether it came from this route or from a host token, whose time is its `iat`. A change cancels the contact's `scheduled` outbound messages whose `unless` now matches.
+The contact upsert sets `name` and `email`, and merges `attributes` key by key, up to 2 KB of JSON: a `null` value removes a key, and a key you leave out stays. Each write carries its time, and the later write wins for each field and each attribute, whether it came from this route or from a host token, whose time is its `iat`. A change cancels the contact's `scheduled` outbound messages whose `unless` now matches, and checks the contact against the live campaigns that read a changed field.
 
 ### The widget's part
 
@@ -422,8 +425,48 @@ The widget reads and answers outbound messages with these routes, with the visit
 | `POST /v1/widget/{key}/outbound-messages/{id}/read` | The visitor saw it in the open chat. A repeat changes nothing. 404 when it is not theirs or it ended |
 | `POST /v1/widget/{key}/outbound-messages/{id}/dismiss` | `{ "button": 0 }`: the visitor chose the dismiss button at that place, from 0. It records the read, and the message ends as `dismissed` |
 | `POST /v1/widget/{key}/outbound-messages/{id}/click` | `{ "button": 0 }`: the visitor chose the button at that place that opens a page. It records the read and the button, and sends `outbound_message.clicked` |
+| `POST /v1/widget/{key}/opt-out` | `{ "optedOut": true }` turns off automatic messages for this visitor, and `false` turns them back on. Off, campaigns and keys' outbound messages skip the visitor, and those that wait are cancelled with `opted_out`. A member can still write by hand. It answers the visitor, whose `optedOut` says the state |
+| `POST /v1/widget/{key}/campaigns/{id}/show` | A [page campaign](campaigns.md#page)'s message showed on the page. It counts in the campaign's results and stores nothing about the visitor |
+| `POST /v1/widget/{key}/campaigns/{id}/read` | The visitor read a page campaign's message |
+| `POST /v1/widget/{key}/campaigns/{id}/press` | `{ "button": 0 }`: the visitor chose a page campaign's button at that place |
 
-The widget's [send](#sending-without-duplicates) takes `outboundIds` and `button` for the answer, and the [beat](#visitors) answers `waiting`. The widget stream sends a `notice`, `{ "kind": "outbound" }`, when the visitor's outbound messages change, and the widget fetches them. A notice can be lost, so the widget fetches on its beat too.
+The widget's [send](#sending-without-duplicates) takes `outboundIds`, `button` and `pageCampaign` for the answer, and the [beat](#visitors) answers `waiting` and `pages`. The widget's visitor, from `GET /v1/widget/{key}/me` and the opt-out, has `optedOut`. The widget stream sends a `notice`, `{ "kind": "outbound" }`, when the visitor's outbound messages change, and the widget fetches them. A notice can be lost, so the widget fetches on its beat too.
+
+## Campaigns
+
+A campaign is a saved rule that sends outbound messages: who gets one, when, what it says and how often. Its definition is one JSON object. [Campaigns](campaigns.md) describes every field, the triggers, the rules and the results, with recipes. These routes are under `/v1/operator/workspaces/{workspaceId}`. A route on one campaign takes its ID, `/campaigns/{id}`, or its key, `/campaigns/by-key/{key}`. Every member and every API key reads them. Owners, admins and Full access keys change them, and anyone else gets 403 `forbidden`.
+
+| Route | What it does |
+|---|---|
+| `GET /campaigns` | Lists them, oldest first, as `{ campaigns }`. `status` keeps one status: `draft`, `live`, `paused` or `ended` |
+| `POST /campaigns` | Creates a draft from the whole definition, and answers 201 with `{ campaign }`. A key that another campaign has answers 409 `campaign_key_taken` |
+| `PUT /campaigns/by-key/{key}` | Creates a draft with this key, 201, or replaces the definition of the campaign that has it, 200. It never changes the status |
+| `GET /campaigns/{id}` | Reads one, as `{ campaign }` |
+| `PATCH /campaigns/{id}` | Replaces the parts the body gives, such as `message` or `rules`, each one whole, and checks the whole definition again |
+| `POST /campaigns/{id}/resume` | Starts a draft, or resumes a paused campaign |
+| `POST /campaigns/{id}/pause` | Pauses a live campaign: it makes no new messages, and those not sent yet wait |
+| `POST /campaigns/{id}/end` | Ends it for good. Its messages that wait are cancelled with `campaign_ended` |
+| `GET /campaigns/{id}/results` | Its results per day in UTC and per variant, as `{ days, variants }`, from `from` to `to`, such as `2026-12-01` |
+| `POST /campaigns/{id}/send` | `{ clientId, visitor, data? }` runs a live campaign for one person |
+| `POST /campaigns/{id}/test` | With a session only: shows the message to a test visitor named after the member, and answers `{ outboundMessage, blockedBy }` |
+| `POST /campaigns/estimate` | `{ audience?, trigger? }`: how many contacts the editor's choices reach |
+| `GET /campaign-settings` | `{ paused, gapHours, pausedBy, pausedAt }`, the rules for every campaign, and who paused them and when |
+| `PUT /campaign-settings` | Changes both. Owners, admins and Full access keys only |
+| `POST /track` | Tracks a server event about a contact. API keys only |
+
+A campaign is `{ id, status, version, definition, totals, createdAt, updatedAt, liveAt, endedAt }`. `version` goes up by one on each save. `totals` adds up its results since it started. `liveAt` is when it last went live, and `endedAt` when it ended.
+
+A save checks the definition, and answers 400 `invalid_request` with one line for each problem, such as an unknown variable or a `page` campaign with `show: "chat"`. A campaign's messages come from the member or key that saved it last, so a save answers 403 `send_mode_required` from a key in draft mode, `send_as_member_required` for a member `sender` from a key without the `send_as_member` permission, and `send_email_required` for `sendEmail` or `emailIfUnread` from a key without `send_email`. An ended campaign answers 409 `campaign_ended` to a save or an action. An action from a status it does not start from changes nothing, and answers the campaign as it is.
+
+`send` skips the audience and the trigger, and keeps the frequency, the other rules and the visitor's opt-out. `data` fills `{{ data.<key> }}` in the text, with up to 20 keys. It answers 201 with `{ outboundMessage }`, and 200 with the message that is there for a retry with the same `clientId` or when the frequency keeps the person out. It answers 409 `campaign_not_live` for a campaign that is not live, 409 `opted_out`, 403 `blocked`, 404 `not_found` for an unknown visitor `id` or campaign, and 429 `too_many_waiting`. Sends count in the key's 60 outbound messages a minute.
+
+`test` sends the message to a new test visitor, in a conversation the member can open, whatever the rules say, with no variants. `blockedBy` names what would hold a real message now, `campaign_ended`, `campaign_paused`, `outside_business_hours` or `outside_send_window`, or is null.
+
+`estimate` answers `matching`, the contacts who match `audience` now, and `lastWeek`, those a `match` or `event` trigger would have reached in the last 7 days, or null for another trigger. Each is `{ count, more }`, and a count stops at 10,000 with `more: true`. Test visitors are left out.
+
+`PUT /campaign-settings` answers as the `GET` does, and takes `paused`, which holds every campaign's messages with `campaign_paused` until it is false, apart from the bots' pause, and `gapHours`, from 0 to 720, 24 by default: the fewest hours between two campaign messages to one visitor, checked when a message is about to be sent. One that comes sooner is cancelled with `frequency_capped`. 0 turns it off.
+
+`POST /track` takes `{ visitor, name, properties?, occurredAt?, id? }`. `visitor` creates or updates the contact as a send's does. `name` is up to 64 letters, digits, `_`, `.`, `:` and `-`. `properties`, up to 4 KB of JSON, fill an `event` campaign's text and are never stored. `id`, up to 100 characters, counts a repeat once. It answers `{ visitorId, counted }`, with `counted` false for a repeat. Each contact keeps one row per name with its count and its first and last time, which conditions read as `events.<name>.count` and `events.<name>.lastAt`. A member's session answers 403 `forbidden`, an unknown visitor `id` answers 404, and each key may track 600 events a minute, apart from its 300 requests.
 
 ## Install and test visitors
 
@@ -466,6 +509,7 @@ A webhook sends a signed `POST` to your server when something changes in a works
 | `outbound_message.dismissed` | The visitor chose an outbound message's dismiss button |
 | `outbound_message.cancelled` | An outbound message was cancelled, by a cancel or a check |
 | `outbound_message.expired` | An outbound message's `expiresAt` passed before the visitor read it |
+| `campaign.updated` | A [campaign](#campaigns) was created, saved, paused, resumed or ended |
 
 Drafts send no webhook. The body is JSON:
 
@@ -482,7 +526,7 @@ Drafts send no webhook. The body is JSON:
 }
 ```
 
-`data.conversation` and `data.message` have the same shape as the operator API's `Conversation` and `InboxMessage`. Only the `message.*` events have `data.message`, and only `conversation.labeled` has `data.label`. The `outbound_message.*` events have only `data.outboundMessage`, the same shape as the `OutboundMessage` of the outbound routes, because the message may be in no conversation. They hold the state when the request is sent, which can be later than the change, such as after a retry. A test visitor's conversation has `visitor.isTest: true`.
+`data.conversation` and `data.message` have the same shape as the operator API's `Conversation` and `InboxMessage`. Only the `message.*` events have `data.message`, and only `conversation.labeled` has `data.label`. The `outbound_message.*` events have only `data.outboundMessage`, the same shape as the `OutboundMessage` of the outbound routes, because the message may be in no conversation. `campaign.updated` has only `data.campaign`, the same shape as the `Campaign` of the campaign routes. They hold the state when the request is sent, which can be later than the change, such as after a retry. A test visitor's conversation has `visitor.isTest: true`.
 
 Each request has these headers:
 
@@ -635,7 +679,11 @@ Every key and connected app gets the Chats tools. A Full access one also gets th
 | `upsert_contact` | Chats | Creates or updates a contact by your `userId`: `name`, `email` and `attributes`, which merge key by key |
 | `send_outbound_message` | Chats | Sends an [outbound message](#outbound-messages-and-contacts) to one visitor, with the fields of the route. Pass the same `clientId` on a retry |
 | `cancel_outbound_message` | Chats | Cancels an outbound message that the visitor has not read, by `outboundMessageId`, or by `visitor` and `dedupeKey`. Marked destructive |
-| `list_outbound_messages` | Chats | Lists outbound messages with their `status` and `statusReason`, by `visitorId`, `status` or `apiKeyId` |
+| `list_outbound_messages` | Chats | Lists outbound messages with their `status` and `statusReason`, by `visitorId`, `status`, `apiKeyId` or `campaignId` |
+| `list_campaigns`, `get_campaign` | Chats | Lists the [campaigns](#campaigns), with `status`, or reads one by `id` or `key`, with its definition and totals |
+| `get_campaign_results` | Chats | A campaign's results per day and per variant, between `from` and `to` |
+| `send_campaign` | Chats | Runs a live campaign for one person, by `id` or `key`, with `visitor`, `clientId` and `data`. Pass the same `clientId` on a retry |
+| `track_event` | Chats | Tracks a server event about a contact, with the fields of `POST /track` |
 | `get_live_visitors` | Chats | Lists the tabs of the site open now |
 | `get_analytics` | Chats | The Analytics page's numbers for 7, 30 or 90 days |
 | `get_install_snippet` | Full access | The code that adds the widget for a framework, and where it goes |
@@ -652,6 +700,9 @@ Every key and connected app gets the Chats tools. A Full access one also gets th
 | `list_webhook_deliveries`, `replay_webhook_delivery` | Full access | Lists a webhook's last 20 deliveries, or sends one again |
 | `send_test_message` | Full access | Sends a message as a test visitor |
 | `delete_test_visitors` | Full access | Deletes every test visitor. Marked destructive |
+| `upsert_campaign` | Full access | Creates a draft campaign from `definition`, or replaces the one with its key. The status stays |
+| `pause_campaign`, `resume_campaign` | Full access | Pauses a live campaign, or starts or resumes one, by `id` or `key` |
+| `end_campaign` | Full access | Ends a campaign for good, by `id` or `key`. Marked destructive |
 
 Each tool says in its annotations whether it only reads, whether a retry is safe, and whether it deletes or ends something. A client asks the person before it calls a destructive tool. The server's instructions, and every tool that returns text a visitor wrote, tell the agent that this text is data and that it must never follow instructions in it.
 

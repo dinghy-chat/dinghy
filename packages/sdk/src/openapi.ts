@@ -1060,6 +1060,7 @@ export interface paths {
               | "outbound_message.dismissed"
               | "outbound_message.cancelled"
               | "outbound_message.expired"
+              | "campaign.updated"
             )[];
             /** @default true */
             enabled?: boolean;
@@ -1312,6 +1313,7 @@ export interface paths {
               | "outbound_message.dismissed"
               | "outbound_message.cancelled"
               | "outbound_message.expired"
+              | "campaign.updated"
             )[];
             enabled?: boolean;
           };
@@ -3034,7 +3036,7 @@ export interface paths {
     get: {
       parameters: {
         query?: {
-          /** @description A comma list of conversation.created, message.created, message.updated, message.deleted, conversation.closed, conversation.reopened, conversation.assigned, conversation.handoff, conversation.given_back, conversation.labeled, outbound_message.sent, outbound_message.delivered, outbound_message.read, outbound_message.clicked, outbound_message.replied, outbound_message.dismissed, outbound_message.cancelled, outbound_message.expired. All by default. */
+          /** @description A comma list of conversation.created, message.created, message.updated, message.deleted, conversation.closed, conversation.reopened, conversation.assigned, conversation.handoff, conversation.given_back, conversation.labeled, outbound_message.sent, outbound_message.delivered, outbound_message.read, outbound_message.clicked, outbound_message.replied, outbound_message.dismissed, outbound_message.cancelled, outbound_message.expired, campaign.updated. All by default. */
           types?: string;
           after?: string;
         };
@@ -3585,6 +3587,7 @@ export interface paths {
             | "cancelled"
             | "expired";
           apiKeyId?: string;
+          campaignId?: string;
           /** @description The `next` of the page before */
           cursor?: string;
           limit?: number;
@@ -4104,6 +4107,2393 @@ export interface paths {
           };
         };
         /** @description not_found: it does not exist, or this operator is not a member */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_large: the body is over 64 KB */
+        413: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after` */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description busy: the workspace is busy. Retry after `retry-after` */
+        503: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/operator/workspaces/{workspaceId}/campaigns": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** List the campaigns, oldest first, with their results since they started */
+    get: {
+      parameters: {
+        query?: {
+          status?: "draft" | "live" | "paused" | "ended";
+        };
+        header?: never;
+        path: {
+          workspaceId: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description The campaigns */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": {
+              campaigns: components["schemas"]["Campaign"][];
+              /** @description The messages every campaign sent in the last 7 days, whatever the status */
+              sentLastWeek: number;
+            };
+          };
+        };
+        /** @description invalid_request: the request is not valid */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description payment_required: the workspace waits for payment */
+        402: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description not_found: it does not exist, or this operator is not a member */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after` */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    put?: never;
+    /**
+     * Create a campaign, as a draft. Owners, admins and Full access keys only
+     * @description The body is the whole definition. A new campaign is a draft until `/resume`. Its messages carry the member or key that saved it last, so a key needs the permissions its messages use.
+     */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          workspaceId: string;
+        };
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          "application/json": components["schemas"]["CampaignDefinition"];
+        };
+      };
+      responses: {
+        /** @description The new campaign */
+        201: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": {
+              campaign: components["schemas"]["Campaign"];
+            };
+          };
+        };
+        /** @description invalid_request: the request is not valid */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export */
+        402: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description forbidden: this role or key may not. send_mode_required, send_as_member_required, send_email_required: this key may not stand behind the campaign's messages */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description not_found: it does not exist, or this operator is not a member */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description campaign_key_taken: another campaign has this key. campaign_ended: an ended campaign does not change */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_large: the body is over 64 KB */
+        413: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after` */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description busy: the workspace is busy. Retry after `retry-after` */
+        503: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/operator/workspaces/{workspaceId}/campaigns/estimate": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Count the contacts an audience matches now, and those a trigger reached lately
+     * @description `matching` counts the contacts who match `audience` now. `lastWeek` counts those a `match` or `event` trigger would have reached in the last 7 days, and is null for another trigger. Each count stops at 10,000 with `more: true`.
+     */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          workspaceId: string;
+        };
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          "application/json": {
+            audience?: components["schemas"]["Condition"];
+            trigger?: components["schemas"]["CampaignTrigger"];
+          };
+        };
+      };
+      responses: {
+        /** @description The counts */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": {
+              matching: {
+                count: number;
+                more: boolean;
+              };
+              lastWeek: {
+                count: number;
+                more: boolean;
+              } | null;
+            };
+          };
+        };
+        /** @description invalid_request: the request is not valid */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export */
+        402: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description not_found: it does not exist, or this operator is not a member */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_large: the body is over 64 KB */
+        413: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after` */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description busy: the workspace is busy. Retry after `retry-after` */
+        503: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/operator/workspaces/{workspaceId}/campaign-settings": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Read the settings for every campaign */
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          workspaceId: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description The settings for every campaign */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["CampaignSettingsView"];
+          };
+        };
+        /** @description unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description payment_required: the workspace waits for payment */
+        402: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description not_found: it does not exist, or this operator is not a member */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after` */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    /**
+     * Pause every campaign, or set the gap between two campaign messages to one visitor
+     * @description `paused` holds every campaign's messages until it is false again. It is apart from pausing the bots. `gapHours` is checked when a campaign's message is about to go: one that comes sooner after another is cancelled with `frequency_capped`. Owners, admins and Full access keys only.
+     */
+    put: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          workspaceId: string;
+        };
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          "application/json": components["schemas"]["CampaignSettings"];
+        };
+      };
+      responses: {
+        /** @description The settings for every campaign */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["CampaignSettingsView"];
+          };
+        };
+        /** @description invalid_request: the request is not valid */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export */
+        402: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description forbidden: this role may not do this. suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description not_found: it does not exist, or this operator is not a member */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_large: the body is over 64 KB */
+        413: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after` */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description busy: the workspace is busy. Retry after `retry-after` */
+        503: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/operator/workspaces/{workspaceId}/campaigns/by-key/{key}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    /**
+     * Create or replace the campaign with this key. Owners, admins and Full access keys only
+     * @description The body is the whole definition, with this key or none. A new campaign is a draft. A save never changes the status, so a deploy never resumes a campaign that support paused. A live campaign keeps its changes for new messages only.
+     */
+    put: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          workspaceId: string;
+          /** @description Lowercase letters, digits, - and _, unique in the workspace */
+          key: string;
+        };
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          "application/json": components["schemas"]["CampaignDefinition"];
+        };
+      };
+      responses: {
+        /** @description The campaign, replaced */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": {
+              campaign: components["schemas"]["Campaign"];
+            };
+          };
+        };
+        /** @description The new campaign */
+        201: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": {
+              campaign: components["schemas"]["Campaign"];
+            };
+          };
+        };
+        /** @description invalid_request: the request is not valid */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export */
+        402: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description forbidden: this role or key may not. send_mode_required, send_as_member_required, send_email_required: this key may not stand behind the campaign's messages */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description not_found: it does not exist, or this operator is not a member */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description campaign_key_taken: another campaign has this key. campaign_ended: an ended campaign does not change */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_large: the body is over 64 KB */
+        413: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after` */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description busy: the workspace is busy. Retry after `retry-after` */
+        503: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/operator/workspaces/{workspaceId}/campaigns/{ref}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get one campaign */
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          workspaceId: string;
+          /** @description The campaign's ID */
+          ref: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description The campaign */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": {
+              campaign: components["schemas"]["Campaign"];
+            };
+          };
+        };
+        /** @description unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description payment_required: the workspace waits for payment */
+        402: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description not_found: it does not exist, or this operator is not a member */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after` */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Change parts of a campaign. Owners, admins and Full access keys only
+     * @description Each part the body gives, such as `message` or `rules`, replaces that part whole, and the whole definition is checked again.
+     */
+    patch: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          workspaceId: string;
+          /** @description The campaign's ID */
+          ref: string;
+        };
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          "application/json": components["schemas"]["CampaignPatch"];
+        };
+      };
+      responses: {
+        /** @description The campaign after the change */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": {
+              campaign: components["schemas"]["Campaign"];
+            };
+          };
+        };
+        /** @description invalid_request: the request is not valid */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export */
+        402: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description forbidden: this role or key may not. send_mode_required, send_as_member_required, send_email_required: this key may not stand behind the campaign's messages */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description not_found: it does not exist, or this operator is not a member */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description campaign_key_taken: another campaign has this key. campaign_ended: an ended campaign does not change */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_large: the body is over 64 KB */
+        413: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after` */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description busy: the workspace is busy. Retry after `retry-after` */
+        503: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    trace?: never;
+  };
+  "/v1/operator/workspaces/{workspaceId}/campaigns/by-key/{ref}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /** Get one campaign */
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          workspaceId: string;
+          /** @description The campaign's key */
+          ref: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description The campaign */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": {
+              campaign: components["schemas"]["Campaign"];
+            };
+          };
+        };
+        /** @description unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description payment_required: the workspace waits for payment */
+        402: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description not_found: it does not exist, or this operator is not a member */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after` */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    /**
+     * Change parts of a campaign. Owners, admins and Full access keys only
+     * @description Each part the body gives, such as `message` or `rules`, replaces that part whole, and the whole definition is checked again.
+     */
+    patch: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          workspaceId: string;
+          /** @description The campaign's key */
+          ref: string;
+        };
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          "application/json": components["schemas"]["CampaignPatch"];
+        };
+      };
+      responses: {
+        /** @description The campaign after the change */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": {
+              campaign: components["schemas"]["Campaign"];
+            };
+          };
+        };
+        /** @description invalid_request: the request is not valid */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export */
+        402: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description forbidden: this role or key may not. send_mode_required, send_as_member_required, send_email_required: this key may not stand behind the campaign's messages */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description not_found: it does not exist, or this operator is not a member */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description campaign_key_taken: another campaign has this key. campaign_ended: an ended campaign does not change */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_large: the body is over 64 KB */
+        413: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after` */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description busy: the workspace is busy. Retry after `retry-after` */
+        503: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    trace?: never;
+  };
+  "/v1/operator/workspaces/{workspaceId}/campaigns/{ref}/pause": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Pause a live campaign: its waiting messages wait, and it makes no new ones. Owners, admins and Full access keys only */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          workspaceId: string;
+          /** @description The campaign's ID */
+          ref: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description The campaign as it is now */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": {
+              campaign: components["schemas"]["Campaign"];
+            };
+          };
+        };
+        /** @description invalid_request: the request is not valid */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export */
+        402: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description forbidden: this role may not do this. suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description not_found: it does not exist, or this operator is not a member */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description campaign_ended: an ended campaign does not change */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_large: the body is over 64 KB */
+        413: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after` */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description busy: the workspace is busy. Retry after `retry-after` */
+        503: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/operator/workspaces/{workspaceId}/campaigns/by-key/{ref}/pause": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Pause a live campaign: its waiting messages wait, and it makes no new ones. Owners, admins and Full access keys only */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          workspaceId: string;
+          /** @description The campaign's key */
+          ref: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description The campaign as it is now */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": {
+              campaign: components["schemas"]["Campaign"];
+            };
+          };
+        };
+        /** @description invalid_request: the request is not valid */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export */
+        402: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description forbidden: this role may not do this. suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description not_found: it does not exist, or this operator is not a member */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description campaign_ended: an ended campaign does not change */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_large: the body is over 64 KB */
+        413: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after` */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description busy: the workspace is busy. Retry after `retry-after` */
+        503: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/operator/workspaces/{workspaceId}/campaigns/{ref}/resume": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Start a draft, or resume a paused campaign. Owners, admins and Full access keys only */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          workspaceId: string;
+          /** @description The campaign's ID */
+          ref: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description The campaign as it is now */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": {
+              campaign: components["schemas"]["Campaign"];
+            };
+          };
+        };
+        /** @description invalid_request: the request is not valid */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export */
+        402: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description forbidden: this role may not do this. suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description not_found: it does not exist, or this operator is not a member */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description campaign_ended: an ended campaign does not change */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_large: the body is over 64 KB */
+        413: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after` */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description busy: the workspace is busy. Retry after `retry-after` */
+        503: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/operator/workspaces/{workspaceId}/campaigns/by-key/{ref}/resume": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** Start a draft, or resume a paused campaign. Owners, admins and Full access keys only */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          workspaceId: string;
+          /** @description The campaign's key */
+          ref: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description The campaign as it is now */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": {
+              campaign: components["schemas"]["Campaign"];
+            };
+          };
+        };
+        /** @description invalid_request: the request is not valid */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export */
+        402: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description forbidden: this role may not do this. suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description not_found: it does not exist, or this operator is not a member */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description campaign_ended: an ended campaign does not change */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_large: the body is over 64 KB */
+        413: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after` */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description busy: the workspace is busy. Retry after `retry-after` */
+        503: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/operator/workspaces/{workspaceId}/campaigns/{ref}/end": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** End a campaign for good: its messages that wait are cancelled with `campaign_ended`. Owners, admins and Full access keys only */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          workspaceId: string;
+          /** @description The campaign's ID */
+          ref: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description The campaign as it is now */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": {
+              campaign: components["schemas"]["Campaign"];
+            };
+          };
+        };
+        /** @description invalid_request: the request is not valid */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export */
+        402: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description forbidden: this role may not do this. suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description not_found: it does not exist, or this operator is not a member */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description campaign_ended: an ended campaign does not change */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_large: the body is over 64 KB */
+        413: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after` */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description busy: the workspace is busy. Retry after `retry-after` */
+        503: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/operator/workspaces/{workspaceId}/campaigns/by-key/{ref}/end": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /** End a campaign for good: its messages that wait are cancelled with `campaign_ended`. Owners, admins and Full access keys only */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          workspaceId: string;
+          /** @description The campaign's key */
+          ref: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description The campaign as it is now */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": {
+              campaign: components["schemas"]["Campaign"];
+            };
+          };
+        };
+        /** @description invalid_request: the request is not valid */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export */
+        402: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description forbidden: this role may not do this. suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description not_found: it does not exist, or this operator is not a member */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description campaign_ended: an ended campaign does not change */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_large: the body is over 64 KB */
+        413: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after` */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description busy: the workspace is busy. Retry after `retry-after` */
+        503: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/operator/workspaces/{workspaceId}/campaigns/{ref}/results": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * A campaign's results per day in UTC and per A/B variant
+     * @description Each day counts the contacts it reached (`entered`, the control group too), and its messages sent, delivered, read, replied and dismissed, the clicks by button value, the goals reached and the conversations started. Test visitors are left out. The days outlive the messages' text.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description The first day, in UTC */
+          from?: string;
+          /** @description The last day, in UTC */
+          to?: string;
+        };
+        header?: never;
+        path: {
+          workspaceId: string;
+          /** @description The campaign's ID */
+          ref: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description The results */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["CampaignResults"];
+          };
+        };
+        /** @description invalid_request: the request is not valid */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description payment_required: the workspace waits for payment */
+        402: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description not_found: it does not exist, or this operator is not a member */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after` */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/operator/workspaces/{workspaceId}/campaigns/by-key/{ref}/results": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * A campaign's results per day in UTC and per A/B variant
+     * @description Each day counts the contacts it reached (`entered`, the control group too), and its messages sent, delivered, read, replied and dismissed, the clicks by button value, the goals reached and the conversations started. Test visitors are left out. The days outlive the messages' text.
+     */
+    get: {
+      parameters: {
+        query?: {
+          /** @description The first day, in UTC */
+          from?: string;
+          /** @description The last day, in UTC */
+          to?: string;
+        };
+        header?: never;
+        path: {
+          workspaceId: string;
+          /** @description The campaign's key */
+          ref: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description The results */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["CampaignResults"];
+          };
+        };
+        /** @description invalid_request: the request is not valid */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description payment_required: the workspace waits for payment */
+        402: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description not_found: it does not exist, or this operator is not a member */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after` */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/operator/workspaces/{workspaceId}/campaigns/{ref}/send": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Run a live campaign for one person, from your code
+     * @description It skips the audience and the trigger, because your code chose the person, and keeps the frequency and the visitor's opt-out. `data` fills `{{ data.<key> }}` in the text. A retry with the same `clientId`, and a send that the frequency keeps out, answer 200 with the message that is there.
+     */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          workspaceId: string;
+          /** @description The campaign's ID */
+          ref: string;
+        };
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          "application/json": {
+            /** @description Your own ID for this send. A retry with the same one answers the first result */
+            clientId: string;
+            visitor: components["schemas"]["VisitorSelector"];
+            /** @description Values for `{{ data.<key> }}` in the text */
+            data?: {
+              [key: string]: string | number | boolean;
+            };
+          };
+        };
+      };
+      responses: {
+        /** @description A retry, or a message the frequency keeps: the one that is there */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": {
+              outboundMessage: components["schemas"]["OutboundMessage"];
+            };
+          };
+        };
+        /** @description The new outbound message */
+        201: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": {
+              outboundMessage: components["schemas"]["OutboundMessage"];
+            };
+          };
+        };
+        /** @description invalid_request: the request is not valid */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export */
+        402: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description blocked: the team blocked this visitor */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description not_found: no such campaign, or no visitor has this `id` */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description campaign_not_live: the campaign is a draft, paused or ended. opted_out: the visitor turned off automatic messages */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_large: the body is over 64 KB */
+        413: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_many_requests: over the key's rate limit. too_many_waiting: the visitor has too many outbound messages waiting */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description busy: the workspace is busy. Retry after `retry-after` */
+        503: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/operator/workspaces/{workspaceId}/campaigns/by-key/{ref}/send": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Run a live campaign for one person, from your code
+     * @description It skips the audience and the trigger, because your code chose the person, and keeps the frequency and the visitor's opt-out. `data` fills `{{ data.<key> }}` in the text. A retry with the same `clientId`, and a send that the frequency keeps out, answer 200 with the message that is there.
+     */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          workspaceId: string;
+          /** @description The campaign's key */
+          ref: string;
+        };
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          "application/json": {
+            /** @description Your own ID for this send. A retry with the same one answers the first result */
+            clientId: string;
+            visitor: components["schemas"]["VisitorSelector"];
+            /** @description Values for `{{ data.<key> }}` in the text */
+            data?: {
+              [key: string]: string | number | boolean;
+            };
+          };
+        };
+      };
+      responses: {
+        /** @description A retry, or a message the frequency keeps: the one that is there */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": {
+              outboundMessage: components["schemas"]["OutboundMessage"];
+            };
+          };
+        };
+        /** @description The new outbound message */
+        201: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": {
+              outboundMessage: components["schemas"]["OutboundMessage"];
+            };
+          };
+        };
+        /** @description invalid_request: the request is not valid */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export */
+        402: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description blocked: the team blocked this visitor */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description not_found: no such campaign, or no visitor has this `id` */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description campaign_not_live: the campaign is a draft, paused or ended. opted_out: the visitor turned off automatic messages */
+        409: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_large: the body is over 64 KB */
+        413: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_many_requests: over the key's rate limit. too_many_waiting: the visitor has too many outbound messages waiting */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description busy: the workspace is busy. Retry after `retry-after` */
+        503: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/operator/workspaces/{workspaceId}/track": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Track an event about a contact, from your server. API keys only
+     * @description Counts the event `name` on the contact that `visitor` names, which it creates or updates. Each contact keeps, per name, how often it happened and when, first and last, and no log. Conditions read `events.<name>.count` and `events.<name>.lastAt`, and a live campaign with the trigger `{ type: "event", name }` runs for the contact, with `properties` in its text. Properties are never stored. A repeat of a recent `id` counts once.
+     */
+    post: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          workspaceId: string;
+        };
+        cookie?: never;
+      };
+      requestBody: {
+        content: {
+          "application/json": {
+            visitor: components["schemas"]["VisitorSelector"];
+            /** @example export.finished */
+            name: string;
+            /** @description Values for `{{ event.properties.<key> }}` in an `event` campaign's text. Never stored */
+            properties?: {
+              [key: string]: unknown;
+            };
+            /**
+             * Format: date-time
+             * @description When it happened. Now if left out
+             */
+            occurredAt?: string;
+            /** @description Your own ID for this event, so a retry soon after counts once */
+            id?: string;
+          };
+        };
+      };
+      responses: {
+        /** @description Tracked. `counted` is false for a repeat of a recent `id` */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": {
+              visitorId: string;
+              counted: boolean;
+            };
+          };
+        };
+        /** @description invalid_request: the request is not valid */
+        400: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export */
+        402: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description forbidden: a member sent it. Only your server tracks events, with a key */
+        403: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description not_found: no visitor has this `id` */
         404: {
           headers: {
             [name: string]: unknown;
@@ -5006,6 +7396,9 @@ export interface components {
           | "blocked"
           | "bots_paused"
           | "busy"
+          | "campaign_ended"
+          | "campaign_key_taken"
+          | "campaign_not_live"
           | "check_unavailable"
           | "checkout_retry_later"
           | "conversation_closed"
@@ -5043,6 +7436,7 @@ export interface components {
           | "not_an_image"
           | "not_found"
           | "operator_limit"
+          | "opted_out"
           | "origin_not_allowed"
           | "payment_pending"
           | "payment_required"
@@ -5265,6 +7659,7 @@ export interface components {
       authorName: string | null;
       authorPictureUrl: string | null;
       authorId: string | null;
+      campaignId: string | null;
       createdAt: string;
     };
     Visitor: {
@@ -5276,6 +7671,7 @@ export interface components {
       lastReadSeq: string;
       unread: number;
       readCursor: string;
+      optedOut: boolean;
     };
     /**
      * @example {
@@ -5588,6 +7984,7 @@ export interface components {
         | "outbound_message.dismissed"
         | "outbound_message.cancelled"
         | "outbound_message.expired"
+        | "campaign.updated"
       )[];
       enabled: boolean;
       createdBy: {
@@ -5619,7 +8016,8 @@ export interface components {
         | "outbound_message.replied"
         | "outbound_message.dismissed"
         | "outbound_message.cancelled"
-        | "outbound_message.expired";
+        | "outbound_message.expired"
+        | "campaign.updated";
       /** @enum {string} */
       status: "pending" | "sent" | "failed";
       attempts: number;
@@ -5808,6 +8206,15 @@ export interface components {
         | "unless_matched"
         | "cancelled_by_request"
         | "conversation_deleted"
+        | "opted_out"
+        | "audience_unmatched"
+        | "frequency_capped"
+        | "goal_reached"
+        | "outside_business_hours"
+        | "outside_send_window"
+        | "campaign_paused"
+        | "campaign_ended"
+        | "control_group"
         | null;
       visitorId: string;
       body: string | null;
@@ -5839,6 +8246,9 @@ export interface components {
       sendEmail: boolean;
       conversationId: string | null;
       messageId: string | null;
+      campaignId: string | null;
+      campaignRunId: string | null;
+      variant: string | null;
       dedupeKey: string | null;
       sendAt: string;
       expiresAt: string | null;
@@ -5887,7 +8297,7 @@ export interface components {
           email: string;
         };
     /**
-     * @description A rule `{ field, op, value }`, or a group `{ all: [...] }`, `{ any: [...] }` or `{ not: ... }`, which nest. Fields: name, firstName, email, userId, language, country, timeZone, signedIn, firstSeenAt, lastSeenAt, hasChatted, conversationCount, attributes.<key>. Ops: eq, ne, in, not_in, exists, missing, gt, gte, lt, lte, contains, older_than; older_than takes a duration such as 7d.
+     * @description A rule `{ field, op, value }`, or a group `{ all: [...] }`, `{ any: [...] }` or `{ not: ... }`, which nest. Fields: name, firstName, email, userId, language, country, timeZone, signedIn, firstSeenAt, lastSeenAt, hasChatted, conversationCount, optedOut, attributes.<key>, events.<name>.count, events.<name>.lastAt. Ops: eq, ne, in, not_in, exists, missing, gt, gte, lt, lte, contains, older_than; older_than takes a duration such as 7d.
      * @example {
      *       "all": [
      *         {
@@ -5942,6 +8352,455 @@ export interface components {
           /** Format: uuid */
           id: string;
         };
+    Campaign: {
+      id: string;
+      /** @enum {string} */
+      status: "draft" | "live" | "paused" | "ended";
+      version: number;
+      definition: components["schemas"]["CampaignDefinition"];
+      totals: {
+        entered: number;
+        sent: number;
+        delivered: number;
+        read: number;
+        replied: number;
+        dismissed: number;
+        goalReached: number;
+        conversationsStarted: number;
+        clicks: {
+          [key: string]: number;
+        };
+      };
+      createdAt: string;
+      updatedAt: string;
+      liveAt: string | null;
+      endedAt: string | null;
+    };
+    /**
+     * @example {
+     *       "key": "dns-help",
+     *       "name": "DNS help after signup",
+     *       "audience": {
+     *         "field": "attributes.domainVerified",
+     *         "op": "ne",
+     *         "value": true
+     *       },
+     *       "trigger": {
+     *         "type": "match",
+     *         "delay": "1h"
+     *       },
+     *       "message": {
+     *         "sender": {
+     *           "email": "julien@example.com"
+     *         },
+     *         "body": "Hi {{ firstName | default: \"there\" }}, want me to check your DNS with you?",
+     *         "buttons": [
+     *           {
+     *             "label": "Yes, please",
+     *             "value": "yes"
+     *           },
+     *           {
+     *             "label": "I'm fine",
+     *             "dismiss": true,
+     *             "value": "no"
+     *           }
+     *         ]
+     *       },
+     *       "presentation": {
+     *         "startConversation": "on_reply",
+     *         "show": "preview",
+     *         "ifConversationOpen": "skip"
+     *       },
+     *       "delivery": {
+     *         "sendEmail": false
+     *       },
+     *       "rules": {
+     *         "frequency": "once",
+     *         "businessHours": true,
+     *         "endsAt": null
+     *       }
+     *     }
+     */
+    CampaignDefinition: {
+      /**
+       * @description Lowercase letters, digits, - and _, unique in the workspace
+       * @example dns-help
+       */
+      key: string;
+      name: string;
+      audience?: components["schemas"]["Condition"] & unknown;
+      trigger: components["schemas"]["CampaignTrigger"];
+      message: components["schemas"]["CampaignMessage"];
+      presentation: {
+        /** @enum {string} */
+        startConversation: "on_reply" | "now";
+        /** @enum {string} */
+        show: "badge" | "preview" | "chat";
+        /** @enum {string} */
+        ifConversationOpen: "hold" | "join" | "skip";
+      };
+      /**
+       * @default {
+       *       "sendEmail": false
+       *     }
+       */
+      delivery?: {
+        /** @default false */
+        sendEmail?: boolean;
+        assignOnReply?: boolean;
+        /**
+         * @description A number with m, h or d, such as 1h
+         * @example 1h
+         */
+        expiresIn?: string;
+        /**
+         * @description An `on_reply` message still unread after this time goes in a conversation and out by email, to a visitor with an email address
+         * @example 1h
+         */
+        emailIfUnread?: string;
+      };
+      /**
+       * @default {
+       *       "frequency": "once",
+       *       "businessHours": false,
+       *       "endsAt": null
+       *     }
+       */
+      rules?: {
+        /**
+         * @description `"once"` per contact, or `{ "every": "7d" }` at most
+         * @default once
+         */
+        frequency?:
+          | "once"
+          | {
+              /**
+               * @description A number with m, h or d, such as 1h
+               * @example 1h
+               */
+              every: string;
+            };
+        /**
+         * @description Send only during the workspace's business hours
+         * @default false
+         */
+        businessHours?: boolean;
+        /** @description Send only between these times on the visitor's own clock */
+        sendWindow?: {
+          /** @example 09:00 */
+          from: string;
+          /** @example 09:00 */
+          to: string;
+        };
+        /**
+         * Format: date-time
+         * @default null
+         */
+        endsAt?: string | null;
+        exitWhen?: components["schemas"]["CampaignCondition"];
+        /**
+         * @description A condition, plus `within`: a contact who matches it within that time after a message reached the goal, which ends the campaign for them and counts in results
+         * @example {
+         *       "field": "attributes.domainVerified",
+         *       "op": "eq",
+         *       "value": true,
+         *       "within": "7d"
+         *     }
+         */
+        goal?: unknown;
+      };
+      /** @description A/B variants by weight, each with its own message or the campaign's, and at most one `control: true` group that gets nothing */
+      variants?: (
+        | {
+            /**
+             * @description Lowercase letters, digits, - and _, unique in the workspace
+             * @example dns-help
+             */
+            key: string;
+            weight: number;
+            message?: components["schemas"]["CampaignMessage"] & unknown;
+          }
+        | {
+            /**
+             * @description Lowercase letters, digits, - and _, unique in the workspace
+             * @example dns-help
+             */
+            key: string;
+            weight: number;
+            /**
+             * @description The control group: no message, so the goal's results can compare
+             * @enum {boolean}
+             */
+            control: true;
+          }
+      )[];
+    };
+    /** @description `match`: when a contact starts to match the audience, after `delay`. `schedule`: everyone in the audience at a time of day, once or again. `event`: when your server tracks the event `name`. `page`: in the widget, after `seconds` on a page that matches `url`. `api`: only when your code calls send */
+    CampaignTrigger:
+      | {
+          /** @enum {string} */
+          type: "match";
+          /**
+           * @description A number with m, h or d, such as 1h
+           * @example 1h
+           */
+          delay?: string;
+        }
+      | {
+          /** @enum {string} */
+          type: "schedule";
+          /** @enum {string} */
+          repeat: "once" | "daily" | "weekly" | "monthly";
+          /** @example 09:00 */
+          time: string;
+          days?: ("mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun")[];
+          /**
+           * Format: date
+           * @example 2026-12-01
+           */
+          startDate: string;
+          /**
+           * Format: date
+           * @example 2026-12-01
+           */
+          endDate?: string;
+          /** @default UTC */
+          timeZone?: string;
+        }
+      | {
+          /** @enum {string} */
+          type: "event";
+          name: string;
+          /**
+           * @description A number with m, h or d, such as 1h
+           * @example 1h
+           */
+          delay?: string;
+        }
+      | {
+          /** @enum {string} */
+          type: "page";
+          /** @description A path or a full URL, where `*` matches any text, such as `/pricing*`. A path matches on any allowed site */
+          url: string;
+          seconds: number;
+        }
+      | {
+          /** @enum {string} */
+          type: "api";
+        };
+    CampaignMessage: {
+      sender?: components["schemas"]["OutboundSender"];
+      body: string;
+      buttons?: components["schemas"]["OutboundButton"][];
+      /** @description A body and buttons per language, by the visitor's language */
+      translations?: {
+        en?: {
+          body: string;
+          buttons?: components["schemas"]["OutboundButton"][];
+        };
+        fr?: {
+          body: string;
+          buttons?: components["schemas"]["OutboundButton"][];
+        };
+        es?: {
+          body: string;
+          buttons?: components["schemas"]["OutboundButton"][];
+        };
+      };
+    };
+    /**
+     * @description A contact who matches it leaves the campaign, and their waiting messages from it are cancelled. `repliedToCampaign` stops it once they answer
+     * @example {
+     *       "all": [
+     *         {
+     *           "field": "attributes.plan",
+     *           "op": "in",
+     *           "value": [
+     *             "trial",
+     *             "pro"
+     *           ]
+     *         },
+     *         {
+     *           "field": "attributes.onboarded",
+     *           "op": "ne",
+     *           "value": true
+     *         }
+     *       ]
+     *     }
+     */
+    CampaignCondition:
+      | {
+          field: string;
+          /** @enum {string} */
+          op:
+            | "eq"
+            | "ne"
+            | "in"
+            | "not_in"
+            | "exists"
+            | "missing"
+            | "gt"
+            | "gte"
+            | "lt"
+            | "lte"
+            | "contains"
+            | "older_than";
+          value?: (string | number | boolean) | (string | number | boolean)[];
+        }
+      | {
+          all: components["schemas"]["Condition"][];
+        }
+      | {
+          any: components["schemas"]["Condition"][];
+        }
+      | {
+          not: components["schemas"]["Condition"];
+        };
+    CampaignSettingsView: components["schemas"]["CampaignSettings"] & {
+      /** @description The member or key who paused every campaign, by its name then, or null */
+      pausedBy: string | null;
+      /** @description When, or null while they run */
+      pausedAt: string | null;
+    };
+    CampaignSettings: {
+      /** @description Every campaign's messages wait while true */
+      paused: boolean;
+      /** @description The fewest hours between two campaign messages to one visitor. 0 turns it off */
+      gapHours: number;
+    };
+    CampaignPatch: {
+      /**
+       * @description Lowercase letters, digits, - and _, unique in the workspace
+       * @example dns-help
+       */
+      key?: string;
+      name?: string;
+      audience?: components["schemas"]["Condition"] & unknown;
+      trigger?: components["schemas"]["CampaignTrigger"];
+      message?: components["schemas"]["CampaignMessage"];
+      presentation?: {
+        /** @enum {string} */
+        startConversation: "on_reply" | "now";
+        /** @enum {string} */
+        show: "badge" | "preview" | "chat";
+        /** @enum {string} */
+        ifConversationOpen: "hold" | "join" | "skip";
+      };
+      delivery?: {
+        /** @default false */
+        sendEmail?: boolean;
+        assignOnReply?: boolean;
+        /**
+         * @description A number with m, h or d, such as 1h
+         * @example 1h
+         */
+        expiresIn?: string;
+        /**
+         * @description An `on_reply` message still unread after this time goes in a conversation and out by email, to a visitor with an email address
+         * @example 1h
+         */
+        emailIfUnread?: string;
+      };
+      rules?: {
+        /**
+         * @description `"once"` per contact, or `{ "every": "7d" }` at most
+         * @default once
+         */
+        frequency?:
+          | "once"
+          | {
+              /**
+               * @description A number with m, h or d, such as 1h
+               * @example 1h
+               */
+              every: string;
+            };
+        /**
+         * @description Send only during the workspace's business hours
+         * @default false
+         */
+        businessHours?: boolean;
+        /** @description Send only between these times on the visitor's own clock */
+        sendWindow?: {
+          /** @example 09:00 */
+          from: string;
+          /** @example 09:00 */
+          to: string;
+        };
+        /**
+         * Format: date-time
+         * @default null
+         */
+        endsAt?: string | null;
+        exitWhen?: components["schemas"]["CampaignCondition"];
+        /**
+         * @description A condition, plus `within`: a contact who matches it within that time after a message reached the goal, which ends the campaign for them and counts in results
+         * @example {
+         *       "field": "attributes.domainVerified",
+         *       "op": "eq",
+         *       "value": true,
+         *       "within": "7d"
+         *     }
+         */
+        goal?: unknown;
+      };
+      /** @description A/B variants by weight, each with its own message or the campaign's, and at most one `control: true` group that gets nothing */
+      variants?: (
+        | {
+            /**
+             * @description Lowercase letters, digits, - and _, unique in the workspace
+             * @example dns-help
+             */
+            key: string;
+            weight: number;
+            message?: components["schemas"]["CampaignMessage"] & unknown;
+          }
+        | {
+            /**
+             * @description Lowercase letters, digits, - and _, unique in the workspace
+             * @example dns-help
+             */
+            key: string;
+            weight: number;
+            /**
+             * @description The control group: no message, so the goal's results can compare
+             * @enum {boolean}
+             */
+            control: true;
+          }
+      )[];
+    };
+    CampaignResults: {
+      days: {
+        entered: number;
+        sent: number;
+        delivered: number;
+        read: number;
+        replied: number;
+        dismissed: number;
+        goalReached: number;
+        conversationsStarted: number;
+        clicks: {
+          [key: string]: number;
+        };
+        day: string;
+        variant: string | null;
+      }[];
+      variants: {
+        entered: number;
+        sent: number;
+        delivered: number;
+        read: number;
+        replied: number;
+        dismissed: number;
+        goalReached: number;
+        conversationsStarted: number;
+        clicks: {
+          [key: string]: number;
+        };
+        variant: string | null;
+      }[];
+    };
     LiveVisitor: {
       tab: string;
       page: string;

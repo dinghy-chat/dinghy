@@ -4,6 +4,7 @@ import { useBilling } from "../../../ee/operator/billing.tsx";
 import { AnalyticsPage } from "./analytics.tsx";
 import { type Me, workspaceApi } from "./api.ts";
 import { pauseBots } from "./bots.tsx";
+import { CampaignsPage } from "./campaigns.tsx";
 import { ContactsPage } from "./contacts.tsx";
 import { NO_DRAFT, useDrafts } from "./drafts.ts";
 import { GetStarted } from "./get-started.tsx";
@@ -28,16 +29,18 @@ import { Thread } from "./thread.tsx";
 import { VisitorsPage } from "./visitors.tsx";
 
 /** The views with an address of their own besides the Inbox and Settings, as `/contacts`. */
-const PAGES = ["contacts", "visitors", "analytics"] as const;
+const PAGES = ["contacts", "visitors", "analytics", "campaigns"] as const;
+/** The views that show one item at `/<view>/<id>`: a contact, or a campaign. */
+const ITEM_PAGES: ReadonlySet<View> = new Set(["contacts", "campaigns"]);
 
-/** The view in the address, and the contact for `/contacts/<id>`. Settings reads its own page. */
-function viewInAddress(): { view: View; contactId: string | null } {
+/** The view in the address, and the item for `/contacts/<id>`. Settings reads its own page. */
+function viewInAddress(): { view: View; itemId: string | null } {
   const [first, second, ...rest] = location.pathname.split("/").filter((part) => part !== "");
-  if (first === "settings") return { view: "settings", contactId: null };
+  if (first === "settings") return { view: "settings", itemId: null };
   const page = PAGES.find((one) => one === first);
-  if (page === undefined) return { view: "inbox", contactId: null };
-  const contact = page === "contacts" && rest.length === 0 ? (second ?? null) : null;
-  return { view: page, contactId: contact };
+  if (page === undefined) return { view: "inbox", itemId: null };
+  const item = ITEM_PAGES.has(page) && rest.length === 0 ? (second ?? null) : null;
+  return { view: page, itemId: item };
 }
 
 /**
@@ -48,14 +51,10 @@ function viewInAddress(): { view: View; contactId: string | null } {
 function viewAddress(
   view: Exclude<View, "settings">,
   workspaceId: string,
-  {
-    selected,
-    contactId,
-    filter,
-  }: { selected: string | null; contactId: string | null; filter: Filter },
+  { selected, itemId, filter }: { selected: string | null; itemId: string | null; filter: Filter },
 ): string {
   if (view !== "inbox") {
-    const path = view === "contacts" && contactId !== null ? `/contacts/${contactId}` : `/${view}`;
+    const path = ITEM_PAGES.has(view) && itemId !== null ? `/${view}/${itemId}` : `/${view}`;
     return `${path}?workspace=${workspaceId}`;
   }
   const url = new URL("/", location.origin);
@@ -76,15 +75,15 @@ function useViews(setFilter: Dispatch<SetStateAction<Filter>>) {
   const [initial] = useState(() => ({ ...viewInAddress(), page: settingsInAddress() }));
   const [view, setView] = useState<View>(initial.view);
   const [settingsPage, setSettingsPage] = useState<SettingsPage | null>(initial.page ?? null);
-  // The contact the Contacts view shows, or null for its list.
-  const [contactId, setContactId] = useState<string | null>(initial.contactId);
+  // The contact or campaign the view shows, or null for its list.
+  const [itemId, setItemId] = useState<string | null>(initial.itemId);
   useEffect(() => {
     const moved = () => {
       const page = settingsInAddress();
       if (page === undefined) {
         const shown = viewInAddress();
         setView(shown.view);
-        setContactId(shown.contactId);
+        setItemId(shown.itemId);
         const next = filterInAddress();
         setFilter((current) => (sameFilter(current, next) ? current : next));
         return;
@@ -95,7 +94,7 @@ function useViews(setFilter: Dispatch<SetStateAction<Filter>>) {
     addEventListener(NAVIGATE_EVENT, moved);
     return () => removeEventListener(NAVIGATE_EVENT, moved);
   }, [setFilter]);
-  return { view, setView, settingsPage, setSettingsPage, contactId, setContactId };
+  return { view, setView, settingsPage, setSettingsPage, itemId, setItemId };
 }
 
 /**
@@ -154,8 +153,7 @@ export function Inbox({
   const [drafts, setDraft] = useDrafts(me.id, workspaceId);
   // A notification opens the app on its conversation.
   const [selected, setSelected] = useState(() => linkedConversation(workspaceId));
-  const { view, setView, settingsPage, setSettingsPage, contactId, setContactId } =
-    useViews(setFilter);
+  const { view, setView, settingsPage, setSettingsPage, itemId, setItemId } = useViews(setFilter);
   // Each opening of the shortcuts is a new sheet. A dialog's close event comes a moment after
   // Escape, so a quick ? must not meet the old sheet's late close.
   const selectedNow = useRef(selected);
@@ -211,7 +209,7 @@ export function Inbox({
   }, [workspaceId]);
 
   /** Shows a view, and a Settings page in it, and puts it in the address for Back and reloads. */
-  const showView = (next: View, page: SettingsPage | null = null, contact = contactId) => {
+  const showView = (next: View, page: SettingsPage | null = null, item = itemId) => {
     setSettingsPage(page);
     // The account's delete reads who owns what, which can change in Settings.
     if (page === "profile") onAccountChanged();
@@ -219,7 +217,7 @@ export function Inbox({
     const address =
       next === "settings"
         ? settingsAddress(page, workspaceId)
-        : viewAddress(next, workspaceId, { selected, contactId: contact, filter: shownFilter });
+        : viewAddress(next, workspaceId, { selected, itemId: item, filter: shownFilter });
     if (address !== here()) pushAddress(address);
   };
   const openSettings = (page: SettingsPage | null) => leave(() => showView("settings", page));
@@ -228,9 +226,9 @@ export function Inbox({
   // biome-ignore lint/correctness/useExhaustiveDependencies: a filter writes its own address.
   useEffect(() => {
     if (view === "settings") return;
-    const address = viewAddress(view, workspaceId, { selected, contactId, filter: shownFilter });
+    const address = viewAddress(view, workspaceId, { selected, itemId, filter: shownFilter });
     if (address !== here()) replaceAddress(address);
-  }, [view, workspaceId, selected, contactId]);
+  }, [view, workspaceId, selected, itemId]);
 
   /** Shows another filter, and puts it in the address, so a reload or a shared link keeps it. */
   const showFilter = (next: Filter) => {
@@ -248,7 +246,7 @@ export function Inbox({
   /** Opens a contact's page, from a conversation's panel or from Visitors. */
   const openContact = (visitorId: string) =>
     leave(() => {
-      setContactId(visitorId);
+      setItemId(visitorId);
       showView("contacts", null, visitorId);
     });
   /** Opens a conversation in the Inbox, under Open or Closed as it is. */
@@ -261,9 +259,9 @@ export function Inbox({
 
   /** Shows a view from the sidebar or the keyboard. Contacts opens on its list. */
   const openView = (next: View) => {
-    if (next !== view || next === "contacts") {
+    if (next !== view || ITEM_PAGES.has(next)) {
       leave(() => {
-        if (next === "contacts") setContactId(null);
+        setItemId(null);
         showView(next, null, null);
       });
     }
@@ -278,6 +276,7 @@ export function Inbox({
     "g c": () => openView("contacts"),
     "g v": () => openView("visitors"),
     "g a": () => openView("analytics"),
+    "g m": () => openView("campaigns"),
     "g s": () => openView("settings"),
     ...(view === "inbox" && {
       j: () => openRow(rowFrom(1)),
@@ -381,10 +380,23 @@ export function Inbox({
               <ContactsPage
                 api={api}
                 role={role}
-                contactId={contactId}
+                contactId={itemId}
                 version={version}
-                onContact={setContactId}
+                onContact={setItemId}
                 onOpenConversation={openConversation}
+              />
+            )}
+            {view === "campaigns" && (
+              <CampaignsPage
+                api={api}
+                me={me}
+                role={role}
+                members={members}
+                workspace={{ id: workspaceId, name, pictureUrl: logoUrl }}
+                campaignId={itemId}
+                version={version}
+                onCampaign={setItemId}
+                onOpenConversation={(id) => openConversation(id, "open")}
               />
             )}
             <div className="split">

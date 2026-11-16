@@ -162,6 +162,11 @@ describe("the protocol", () => {
       "list_outbound_messages",
       "get_live_visitors",
       "get_analytics",
+      "list_campaigns",
+      "get_campaign",
+      "get_campaign_results",
+      "send_campaign",
+      "track_event",
     ]);
     const reply = tools.find((tool) => tool.name === "reply");
     expect(reply?.inputSchema).toMatchObject({

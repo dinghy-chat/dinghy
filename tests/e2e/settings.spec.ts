@@ -80,7 +80,7 @@ test("the grouped list opens each page, by a click and by its address", async ({
   await page.context().close();
 });
 
-test("the sidebar keeps Inbox, Contacts, Visitors, Analytics and Settings, and Profile opens from the user menu", async ({
+test("the sidebar keeps Inbox, Contacts, Visitors, Analytics, Campaigns and Settings, and Profile opens from the user menu", async ({
   browser,
 }) => {
   const page = await signedIn(browser, server, "owner@example.com");
@@ -89,6 +89,7 @@ test("the sidebar keeps Inbox, Contacts, Visitors, Analytics and Settings, and P
     "Contacts",
     "Visitors",
     "Analytics",
+    "Campaigns",
     "Settings",
   ]);
   await page.getByRole("button", { name: "Your account" }).click();

@@ -61,7 +61,7 @@
   --display: "Gabarito", "Hanken Grotesk", system-ui, sans-serif;
   --body: "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  --rail: 200px;
+  --rail: 208px;
   /* Around the panel: warm paper grey, or the night. */
   --sky: light-dark(#f3f2ee, #0b141d);
   /* The panel, cards, menus and fields. */
@@ -1720,9 +1720,10 @@ button.workspace[aria-expanded="true"],
   gap: 10px;
 }
 @media (max-width: 560px) {
-  /* A segmented control in a page's head, such as the period, takes its own full row under the
-     line of context, as its pills would not fit beside the title. */
-  .page-actions:has(> .choices.outlined) {
+  /* A segmented control in a page's head, such as the period, or three or more controls, take
+     their own full row under the line of context, as they would not fit beside the title. */
+  .page-actions:has(> .choices.outlined),
+  .page-actions:has(> :nth-child(3)) {
     grid-row: 3;
     grid-column: 1 / -1;
     margin-top: 12px;
@@ -4555,6 +4556,16 @@ button.quote:hover {
   color: var(--mute);
   font-variant-numeric: tabular-nums;
 }
+/* Tabs as filled pills: the chosen one in the strong fill, as on the Campaigns list. */
+.choices.pills label:has(:checked) {
+  background: var(--fill);
+  box-shadow: none;
+  color: var(--on-fill);
+}
+.choices.pills label:has(:checked) .choice-count {
+  color: inherit;
+  opacity: 0.7;
+}
 /* Appearance: the form, and the preview beside it, which stays in view. In the markup the
    preview comes first, so on a narrow screen it sits above the form. */
 .appearance {
@@ -5908,7 +5919,8 @@ button.quote:hover {
     left: 0;
     z-index: 40;
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-auto-columns: minmax(0, 1fr);
+    grid-auto-flow: column;
     gap: 2px;
     margin: 0;
     padding: 4px max(4px, env(safe-area-inset-right)) calc(4px + env(safe-area-inset-bottom))
@@ -5925,8 +5937,9 @@ button.quote:hover {
     min-width: 0;
     height: calc(var(--tab-bar-height) - 9px);
     min-height: 0;
-    padding: 0 2px;
-    font-size: 11.5px;
+    padding: 0;
+    /* Six labels share the row, so they shrink on a screen narrower than 390px. */
+    font-size: min(11.5px, 3vw);
     line-height: 1.2;
   }
   .nav button[aria-current="page"] {
@@ -6636,18 +6649,27 @@ button.quote:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.chip.live-chatting {
+.chip.live-chatting,
+.chip.campaign-live {
   padding: 2px 8px;
   background: color-mix(in srgb, var(--green) 14%, transparent);
   color: var(--green);
   font-size: 12px;
 }
-.chip.live-chatting::before {
+.chip.live-chatting::before,
+.chip.campaign-live::before {
   content: "";
   width: 6px;
   height: 6px;
   border-radius: 50%;
   background: currentColor;
+}
+/* A live campaign's dot sits in a soft ring, with room for it. */
+.chip.campaign-live {
+  gap: 8px;
+}
+.chip.campaign-live::before {
+  box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 25%, transparent);
 }
 .live-page {
   margin-top: 2px;
@@ -7580,16 +7602,46 @@ button.quote:hover {
     display: none;
   }
 }
-/* A view's keys take the count's place at the row's end while the pointer rests on it, so the
-   count stays right-aligned and nothing overflows the narrow sidebar. */
+/* A view's keys take the count's place at the row's end while the pointer rests on it. They share
+   the last column with the count, so neither ever covers the label. A narrower screen moves the
+   views into a row, which has no room for them. */
 .nav .keys {
-  position: absolute;
-  top: 50%;
-  right: 10px;
   opacity: 0;
-  transform: translateY(-50%);
   transition: opacity 0.15s;
   pointer-events: none;
+}
+@media (min-width: 1001px) {
+  .nav button {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    column-gap: 6px;
+    padding-right: 10px;
+  }
+  .nav button > svg {
+    margin-right: 5px;
+  }
+  .nav .keys {
+    gap: 2px;
+  }
+  .nav .keys kbd {
+    min-width: 17px;
+    padding: 0 3px;
+  }
+  .nav .count,
+  .nav .keys {
+    grid-area: 1 / 3;
+    justify-self: end;
+  }
+  .nav-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+@media (max-width: 1000px) {
+  .nav .keys {
+    display: none;
+  }
 }
 .nav button:is(:hover, :focus-visible) .keys {
   opacity: 1;
@@ -7781,4 +7833,788 @@ button.quote:hover {
     right: 0;
     left: auto;
   }
+}
+/* Campaigns: the list's rows and templates, and the editor's numbered steps beside its preview. */
+.campaign-list {
+  display: grid;
+  gap: 16px;
+}
+.campaign-rows {
+  margin: 0;
+  padding: 0;
+  border-top: 1px solid var(--line);
+  list-style: none;
+}
+.campaign-row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 96px minmax(0, 360px) 16px;
+  align-items: center;
+  gap: 18px;
+  width: 100%;
+  padding: 16px 8px;
+  border-bottom: 1px solid var(--line);
+  color: var(--mute);
+  text-align: left;
+}
+/* A grid item stretches to its column, and a status chip fits its text. */
+.campaign-row > .chip {
+  justify-self: start;
+}
+.campaign-row:hover {
+  background: var(--row-hover);
+}
+.campaign-row:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: -2px;
+}
+.campaign-tile {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  color: var(--navy);
+}
+.row-lines {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.row-lines b {
+  color: var(--navy);
+  font: 600 16px / 1.3 var(--display);
+}
+.row-sentence {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.row-stats {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.row-stat {
+  display: grid;
+  min-width: 0;
+}
+.row-stat b {
+  color: var(--navy);
+  font: 600 18px / 1.2 var(--display);
+  font-variant-numeric: tabular-nums;
+}
+.row-label {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.row-bar {
+  display: block;
+  height: 4px;
+  margin-top: 6px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--soft);
+}
+.row-bar > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--blue);
+}
+.row-bar.goal > span {
+  background: var(--green);
+}
+.row-quiet {
+  font-size: 13.5px;
+}
+.campaign-empty {
+  color: var(--text-strong);
+}
+.campaign-empty b {
+  color: var(--navy);
+}
+.campaign-templates {
+  display: grid;
+  gap: 4px;
+  margin-top: 20px;
+}
+.campaign-templates h3 {
+  color: var(--navy);
+  font: 600 18px / 1.3 var(--display);
+}
+.template-cards {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 10px;
+}
+.template-card {
+  display: grid;
+  align-content: start;
+  justify-items: start;
+  gap: 4px;
+  padding: 16px;
+  border-radius: 14px;
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--mute);
+  font-size: 13.5px;
+  line-height: 1.45;
+  text-align: left;
+}
+.template-card:hover:not(:disabled) {
+  background: var(--row-hover);
+  box-shadow: inset 0 0 0 1px var(--soft-edge);
+}
+.template-card .campaign-tile {
+  width: 36px;
+  height: 36px;
+  margin-bottom: 8px;
+  border-radius: 10px;
+}
+.template-card b {
+  color: var(--navy);
+  font: 600 15px / 1.3 var(--display);
+}
+@media (max-width: 1000px) {
+  /* The results go under the name, beside the tile. */
+  .campaign-row {
+    grid-template-columns: 44px minmax(0, 1fr) auto 16px;
+  }
+  .row-stats,
+  .row-quiet {
+    grid-column: 2 / 4;
+  }
+  .row-sentence {
+    white-space: normal;
+  }
+  .template-cards {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+/* The editor: its header, then the steps beside the preview, which stays in view. */
+.campaign-page {
+  container-type: inline-size;
+}
+.campaign-form {
+  display: flex;
+  flex-direction: column;
+}
+.campaign-form > .back-link {
+  align-self: flex-start;
+  margin: 20px 34px 0;
+  color: var(--blue-deep);
+  font-size: 14px;
+}
+.campaign-head {
+  padding-top: 8px;
+}
+.campaign-title {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+/* The name is the title, and changes in place. */
+.campaign-title .title-input {
+  field-sizing: content;
+  width: auto;
+  min-width: 8ch;
+  max-width: 100%;
+  min-height: 0;
+  margin-left: -6px;
+  padding: 0 6px;
+  border: 0;
+  border-radius: 8px;
+  background: none;
+  font: 700 28px / 1.15 var(--display);
+}
+.campaign-title .title-input:hover:not(:disabled) {
+  background-color: var(--row-hover);
+}
+.campaign-title .title-input:disabled {
+  background: none;
+}
+.campaign-head p {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  color: var(--mute);
+  font-size: 14px;
+}
+.campaign-head code {
+  font: 13px var(--mono);
+}
+.campaign-head .key-input {
+  width: 22ch;
+  min-height: 30px;
+  padding: 0 8px;
+  border-radius: 8px;
+  font-size: 13px;
+}
+.campaign-editor {
+  gap: 28px;
+}
+/* Wider than Appearance's preview, beside the form while both fit. */
+@container (min-width: 861px) {
+  .campaign-editor {
+    grid-template-columns: minmax(0, 1fr) minmax(320px, 420px);
+  }
+}
+.campaign-editor .widget-form {
+  gap: 14px;
+  max-width: none;
+}
+.campaign-steps {
+  display: grid;
+  gap: 14px;
+}
+.step {
+  padding: 18px 20px;
+  border-radius: 16px;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.step-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  min-height: 30px;
+}
+.step-head h3 {
+  color: var(--navy);
+  font: 600 16px / 1.3 var(--display);
+}
+.step-index {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--fill);
+  color: var(--on-fill);
+  font: 600 13px / 1 var(--display);
+}
+.step-index.done {
+  background: var(--tile-mint);
+  color: var(--green);
+}
+.step-summary {
+  flex: 1 1 200px;
+  min-width: 0;
+  color: var(--mute);
+  font-size: 14px;
+}
+.step-aside {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  margin-left: auto;
+}
+.step-aside .text-button {
+  color: var(--blue-deep);
+  font-weight: 600;
+}
+.step-body {
+  display: grid;
+  gap: 14px;
+  margin: 16px 0 0 38px;
+}
+.count-badge {
+  padding: 4px 11px;
+  border-radius: 999px;
+  background: var(--tile-blue);
+  color: var(--navy);
+  font-size: 13px;
+  font-weight: 600;
+}
+.field-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  align-items: start;
+  gap: 14px;
+}
+.trigger-delay {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-strong);
+}
+/* Cards to choose from, such as the triggers: the chosen one outlined on cream. */
+.option-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+  gap: 8px;
+}
+.option-card {
+  position: relative;
+  display: grid;
+  align-content: start;
+  gap: 2px;
+  padding: 12px;
+  border-radius: 12px;
+  box-shadow: inset 0 0 0 1px var(--line);
+  color: var(--mute);
+  font-size: 12.5px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+.option-card:hover {
+  box-shadow: inset 0 0 0 1px var(--field-line);
+}
+.option-card:has(:checked) {
+  background: var(--cream-soft);
+  box-shadow: inset 0 0 0 1.5px var(--navy);
+}
+.option-card:has(:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+/* The radio stays for the keys and screen readers, over the whole card. */
+.option-radio {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  min-height: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.option-art {
+  display: flex;
+  margin-bottom: 6px;
+  color: var(--navy);
+}
+.option-card b {
+  color: var(--navy);
+  font-size: 13.5px;
+}
+/* How it shows: the launcher in red, with a dot, a card above it, or the chat open. */
+.show-art {
+  position: relative;
+  width: 100%;
+  height: 64px;
+  border-radius: 8px;
+  background: var(--soft);
+}
+.show-art::after {
+  content: "";
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--red);
+}
+.show-art::before {
+  content: "";
+  position: absolute;
+  right: 8px;
+  border-radius: 6px;
+  background: var(--surface);
+  box-shadow: 0 1px 3px var(--raised-shadow);
+}
+.show-badge::before {
+  right: 6px;
+  bottom: 20px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--navy);
+  box-shadow: none;
+}
+.show-preview::before {
+  bottom: 30px;
+  width: min(60%, 72px);
+  height: 20px;
+}
+.show-chat::after {
+  display: none;
+}
+.show-chat::before {
+  bottom: 8px;
+  width: 56px;
+  height: 48px;
+}
+/* The condition builder: each rule one sentence of pills, a nested group in a box. */
+.condition-group {
+  display: grid;
+  gap: 10px;
+}
+.condition-group.nested {
+  padding: 12px;
+  border-radius: 14px;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.condition-match,
+.condition-adds,
+.button-row,
+.variant-head,
+.preview-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.condition-adds {
+  gap: 4px 16px;
+}
+.condition-adds .text-button {
+  color: var(--blue-deep);
+  font-weight: 600;
+}
+.condition-items,
+.variants {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.condition-rule {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-radius: 12px;
+  background: var(--surface-dim);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.value-token {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 11px;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--soft-edge);
+  color: var(--navy);
+  font-size: 14px;
+  font-weight: 600;
+}
+.token-remove,
+.condition-remove {
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  color: var(--mute);
+}
+.token-remove {
+  width: 18px;
+  height: 18px;
+  background: var(--soft);
+}
+.token-remove:hover,
+.condition-remove:hover {
+  background: var(--soft-hover);
+  color: var(--navy);
+}
+.condition-rule .value-add {
+  flex: 1 1 60px;
+  width: auto;
+  min-width: 60px;
+  min-height: 32px;
+  padding: 0 4px;
+  border: 0;
+  background: none;
+}
+.condition-remove {
+  width: 28px;
+  height: 28px;
+  margin-left: auto;
+}
+/* The composer: who it is from, the text with its variables marked, its buttons, and the
+   variables to add. The marks sit under the transparent box, at the same place as its text. */
+.composer {
+  display: grid;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1.5px var(--field-line);
+}
+.composer:focus-within {
+  box-shadow: inset 0 0 0 1.5px var(--focus);
+}
+.composer-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.composer-from {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--mute);
+}
+.composer-text {
+  display: grid;
+}
+.template-text {
+  grid-area: 1 / 1;
+  min-height: calc(3lh + 28px);
+  padding: 14px;
+  border-radius: 14px;
+  color: var(--navy);
+  font: 400 15px / 1.55 var(--body);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.template-text:focus-visible {
+  outline: 0;
+}
+.template-text:empty::before {
+  content: attr(data-placeholder);
+  color: var(--mute);
+}
+/* A variable, in words, as one piece of the text. */
+.variable-token {
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--tile-blue);
+  color: var(--navy);
+  font-weight: 600;
+  white-space: nowrap;
+}
+/* The copy of the text that the form's checks read: under the box, where their message points. */
+.composer-check {
+  grid-area: 1 / 1;
+  min-height: 0;
+  opacity: 0;
+  pointer-events: none;
+  resize: none;
+}
+.composer-buttons,
+.composer-tools,
+.composer-foot {
+  display: grid;
+  gap: 10px;
+  padding: 0 12px 12px;
+}
+.composer-row,
+.composer-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.answer-pill {
+  min-height: 30px;
+  padding: 0 13px;
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1.5px var(--navy);
+  color: var(--navy);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.answer-pill[aria-expanded="true"] {
+  background: var(--soft);
+}
+.add-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 0 11px;
+  border: 1px dashed var(--soft-edge);
+  border-radius: 999px;
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 600;
+}
+.add-chip:hover {
+  background: var(--row-hover);
+}
+.button-row input {
+  flex: 1 1 140px;
+  min-width: 0;
+}
+/* Why the text's variables do not read, under the composer's tools. */
+.field-problems {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0 14px 12px;
+  color: var(--bad);
+  font-size: 14px;
+  list-style: none;
+}
+.variants-test {
+  display: grid;
+  gap: 12px;
+}
+.variants-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.variants-head h4 {
+  color: var(--navy);
+  font-weight: 600;
+}
+.variants {
+  gap: 12px;
+}
+.variant {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  border-radius: 14px;
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.variant-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+.variant-field input {
+  width: 84px;
+}
+.variant-key {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+.variant-key input {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
+/* The preview: a simple browser over a sample page, light as most sites are. */
+.preview-controls {
+  justify-content: space-between;
+}
+.campaign-editor .preview-stage {
+  padding: 0;
+  border-radius: 14px;
+  background: none;
+}
+.browser-frame {
+  overflow: hidden;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.browser-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--line);
+  background: var(--soft);
+}
+/* Three dots, drawn by one with two shadows. */
+.browser-dots {
+  width: 9px;
+  height: 9px;
+  margin-right: 30px;
+  border-radius: 50%;
+  background: var(--soft-edge);
+  box-shadow:
+    15px 0 var(--soft-edge),
+    30px 0 var(--soft-edge);
+}
+.browser-address {
+  flex: 1;
+  margin-left: 10px;
+  padding: 3px 12px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--mute);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sample-page {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+}
+.sample-lines {
+  display: grid;
+  gap: 10px;
+}
+.sample-line {
+  height: 12px;
+  border-radius: 6px;
+  background: var(--soft);
+}
+.sample-line:first-child {
+  height: 16px;
+}
+/* A phone's width, where the chat fills the screen and a message shows as a card. */
+.preview-phone {
+  width: min(360px, 100%);
+  margin: 0 auto;
+}
+.preview-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--mute);
+  font-size: 13px;
+}
+/* After the inputs of the buttons and variants, as it is the more specific. */
+.condition-rule input:not(.value-add) {
+  flex: 1 1 100px;
+  min-width: 0;
+  min-height: 36px;
+}
+@media (max-width: 1000px) {
+  /* The editor has several actions, so they take their own row under the title. */
+  .campaign-head .campaign-title {
+    grid-column: 1 / -1;
+  }
+  .campaign-head .page-actions {
+    width: 100%;
+  }
+}
+@media (max-width: 760px) {
+  .campaign-form > .back-link {
+    margin: 16px 16px 0;
+  }
+  .step {
+    padding: 16px;
+  }
+  .step-body {
+    margin-left: 0;
+  }
+}
+.results-charts {
+  grid-template-columns: minmax(0, 1fr);
+}
+.table-scroll {
+  overflow-x: auto;
+}
+.results-table th[scope="row"] {
+  color: var(--navy);
+  font-weight: 600;
+  text-align: left;
+  white-space: nowrap;
+}
+.repliers.no-lead li {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.dialog.code-dialog {
+  width: min(720px, calc(100vw - 32px));
+}
+/* A long campaign scrolls inside its block, so the dialog's buttons stay on screen. */
+.code-dialog pre {
+  max-height: min(420px, calc(100dvh - 320px));
+  overflow-y: auto;
+}
+.who-lines > .mono {
+  font-size: 12.5px;
 }

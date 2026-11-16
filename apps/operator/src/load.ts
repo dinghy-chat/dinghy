@@ -118,3 +118,15 @@ export function useAction(
   };
   return { busy, failure, setFailure, run };
 }
+
+const SETTLE_MS = 250;
+
+/** A value once the operator pauses, such as a search box's words, so each key asks nothing. */
+export function useSettled(value: string): string {
+  const [settled, setSettled] = useState(value);
+  useEffect(() => {
+    const timer = setTimeout(() => setSettled(value), SETTLE_MS);
+    return () => clearTimeout(timer);
+  }, [value]);
+  return settled;
+}

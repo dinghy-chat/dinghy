@@ -730,7 +730,8 @@ describe("the subscription lifecycle", () => {
     await payCheckout(paid.workspaceId, paid.cookie);
     expect((await row(paid.workspaceId))?.readOnlyAt).toBeNull();
     expect(await billingEvents()).toBe(before + 2);
-  });
+    // Longer than the signal's own 5-second poll, so a loaded machine fails the poll, not the test.
+  }, 15_000);
 
   test("a paid workspace's Checkout still answers 409", async () => {
     const paid = await paidWorkspace();

@@ -10,6 +10,7 @@ import {
 } from "./request.ts";
 import {
   analytics,
+  campaigns,
   contacts,
   conversations,
   labels,
@@ -17,6 +18,7 @@ import {
   type Request,
   savedReplies,
   setup,
+  track,
   webhookRoutes,
   workspace,
 } from "./resources.ts";
@@ -66,6 +68,10 @@ export class Dinghy {
   readonly conversations: ReturnType<typeof conversations>;
   readonly contacts: ReturnType<typeof contacts>;
   readonly outboundMessages: ReturnType<typeof outboundMessages>;
+  /** Reading and sending need any key. Saving, starting, pausing and ending need a Full access key. */
+  readonly campaigns: ReturnType<typeof campaigns>;
+  /** Counts an event about a contact, such as `export.finished`, for campaigns and conditions. */
+  readonly track: ReturnType<typeof track>;
   readonly labels: ReturnType<typeof labels>;
   readonly savedReplies: ReturnType<typeof savedReplies>;
   readonly analytics: ReturnType<typeof analytics>;
@@ -87,6 +93,8 @@ export class Dinghy {
     this.conversations = conversations(request);
     this.contacts = contacts(request);
     this.outboundMessages = outboundMessages(request);
+    this.campaigns = campaigns(request);
+    this.track = track(request);
     this.labels = labels(request);
     this.savedReplies = savedReplies(request);
     this.analytics = analytics(request);

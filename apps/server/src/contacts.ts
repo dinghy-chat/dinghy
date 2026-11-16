@@ -9,6 +9,7 @@ import {
   hasChatted,
   toSql,
 } from "./conditions.ts";
+import { upsertContactAndRecheck } from "./contact-checks.ts";
 import { CHAT_KINDS, conversation, outboundMessage, visitor } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import {
@@ -29,7 +30,6 @@ import { type Live, OPERATORS } from "./live.ts";
 import { WORKSPACE_PREFIX as PREFIX, workspaceParams } from "./member.ts";
 import { containing, isChat, previewBody } from "./messages.ts";
 import { deleteConversations } from "./moderation.ts";
-import { upsertContactAndRecheck } from "./outbound-delivery.ts";
 import { beforeCursor, cursorTime, TimeCursor } from "./pages.ts";
 import type { VisitorPresence } from "./presence.ts";
 import { allowed } from "./team.ts";

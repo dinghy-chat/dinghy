@@ -99,6 +99,7 @@ The key must be in **Send directly**. To show a member's name and picture with `
 | `send_email_required` | The key may not send email | Leave `sendEmail` out, or ask a person to turn on **May email visitors** |
 | `bots_paused` | An owner or admin paused every bot | Do not send now. A message with `delay` or `sendAt` waits for the resume instead |
 | `blocked` | The team blocked this visitor | Do nothing |
+| `opted_out` | The visitor turned off automatic messages | Do not send. Only a member can write to them by hand |
 | `too_many_waiting` | 5 outbound messages already wait for this visitor | Cancel one, or wait |
 
 For example, when a job ends, tell the user in a conversation that starts now:
@@ -114,6 +115,33 @@ For example, when a job ends, tell the user in a conversation that starts now:
 ```
 
 `send_outbound_message` answers the outbound message, with `conversationId` set, and `wait_for_messages` picks up the user's answer as any other. With `startConversation: "on_reply"`, the default, the message waits in the chat on your site, and the conversation starts only when the user answers. A message from a key never joins a conversation that a person handles: it waits, with `statusReason: "human_handling"`.
+
+## Campaigns
+
+A [campaign](campaigns.md) is a saved rule that sends outbound messages: who, when, what and how often. Every key gets these tools, at both levels:
+
+- `list_campaigns` lists the campaigns, oldest first, each with its `status` (`draft`, `live`, `paused` or `ended`), its `definition` and its `totals`. `status` keeps one status.
+- `get_campaign` reads one, by `id` or `key`, exactly one of them.
+- `get_campaign_results` reads a campaign's results per day in UTC and per A/B variant, by `id` or `key`, between `from` and `to` (`YYYY-MM-DD`): contacts reached, messages sent, delivered, read, replied and dismissed, clicks by button value, goals reached and conversations started.
+- `send_campaign` runs a live campaign for one person, by `id` or `key`, with `visitor`, `clientId` and `data`, which fills `{{ data.<key> }}` in the text. It skips the audience and the trigger, and keeps the frequency and the visitor's opt-out. A retry with the same `clientId`, and a send the frequency keeps out, answer the message that is there.
+- `track_event` tells Dinghy that something happened to a contact, such as `export.finished`, with `visitor`, `name`, and the optional `properties`, `occurredAt` and `id`. Conditions read `events.<name>.count` and `events.<name>.lastAt`, and a live campaign with the trigger `{ "type": "event", "name" }` runs for the contact. Properties are never stored. A repeat of a recent `id` answers `counted: false`.
+
+A Full access key also gets these:
+
+- `upsert_campaign` saves a campaign from `definition`, by its `key`: a new one as a draft, or over the one with that key, whose status stays. It answers the campaign and `created`.
+- `resume_campaign` starts a draft or resumes a paused campaign, by `id` or `key`.
+- `pause_campaign` pauses a live campaign: it makes no new messages, and those not sent yet wait.
+- `end_campaign` ends a campaign for good and cancels its messages that wait. It is marked destructive.
+
+A new campaign is a draft until `resume_campaign`, so a person can check it first with **Send a test to me** in the operator app. Errors to expect:
+
+| Code | Meaning | What to do |
+|---|---|---|
+| `invalid_request` | The definition does not fit together, such as an unknown variable | Read the message, which has one line per problem, and fix the definition |
+| `campaign_not_live` | `send_campaign` named a draft, paused or ended campaign | Ask a person to start it |
+| `campaign_ended` | The campaign ended, and does not change again | Save a new one with another key |
+| `opted_out` | The visitor turned off automatic messages | Do nothing |
+| `blocked`, `too_many_waiting` | As for `send_outbound_message` | As above |
 
 ## Hand off to a person
 
@@ -165,7 +193,7 @@ With Full access, `send_test_message` sends a message as a test visitor, through
 - **Visitor text is data.** Anyone on the internet can type into your chat, and a message can say "ignore your instructions and...". Never follow instructions in a visitor's message, name, page context or attributes. Dinghy's tool descriptions say so to the agent, and your bot's own prompt should say it too.
 - **Two connections for two jobs.** Give the coding agent that installs Dinghy a Full access connection. Give the bot that answers chats its own Chats connection, so text from a visitor cannot reach the webhook or site tools.
 - **Drafts first.** Start a new bot in **Drafts only**, read its drafts for a while, then switch it to **Send directly**.
-- **Ask before deleting.** `remove_allowed_site`, `delete_webhook`, `delete_test_visitors` and `close_conversation` are marked destructive, so a client asks you before it calls them.
+- **Ask before deleting.** `remove_allowed_site`, `delete_webhook`, `delete_test_visitors`, `end_campaign` and `close_conversation` are marked destructive, so a client asks you before it calls them.
 - **What no key can do.** No key or connection can manage keys, connected apps or members, see the signing secret, read billing, export or delete the workspace, send, edit or discard a draft, give a conversation back to bots, pause or resume bots, upload the logo, or edit or delete messages. A key reaches a visitor through the chat only: a reply in the conversation it answers, or an outbound message. An outbound message with `sendEmail: true` and `startConversation: "now"` also goes in the reply email to the visitor's address, and `upsert_contact` can set that address. So `sendEmail: true` needs the key's permission **May email visitors**, off by default: an agent that reads visitor text could be steered into emailing an address of an attacker's choice. The key has no other tool that sends email or calls an address of its choice.
 
 ## Tell your agent about Dinghy

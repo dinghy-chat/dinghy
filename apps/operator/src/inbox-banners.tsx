@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import { BillingBanner, WaitingBanner } from "../../../ee/operator/billing.tsx";
 import { ApiError, type BillingState, cancelRemoval, type Me, type WorkspaceApi } from "./api.ts";
-import { BotsPausedBanner } from "./bots.tsx";
+import { PausedBanner } from "./bots.tsx";
 import { dayTime } from "./format.ts";
 import { Icon } from "./icons.tsx";
 import { useAction } from "./load.ts";
@@ -155,7 +155,7 @@ export function InboxBanners({
       )}
       <PlanBanner {...plan} />
       {botsPaused && (
-        <BotsPausedBanner pausedBy={botsPausedBy} pausedAt={botsPausedAt} onResume={onResumeBots} />
+        <PausedBanner pausedBy={botsPausedBy} pausedAt={botsPausedAt} onResume={onResumeBots} />
       )}
     </>
   );

@@ -13,7 +13,7 @@ import { toast } from "./toast.tsx";
 import { Avatar, DOCS_URL, initials, ROLE_TEXT } from "./ui.tsx";
 
 /** What the panel shows: the Inbox, or a page. */
-export type View = "inbox" | "contacts" | "visitors" | "analytics" | "settings";
+export type View = "inbox" | "contacts" | "visitors" | "analytics" | "campaigns" | "settings";
 
 /** Each view's keys: G, then its letter. */
 const NAV: { view: View; label: TextId; icon: IconName; keys: string }[] = [
@@ -21,6 +21,7 @@ const NAV: { view: View; label: TextId; icon: IconName; keys: string }[] = [
   { view: "contacts", label: "contacts", icon: "contacts", keys: "g c" },
   { view: "visitors", label: "visitors", icon: "globe", keys: "g v" },
   { view: "analytics", label: "analytics", icon: "chart", keys: "g a" },
+  { view: "campaigns", label: "campaigns", icon: "megaphone", keys: "g m" },
   { view: "settings", label: "settings", icon: "gear", keys: "g s" },
 ];
 
@@ -322,7 +323,7 @@ export function Sidebar({
               onClick={() => onView(item.view)}
             >
               <Icon name={item.icon} size={20} />
-              {t(item.label)}
+              <span className="nav-label">{t(item.label)}</span>
               {counted && (
                 <span className="count" aria-hidden="true">
                   {waiting}

@@ -1,12 +1,10 @@
 /** @jsxImportSource react */
-import { type FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
-import { loadTexts, pickLocale } from "../../../packages/widget/src/locale.ts";
-import { clearPreview, renderPreview } from "../../../packages/widget/src/preview.tsx";
+import { type FormEvent, type ReactNode, useEffect, useState } from "react";
+import { pickLocale } from "../../../packages/widget/src/locale.ts";
 import {
   DEFAULT_COLORS,
   firstName,
   HEADER_FACES_MAX,
-  type Locale,
   RADIUS_MAX_PX,
   type SavedAppearance,
   TEXT_MAX,
@@ -14,7 +12,7 @@ import {
   TITLE_MAX,
   type WidgetSettings,
 } from "../../../packages/widget/src/shared.ts";
-import { setLanguage, type Texts, t as widgetText } from "../../../packages/widget/src/text.ts";
+import { t as widgetText } from "../../../packages/widget/src/text.ts";
 import type { AppearanceSettings, Me, Member, OperatorAppearance, WorkspaceApi } from "./api.ts";
 import { hexColor } from "./hex-color.ts";
 import { Icon } from "./icons.tsx";
@@ -37,6 +35,7 @@ import {
   SettingRow,
   Switch,
 } from "./ui.tsx";
+import { PreviewFrame, WidgetDrawing } from "./widget-drawing.tsx";
 
 const HIDDEN_BUTTON_DOC = {
   path: "add-to-your-site#use-your-own-button",
@@ -118,7 +117,7 @@ const memberFace = (member: Member): TeamFace => ({
  * Asks before a change that is not saved is lost: the browser asks before it leaves the page, and
  * this dialog before the app moves to another page, view or workspace.
  */
-function LeaveGuard({ unsaved }: { unsaved: boolean }) {
+export function LeaveGuard({ unsaved }: { unsaved: boolean }) {
   const [asked, setAsked] = useState<{ move(): void; stay(): void } | null>(null);
   useEffect(() => {
     if (!unsaved) return;
@@ -584,26 +583,11 @@ function previewFaces(
   return faces[settings.headerFaces]();
 }
 
-/** The chat as visitors will see it, drawn by the widget's own code in a Shadow DOM. */
+/** The chat as visitors will see it, drawn by the widget's own code. */
 function WidgetPreview({ appearance, me }: { appearance: SavedAppearance; me: Me }) {
-  const host = useRef<HTMLDivElement>(null);
   // An auto theme follows the visitor's device, which the operator picks here.
   const [device, setDevice] = useState<"light" | "dark">("light");
   const theme = appearance.theme === "auto" ? device : appearance.theme;
-  // On a phone the preview sits above the form, and folds away.
-  const [folded, setFolded] = useState(false);
-  // The language this browser would get, with its texts once they load.
-  const locale = pickLocale(undefined, appearance.language, navigator.languages);
-  const [texts, setTexts] = useState<{ locale: Locale; texts: Partial<Texts> } | null>(null);
-  useEffect(() => {
-    let current = true;
-    void loadTexts("/widget/", locale).then((loaded) => {
-      if (current) setTexts({ locale, texts: loaded });
-    });
-    return () => {
-      current = false;
-    };
-  }, [locale]);
   // A member who replied lately, or the operator who looks, answers the sample question. Visitors
   // see the first word of a name, as the server sends it.
   const author: TeamFace = appearance.team[0] ?? {
@@ -611,53 +595,28 @@ function WidgetPreview({ appearance, me }: { appearance: SavedAppearance; me: Me
     name: firstName(me.name),
     pictureUrl: me.pictureUrl,
   };
-  // On every render, so each change in the form shows at once.
-  useEffect(() => {
-    const element = host.current;
-    if (element === null) return;
-    const shadow = element.shadowRoot ?? element.attachShadow({ mode: "open" });
-    if (texts?.locale === locale) setLanguage(locale, texts.texts);
-    renderPreview(shadow, {
-      appearance,
-      theme,
-      sample: { question: t("previewQuestion"), answer: t("previewAnswer"), author },
-    });
-  });
-  // With the page, so the sea's animation frames and listeners stop.
-  useEffect(() => {
-    const shadow = host.current?.shadowRoot;
-    return () => {
-      if (shadow) clearPreview(shadow);
-    };
-  }, []);
   return (
-    <section className="widget-preview" aria-label={t("previewTitle")} data-folded={folded}>
-      <div className="preview-bar">
-        <h3>{t("previewTitle")}</h3>
-        <button
-          type="button"
-          className="text-button preview-fold"
-          onClick={() => setFolded(!folded)}
-        >
-          {t(folded ? "previewShow" : "previewHide")}
-        </button>
-      </div>
-      <div className="preview-body">
-        {appearance.theme === "auto" && (
+    <PreviewFrame
+      controls={
+        appearance.theme === "auto" && (
           <Choices
             label={t("previewDevice")}
             value={device}
             options={DEVICES}
             onChange={(next) => setDevice(next)}
           />
-        )}
-        <div className="preview-stage">
-          {/* A picture of the widget: its sample buttons do nothing, so nothing can reach them. */}
-          <div ref={host} inert />
-          {appearance.launcher === "hidden" && <p className="hint">{t("previewLauncherHidden")}</p>}
-        </div>
-      </div>
-    </section>
+        )
+      }
+    >
+      <WidgetDrawing
+        // The language this browser would get.
+        locale={pickLocale(undefined, appearance.language, navigator.languages)}
+        appearance={appearance}
+        theme={theme}
+        sample={{ question: t("previewQuestion"), answer: t("previewAnswer"), author }}
+      />
+      {appearance.launcher === "hidden" && <p className="hint">{t("previewLauncherHidden")}</p>}
+    </PreviewFrame>
   );
 }
 

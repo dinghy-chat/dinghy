@@ -16,14 +16,14 @@ const PERIODS: readonly Option<Period>[] = [
   { value: "90", label: "period90" },
 ];
 
-const percent = (share: number) =>
+export const percent = (share: number) =>
   new Intl.NumberFormat([], { style: "percent", maximumFractionDigits: 0 }).format(share);
 
 /** A part of a total, from 0 to 1; 0 when the total is 0. */
-const shareOf = (count: number, total: number) => (total === 0 ? 0 : count / total);
+export const shareOf = (count: number, total: number) => (total === 0 ? 0 : count / total);
 
 /** A date of the period, "2026-11-08", as "Nov 8". */
-function dayName(
+export function dayName(
   date: string,
   options: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" },
 ) {
@@ -64,7 +64,7 @@ function tipAt(area: HTMLElement | null, target: EventTarget | null): Tip | null
  * the focus on it, shows them in a card above it, kept inside the area. Escape hides the card.
  * The words for screen readers are in each figure's caption, or in each button's label.
  */
-function Tipped({ className, children }: { className: string; children: ReactNode }) {
+export function Tipped({ className, children }: { className: string; children: ReactNode }) {
   const [tip, setTip] = useState<Tip | null>(null);
   const card = useRef<HTMLDivElement>(null);
   const box = useRef<HTMLDivElement>(null);
@@ -236,7 +236,15 @@ function Ring({ share }: { share: number }) {
   );
 }
 
-function Stat({ title, help, children }: { title: TextId; help?: TextId; children: ReactNode }) {
+export function Stat({
+  title,
+  help,
+  children,
+}: {
+  title: TextId;
+  help?: TextId;
+  children: ReactNode;
+}) {
   return (
     <article className="stat">
       <h3>
@@ -291,7 +299,15 @@ function Stats({ numbers, days }: { numbers: Analytics; days: Period }) {
   );
 }
 
-function Card({ title, hint, children }: { title: TextId; hint?: string; children: ReactNode }) {
+export function Card({
+  title,
+  hint,
+  children,
+}: {
+  title: TextId;
+  hint?: string;
+  children: ReactNode;
+}) {
   return (
     <section className="chart-card">
       <div className="chart-head">
@@ -475,24 +491,40 @@ function replierLabel(one: Replier): { key: string; avatar: string; name: string
   }
 }
 
-/** The bar and the share both measure against the conversations answered, as Outcomes does. */
-function Repliers({ numbers }: { numbers: Analytics }) {
-  const { repliers, answered } = numbers;
+/** One row of a ShareList: what it counts, with an avatar or a dot before it if it has one. */
+interface ShareRow {
+  key: string;
+  lead?: ReactNode;
+  name: ReactNode;
+  count: number;
+}
+
+/** A card of rows, each with its count, its share of `total` and a bar, or a note when empty. */
+export function ShareList({
+  title,
+  empty,
+  total,
+  rows,
+}: {
+  title: TextId;
+  empty: TextId;
+  total: number;
+  rows: ShareRow[];
+}) {
   return (
-    <Card title="byOperatorTitle">
-      {repliers.length === 0 ? (
-        <p className="note">{t("noReplies")}</p>
+    <Card title={title}>
+      {rows.length === 0 ? (
+        <p className="note">{t(empty)}</p>
       ) : (
-        <ol className="repliers">
-          {repliers.map((one) => {
-            const { key, avatar, name } = replierLabel(one);
-            const share = shareOf(one.conversations, answered);
+        <ol className={rows[0]?.lead === undefined ? "repliers no-lead" : "repliers"}>
+          {rows.map((row) => {
+            const share = shareOf(row.count, total);
             return (
-              <li key={key}>
-                <Avatar name={avatar} />
-                <span className="replier-name">{name}</span>
+              <li key={row.key}>
+                {row.lead}
+                <span className="replier-name">{row.name}</span>
                 <span className="share-count">
-                  {one.conversations}
+                  {row.count}
                   <span>{percent(share)}</span>
                 </span>
                 <span className="share-track" aria-hidden="true">
@@ -507,34 +539,35 @@ function Repliers({ numbers }: { numbers: Analytics }) {
   );
 }
 
+/** The bar and the share both measure against the conversations answered, as Outcomes does. */
+function Repliers({ numbers }: { numbers: Analytics }) {
+  return (
+    <ShareList
+      title="byOperatorTitle"
+      empty="noReplies"
+      total={numbers.answered}
+      rows={numbers.repliers.map((one) => {
+        const { key, avatar, name } = replierLabel(one);
+        return { key, lead: <Avatar name={avatar} />, name, count: one.conversations };
+      })}
+    />
+  );
+}
+
 /** Conversations started in the period by each label they have now. One can have several. */
 function Labels({ numbers }: { numbers: Analytics }) {
-  const { labels, started } = numbers;
   return (
-    <Card title="byLabelTitle">
-      {labels.length === 0 ? (
-        <p className="note">{t("noLabeledConversations")}</p>
-      ) : (
-        <ol className="repliers">
-          {labels.map((one) => {
-            const share = shareOf(one.conversations, started);
-            return (
-              <li key={one.labelId}>
-                <LabelDot color={one.color} />
-                <span className="replier-name">{one.name}</span>
-                <span className="share-count">
-                  {one.conversations}
-                  <span>{percent(share)}</span>
-                </span>
-                <span className="share-track" aria-hidden="true">
-                  <span style={{ width: `${share * 100}%` }} />
-                </span>
-              </li>
-            );
-          })}
-        </ol>
-      )}
-    </Card>
+    <ShareList
+      title="byLabelTitle"
+      empty="noLabeledConversations"
+      total={numbers.started}
+      rows={numbers.labels.map((one) => ({
+        key: one.labelId,
+        lead: <LabelDot color={one.color} />,
+        name: one.name,
+        count: one.conversations,
+      }))}
+    />
   );
 }
 
