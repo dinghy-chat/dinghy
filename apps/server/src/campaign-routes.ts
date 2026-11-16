@@ -14,6 +14,7 @@ import {
   CampaignSchema,
   CampaignSendSchema,
   CampaignSettingsSchema,
+  CampaignSettingsView,
   EstimateSchema,
   ResultsQuery,
 } from "./campaign-schemas.ts";
@@ -145,7 +146,7 @@ const estimateRoute = createRoute({
 });
 
 const SETTINGS_PATH = `${WORKSPACE_PREFIX}/{workspaceId}/campaign-settings`;
-const settingsAnswer = jsonAnswer("The settings for every campaign", CampaignSettingsSchema);
+const settingsAnswer = jsonAnswer("The settings for every campaign", CampaignSettingsView);
 
 const readSettingsRoute = createRoute({
   method: "get",
@@ -323,7 +324,7 @@ export function registerCampaignRoutes(
   app.openapi(saveSettingsRoute, async (c) => {
     if (!mayChange(c)) return c.json(FORBIDDEN, 403);
     return c.json(
-      await campaigns.saveSettings(c.get("memberWorkspaceId"), c.req.valid("json")),
+      await campaigns.saveSettings(c.get("memberWorkspaceId"), c.get("actor"), c.req.valid("json")),
       200,
     );
   });

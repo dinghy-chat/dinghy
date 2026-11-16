@@ -1,0 +1,1 @@
+ALTER TABLE "workspace" ADD COLUMN "campaigns_paused_by" text;

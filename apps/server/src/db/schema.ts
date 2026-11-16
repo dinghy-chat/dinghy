@@ -150,6 +150,8 @@ export const workspace = pgTable(
     // Set when a member pauses every campaign. Separate from the bots' pause: a campaign's message
     // waits while it is set, and a key's reply does not.
     campaignsPausedAt: timestamp("campaigns_paused_at", { withTimezone: true }),
+    // The name of the member or key who paused them, as it was then: a key can pause them too.
+    campaignsPausedBy: text("campaigns_paused_by"),
     // The fewest hours between two campaign messages to one visitor, checked when one becomes sent.
     // 0 turns the rule off.
     campaignGapHours: smallint("campaign_gap_hours").notNull().default(24),

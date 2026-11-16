@@ -488,33 +488,66 @@ export function createCampaigns({ db, live }: { db: Database; live: Live }) {
     readSettings: (workspaceId: string) =>
       withWorkspace(db, workspaceId, async (tx) => {
         const [row] = await tx
-          .select({ pausedAt: workspace.campaignsPausedAt, gapHours: workspace.campaignGapHours })
+          .select({
+            pausedAt: workspace.campaignsPausedAt,
+            pausedBy: workspace.campaignsPausedBy,
+            gapHours: workspace.campaignGapHours,
+          })
           .from(workspace)
           .where(eq(workspace.id, workspaceId));
         if (row === undefined) throw new Error("The workspace is missing");
-        return { paused: row.pausedAt !== null, gapHours: row.gapHours };
+        return settingsView(row);
       }),
 
-    /** Pauses or resumes every campaign, and sets the gap between two of their messages. */
-    async saveSettings(workspaceId: string, settings: { paused: boolean; gapHours: number }) {
-      await withWorkspace(db, workspaceId, async (tx) => {
-        await tx
+    /**
+     * Pauses or resumes every campaign, and sets the gap between two of their messages. A pause
+     * that is already on keeps who started it and when.
+     */
+    async saveSettings(
+      workspaceId: string,
+      actor: Actor,
+      settings: { paused: boolean; gapHours: number },
+    ) {
+      const row = await withWorkspace(db, workspaceId, async (tx) => {
+        const [saved] = await tx
           .update(workspace)
           .set({
             campaignsPausedAt: settings.paused
               ? sql`coalesce(${workspace.campaignsPausedAt}, now())`
               : null,
+            campaignsPausedBy: settings.paused
+              ? sql`case when ${workspace.campaignsPausedAt} is null then ${actor.name} else ${workspace.campaignsPausedBy} end`
+              : null,
             campaignGapHours: settings.gapHours,
           })
-          .where(eq(workspace.id, workspaceId));
+          .where(eq(workspace.id, workspaceId))
+          .returning({
+            pausedAt: workspace.campaignsPausedAt,
+            pausedBy: workspace.campaignsPausedBy,
+            gapHours: workspace.campaignGapHours,
+          });
+        if (saved === undefined) throw new Error("The workspace is missing");
         if (!settings.paused) await wakeHeld(tx, workspaceId, undefined);
+        return saved;
       });
       changed(workspaceId);
-      return settings;
+      return settingsView(row);
     },
   };
 }
 export type Campaigns = ReturnType<typeof createCampaigns>;
+
+/** The settings for every campaign, as the API answers them. */
+const settingsView = (row: {
+  pausedAt: Date | null;
+  pausedBy: string | null;
+  gapHours: number;
+}) => ({
+  paused: row.pausedAt !== null,
+  gapHours: row.gapHours,
+  pausedBy: row.pausedBy,
+  pausedAt: row.pausedAt?.toISOString() ?? null,
+});
 
 /** The rule that would hold one of the campaign's messages if it were sent now, or null. */
 async function blockingRule(

@@ -352,6 +352,13 @@ export const CampaignSettingsSchema = z
   })
   .openapi("CampaignSettings");
 
+export const CampaignSettingsView = CampaignSettingsSchema.extend({
+  pausedBy: z.string().nullable().openapi({
+    description: "The member or key who paused every campaign, by its name then, or null",
+  }),
+  pausedAt: z.string().nullable().openapi({ description: "When, or null while they run" }),
+}).openapi("CampaignSettingsView");
+
 export const EstimateSchema = z.object({
   audience: AudienceCondition.optional(),
   trigger: TriggerSchema.optional(),

@@ -4503,7 +4503,7 @@ export interface paths {
             [name: string]: unknown;
           };
           content: {
-            "application/json": components["schemas"]["CampaignSettings"];
+            "application/json": components["schemas"]["CampaignSettingsView"];
           };
         };
         /** @description unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet */
@@ -4569,7 +4569,7 @@ export interface paths {
             [name: string]: unknown;
           };
           content: {
-            "application/json": components["schemas"]["CampaignSettings"];
+            "application/json": components["schemas"]["CampaignSettingsView"];
           };
         };
         /** @description invalid_request: the request is not valid */
@@ -8654,6 +8654,12 @@ export interface components {
       | {
           not: components["schemas"]["Condition"];
         };
+    CampaignSettingsView: components["schemas"]["CampaignSettings"] & {
+      /** @description The member or key who paused every campaign, by its name then, or null */
+      pausedBy: string | null;
+      /** @description When, or null while they run */
+      pausedAt: string | null;
+    };
     CampaignSettings: {
       /** @description Every campaign's messages wait while true */
       paused: boolean;

@@ -450,7 +450,7 @@ A campaign is a saved rule that sends outbound messages: who gets one, when, wha
 | `POST /campaigns/{id}/send` | `{ clientId, visitor, data? }` runs a live campaign for one person |
 | `POST /campaigns/{id}/test` | With a session only: shows the message to a test visitor named after the member, and answers `{ outboundMessage, blockedBy }` |
 | `POST /campaigns/estimate` | `{ audience?, trigger? }`: how many contacts the editor's choices reach |
-| `GET /campaign-settings` | `{ paused, gapHours }`, the rules for every campaign |
+| `GET /campaign-settings` | `{ paused, gapHours, pausedBy, pausedAt }`, the rules for every campaign, and who paused them and when |
 | `PUT /campaign-settings` | Changes both. Owners, admins and Full access keys only |
 | `POST /track` | Tracks a server event about a contact. API keys only |
 
@@ -464,7 +464,7 @@ A save checks the definition, and answers 400 `invalid_request` with one line fo
 
 `estimate` answers `matching`, the contacts who match `audience` now, and `lastWeek`, those a `match` or `event` trigger would have reached in the last 7 days, or null for another trigger. Each is `{ count, more }`, and a count stops at 10,000 with `more: true`. Test visitors are left out.
 
-`PUT /campaign-settings` takes `paused`, which holds every campaign's messages with `campaign_paused` until it is false, apart from the bots' pause, and `gapHours`, from 0 to 720, 24 by default: the fewest hours between two campaign messages to one visitor, checked when a message is about to be sent. One that comes sooner is cancelled with `frequency_capped`. 0 turns it off.
+`PUT /campaign-settings` answers as the `GET` does, and takes `paused`, which holds every campaign's messages with `campaign_paused` until it is false, apart from the bots' pause, and `gapHours`, from 0 to 720, 24 by default: the fewest hours between two campaign messages to one visitor, checked when a message is about to be sent. One that comes sooner is cancelled with `frequency_capped`. 0 turns it off.
 
 `POST /track` takes `{ visitor, name, properties?, occurredAt?, id? }`. `visitor` creates or updates the contact as a send's does. `name` is up to 64 letters, digits, `_`, `.`, `:` and `-`. `properties`, up to 4 KB of JSON, fill an `event` campaign's text and are never stored. `id`, up to 100 characters, counts a repeat once. It answers `{ visitorId, counted }`, with `counted` false for a repeat. Each contact keeps one row per name with its count and its first and last time, which conditions read as `events.<name>.count` and `events.<name>.lastAt`. A member's session answers 403 `forbidden`, an unknown visitor `id` answers 404, and each key may track 600 events a minute, apart from its 300 requests.
 

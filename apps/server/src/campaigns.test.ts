@@ -562,17 +562,20 @@ describe("the workspace's rules", () => {
       paused: true,
       gapHours: 0,
     });
-    expect(saved.status).toBe(200);
+    expect(await saved.json()).toMatchObject({ paused: true, pausedBy: "Julien Coulaud" });
+    const read = await asOperator(app, boss.cookie, "GET", inSpace("/campaign-settings"));
+    expect(await read.json()).toMatchObject({ paused: true, pausedBy: "Julien Coulaud" });
     const held = await sendCampaign(key, { visitor: { userId: userId() } });
     expect(held.outboundMessage).toMatchObject({
       status: "scheduled",
       statusReason: "campaign_paused",
     });
     expect((await rowOf(held.outboundMessage.id))?.dueAt).toBeNull();
-    await asOperator(app, boss.cookie, "PUT", inSpace("/campaign-settings"), {
+    const resumed = await asOperator(app, boss.cookie, "PUT", inSpace("/campaign-settings"), {
       paused: false,
       gapHours: 0,
     });
+    expect(await resumed.json()).toMatchObject({ paused: false, pausedBy: null, pausedAt: null });
     await runDueOutbound(workerDb, db, noLive, 50);
     expect((await rowOf(held.outboundMessage.id))?.status).toBe("sent");
   });

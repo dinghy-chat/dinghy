@@ -245,7 +245,7 @@ A campaign's message does not wait for paused bots: it has its own pause. It sti
 
 ## Rules for every campaign
 
-`GET .../campaign-settings` answers `{ paused, gapHours }`, and owners, admins and Full access keys change them with `PUT` and both fields. In the operator app they are on the Campaigns page.
+`GET .../campaign-settings` answers `{ paused, gapHours, pausedBy, pausedAt }`, where `pausedBy` is the name of the member or key who paused every campaign, and owners, admins and Full access keys change them with `PUT` and both fields. In the operator app they are on the Campaigns page.
 
 - `paused: true` is **Pause all campaigns**: every campaign's messages wait, with `campaign_paused`, until it is `false` again. It is apart from pausing the bots.
 - `gapHours` is the fewest hours between two campaign messages to one visitor, from 0 to 720, 24 by default. 0 turns it off. Dinghy checks it when a campaign's message becomes `sent`, under the workspace's lock, so two campaigns cannot both pass. A message that comes too soon after another is cancelled with `frequency_capped`. It counts messages from every campaign, `api` ones too, and never outbound messages sent without a campaign.

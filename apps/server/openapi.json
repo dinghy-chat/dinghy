@@ -3447,6 +3447,27 @@
           ]
         }
       },
+      "CampaignSettingsView": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/CampaignSettings"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "pausedBy": {
+                "type": ["string", "null"],
+                "description": "The member or key who paused every campaign, by its name then, or null"
+              },
+              "pausedAt": {
+                "type": ["string", "null"],
+                "description": "When, or null while they run"
+              }
+            },
+            "required": ["pausedBy", "pausedAt"]
+          }
+        ]
+      },
       "CampaignSettings": {
         "type": "object",
         "properties": {
@@ -17982,7 +18003,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CampaignSettings"
+                  "$ref": "#/components/schemas/CampaignSettingsView"
                 }
               }
             }
@@ -18067,7 +18088,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/CampaignSettings"
+                  "$ref": "#/components/schemas/CampaignSettingsView"
                 }
               }
             }
