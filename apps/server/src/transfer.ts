@@ -12,12 +12,19 @@ import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { BadArchiveError, readTar, tarEnd, tarEntry, tarEntryParts } from "./archive.ts";
 import { BusinessHoursSchema, readBusinessHours, saveBusinessHours } from "./business-hours.ts";
-import { ConditionSchema } from "./conditions.ts";
+import { CampaignDefinitionSchema } from "./campaign-schemas.ts";
+import { saveTriggerFields } from "./campaigns.ts";
+import { ConditionSchema, EVENT_NAME } from "./conditions.ts";
 import { newGeneration } from "./db/migrate.ts";
 import {
   apiKey,
   attachment,
+  CAMPAIGN_STATUSES,
   CONVERSATION_STARTERS,
+  campaign,
+  campaignDay,
+  campaignRun,
+  contactEvent,
   conversation,
   conversationLabel,
   emailStop,
@@ -149,6 +156,8 @@ const ExportFile = z.strictObject({
       locale: z.enum(LOCALES).nullable().default(null),
       // A file from before test visitors has none.
       isTest: z.boolean().default(false),
+      // A file from before campaigns has none: the visitor never turned automatic messages off.
+      optedOutAt: nullableDate.default(null),
       createdAt: date,
     }),
   ),
@@ -266,12 +275,77 @@ const ExportFile = z.strictObject({
       cancelledAt: nullableDate,
       conversationId: id.nullable(),
       messageId: id.nullable(),
+      // A file from before campaigns has none of these.
+      campaignId: id.nullable().default(null),
+      campaignRunId: id.nullable().default(null),
+      variant: z.string().max(64).nullable().default(null),
+      sentAt: nullableDate.default(null),
+      goalReachedAt: nullableDate.default(null),
+      emailIfUnreadAt: nullableDate.default(null),
       createdAt: date,
     }),
   ),
   outboundDedupe: z.array(
     z.strictObject({ visitorId: id, dedupeKey: DedupeKey, outboundMessageId: id }),
   ),
+  campaigns: z
+    .array(
+      z.strictObject({
+        id,
+        status: z.enum(CAMPAIGN_STATUSES),
+        definition: CampaignDefinitionSchema,
+        version: z.number().int().min(1),
+        authorOperatorId: id.nullable(),
+        authorApiKeyId: id.nullable(),
+        createdAt: date,
+        updatedAt: date,
+        liveAt: nullableDate,
+        endedAt: nullableDate,
+      }),
+    )
+    .default([]),
+  campaignRuns: z
+    .array(
+      z.strictObject({
+        id,
+        campaignId: id,
+        occurrence: date,
+        cursor: id.nullable(),
+        finishedAt: nullableDate,
+        createdAt: date,
+      }),
+    )
+    .default([]),
+  campaignDays: z
+    .array(
+      z.strictObject({
+        campaignId: id,
+        day: z.iso.date(),
+        variant: z.string().max(64),
+        entered: z.number().int().min(0),
+        sent: z.number().int().min(0),
+        delivered: z.number().int().min(0),
+        read: z.number().int().min(0),
+        replied: z.number().int().min(0),
+        dismissed: z.number().int().min(0),
+        goalReached: z.number().int().min(0),
+        conversationsStarted: z.number().int().min(0),
+        clicks: z.record(z.string(), z.number().int().min(0)),
+      }),
+    )
+    .default([]),
+  contactEvents: z
+    .array(
+      z.strictObject({
+        visitorId: id,
+        name: z.string().regex(EVENT_NAME),
+        count: z.number().int().min(0),
+        firstAt: date,
+        lastAt: date,
+        recentIds: z.array(z.string().max(100)).max(20),
+      }),
+    )
+    .default([]),
   pageViews: z.array(
     z.strictObject({
       visitorId: id,
@@ -463,6 +537,10 @@ async function readWorkspace(
         | "conversationLabels"
         | "outboundMessages"
         | "outboundDedupe"
+        | "campaigns"
+        | "campaignRuns"
+        | "campaignDays"
+        | "contactEvents"
         | "pageViews"
       > = {
         version: VERSION,
@@ -510,6 +588,7 @@ async function readWorkspace(
           timeZone: row.timeZone,
           locale: row.locale,
           isTest: row.isTest,
+          optedOutAt: isoOrNull(row.optedOutAt),
           createdAt: iso(row.createdAt),
         })),
         conversations: conversations.map((row) => ({
@@ -535,6 +614,22 @@ async function readWorkspace(
         .select()
         .from(outboundDedupe)
         .where(eq(outboundDedupe.workspaceId, workspaceId));
+      const campaigns = await tx
+        .select()
+        .from(campaign)
+        .where(eq(campaign.workspaceId, workspaceId));
+      const runs = await tx
+        .select()
+        .from(campaignRun)
+        .where(eq(campaignRun.workspaceId, workspaceId));
+      const days = await tx
+        .select()
+        .from(campaignDay)
+        .where(eq(campaignDay.workspaceId, workspaceId));
+      const events = await tx
+        .select()
+        .from(contactEvent)
+        .where(eq(contactEvent.workspaceId, workspaceId));
       const tail: Pick<
         ExportData,
         | "attachments"
@@ -544,6 +639,10 @@ async function readWorkspace(
         | "conversationLabels"
         | "outboundMessages"
         | "outboundDedupe"
+        | "campaigns"
+        | "campaignRuns"
+        | "campaignDays"
+        | "contactEvents"
       > = {
         attachments: attachments.map((row) => ({
           id: row.id,
@@ -584,9 +683,32 @@ async function readWorkspace(
           repliedAt: isoOrNull(row.repliedAt),
           dismissedAt: isoOrNull(row.dismissedAt),
           cancelledAt: isoOrNull(row.cancelledAt),
+          sentAt: isoOrNull(row.sentAt),
+          goalReachedAt: isoOrNull(row.goalReachedAt),
+          emailIfUnreadAt: isoOrNull(row.emailIfUnreadAt),
           createdAt: iso(row.createdAt),
         })),
         outboundDedupe: dedupeKeys.map(({ workspaceId: _workspace, ...row }) => row),
+        // The key and the name are in the definition.
+        campaigns: campaigns.map(({ workspaceId: _workspace, key: _key, name: _name, ...row }) => ({
+          ...row,
+          createdAt: iso(row.createdAt),
+          updatedAt: iso(row.updatedAt),
+          liveAt: isoOrNull(row.liveAt),
+          endedAt: isoOrNull(row.endedAt),
+        })),
+        campaignRuns: runs.map(({ workspaceId: _workspace, ...row }) => ({
+          ...row,
+          occurrence: iso(row.occurrence),
+          finishedAt: isoOrNull(row.finishedAt),
+          createdAt: iso(row.createdAt),
+        })),
+        campaignDays: days.map(({ workspaceId: _workspace, ...row }) => row),
+        contactEvents: events.map(({ workspaceId: _workspace, ...row }) => ({
+          ...row,
+          firstAt: iso(row.firstAt),
+          lastAt: iso(row.lastAt),
+        })),
       };
       const json = [
         Buffer.from(`${JSON.stringify(head).slice(0, -1)},"messages":[`),
@@ -868,10 +990,22 @@ async function insertWorkspace(
         timeZone: row.timeZone,
         locale: row.locale,
         isTest: row.isTest,
+        optedOutAt: dateOrNull(row.optedOutAt),
         createdAt: new Date(row.createdAt),
       })),
     );
   }
+  for (const rows of batches(data.contactEvents)) {
+    await tx.insert(contactEvent).values(
+      rows.map((row) => ({
+        workspaceId,
+        ...row,
+        firstAt: new Date(row.firstAt),
+        lastAt: new Date(row.lastAt),
+      })),
+    );
+  }
+  await importCampaigns(tx, workspaceId, data, mapOperator);
   for (const rows of batches(data.conversations)) {
     await tx.insert(conversation).values(
       rows.map((row) => ({
@@ -931,6 +1065,9 @@ async function insertWorkspace(
         repliedAt: dateOrNull(row.repliedAt),
         dismissedAt: dateOrNull(row.dismissedAt),
         cancelledAt: dateOrNull(row.cancelledAt),
+        sentAt: dateOrNull(row.sentAt),
+        goalReachedAt: dateOrNull(row.goalReachedAt),
+        emailIfUnreadAt: dateOrNull(row.emailIfUnreadAt),
         createdAt: new Date(row.createdAt),
       })),
     );
@@ -974,6 +1111,50 @@ async function insertWorkspace(
     );
   }
   return created;
+}
+
+/** A file's campaigns, their runs and their days, with the fields each campaign reads. */
+async function importCampaigns(
+  tx: Transaction,
+  workspaceId: string,
+  data: ExportData,
+  mapOperator: (exported: string | null) => string | null,
+) {
+  for (const rows of batches(data.campaigns)) {
+    await tx.insert(campaign).values(
+      rows.map((row) => {
+        const { key, name } = row.definition;
+        return {
+          workspaceId,
+          ...row,
+          key,
+          name,
+          authorOperatorId: mapOperator(row.authorOperatorId),
+          createdAt: new Date(row.createdAt),
+          updatedAt: new Date(row.updatedAt),
+          liveAt: dateOrNull(row.liveAt),
+          endedAt: dateOrNull(row.endedAt),
+        };
+      }),
+    );
+  }
+  for (const row of data.campaigns) {
+    await saveTriggerFields(tx, workspaceId, row.id, row.definition);
+  }
+  for (const rows of batches(data.campaignRuns)) {
+    await tx.insert(campaignRun).values(
+      rows.map((row) => ({
+        workspaceId,
+        ...row,
+        occurrence: new Date(row.occurrence),
+        finishedAt: dateOrNull(row.finishedAt),
+        createdAt: new Date(row.createdAt),
+      })),
+    );
+  }
+  for (const rows of batches(data.campaignDays)) {
+    await tx.insert(campaignDay).values(rows.map((row) => ({ workspaceId, ...row })));
+  }
 }
 
 /**

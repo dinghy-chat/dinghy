@@ -1,6 +1,8 @@
-import { and, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNull, type SQL } from "drizzle-orm";
 import { gateOf } from "./bots.ts";
-import { type Condition, toSql } from "./conditions.ts";
+import { type CampaignCheck, campaignCheck } from "./campaign-checks.ts";
+import { tallyChange } from "./campaign-results.ts";
+import { matchesContact } from "./conditions.ts";
 import {
   apiKey,
   conversation,
@@ -103,6 +105,7 @@ export async function change(
     .returning();
   if (changed === undefined) throw new Error("The outbound message changed since it was read");
   if (kind !== undefined) await record(tx, workspaceId, changed, kind);
+  await tallyChange(tx, workspaceId, row, changed, kind);
   return changed;
 }
 
@@ -139,12 +142,33 @@ export async function end(
   );
 }
 
+/**
+ * Cancels every message that `which` names and a cancel may still end, with the reason. The caller
+ * holds the workspace lock. Answers the visitors whose messages ended, each once.
+ */
+export async function cancelWhere(
+  tx: Transaction,
+  workspaceId: string,
+  which: SQL,
+  reason: OutboundStatusReason,
+): Promise<string[]> {
+  const rows = await tx
+    .select()
+    .from(outboundMessage)
+    .where(and(eq(outboundMessage.workspaceId, workspaceId), endable, which))
+    .for("update");
+  for (const row of rows) await end(tx, workspaceId, row, { status: "cancelled", reason });
+  return [...new Set(rows.map((row) => row.visitorId))];
+}
+
 // The decision -----------------------------------------------------------------------------------
 
 /** What a message may do now, from everything that can stop it. */
 interface Situation {
   writable: boolean;
   blocked: boolean;
+  /** The visitor turned off automatic messages. */
+  optedOut: boolean;
   botsPaused: boolean;
   /** The key that sent it, or null for a member's. */
   key: KeyState | null;
@@ -154,6 +178,8 @@ interface Situation {
   open: { id: string; humanSince: Date | null } | null;
   /** The `unless` condition matches the contact now. */
   unlessMatched: boolean;
+  /** What its campaign says, checked when it is about to become sent. Null otherwise. */
+  campaign: CampaignCheck | null;
 }
 
 /** What the key that sent a message may do now. */
@@ -167,20 +193,42 @@ export interface KeyState {
 type Verdict =
   | { kind: "go" }
   | { kind: "join"; conversationId: string }
-  | { kind: "wait"; reason: OutboundStatusReason }
+  // `until` is when to look again: null waits for a change that wakes it, such as a resume.
+  | { kind: "wait"; reason: OutboundStatusReason; until?: Date | null }
   | { kind: "cancel"; reason: OutboundStatusReason };
+
+type Message = Pick<
+  Row,
+  "authorApiKeyId" | "campaignId" | "senderKind" | "ifConversationOpen" | "sendEmail"
+>;
+
+/** A message that no person wrote: a key's or a campaign's. The opt-out and the reply gate hold. */
+const isAutomatic = (message: Pick<Row, "authorApiKeyId" | "campaignId">) =>
+  message.authorApiKeyId !== null || message.campaignId !== null;
+
+/** What a campaign's checks say, or null when they let the message go. */
+function campaignVerdict(check: CampaignCheck): Verdict | null {
+  if (check.status === "ended") return { kind: "cancel", reason: "campaign_ended" };
+  if (check.exited) return { kind: "cancel", reason: "unless_matched" };
+  if (check.goalReached) return { kind: "cancel", reason: "goal_reached" };
+  if (!check.audienceMatched) return { kind: "cancel", reason: "audience_unmatched" };
+  if (check.status !== "live") return { kind: "wait", reason: "campaign_paused", until: null };
+  if (check.closed !== null) return { kind: "wait", ...check.closed };
+  if (check.capped) return { kind: "cancel", reason: "frequency_capped" };
+  return null;
+}
 
 /**
  * The one decision for a message about to show or go in a conversation. A check that can change,
  * such as paused bots, makes it wait. One that holds for good, such as `unless`, cancels it. A key's
  * message follows the reply gate: it never joins a conversation that a person handles.
  */
-export function decide(
-  message: Pick<Row, "authorApiKeyId" | "senderKind" | "ifConversationOpen" | "sendEmail">,
-  state: Situation,
-): Verdict {
+export function decide(message: Message, state: Situation): Verdict {
   if (state.blocked) return { kind: "cancel", reason: "blocked" };
   if (state.unlessMatched) return { kind: "cancel", reason: "unless_matched" };
+  if (state.optedOut && isAutomatic(message)) return { kind: "cancel", reason: "opted_out" };
+  const fromCampaign = state.campaign === null ? null : campaignVerdict(state.campaign);
+  if (fromCampaign !== null) return fromCampaign;
   if (state.key?.revoked === true || !state.senderActive) {
     return { kind: "cancel", reason: "permission_revoked" };
   }
@@ -197,9 +245,10 @@ export function decide(
   if (state.open !== null && message.ifConversationOpen === "hold") {
     return { kind: "wait", reason: "open_conversation" };
   }
-  if (message.authorApiKeyId !== null) {
+  if (isAutomatic(message)) {
     const gate = gateOf({
-      botsPaused: state.botsPaused,
+      // A campaign waits for its own pause, which is apart from the bots'.
+      botsPaused: message.campaignId === null && state.botsPaused,
       replyMode: state.key?.replyMode,
       humanSince: state.open?.humanSince ?? null,
     });
@@ -209,35 +258,35 @@ export function decide(
   return state.open === null ? { kind: "go" } : { kind: "join", conversationId: state.open.id };
 }
 
-/** Whether a condition matches one contact now: the same SQL as the contacts filter. */
-export async function matches(
-  tx: Transaction,
-  workspaceId: string,
-  visitorId: string,
-  condition: Condition,
-) {
-  const [row] = await tx
-    .select({ matched: sql<boolean>`${toSql(condition)}` })
-    .from(visitor)
-    .where(and(eq(visitor.workspaceId, workspaceId), eq(visitor.id, visitorId)));
-  return row?.matched === true;
-}
-
-/** Whether the team blocked the visitor. A visitor that is gone counts as blocked. */
-export async function isBlocked(tx: Transaction, workspaceId: string, visitorId: string) {
+/**
+ * Whether the team blocked the visitor, and whether they turned off automatic messages. A visitor
+ * that is gone counts as blocked.
+ */
+export async function visitorFlags(tx: Transaction, workspaceId: string, visitorId: string) {
   const [who] = await tx
-    .select({ blockedAt: visitor.blockedAt })
+    .select({
+      blockedAt: visitor.blockedAt,
+      optedOutAt: visitor.optedOutAt,
+      isTest: visitor.isTest,
+    })
     .from(visitor)
     .where(and(eq(visitor.workspaceId, workspaceId), eq(visitor.id, visitorId)));
-  return who === undefined || who.blockedAt !== null;
+  return {
+    blocked: who === undefined || who.blockedAt !== null,
+    optedOut: who?.optedOutAt != null,
+    isTest: who?.isTest === true,
+  };
 }
 
-/** Reads what decides a message now. The caller holds the workspace lock. */
+/**
+ * Reads what decides a message now. `atSendTime` also checks its `unless` and its campaign, as it
+ * is about to become sent. The caller holds the workspace lock.
+ */
 export async function situation(
   tx: Transaction,
   workspaceId: string,
   row: Row,
-  { botsPaused, checkUnless }: { botsPaused: boolean; checkUnless: boolean },
+  { botsPaused, atSendTime }: { botsPaused: boolean; atSendTime: boolean },
 ): Promise<Situation> {
   const [open] = await tx
     .select({ id: conversation.id, humanSince: conversation.humanSince })
@@ -251,18 +300,26 @@ export async function situation(
     )
     .orderBy(desc(conversation.createdAt))
     .limit(1);
+  const { campaignId } = row;
+  const { blocked, optedOut, isTest } = await visitorFlags(tx, workspaceId, row.visitorId);
   return {
     writable: writable(await workspaceAccess(tx, workspaceId)),
-    blocked: await isBlocked(tx, workspaceId, row.visitorId),
+    blocked,
+    optedOut,
     botsPaused,
     key: row.authorApiKeyId === null ? null : await keyState(tx, workspaceId, row.authorApiKeyId),
     senderActive:
       row.senderOperatorId === null || (await isMember(tx, workspaceId, row.senderOperatorId)),
     open: open ?? null,
     unlessMatched:
-      checkUnless &&
+      atSendTime &&
       row.unless !== null &&
-      (await matches(tx, workspaceId, row.visitorId, row.unless)),
+      (await matchesContact(tx, workspaceId, row.visitorId, row.unless)),
+    // A test visitor sees a campaign's message whatever its rules say, as "Send a test" shows it.
+    campaign:
+      atSendTime && campaignId !== null && !isTest
+        ? await campaignCheck(tx, workspaceId, { ...row, campaignId })
+        : null,
   };
 }
 

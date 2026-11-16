@@ -15,6 +15,8 @@ import {
   retryDelivery,
   sendToOperator,
 } from "./alerts.ts";
+import { openRuns, runCampaignRuns } from "./campaign-runs.ts";
+import { endDueCampaigns } from "./campaigns.ts";
 import { workerHeartbeat } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
 import { noLive, type Signals } from "./live.ts";
@@ -397,6 +399,8 @@ export function startWorker({
         // Each pass, so a removal request's first warning goes out within seconds.
         busy = (await stage("two-factor removal", removalStep)) || busy;
         busy = (await stage("outbound messages", outboundStep)) || busy;
+        busy =
+          (await stage("campaign runs", () => runCampaignRuns(db, appDb, signals, BATCH))) || busy;
       }
       if (Date.now() >= pruneAt) {
         pruneAt = Date.now() + PRUNE_EVERY_MS;
@@ -409,6 +413,11 @@ export function startWorker({
         lifecycleAt = Date.now() + lifecycleMs;
         // The cloud step keeps its own claim time, sized for slow Stripe calls and emails.
         await stage("cloud", async () => cloudStep?.({ mailer: bounded }));
+        // A schedule's time is a minute at the finest, and an end date passes once.
+        await stage("campaign schedules", async () => {
+          await endDueCampaigns(db, appDb, signals);
+          await openRuns(db, appDb);
+        });
         // Its uploads go through the deletions above, and the workspace row after them.
         await stage("purge", async () => {
           await purgeDeletedWorkspaces(db);

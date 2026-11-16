@@ -145,6 +145,10 @@ describe("who may set up", () => {
       "replay_webhook_delivery",
       "send_test_message",
       "delete_test_visitors",
+      "upsert_campaign",
+      "pause_campaign",
+      "resume_campaign",
+      "end_campaign",
     ]) {
       expect(names).toContain(name);
     }
@@ -154,11 +158,13 @@ describe("who may set up", () => {
       "close_conversation",
       "delete_test_visitors",
       "delete_webhook",
+      "end_campaign",
       "remove_allowed_site",
     ]);
     const chatTools = await list(chatKey);
     const chatNames = chatTools.map((one) => one.name);
     expect(chatNames).not.toContain("verify_install");
+    expect(chatNames).not.toContain("upsert_campaign");
     // MCP clients refuse a whole list when one tool's input is not an object at its root.
     for (const one of [...setupTools, ...chatTools]) {
       expect(one.inputSchema, one.name).toMatchObject({ type: "object" });

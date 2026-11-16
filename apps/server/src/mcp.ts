@@ -10,6 +10,7 @@ import { type Inbox, parseSnooze, SNOOZE_CLOSED, type SnoozeOutcome } from "./in
 import { conversationId, labelId, UNTRUSTED_TEXT, webhookId } from "./inputs.ts";
 import { labelConversation, listLabels } from "./labels.ts";
 import type { Live } from "./live.ts";
+import { campaignTools } from "./mcp-campaign-tools.ts";
 import { type ChatToolsOptions, chatTools } from "./mcp-chat-tools.ts";
 import { mcpSetupTools, type SetupToolOptions } from "./mcp-setup-tools.ts";
 import { closedFailure } from "./member.ts";
@@ -363,6 +364,7 @@ interface McpOptions {
   version: string;
   setup: SetupToolOptions;
   chat: ChatToolsOptions;
+  campaigns: Parameters<typeof campaignTools>[0];
   /** Where a client learns to get an OAuth token, or null when OAuth is off. */
   resourceMetadata: string | null;
 }
@@ -422,11 +424,13 @@ export function registerMcp(
     version,
     setup,
     chat,
+    campaigns,
     resourceMetadata,
   }: McpOptions,
 ): void {
-  const everyKey = [...tools(inbox, db, live), ...chatTools(chat)];
-  const setupOnly = [...setupTools(webhooks), ...mcpSetupTools(setup)];
+  const forCampaigns = campaignTools(campaigns);
+  const everyKey = [...tools(inbox, db, live), ...chatTools(chat), ...forCampaigns.everyKey];
+  const setupOnly = [...setupTools(webhooks), ...mcpSetupTools(setup), ...forCampaigns.setupOnly];
   /** A Conversations key does not see the Setup tools at all. */
   const toolsFor = (actor: KeyActor) =>
     actor.level === "setup" ? [...everyKey, ...setupOnly] : everyKey;

@@ -59,16 +59,27 @@ export const replyToMessageId = z
 
 const DURATION_UNITS_MS = { m: 60_000, h: 3_600_000, d: 86_400_000 } as const;
 
-/** A duration such as `"30m"`, `"1h"` or `"7d"`, in milliseconds. */
-export const Duration = z
+const DURATION_TEXT = "A number with m, h or d, such as 1h";
+
+/**
+ * A duration as written, such as `"7d"`, for a definition that keeps what its author wrote, such as
+ * a campaign's. `toMs` reads it.
+ */
+export const DurationText = z
   .string()
   .regex(/^[1-9]\d{0,3}[mhd]$/)
-  .transform(
-    (value) =>
-      Number(value.slice(0, -1)) *
-      DURATION_UNITS_MS[value.slice(-1) as keyof typeof DURATION_UNITS_MS],
-  )
-  .openapi({ type: "string", example: "1h", description: "A number with m, h or d, such as 1h" });
+  .openapi({ example: "1h", description: DURATION_TEXT });
+
+/** A duration as written, in milliseconds. */
+export const toMs = (value: string) =>
+  Number(value.slice(0, -1)) * DURATION_UNITS_MS[value.slice(-1) as keyof typeof DURATION_UNITS_MS];
+
+/** A duration such as `"30m"`, `"1h"` or `"7d"`, in milliseconds. */
+export const Duration = DurationText.transform(toMs).openapi({
+  type: "string",
+  example: "1h",
+  description: DURATION_TEXT,
+});
 
 const ATTRIBUTES_MAX_BYTES = 2048;
 

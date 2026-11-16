@@ -16,6 +16,8 @@ import { registerSecuritySchemes } from "./api-security.ts";
 import type { Auth } from "./auth.ts";
 import { registerBulkRoute } from "./bulk.ts";
 import { registerBusinessHoursRoutes } from "./business-hours.ts";
+import { registerCampaignRoutes } from "./campaign-routes.ts";
+import { createCampaigns } from "./campaigns.ts";
 import { registerChatPage } from "./chat-link.ts";
 import { clientIp } from "./client-ip.ts";
 import { registerContactRoutes } from "./contacts.ts";
@@ -62,6 +64,7 @@ import { DEFAULT_STREAM, type StreamOptions } from "./stream.ts";
 import { type Role, registerTeamRoutes } from "./team.ts";
 import { createTestVisitors, registerTestVisitorRoutes } from "./test-visitors.ts";
 import { MINUTE_MS } from "./time.ts";
+import { createTracking, registerTrackRoute } from "./track.ts";
 import { registerExportRoute } from "./transfer.ts";
 import { registerTwoFactorRoutes, type TwoFactorState } from "./two-factor.ts";
 import { registerRemovalRoutes } from "./two-factor-removal.ts";
@@ -389,6 +392,8 @@ export function createApp({
   const ownOrigin = publicUrl === undefined ? undefined : new URL(publicUrl).origin;
   const setup = createSetup({ db, logger, valkey, liveVisitors });
   const outbound = createOutbound({ db, live });
+  const campaigns = createCampaigns({ db, live });
+  const tracking = createTracking({ db, live });
   // Before the widget routes, because any site may read it.
   registerWidgetAppearance(app, db, urls, rateLimit);
   registerWidgetRoutes(app, {
@@ -540,6 +545,7 @@ export function createApp({
         presence,
         visitorPresence,
       },
+      campaigns: { campaigns, tracking },
       resourceMetadata: issuer === null ? null : resourceMetadataUrl(issuer),
     });
     registerKeyEvents(app, {
@@ -557,6 +563,8 @@ export function createApp({
     registerModerationRoutes(app, db, live);
     registerContactRoutes(app, { db, live, visitorPresence });
     registerOutboundRoutes(app, { outbound, rateLimit });
+    registerCampaignRoutes(app, { campaigns, rateLimit });
+    registerTrackRoute(app, { tracking, rateLimit });
     registerLiveVisitorRoutes(app, db, liveVisitors);
     registerGetStartedRoutes(app, db);
     registerSavedReplyRoutes(app, db, live);

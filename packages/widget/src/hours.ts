@@ -124,3 +124,16 @@ export function hoursState(hours: BusinessHours, now: number): HoursState {
   const next = changes.length === 0 ? null : new Date(Math.min(...changes));
   return open ? { open, closesAt: next } : { open, reopensAt: next };
 }
+
+/** The day a zone's clock reads at a moment, as `YYYY-MM-DD`. */
+export const zonedDay = (at: number, timeZone: string) =>
+  new Date(wallClock(at, timeZone).wall).toISOString().slice(0, "YYYY-MM-DD".length);
+
+/**
+ * The moment a zone's clock reads `time` on `day`, the earlier one in a repeated hour. Null in a
+ * skipped hour, which that day never reads.
+ */
+export function zonedTime(day: string, time: string, timeZone: string): number | null {
+  const found = readings(Date.parse(`${day}T${time}:00Z`), timeZone);
+  return found.length === 0 ? null : Math.min(...found);
+}

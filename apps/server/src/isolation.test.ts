@@ -20,6 +20,8 @@ import {
   apiKey,
   attachment,
   businessHours,
+  campaign,
+  contactEvent,
   conversation,
   conversationLabel,
   conversationRead,
@@ -142,6 +144,8 @@ interface World {
   /** An outbound message for visitor two, in the first workspace, and one in the other. */
   outboundTwo: { id: string };
   outboundB: { id: string };
+  /** A live campaign in the other workspace. */
+  campaignB: { id: string; key: string };
   /** Strings that belong to someone else, for each kind of caller. */
   secrets: { two: string; b: string };
   widget(
@@ -300,8 +304,159 @@ const crossedMessagePaths = (mine: string, theirs: string, conversationId: strin
   inWorkspace(theirs, `/conversations/${conversationId}/messages/${id}`),
 ];
 
+/** A campaign's definition for the attacks, with this key. */
+const campaignDefinition = (key: string, body = "A campaign's secret") => ({
+  key,
+  name: `Campaign ${key}`,
+  trigger: { type: "api" },
+  message: { body },
+  presentation: { startConversation: "on_reply", show: "badge", ifConversationOpen: "skip" },
+});
+
+const campaignRow = (id: string) => owner.select().from(campaign).where(eq(campaign.id, id));
+const campaignMessagesOf = (id: string) =>
+  owner.select().from(outboundMessage).where(eq(outboundMessage.campaignId, id));
+
+/** The other workspace's campaign, by ID and by key, refused through both workspaces' paths. */
+async function campaignRefusedInBoth(
+  world: World,
+  method: string,
+  tail: string,
+  read: () => Promise<unknown>,
+  body?: unknown,
+) {
+  const { campaignB } = world;
+  for (const ref of [campaignB.id, `by-key/${campaignB.key}`]) {
+    await refusedInBoth(world, method, `/campaigns/${ref}${tail}`, read, body);
+  }
+}
+
+/** Each spelling of a route on one campaign, by ID and by key. */
+const byIdAndKey = (method: string, tail: string, attack: Attack) => ({
+  [`${method} /v1/operator/workspaces/:workspaceId/campaigns/:ref${tail}`]: attack,
+  [`${method} /v1/operator/workspaces/:workspaceId/campaigns/by-key/:ref${tail}`]: attack,
+});
+
+const CAMPAIGN_ATTACKS: Record<string, Attack> = {
+  "GET /v1/operator/workspaces/:workspaceId/campaigns": async (world) => {
+    const { operator: as, withKey, anna, a, b, keyA, campaignB } = world;
+    expect((await as(anna, "GET", inWorkspace(b.id, "/campaigns"))).status).toBe(404);
+    const own = await withKey(keyA.token, "GET", inWorkspace(a.id, "/campaigns"));
+    expect(own.status).toBe(200);
+    expect(await own.text()).not.toContain(campaignB.id);
+  },
+  "POST /v1/operator/workspaces/:workspaceId/campaigns": async (world) => {
+    const { operator: as, withKey, anna, b, setupA } = world;
+    const body = campaignDefinition("crossing");
+    expect((await as(anna, "POST", inWorkspace(b.id, "/campaigns"), body)).status).toBe(404);
+    expect(
+      (await withKey(setupA.token, "POST", inWorkspace(b.id, "/campaigns"), body)).status,
+    ).toBe(404);
+    const crossed = await owner.select().from(campaign).where(eq(campaign.key, "crossing"));
+    expect(crossed).toEqual([]);
+  },
+  "PUT /v1/operator/workspaces/:workspaceId/campaigns/by-key/:key": async (world) => {
+    const { operator: as, anna, a, b, campaignB } = world;
+    const before = await campaignRow(campaignB.id);
+    const body = campaignDefinition(campaignB.key, "Overwritten");
+    const path = `/campaigns/by-key/${campaignB.key}`;
+    expect((await as(anna, "PUT", inWorkspace(b.id, path), body)).status).toBe(404);
+    const own = `/campaigns/by-key/${campaignB.key}-here`;
+    expect((await as(anna, "PUT", inWorkspace(a.id, own), body)).status).toBe(201);
+    expect(await campaignRow(campaignB.id)).toEqual(before);
+  },
+  "POST /v1/operator/workspaces/:workspaceId/campaigns/estimate": async (world) => {
+    const { operator: as, anna, a, b, other } = world;
+    const audience = { field: "userId", op: "eq", value: other.id };
+    expect(
+      (await as(anna, "POST", inWorkspace(b.id, "/campaigns/estimate"), { audience })).status,
+    ).toBe(404);
+    // Every contact here, and none of the other workspace's.
+    const everyone = await as(anna, "POST", inWorkspace(a.id, "/campaigns/estimate"), {});
+    const { matching } = (await everyone.json()) as { matching: { count: number } };
+    const [{ count } = { count: 0 }] = await owner
+      .select({ count: sql<number>`count(*)::int` })
+      .from(visitor)
+      .where(and(eq(visitor.workspaceId, a.id), eq(visitor.isTest, false)));
+    expect(matching.count).toBe(count);
+  },
+  "GET /v1/operator/workspaces/:workspaceId/campaign-settings": async (world) => {
+    const { operator: as, anna, b } = world;
+    expect((await as(anna, "GET", inWorkspace(b.id, "/campaign-settings"))).status).toBe(404);
+  },
+  "PUT /v1/operator/workspaces/:workspaceId/campaign-settings": async (world) => {
+    const { operator: as, anna, a, b } = world;
+    const theirs = async () =>
+      (await owner.select().from(workspace).where(eq(workspace.id, b.id)))[0]?.campaignGapHours;
+    const before = await theirs();
+    const body = { paused: false, gapHours: 3 };
+    expect((await as(anna, "PUT", inWorkspace(b.id, "/campaign-settings"), body)).status).toBe(404);
+    expect((await as(anna, "PUT", inWorkspace(a.id, "/campaign-settings"), body)).status).toBe(200);
+    expect(await theirs()).toBe(before);
+  },
+  ...byIdAndKey("GET", "", (world) =>
+    campaignRefusedInBoth(world, "GET", "", () => campaignRow(world.campaignB.id)),
+  ),
+  ...byIdAndKey("PATCH", "", (world) =>
+    campaignRefusedInBoth(world, "PATCH", "", () => campaignRow(world.campaignB.id), {
+      name: "Renamed across",
+    }),
+  ),
+  ...Object.assign(
+    {},
+    ...["pause", "resume", "end"].map((action) =>
+      byIdAndKey("POST", `/${action}`, (world) =>
+        campaignRefusedInBoth(world, "POST", `/${action}`, () => campaignRow(world.campaignB.id)),
+      ),
+    ),
+  ),
+  ...byIdAndKey("GET", "/results", (world) =>
+    campaignRefusedInBoth(world, "GET", "/results", () => campaignRow(world.campaignB.id)),
+  ),
+  ...byIdAndKey("POST", "/send", async (world) => {
+    const { withKey, a, keyA, campaignB, one } = world;
+    const body = { clientId: randomUUID(), visitor: { id: one.id } };
+    await campaignRefusedInBoth(
+      world,
+      "POST",
+      "/send",
+      () => campaignMessagesOf(campaignB.id),
+      body,
+    );
+    const path = inWorkspace(a.id, `/campaigns/${campaignB.id}/send`);
+    expect((await withKey(keyA.token, "POST", path, body)).status).toBe(404);
+  }),
+  ...byIdAndKey("POST", "/test", (world) =>
+    campaignRefusedInBoth(world, "POST", "/test", () => campaignMessagesOf(world.campaignB.id)),
+  ),
+  "POST /v1/operator/workspaces/:workspaceId/track": async (world) => {
+    const { withKey, a, b, keyA, other } = world;
+    const theirs = () =>
+      owner.select().from(contactEvent).where(eq(contactEvent.workspaceId, b.id));
+    const before = await theirs();
+    const body = { visitor: { id: other.id }, name: "crossing" };
+    expect((await withKey(keyA.token, "POST", inWorkspace(b.id, "/track"), body)).status).toBe(404);
+    // Another workspace's visitor is nobody here.
+    expect((await withKey(keyA.token, "POST", inWorkspace(a.id, "/track"), body)).status).toBe(404);
+    expect(await theirs()).toEqual(before);
+  },
+  "POST /v1/widget/:key/opt-out": async ({ widget, a, b, one, two }) => {
+    const twoBefore = (await owner.select().from(visitor).where(eq(visitor.id, two.id)))[0];
+    const own = await widget(a.publicKey, "POST", "opt-out", one.token, SITE_A, {
+      optedOut: false,
+    });
+    expect(own.status).toBe(200);
+    expect(
+      (await widget(b.publicKey, "POST", "opt-out", one.token, SITE_B, { optedOut: true })).status,
+    ).toBe(401);
+    const twoAfter = (await owner.select().from(visitor).where(eq(visitor.id, two.id)))[0];
+    expect(twoAfter?.optedOutAt).toEqual(twoBefore?.optedOutAt);
+  },
+};
+
 /** Runs against a route as the one caller that must be refused or see only its own data. */
 const ATTACKS: Record<string, Attack> = {
+  ...CAMPAIGN_ATTACKS,
   "GET /v1/meta": async ({ server, secrets }) => {
     const text = await (await server.request("/v1/meta")).text();
     expect(text).not.toContain(secrets.b);
@@ -2537,6 +2692,13 @@ async function buildWorld(db: Database): Promise<World> {
     });
     return ((await made.json()) as { outboundMessage: { id: string } }).outboundMessage;
   };
+  const madeCampaign = async () => {
+    const key = "their-secret-campaign";
+    const path = inWorkspace(b.id, `/campaigns/by-key/${key}`);
+    const made = await operatorCall(bea, "PUT", path, campaignDefinition(key));
+    await operatorCall(bea, "POST", `${path}/resume`);
+    return { id: ((await made.json()) as { campaign: { id: string } }).campaign.id, key };
+  };
   const onTheirs = `/conversations/${other.conversationId}/labels/${labelB.id}`;
   await operatorCall(bea, "PUT", inWorkspace(b.id, onTheirs));
   return {
@@ -2563,6 +2725,7 @@ async function buildWorld(db: Database): Promise<World> {
     labelB,
     outboundTwo: await madeOutbound(anna, a, two.id),
     outboundB: await madeOutbound(bea, b, other.id),
+    campaignB: await madeCampaign(),
     secrets: { two: "written by two", b: "written in the other workspace" },
     widget,
     operator: operatorCall,

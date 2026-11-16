@@ -1,15 +1,17 @@
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { chosenButton } from "../../../packages/widget/src/shared.ts";
 import { takeOver } from "./bots.ts";
-import { upsertContact } from "./contact-fields.ts";
+import { tally } from "./campaign-results.ts";
+import { matchesContact } from "./conditions.ts";
 import {
   type ChosenButton,
   conversation,
   type OutboundButton,
   outboundMessage,
+  visitor,
 } from "./db/schema.ts";
 import type { Transaction } from "./db/tenant.ts";
-import type { ContactFields } from "./inputs.ts";
+import { toMs } from "./inputs.ts";
 import {
   type Author,
   appendMessage,
@@ -26,7 +28,6 @@ import {
   hasExpired,
   isMember,
   isOneOf,
-  matches,
   ofRow,
   SHOWN_STATUSES,
   situation,
@@ -117,8 +118,27 @@ export async function materializeOutbound(
     statusReason: null,
     dueAt: null,
   });
+  if (row.campaignId !== null && target.started === "created") {
+    const { campaignId } = row;
+    await tally(tx, workspaceId, { ...row, campaignId }, ["conversationsStarted"]);
+  }
   return appended;
 }
+
+async function hasEmail(tx: Transaction, workspaceId: string, visitorId: string) {
+  const [who] = await tx
+    .select({ email: visitor.email })
+    .from(visitor)
+    .where(and(eq(visitor.workspaceId, workspaceId), eq(visitor.id, visitorId)));
+  return who?.email != null;
+}
+
+/** An unread `on_reply` message whose time to go by email came: it goes in a conversation now. */
+const emailIsDue = (row: Row) =>
+  row.emailIfUnreadAt !== null &&
+  row.emailIfUnreadAt.getTime() <= Date.now() &&
+  row.readAt === null &&
+  (row.status === "sent" || row.status === "delivered");
 
 /**
  * Moves a message on as far as it can go now: at its send time it is sent, and one with
@@ -132,36 +152,41 @@ export async function advance(
   botsPaused: boolean,
 ): Promise<Row> {
   if (hasExpired(row)) return end(tx, workspaceId, row, { status: "expired" });
+  if (emailIsDue(row) && !(await hasEmail(tx, workspaceId, row.visitorId))) {
+    return change(tx, workspaceId, row, { dueAt: null });
+  }
   const scheduled = row.status === "scheduled";
-  const state = await situation(tx, workspaceId, row, { botsPaused, checkUnless: scheduled });
+  const state = await situation(tx, workspaceId, row, { botsPaused, atSendTime: scheduled });
   // An `on_reply` message waits for the widget, which decides about an open conversation when it
-  // would show.
-  const showsLater = row.startConversation === "on_reply";
+  // would show, unless its time to go by email came.
+  const showsLater = row.startConversation === "on_reply" && !emailIsDue(row);
   const verdict = decide(row, showsLater ? { ...state, open: null } : state);
   if (verdict.kind === "cancel") {
     return end(tx, workspaceId, row, { status: "cancelled", reason: verdict.reason });
   }
   // A scheduled message that may not go yet, or a `now` message that waits: the worker looks again.
   if (verdict.kind === "wait" && (scheduled || !showsLater)) {
-    return change(tx, workspaceId, row, {
-      statusReason: verdict.reason,
-      dueAt: new Date(Date.now() + RECHECK_MS),
-    });
+    const { until = new Date(Date.now() + RECHECK_MS) } = verdict;
+    return change(tx, workspaceId, row, { statusReason: verdict.reason, dueAt: until });
   }
-  const sent = scheduled ? await becomeSent(tx, workspaceId, row) : row;
+  const sent = scheduled
+    ? await becomeSent(tx, workspaceId, row, state.campaign?.emailIfUnread ?? null)
+    : row;
   // An `on_reply` message is sent now and waits for the widget, with the reason it would not
-  // show yet.
+  // show yet, and the worker comes back when it would go by email.
   if (showsLater || verdict.kind === "wait") {
     const reason = verdict.kind === "wait" ? verdict.reason : null;
-    return change(tx, workspaceId, sent, { statusReason: reason, dueAt: null });
+    return change(tx, workspaceId, sent, { statusReason: reason, dueAt: sent.emailIfUnreadAt });
   }
   // A `now` message that may go: in the visitor's conversation at once.
   await materializeOutbound(tx, workspaceId, row.id, row.visitorId, { answer: false });
   return (await findRow(tx, workspaceId, row.id)) ?? sent;
 }
 
-const becomeSent = (tx: Transaction, workspaceId: string, row: Row) =>
-  change(
+/** A message that may go now: sent, and when its campaign asks, set to go by email if unread. */
+function becomeSent(tx: Transaction, workspaceId: string, row: Row, emailIfUnread: string | null) {
+  const now = Date.now();
+  return change(
     tx,
     workspaceId,
     row,
@@ -169,10 +194,16 @@ const becomeSent = (tx: Transaction, workspaceId: string, row: Row) =>
       status: "sent",
       statusReason: null,
       dueAt: null,
-      expiresAt: row.expiresAt ?? new Date(Date.now() + EXPIRES_AFTER_MS),
+      sentAt: new Date(now),
+      expiresAt: row.expiresAt ?? new Date(now + EXPIRES_AFTER_MS),
+      emailIfUnreadAt:
+        emailIfUnread === null || row.startConversation !== "on_reply"
+          ? null
+          : new Date(now + toMs(emailIfUnread)),
     },
     "outbound_message.sent",
   );
+}
 
 /**
  * The rows a write will change, read again under the workspace lock when there are any, so a change
@@ -370,7 +401,7 @@ export async function readInConversation(
  * A contact's fields changed: each scheduled message whose `unless` matches now is cancelled. The
  * caller holds the visitor's lock, which comes before the workspace's.
  */
-async function contactChanged(tx: Transaction, workspaceId: string, visitorId: string) {
+export async function recheckUnless(tx: Transaction, workspaceId: string, visitorId: string) {
   const { rows } = await underLock(tx, workspaceId, () =>
     tx
       .select()
@@ -385,26 +416,10 @@ async function contactChanged(tx: Transaction, workspaceId: string, visitorId: s
       ),
   );
   for (const row of rows) {
-    if (row.unless !== null && (await matches(tx, workspaceId, visitorId, row.unless))) {
+    if (row.unless !== null && (await matchesContact(tx, workspaceId, visitorId, row.unless))) {
       await end(tx, workspaceId, row, { status: "cancelled", reason: "unless_matched" });
     }
   }
-}
-
-/**
- * The contact upsert, at `at` in milliseconds, which also checks the person's scheduled messages
- * again when a value changed.
- */
-export async function upsertContactAndRecheck(
-  tx: Transaction,
-  workspaceId: string,
-  userId: string,
-  fields: ContactFields,
-  at: number,
-) {
-  const upserted = await upsertContact(tx, workspaceId, userId, fields, at);
-  if (upserted.changed) await contactChanged(tx, workspaceId, upserted.visitorId);
-  return upserted;
 }
 
 /**

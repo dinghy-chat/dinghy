@@ -63,10 +63,24 @@ const contactState = {
   fieldTimes: visitor.fieldTimes,
 };
 
+/** The fields whose value differs, as conditions name them: `name`, `email`, `attributes.<key>`. */
+function changedFields(before: ContactState, after: ContactChange): string[] {
+  const asRecord = (value: unknown) => (value ?? {}) as Record<string, unknown>;
+  const [old, now] = [asRecord(before.attributes), asRecord(after.attributes)];
+  const keys = new Set([...Object.keys(old), ...Object.keys(now)]);
+  return [
+    ...(before.name === after.name ? [] : ["name", "firstName"]),
+    ...(before.email === after.email ? [] : ["email"]),
+    ...[...keys]
+      .filter((key) => JSON.stringify(old[key]) !== JSON.stringify(now[key]))
+      .map((key) => `${ATTRIBUTE_TIME}${key}`),
+  ];
+}
+
 /**
  * Writes a server's or a host token's fields at `at`, in milliseconds. A read with no lock comes
  * first, so a write that changes nothing, such as the same host token on every request, takes no
- * lock. True when a value changed.
+ * lock. Answers the fields whose value changed.
  */
 async function writeContact(
   tx: Transaction,
@@ -74,24 +88,20 @@ async function writeContact(
   visitorId: string,
   fields: ContactFields,
   at: number,
-): Promise<boolean> {
+): Promise<string[]> {
   const one = and(eq(visitor.workspaceId, workspaceId), eq(visitor.id, visitorId));
   const [seen] = await tx.select(contactState).from(visitor).where(one);
-  if (seen === undefined || mergeContact(seen, fields, at) === null) return false;
+  if (seen === undefined || mergeContact(seen, fields, at) === null) return [];
   const [current] = await tx.select(contactState).from(visitor).where(one).for("no key update");
   const change = current === undefined ? null : mergeContact(current, fields, at);
-  if (current === undefined || change === null) return false;
+  if (current === undefined || change === null) return [];
   await tx.update(visitor).set(change).where(one);
-  return (
-    change.name !== current.name ||
-    change.email !== current.email ||
-    JSON.stringify(change.attributes) !== JSON.stringify(current.attributes)
-  );
+  return changedFields(current, change);
 }
 
 /**
- * Creates the signed-in contact with this user ID, or writes to the one that exists. `changed` is
- * true when a value changed, for the checks that read the contact.
+ * Creates the signed-in contact with this user ID, or writes to the one that exists. `changed` lists
+ * the fields whose value changed, for the checks that read the contact.
  */
 export async function upsertContact(
   tx: Transaction,
@@ -99,7 +109,7 @@ export async function upsertContact(
   userId: string,
   fields: ContactFields,
   at: number,
-): Promise<{ visitorId: string; created: boolean; changed: boolean }> {
+): Promise<{ visitorId: string; created: boolean; changed: string[] }> {
   const ofUser = and(eq(visitor.workspaceId, workspaceId), eq(visitor.userId, userId));
   let [existing] = await tx.select({ id: visitor.id }).from(visitor).where(ofUser);
   if (existing === undefined) {
@@ -109,7 +119,7 @@ export async function upsertContact(
       .values({ workspaceId, userId, ...(mergeContact(empty, fields, at) ?? empty) })
       .onConflictDoNothing()
       .returning({ id: visitor.id });
-    if (created !== undefined) return { visitorId: created.id, created: true, changed: true };
+    if (created !== undefined) return { visitorId: created.id, created: true, changed: [] };
     // Two first requests arrived together, and the other one created the row.
     [existing] = await tx.select({ id: visitor.id }).from(visitor).where(ofUser);
     if (existing === undefined) throw new Error("The visitor row is missing");

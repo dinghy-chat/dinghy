@@ -6,6 +6,11 @@ import {
   apiKey,
   apiKeyCredential,
   attachment,
+  campaign,
+  campaignDay,
+  campaignRun,
+  campaignTrigger,
+  contactEvent,
   conversation,
   draftReply,
   event,
@@ -48,6 +53,11 @@ const TENANT_TABLES = [
   widgetSiteSeen,
   outboundMessage,
   outboundDedupe,
+  campaign,
+  campaignRun,
+  campaignTrigger,
+  campaignDay,
+  contactEvent,
 ];
 
 let database: TestDatabase;
@@ -132,6 +142,34 @@ async function seed(workspaceId: string): Promise<void> {
   await owner
     .insert(outboundDedupe)
     .values({ workspaceId, visitorId, dedupeKey: "welcome", outboundMessageId });
+  const campaignId = uuidFor(workspaceId, 8);
+  await owner.insert(campaign).values({
+    workspaceId,
+    id: campaignId,
+    key: "welcome",
+    name: `campaign of ${workspaceId}`,
+    authorApiKeyId: apiKeyId,
+    definition: {
+      key: "welcome",
+      name: "Welcome",
+      trigger: { type: "api" },
+      message: { body: "Hi" },
+      presentation: { startConversation: "on_reply", show: "badge", ifConversationOpen: "skip" },
+      delivery: { sendEmail: false },
+      rules: { frequency: "once", businessHours: false, endsAt: null },
+    },
+  });
+  await owner.insert(campaignRun).values({ workspaceId, campaignId, occurrence: new Date() });
+  await owner.insert(campaignTrigger).values({ workspaceId, campaignId, field: "name" });
+  await owner.insert(campaignDay).values({ workspaceId, campaignId, day: "2026-11-16", sent: 1 });
+  await owner.insert(contactEvent).values({
+    workspaceId,
+    visitorId,
+    name: "signup",
+    count: 1,
+    firstAt: new Date(),
+    lastAt: new Date(),
+  });
   const webhookId = uuidFor(workspaceId, 4);
   await owner.insert(webhook).values({
     workspaceId,
@@ -209,6 +247,7 @@ describe("migrations", () => {
       webhook_created_by_api_key_fk: "a key's delete, at most 5 webhooks per workspace",
       draft_reply_resolved_by_fk: "a member's removal, which only the purge does",
       outbound_message_sender_fk: "a member's removal, which only the purge does",
+      campaign_author_operator_fk: "a member's removal, which only the purge does",
     };
     const result = await owner.execute<{ name: string }>(sql`
       select c.conname as name from pg_constraint c

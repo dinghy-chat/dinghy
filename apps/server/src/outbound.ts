@@ -1,27 +1,10 @@
 import type { z } from "@hono/zod-openapi";
-import {
-  type AnyColumn,
-  and,
-  asc,
-  desc,
-  eq,
-  inArray,
-  isNull,
-  lte,
-  type SQL,
-  sql,
-} from "drizzle-orm";
+import { type AnyColumn, and, asc, desc, eq, inArray, lte, type SQL, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import { chosenButton } from "../../../packages/widget/src/shared.ts";
 import type { Actor } from "./api-keys.ts";
-import {
-  apiKey,
-  operator,
-  outboundDedupe,
-  outboundMessage,
-  visitor,
-  workspaceMember,
-} from "./db/schema.ts";
+import { contactChanged, upsertContactAndRecheck } from "./contact-checks.ts";
+import { apiKey, operator, outboundDedupe, outboundMessage, visitor } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import type { VisitorSelector } from "./inputs.ts";
 import { lockVisitors } from "./journey.ts";
@@ -36,32 +19,29 @@ import {
   readOutbound,
   shownRows,
   underLock,
-  upsertContactAndRecheck,
   type WidgetOutbound,
   widgetOutbound,
 } from "./outbound-delivery.ts";
+import { keyRefusal, placeOutbound, type SendRefusal, sendsAs } from "./outbound-place.ts";
 import {
   authorRef,
+  cancelWhere,
   change,
   decide,
   end,
   endable,
   hasExpired,
-  isBlocked,
   isEndable,
-  type KeyState,
   keyState,
   ofRow,
   situation,
   WAITING_STATUSES,
 } from "./outbound-rules.ts";
-import {
-  type ListQuery,
-  type OutboundMessageSchema,
-  type SEND_REFUSALS,
-  type SendSchema,
-  type VisitorRef,
-  WAITING_PER_VISITOR,
+import type {
+  ListQuery,
+  OutboundMessageSchema,
+  SendSchema,
+  VisitorRef,
 } from "./outbound-schemas.ts";
 import { beforeCursor, cursorTime } from "./pages.ts";
 import { DAY_MS } from "./time.ts";
@@ -75,10 +55,9 @@ const BODY_KEPT_MS = 30 * DAY_MS;
 type Row = typeof outboundMessage.$inferSelect;
 type OutboundView = z.infer<typeof OutboundMessageSchema>;
 type SendInput = z.infer<typeof SendSchema>;
-type SendRefusal = keyof typeof SEND_REFUSALS;
 
 /** Wakes the operators, and the visitor's widget so it fetches its waiting messages. */
-function tellOutbound(live: Signals, workspaceId: string, visitorId: string) {
+export function tellOutbound(live: Signals, workspaceId: string, visitorId: string) {
   wakeConversation(live, workspaceId, visitorId);
   live.tellVisitor(workspaceId, visitorId, { kind: "outbound" });
 }
@@ -173,7 +152,7 @@ function viewOf(named: Named): OutboundView {
 }
 
 /** One message as the API shows it. */
-async function outboundView(tx: Transaction, workspaceId: string, id: string) {
+export async function outboundView(tx: Transaction, workspaceId: string, id: string) {
   const [found] = await withNames(tx, workspaceId, eq(outboundMessage.id, id), 1);
   return found === undefined ? null : viewOf(found);
 }
@@ -190,39 +169,6 @@ export async function outboundViews(tx: Transaction, workspaceId: string, ids: s
 type SendOutcome =
   | { kind: "sent"; created: boolean; outboundMessage: OutboundView }
   | { kind: "refused"; refusal: SendRefusal };
-
-/** Who the visitor sees on a send, after the key's permission to show a member. */
-async function sendsAs(
-  tx: Transaction,
-  workspaceId: string,
-  actor: Actor,
-  key: KeyState | null,
-  sender: SendInput["sender"],
-): Promise<NewSend["as"] | SendRefusal> {
-  if (sender === "team") return { senderKind: "team", senderOperatorId: null };
-  if (sender === undefined) {
-    return actor.kind === "key"
-      ? { senderKind: "author", senderOperatorId: null }
-      : { senderKind: "member", senderOperatorId: actor.operatorId };
-  }
-  if (key !== null && !key.mayActAsMember) return "send_as_member_required";
-  const [member] = await tx
-    .select({ id: workspaceMember.operatorId })
-    .from(workspaceMember)
-    .innerJoin(operator, eq(operator.id, workspaceMember.operatorId))
-    .where(
-      and(
-        eq(workspaceMember.workspaceId, workspaceId),
-        isNull(workspaceMember.removedAt),
-        "operatorId" in sender
-          ? eq(workspaceMember.operatorId, sender.operatorId)
-          : sql`lower(${operator.email}) = lower(${sender.email})`,
-      ),
-    );
-  return member === undefined
-    ? "unknown_member"
-    : { senderKind: "member", senderOperatorId: member.id };
-}
 
 async function findByVisitorRef(
   tx: Transaction,
@@ -242,7 +188,7 @@ async function findByVisitorRef(
 }
 
 /** The visitor a send names: created or updated by user ID, or found by ID. */
-async function sendTarget(tx: Transaction, workspaceId: string, selector: VisitorSelector) {
+export async function sendTarget(tx: Transaction, workspaceId: string, selector: VisitorSelector) {
   if ("id" in selector) return findByVisitorRef(tx, workspaceId, selector);
   const { userId, ...fields } = selector;
   return (await upsertContactAndRecheck(tx, workspaceId, userId, fields, Date.now())).visitorId;
@@ -299,94 +245,6 @@ async function existingSend(
   const first = await retried(tx, workspaceId, actor, input.clientId);
   if (first !== undefined || input.dedupeKey === undefined) return first;
   return dedupeMessageId(tx, workspaceId, visitorId, input.dedupeKey);
-}
-
-/** What the sending key may not do. A member by hand needs no permission for either. */
-function keyRefusal(key: KeyState | null, input: SendInput): SendRefusal | null {
-  if (key?.replyMode === "draft") return "send_mode_required";
-  if (input.sendEmail && key !== null && !key.maySendEmail) return "send_email_required";
-  return null;
-}
-
-/** The visitor's messages that a cancel or an expiry can still end, for the limit per visitor. */
-const unreadCount = (tx: Transaction, workspaceId: string, visitorId: string) =>
-  tx.$count(
-    outboundMessage,
-    and(
-      eq(outboundMessage.workspaceId, workspaceId),
-      eq(outboundMessage.visitorId, visitorId),
-      endable,
-    ),
-  );
-
-/** Why this visitor may not get a message now, or null. The caller holds the locks. */
-async function refusal(
-  tx: Transaction,
-  workspaceId: string,
-  visitorId: string,
-  { actor, botsPaused, scheduled }: { actor: Actor; botsPaused: boolean; scheduled: boolean },
-): Promise<SendRefusal | null> {
-  if (actor.kind === "key" && botsPaused && !scheduled) return "bots_paused";
-  if (await isBlocked(tx, workspaceId, visitorId)) return "blocked";
-  if ((await unreadCount(tx, workspaceId, visitorId)) >= WAITING_PER_VISITOR) {
-    return "too_many_waiting";
-  }
-  return null;
-}
-
-/** A send that passed every check, with the visitor and the sender it resolved to. */
-interface NewSend {
-  workspaceId: string;
-  visitorId: string;
-  actor: Actor;
-  via: "mcp" | null;
-  as: { senderKind: Row["senderKind"]; senderOperatorId: string | null };
-  input: SendInput;
-  times: { sendAt: Date; expiresAt: Date | null };
-}
-
-/** Inserts a new scheduled message, and its `dedupeKey`. */
-async function insertOutbound(
-  tx: Transaction,
-  { workspaceId, visitorId, actor, via, as, input, times }: NewSend,
-): Promise<Row> {
-  const [row] = await tx
-    .insert(outboundMessage)
-    .values({
-      workspaceId,
-      visitorId,
-      ...(actor.kind === "key"
-        ? { authorApiKeyId: actor.apiKeyId }
-        : { authorOperatorId: actor.operatorId }),
-      via,
-      ...as,
-      body: input.body,
-      buttons: input.buttons ?? [],
-      metadata: input.metadata ?? {},
-      startConversation: input.startConversation,
-      show: input.show,
-      ifConversationOpen: input.ifConversationOpen,
-      assignOnReply: input.assignOnReply ?? as.senderKind === "member",
-      sendEmail: input.sendEmail,
-      dedupeKey: input.dedupeKey ?? null,
-      clientId: input.clientId,
-      status: "scheduled",
-      sendAt: times.sendAt,
-      dueAt: times.sendAt,
-      unless: input.unless ?? null,
-      expiresAt: times.expiresAt,
-    })
-    .returning();
-  if (row === undefined) throw new Error("The outbound insert returned no row");
-  if (row.dedupeKey !== null) {
-    await tx.insert(outboundDedupe).values({
-      workspaceId,
-      visitorId,
-      dedupeKey: row.dedupeKey,
-      outboundMessageId: row.id,
-    });
-  }
-  return row;
 }
 
 /** When a send goes out and when it stops waiting, or null when it would expire first. */
@@ -457,7 +315,7 @@ export function createOutbound({ db, live }: { db: Database; live: Signals }) {
         const first = await retried(tx, workspaceId, actor, input.clientId);
         if (first !== undefined) return { created: false, id: first, visitorId: null };
         const key = actor.kind === "key" ? await keyState(tx, workspaceId, actor.apiKeyId) : null;
-        const refusedKey = keyRefusal(key, input);
+        const refusedKey = keyRefusal(key, input.sendEmail);
         if (refusedKey !== null) return refusedKey;
         const as = await sendsAs(tx, workspaceId, actor, key, input.sender);
         if (typeof as === "string") return as;
@@ -469,12 +327,9 @@ export function createOutbound({ db, live }: { db: Database; live: Signals }) {
         const { botsPaused } = await lockWorkspace(tx, workspaceId);
         const existing = await existingSend(tx, workspaceId, actor, input, visitorId);
         if (existing !== undefined) return { created: false, id: existing, visitorId: null };
-        const scheduled = times.sendAt.getTime() > Date.now();
-        const refused = await refusal(tx, workspaceId, visitorId, { actor, botsPaused, scheduled });
-        if (refused !== null) return refused;
-        const send = { workspaceId, visitorId, actor, via, as, input, times };
-        const row = await insertOutbound(tx, send);
-        if (!scheduled) await advance(tx, workspaceId, row, botsPaused);
+        const send = { workspaceId, visitorId, actor, via, as, input, times, campaign: null };
+        const row = await placeOutbound(tx, send, botsPaused);
+        if (typeof row === "string") return row;
         return { created: true, id: row.id, visitorId };
       });
       if (typeof outcome === "string") return { kind: "refused", refusal: outcome };
@@ -510,6 +365,27 @@ export function createOutbound({ db, live }: { db: Database; live: Signals }) {
 
     get: view,
 
+    /**
+     * Turns automatic messages off or on for a visitor. Off, those from keys and campaigns that
+     * wait for them are cancelled. A member's by hand stay.
+     */
+    async setOptedOut(workspaceId: string, visitorId: string, optedOut: boolean) {
+      const ended = await withWorkspace(db, workspaceId, async (tx) => {
+        await lockVisitors(tx, workspaceId, [visitorId]);
+        await tx
+          .update(visitor)
+          .set({ optedOutAt: optedOut ? sql`coalesce(${visitor.optedOutAt}, now())` : null })
+          .where(and(eq(visitor.workspaceId, workspaceId), eq(visitor.id, visitorId)));
+        await lockWorkspace(tx, workspaceId);
+        const automatic = sql`${outboundMessage.visitorId} = ${visitorId}
+          and (${outboundMessage.authorApiKeyId} is not null or ${outboundMessage.campaignId} is not null)`;
+        const visitors = optedOut ? await cancelWhere(tx, workspaceId, automatic, "opted_out") : [];
+        await contactChanged(tx, workspaceId, visitorId, ["optedOut"]);
+        return visitors.length > 0;
+      });
+      if (ended) tellOutbound(live, workspaceId, visitorId);
+    },
+
     /** A page of messages, newest first. */
     async list(workspaceId: string, filter: z.infer<typeof ListQuery>) {
       const rows = await withWorkspace(db, workspaceId, (tx) =>
@@ -541,10 +417,7 @@ export function createOutbound({ db, live }: { db: Database; live: Signals }) {
         for (const row of rows) {
           const verdict = hasExpired(row)
             ? null
-            : decide(
-                row,
-                await situation(tx, workspaceId, row, { botsPaused, checkUnless: false }),
-              );
+            : decide(row, await situation(tx, workspaceId, row, { botsPaused, atSendTime: false }));
           if (verdict === null) {
             await end(tx, workspaceId, row, { status: "expired" });
           } else if (verdict.kind === "cancel") {

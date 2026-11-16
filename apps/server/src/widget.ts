@@ -9,6 +9,12 @@ import { VISITOR_TOKEN } from "./api-security.ts";
 import type { App, AppEnv } from "./app.ts";
 import { chatLinkVisitor, chatLinkWorkspace, isChatLinkToken } from "./chat-link.ts";
 import {
+  BEAT_FIELDS,
+  CHAT_FIELDS,
+  recheckCampaigns,
+  upsertContactAndRecheck,
+} from "./contact-checks.ts";
+import {
   conversation,
   OUTBOUND_SHOWS,
   VISITOR_KINDS,
@@ -75,7 +81,6 @@ import type { Outbound } from "./outbound.ts";
 import {
   appendVisitorMessage,
   readInConversation,
-  upsertContactAndRecheck,
   type WidgetOutbound,
 } from "./outbound-delivery.ts";
 import { ButtonIndex, ButtonSchema, ChosenButtonSchema } from "./outbound-schemas.ts";
@@ -131,8 +136,30 @@ const VisitorSchema = z
     unread: z.number(),
     // A stream from here reads only what follows the read position, as a closed panel needs.
     readCursor: z.string(),
+    // The visitor turned off automatic messages in the chat's menu.
+    optedOut: z.boolean(),
   })
   .openapi("Visitor");
+
+const optOutRoute = createRoute({
+  method: "post",
+  path: "/v1/widget/{key}/opt-out",
+  security: VISITOR_TOKEN,
+  summary: "Turn automatic messages off or on for this visitor",
+  description:
+    "Off, campaigns and outbound messages from keys skip the visitor, and those that wait for them are cancelled with `opted_out`. A member can still write by hand.",
+  request: {
+    params,
+    body: {
+      required: true,
+      content: { "application/json": { schema: z.object({ optedOut: z.boolean() }) } },
+    },
+  },
+  responses: {
+    200: { description: "The visitor", content: { "application/json": { schema: VisitorSchema } } },
+    ...WIDGET_WRITE_ERRORS,
+  },
+});
 
 const markReadRoute = createRoute({
   method: "post",
@@ -928,7 +955,7 @@ async function visitorView(db: Database, workspaceId: string, identified: Identi
       .orderBy(sql`${conversation.status} = 'open' desc`)
       .limit(1);
     const [saved] = await tx
-      .select({ email: visitor.email })
+      .select({ email: visitor.email, optedOutAt: visitor.optedOutAt })
       .from(visitor)
       .where(and(eq(visitor.workspaceId, workspaceId), eq(visitor.id, visitorId)));
     const { lastReadSeq, unread } = await readState(tx, workspaceId, visitorId);
@@ -945,6 +972,7 @@ async function visitorView(db: Database, workspaceId: string, identified: Identi
       lastReadSeq: lastReadSeq.toString(),
       unread,
       readCursor: formatCursor({ generation: current?.generation ?? 0, seq: lastReadSeq }),
+      optedOut: saved?.optedOutAt != null,
     };
   });
 }
@@ -1269,13 +1297,17 @@ export function registerWidgetRoutes(
           if (await isBlocked(tx, found.id, identified, ipHash)) return null;
           await noteVisitorAddress(tx, found.id, identified.visitorId, ipHash);
           const { page, outboundIds, button, ...input } = c.req.valid("json");
-          return appendVisitorMessage(
+          const appended = await appendVisitorMessage(
             tx,
             found.id,
             { kind: "visitor", visitorId: identified.visitorId },
             { ...input, page: identified.link ? null : sitePage(page, c.req.header("origin")) },
             { outboundIds, button },
           );
+          if (appended.created) {
+            await recheckCampaigns(tx, found.id, identified.visitorId, CHAT_FIELDS);
+          }
+          return appended;
         }),
       ),
     );
@@ -1510,6 +1542,14 @@ export function registerWidgetRoutes(
     });
   }
 
+  app.openapi(optOutRoute, async (c) => {
+    const found = c.get("workspace");
+    const identified = await identify(c);
+    if (identified === null) return c.json(UNAUTHORIZED, 401);
+    await outbound.setOptedOut(found.id, identified.visitorId, c.req.valid("json").optedOut);
+    return c.json(await visitorView(db, found.id, identified), 200);
+  });
+
   app.openapi(saveEmailRoute, async (c) => {
     const found = c.get("workspace");
     const identified = await identify(c);
@@ -1579,9 +1619,11 @@ export function registerWidgetRoutes(
     const conversationId =
       visitorId == null
         ? null
-        : await withWorkspace(db, found.id, (tx) =>
-            notePlace(tx, found.id, visitorId, country, zone),
-          );
+        : await withWorkspace(db, found.id, async (tx) => {
+            const open = await notePlace(tx, found.id, visitorId, country, zone);
+            await recheckCampaigns(tx, found.id, visitorId, BEAT_FIELDS);
+            return open;
+          });
     await liveVisitors.beat(found.id, {
       tab,
       page: path,

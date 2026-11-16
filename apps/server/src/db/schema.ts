@@ -8,6 +8,7 @@ import {
   boolean,
   check,
   customType,
+  date,
   foreignKey,
   index,
   integer,
@@ -33,6 +34,7 @@ import {
   SAVED_REPLY_SHORTCUT,
   WIDGET_DEFAULTS,
 } from "../../../../packages/widget/src/shared.ts";
+import type { CampaignDefinition } from "../campaign-schemas.ts";
 import type { Condition } from "../conditions.ts";
 
 const createdAt = () => timestamp("created_at", { withTimezone: true }).notNull().defaultNow();
@@ -145,10 +147,17 @@ export const workspace = pgTable(
     // The operator who paused them. Not a foreign key: the workspace row would then depend on its
     // own members, which the purge removes before it.
     botsPausedBy: uuid("bots_paused_by"),
+    // Set when a member pauses every campaign. Separate from the bots' pause: a campaign's message
+    // waits while it is set, and a key's reply does not.
+    campaignsPausedAt: timestamp("campaigns_paused_at", { withTimezone: true }),
+    // The fewest hours between two campaign messages to one visitor, checked when one becomes sent.
+    // 0 turns the rule off.
+    campaignGapHours: smallint("campaign_gap_hours").notNull().default(24),
     createdAt: createdAt(),
   },
   (table) => [
     index("workspace_deleted_idx").on(table.deletedAt).where(sql`${table.deletedAt} is not null`),
+    check("workspace_campaign_gap_hours", sql`${table.campaignGapHours} between 0 and 720`),
     check(
       "workspace_waiting_inactive",
       sql`not (${table.active} and ${table.waitingSince} is not null)`,
@@ -322,6 +331,9 @@ export const visitor = pgTable(
     locale: visitorLocale("locale"),
     // Made by a bot's simulated visitor message, to test it. Lists and analytics leave it out.
     isTest: boolean("is_test").notNull().default(false),
+    // When the visitor turned off automatic messages in the widget's menu. Campaigns and outbound
+    // messages from keys skip them while it is set.
+    optedOutAt: timestamp("opted_out_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (table) => [
@@ -568,6 +580,9 @@ const OUTBOUND_EVENT_KINDS = [
 ] as const;
 export type OutboundEventKind = (typeof OUTBOUND_EVENT_KINDS)[number];
 
+/** A campaign was created, changed, paused, resumed or ended. The payload is a CampaignPayload. */
+const CAMPAIGN_EVENT_KINDS = ["campaign.updated"] as const;
+
 // The ordered feed. Payloads hold IDs, never message text, so a delete removes the content.
 /**
  * Every kind of event on a workspace's feed. The operator app branches on them, so a new kind goes
@@ -599,6 +614,7 @@ const EVENT_KINDS = [
   "workspace.changed",
   // The payload is an OutboundPayload.
   ...OUTBOUND_EVENT_KINDS,
+  ...CAMPAIGN_EVENT_KINDS,
 ] as const;
 export type EventKind = (typeof EVENT_KINDS)[number];
 
@@ -620,6 +636,11 @@ export interface MessagePayload {
 export interface OutboundPayload {
   outboundMessageId: string;
   visitorId: string;
+}
+
+/** The payload of a campaign's event. */
+export interface CampaignPayload {
+  campaignId: string;
 }
 
 /** The payload of a `conversation.labeled` event. */
@@ -1175,6 +1196,7 @@ export const WEBHOOK_EVENTS = [
   "conversation.given_back",
   "conversation.labeled",
   ...OUTBOUND_EVENT_KINDS,
+  ...CAMPAIGN_EVENT_KINDS,
 ] as const;
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 
@@ -1226,10 +1248,11 @@ export const webhookDelivery = pgTable(
     // The same for every webhook and every retry of one change, so a receiver can drop a repeat.
     eventId: uuid("event_id").notNull(),
     type: text("type").$type<WebhookEvent>().notNull(),
-    // Null for an outbound message's event, which names the message instead.
+    // Null for an outbound message's or a campaign's event, which names it instead.
     conversationId: uuid("conversation_id"),
     messageId: uuid("message_id"),
     outboundMessageId: uuid("outbound_message_id"),
+    campaignId: uuid("campaign_id"),
     // A `conversation.labeled` delivery's label, and whether it was added or removed, both null on
     // other deliveries, as webhook_delivery_label checks. Not a foreign key, so a delivery still says
     // which label went after someone deletes it.
@@ -1289,9 +1312,15 @@ export const webhookDelivery = pgTable(
       foreignColumns: [outboundMessage.workspaceId, outboundMessage.id],
     }).onDelete("cascade"),
     index("webhook_delivery_outbound_message_idx").on(table.workspaceId, table.outboundMessageId),
+    foreignKey({
+      name: "webhook_delivery_campaign_fk",
+      columns: [table.workspaceId, table.campaignId],
+      foreignColumns: [campaign.workspaceId, campaign.id],
+    }).onDelete("cascade"),
+    index("webhook_delivery_campaign_idx").on(table.workspaceId, table.campaignId),
     check(
-      "webhook_delivery_subject",
-      sql`(${table.conversationId} is null) <> (${table.outboundMessageId} is null)`,
+      "webhook_delivery_one_subject",
+      sql`num_nonnulls(${table.conversationId}, ${table.outboundMessageId}, ${table.campaignId}) = 1`,
     ),
     check(
       "webhook_delivery_label",
@@ -1742,8 +1771,9 @@ export const OUTBOUND_STATUSES = [
 export type OutboundStatus = (typeof OUTBOUND_STATUSES)[number];
 
 /**
- * Why an outbound message waits or was cancelled. Campaigns set the reasons that name them, so the
- * list is whole from the start and a client can switch on every value.
+ * Why an outbound message waits or was cancelled. `unless_matched` also covers a campaign's
+ * `exitWhen`, and `control_group` marks a campaign's contact who gets no message, so its goal still
+ * counts.
  */
 export const OUTBOUND_STATUS_REASONS = [
   "open_conversation",
@@ -1756,6 +1786,15 @@ export const OUTBOUND_STATUS_REASONS = [
   "unless_matched",
   "cancelled_by_request",
   "conversation_deleted",
+  "opted_out",
+  "audience_unmatched",
+  "frequency_capped",
+  "goal_reached",
+  "outside_business_hours",
+  "outside_send_window",
+  "campaign_paused",
+  "campaign_ended",
+  "control_group",
 ] as const;
 export type OutboundStatusReason = (typeof OUTBOUND_STATUS_REASONS)[number];
 
@@ -1834,10 +1873,52 @@ export const outboundMessage = pgTable(
     // are in a custom migration, because Drizzle cannot name the columns.
     conversationId: uuid("conversation_id"),
     messageId: uuid("message_id"),
+    // The campaign that made it, the schedule's run, and the A/B variant it got.
+    campaignId: uuid("campaign_id"),
+    campaignRunId: uuid("campaign_run_id"),
+    variant: text("variant"),
+    // When it became sent, for the workspace's gap between two campaign messages.
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    // When the contact first matched the campaign's goal within its time.
+    goalReachedAt: timestamp("goal_reached_at", { withTimezone: true }),
+    // When an `on_reply` message still unread goes in a conversation and out by email.
+    emailIfUnreadAt: timestamp("email_if_unread_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (table) => [
     primaryKey({ columns: [table.workspaceId, table.id] }),
+    foreignKey({
+      name: "outbound_message_campaign_fk",
+      columns: [table.workspaceId, table.campaignId],
+      foreignColumns: [campaign.workspaceId, campaign.id],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "outbound_message_campaign_run_fk",
+      columns: [table.workspaceId, table.campaignRunId],
+      foreignColumns: [campaignRun.workspaceId, campaignRun.id],
+    }).onDelete("cascade"),
+    // A schedule's run reaches each contact once, even after a crash.
+    unique("outbound_message_run_visitor_key").on(
+      table.workspaceId,
+      table.campaignRunId,
+      table.visitorId,
+    ),
+    // A campaign's messages to one contact: its frequency, its exit and its goal. Whole, as the
+    // campaign's foreign key needs it.
+    index("outbound_message_campaign_idx").on(
+      table.workspaceId,
+      table.campaignId,
+      table.visitorId,
+      table.createdAt,
+    ),
+    // The workspace's gap between two campaign messages to one visitor.
+    index("outbound_message_campaign_sent_idx")
+      .on(table.workspaceId, table.visitorId, table.sentAt)
+      .where(sql`${table.campaignId} is not null and ${table.sentAt} is not null`),
+    check(
+      "outbound_message_variant",
+      sql`(${table.variant} is null) or (${table.campaignId} is not null)`,
+    ),
     foreignKey({
       name: "outbound_message_visitor_fk",
       columns: [table.workspaceId, table.visitorId],
@@ -1949,5 +2030,171 @@ export const outboundDedupe = pgTable(
       foreignColumns: [outboundMessage.workspaceId, outboundMessage.id],
     }).onDelete("cascade"),
     index("outbound_dedupe_outbound_message_idx").on(table.workspaceId, table.outboundMessageId),
+  ],
+);
+
+/** Where a campaign stands. Only its own routes change it, never a save of its definition. */
+export const CAMPAIGN_STATUSES = ["draft", "live", "paused", "ended"] as const;
+export type CampaignStatus = (typeof CAMPAIGN_STATUSES)[number];
+
+/**
+ * A saved rule that creates outbound messages: who, when, what, how it shows, and limits. The
+ * definition is the JSON that the API and the editor share, checked by its schema on each save.
+ * New messages carry the member or key that saved it last.
+ */
+export const campaign = pgTable(
+  "campaign",
+  {
+    workspaceId: ownedByWorkspace(),
+    id: id(),
+    key: text("key").notNull(),
+    name: text("name").notNull(),
+    status: text("status").$type<CampaignStatus>().notNull().default("draft"),
+    definition: jsonb("definition").$type<CampaignDefinition>().notNull(),
+    // One more on each save, so an editor can tell that someone else saved in between.
+    version: integer("version").notNull().default(1),
+    authorOperatorId: uuid("author_operator_id"),
+    authorApiKeyId: uuid("author_api_key_id"),
+    createdAt: createdAt(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    // When it last went live, and when it ended.
+    liveAt: timestamp("live_at", { withTimezone: true }),
+    endedAt: timestamp("ended_at", { withTimezone: true }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.id] }),
+    unique("campaign_key_key").on(table.workspaceId, table.key),
+    foreignKey({
+      name: "campaign_author_operator_fk",
+      columns: [table.workspaceId, table.authorOperatorId],
+      foreignColumns: [workspaceMember.workspaceId, workspaceMember.operatorId],
+    }).onDelete("cascade"),
+    foreignKey({
+      name: "campaign_author_api_key_fk",
+      columns: [table.workspaceId, table.authorApiKeyId],
+      foreignColumns: [apiKey.workspaceId, apiKey.id],
+    }).onDelete("cascade"),
+    check(
+      "campaign_one_author",
+      sql`num_nonnulls(${table.authorOperatorId}, ${table.authorApiKeyId}) = 1`,
+    ),
+    enumCheck("campaign_status", table.status, CAMPAIGN_STATUSES),
+    check("campaign_key_format", sql`${table.key} ~ '^[a-z0-9][a-z0-9_-]{0,63}$'`),
+    check("campaign_name_length", sql`char_length(${table.name}) between 1 and 100`),
+    // The live campaigns, which the triggers and the worker read.
+    index("campaign_live_idx").on(table.workspaceId).where(sql`${table.status} = 'live'`),
+    index("campaign_api_key_idx").on(table.workspaceId, table.authorApiKeyId),
+  ],
+);
+
+/**
+ * One pass of a campaign over its audience: a schedule's occurrence, or the daily pass of a match
+ * campaign that emails. It goes in visitor ID order, and each batch commits its messages and its
+ * cursor together, so a crash resumes with no double and no gap.
+ */
+export const campaignRun = pgTable(
+  "campaign_run",
+  {
+    workspaceId: ownedByWorkspace(),
+    id: id(),
+    campaignId: uuid("campaign_id").notNull(),
+    // The time this run stands for: the schedule's occurrence, or the day of a daily pass.
+    occurrence: timestamp("occurrence", { withTimezone: true }).notNull(),
+    // The last visitor ID done, or null before the first batch.
+    cursor: uuid("cursor"),
+    finishedAt: timestamp("finished_at", { withTimezone: true }),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.id] }),
+    foreignKey({
+      name: "campaign_run_campaign_fk",
+      columns: [table.workspaceId, table.campaignId],
+      foreignColumns: [campaign.workspaceId, campaign.id],
+    }).onDelete("cascade"),
+    unique("campaign_run_occurrence_key").on(table.workspaceId, table.campaignId, table.occurrence),
+    // The worker's unfinished runs, across workspaces.
+    index("campaign_run_open_idx").on(table.createdAt).where(sql`${table.finishedAt} is null`),
+  ],
+);
+
+/**
+ * The contact fields that a campaign reads, so a change to a contact checks only the campaigns that
+ * read a changed field. A save rewrites its rows.
+ */
+export const campaignTrigger = pgTable(
+  "campaign_trigger",
+  {
+    workspaceId: ownedByWorkspace(),
+    campaignId: uuid("campaign_id").notNull(),
+    field: text("field").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.campaignId, table.field] }),
+    foreignKey({
+      name: "campaign_trigger_campaign_fk",
+      columns: [table.workspaceId, table.campaignId],
+      foreignColumns: [campaign.workspaceId, campaign.id],
+    }).onDelete("cascade"),
+    index("campaign_trigger_field_idx").on(table.workspaceId, table.field),
+  ],
+);
+
+/**
+ * A campaign's results for one day in UTC and one variant (empty without variants). It outlives the
+ * pruning of message bodies. Test visitors are left out.
+ */
+export const campaignDay = pgTable(
+  "campaign_day",
+  {
+    workspaceId: ownedByWorkspace(),
+    campaignId: uuid("campaign_id").notNull(),
+    day: date("day", { mode: "string" }).notNull(),
+    variant: text("variant").notNull().default(""),
+    // Contacts it reached: a message made, or a place in the control group.
+    entered: integer("entered").notNull().default(0),
+    sent: integer("sent").notNull().default(0),
+    delivered: integer("delivered").notNull().default(0),
+    read: integer("read").notNull().default(0),
+    replied: integer("replied").notNull().default(0),
+    dismissed: integer("dismissed").notNull().default(0),
+    goalReached: integer("goal_reached").notNull().default(0),
+    conversationsStarted: integer("conversations_started").notNull().default(0),
+    // Clicks by button value.
+    clicks: jsonb("clicks").$type<Record<string, number>>().notNull().default({}),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.campaignId, table.day, table.variant] }),
+    foreignKey({
+      name: "campaign_day_campaign_fk",
+      columns: [table.workspaceId, table.campaignId],
+      foreignColumns: [campaign.workspaceId, campaign.id],
+    }).onDelete("cascade"),
+  ],
+);
+
+/**
+ * A fact that the customer's server tracked about a contact, such as `export.finished`: one row per
+ * contact and name, with how often and when. Its properties are never stored.
+ */
+export const contactEvent = pgTable(
+  "contact_event",
+  {
+    workspaceId: ownedByWorkspace(),
+    visitorId: uuid("visitor_id").notNull(),
+    name: text("name").notNull(),
+    count: integer("count").notNull().default(0),
+    firstAt: timestamp("first_at", { withTimezone: true }).notNull(),
+    lastAt: timestamp("last_at", { withTimezone: true }).notNull(),
+    // The IDs of the last few tracks, so a retry with the same ID counts once.
+    recentIds: text("recent_ids").array().notNull().default(sql`'{}'::text[]`),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.visitorId, table.name] }),
+    foreignKey({
+      name: "contact_event_visitor_fk",
+      columns: [table.workspaceId, table.visitorId],
+      foreignColumns: [visitor.workspaceId, visitor.id],
+    }).onDelete("cascade"),
   ],
 );

@@ -11,6 +11,7 @@ import { SESSION_OR_SETUP_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { audit } from "./audit.ts";
 import type { HandledPayload } from "./bots.ts";
+import { campaignViews } from "./campaigns.ts";
 import {
   apiKey,
   event,
@@ -723,8 +724,16 @@ export function createWebhooks({
             ),
           );
         if (found === undefined) return [];
-        const { eventId, type, conversationId, messageId, outboundMessageId, labelId, labelAdded } =
-          found;
+        const {
+          eventId,
+          type,
+          conversationId,
+          messageId,
+          outboundMessageId,
+          campaignId,
+          labelId,
+          labelAdded,
+        } = found;
         return tx
           .insert(webhookDelivery)
           .values({
@@ -735,6 +744,7 @@ export function createWebhooks({
             conversationId,
             messageId,
             outboundMessageId,
+            campaignId,
             labelId,
             labelAdded,
             replayOf: deliveryId,
@@ -852,9 +862,9 @@ export const isWebhookEvent = (name: string): name is WebhookEvent =>
 
 /**
  * What one webhook event names: its conversation, its message and the label it changed, or an
- * outbound message, which may be in no conversation.
+ * outbound message, which may be in no conversation, or a campaign.
  */
-type WebhookSubject = ConversationSubject | { outboundMessageId: string };
+type WebhookSubject = ConversationSubject | { outboundMessageId: string } | { campaignId: string };
 
 interface ConversationSubject {
   conversationId: string;
@@ -871,8 +881,10 @@ export function subjectOf(type: WebhookEvent, payload: unknown): WebhookSubject 
     conversationId?: string;
     messageId?: string;
     outboundMessageId?: string;
+    campaignId?: string;
   };
   if (ids.outboundMessageId !== undefined) return { outboundMessageId: ids.outboundMessageId };
+  if (ids.campaignId !== undefined) return { campaignId: ids.campaignId };
   if (ids.conversationId === undefined) return null;
   return {
     conversationId: ids.conversationId,
@@ -933,10 +945,19 @@ export async function webhookData(
     workspaceId,
     subjects.flatMap((one) => ("outboundMessageId" in one ? [one.outboundMessageId] : [])),
   );
+  const campaigns = await campaignViews(
+    tx,
+    workspaceId,
+    subjects.flatMap((one) => ("campaignId" in one ? [one.campaignId] : [])),
+  );
   return subjects.map((subject) => {
     if ("outboundMessageId" in subject) {
       const sent = outbound.get(subject.outboundMessageId);
       return sent === undefined ? "The outbound message was deleted." : { outboundMessage: sent };
+    }
+    if ("campaignId" in subject) {
+      const found = campaigns.get(subject.campaignId);
+      return found === undefined ? "The campaign was deleted." : { campaign: found };
     }
     const found = conversations.get(subject.conversationId);
     if (found === undefined) return "The conversation was deleted.";
@@ -1008,6 +1029,9 @@ export function fanOutWebhooksOne(db: Database): Promise<boolean> {
 
 /** Whether what a delivery names still exists, so its foreign keys hold. */
 async function stillThere(tx: Transaction, workspaceId: string, subject: WebhookSubject) {
+  if ("campaignId" in subject) {
+    return (await campaignViews(tx, workspaceId, [subject.campaignId])).has(subject.campaignId);
+  }
   if ("outboundMessageId" in subject) {
     const [found] = await tx
       .select({ id: outboundMessage.id })
@@ -1030,12 +1054,14 @@ async function stillThere(tx: Transaction, workspaceId: string, subject: Webhook
 const deliverySubject = (subject: WebhookSubject) =>
   "outboundMessageId" in subject
     ? { outboundMessageId: subject.outboundMessageId }
-    : {
-        conversationId: subject.conversationId,
-        messageId: subject.messageId,
-        labelId: subject.label?.labelId ?? null,
-        labelAdded: subject.label?.added ?? null,
-      };
+    : "campaignId" in subject
+      ? { campaignId: subject.campaignId }
+      : {
+          conversationId: subject.conversationId,
+          messageId: subject.messageId,
+          labelId: subject.label?.labelId ?? null,
+          labelAdded: subject.label?.added ?? null,
+        };
 
 interface ClaimedWebhook {
   workspaceId: string;
@@ -1097,6 +1123,7 @@ async function planWebhook(
         conversationId: webhookDelivery.conversationId,
         messageId: webhookDelivery.messageId,
         outboundMessageId: webhookDelivery.outboundMessageId,
+        campaignId: webhookDelivery.campaignId,
         labelId: webhookDelivery.labelId,
         labelAdded: webhookDelivery.labelAdded,
         createdAt: webhookDelivery.createdAt,
@@ -1118,15 +1145,18 @@ async function planWebhook(
     if (!delivery.enabled) {
       return "Dinghy stopped this delivery because the webhook is off. Turn it on to receive future events.";
     }
-    const { labelId, labelAdded, conversationId, outboundMessageId } = delivery;
+    const { labelId, labelAdded, conversationId, outboundMessageId, campaignId } = delivery;
     const subject: WebhookSubject =
-      conversationId === null
-        ? { outboundMessageId: outboundMessageId ?? "" }
-        : {
-            conversationId,
-            messageId: delivery.messageId,
-            label: labelId === null || labelAdded === null ? null : { labelId, added: labelAdded },
-          };
+      campaignId !== null
+        ? { campaignId }
+        : conversationId === null
+          ? { outboundMessageId: outboundMessageId ?? "" }
+          : {
+              conversationId,
+              messageId: delivery.messageId,
+              label:
+                labelId === null || labelAdded === null ? null : { labelId, added: labelAdded },
+            };
     const [data] = await webhookData(tx, uploads, row.workspaceId, [subject]);
     // One subject has one answer.
     if (typeof data !== "object") return data ?? "The conversation was deleted.";

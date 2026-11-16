@@ -813,6 +813,20 @@
       "when": 1794785645970,
       "tag": "0115_visitor_field_times",
       "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "7",
+      "when": 1794832184453,
+      "tag": "0116_campaigns",
+      "breakpoints": true
+    },
+    {
+      "idx": 117,
+      "version": "7",
+      "when": 1794832185043,
+      "tag": "0117_campaigns_grants",
+      "breakpoints": true
     }
   ]
 }
