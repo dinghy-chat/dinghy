@@ -1,5 +1,15 @@
 /** @jsxImportSource react */
-import { type FormEvent, type ReactNode, useId, useRef, useState } from "react";
+import {
+  type Dispatch,
+  type FormEvent,
+  type ReactNode,
+  type RefObject,
+  type SetStateAction,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import { flushSync } from "react-dom";
 import {
   CAMPAIGN_KEY_PATTERN,
@@ -18,8 +28,9 @@ import {
 import { LeaveGuard } from "./appearance.tsx";
 import {
   CodeDialog,
-  deleteBlock,
+  deleteCampaign,
   EndingConfirm,
+  endingItem,
   GoLiveDialog,
   TestDialog,
 } from "./campaign-dialogs.tsx";
@@ -46,8 +57,7 @@ export function campaignFailure(error: unknown): TextId {
     if (error.code === "invalid_request") return "campaignInvalid";
     if (error.code === "campaign_key_taken") return "campaignKeyTaken";
     if (error.code === "campaign_ended") return "campaignEndedRefused";
-    if (error.code === "campaign_sent") return "campaignDeleteSent";
-    if (error.code === "campaign_live") return "campaignDeleteLive";
+    if (error.code === "campaign_sent") return "campaignSentRefused";
   }
   return failureText(error, { 403: "campaignForbidden" }, "actionFailed");
 }
@@ -81,7 +91,8 @@ function EditorActions({
 }) {
   const status = campaign?.status ?? "draft";
   // Save is the form's first submit button, so Enter in a field saves. With nothing to save it is
-  // disabled, which stops Enter there, so Enter never reaches Go live or Resume.
+  // disabled, which stops Enter there, so Enter never reaches Resume. A saved draft saves itself,
+  // so it has no Save, and Go live is no submit.
   const submit = (
     action: Action,
     label: TextId,
@@ -108,32 +119,13 @@ function EditorActions({
     });
   }
   items.push({ label: t("campaignCode"), lead: <Icon name="code" size={18} />, onSelect: onCode });
-  if (canEdit && campaign !== null) {
-    const block = deleteBlock(campaign);
-    if (status !== "ended") {
-      items.push({
-        label: t("campaignEnd"),
-        lead: <Icon name="prohibit" size={18} />,
-        danger: true,
-        divider: true,
-        onSelect: () => onAction("end"),
-      });
-    }
-    items.push({
-      label: t("campaignDelete"),
-      lead: <Icon name="trash" size={18} />,
-      danger: true,
-      divider: status === "ended",
-      ...(block !== null && { unavailable: t(block) }),
-      onSelect: () => onAction("delete"),
-    });
-  }
+  const ending = canEdit && campaign !== null ? endingItem(campaign, onAction) : null;
+  if (ending !== null) items.push({ ...ending, divider: true });
   return (
     <>
       {editable &&
-        submit("save", status === "draft" ? "campaignSaveDraft" : "save", {
-          isIdle: !unsaved && campaign !== null,
-        })}
+        (campaign === null || status !== "draft") &&
+        submit("save", campaign === null ? "campaignSaveDraft" : "save", { isIdle: !unsaved })}
       {editable && status === "draft" && (
         // Not a submit, so Enter in a field never starts it: it asks first.
         <button type="button" className="pill dark" disabled={busy} onClick={onGoLive}>
@@ -302,7 +294,7 @@ function useCampaignActions({
     setDialog(null);
     if (campaign === null) return;
     void busyWhile(async () => {
-      await api.deleteCampaign(campaign.id);
+      await deleteCampaign(api, campaign);
       toast("campaignDeleted");
       // Its changes not saved go with it, so leaving the page asks nothing.
       flushSync(() => setEdited(null));
@@ -320,6 +312,51 @@ function useCampaignActions({
       });
     });
   return { busy, failure, act, end, remove, test };
+}
+
+/** How long a draft waits after the last change before it saves itself. */
+const AUTOSAVE_DELAY_MS = 800;
+
+/**
+ * Saves a saved draft a moment after each change, while the form is valid. A live or paused
+ * campaign waits for Save, since a save changes what it sends. Answers why the last try failed.
+ */
+function useDraftAutosave({
+  api,
+  campaign,
+  edited,
+  unsaved,
+  form,
+  setCampaign,
+  setEdited,
+}: {
+  api: WorkspaceApi;
+  campaign: Campaign | null;
+  edited: CampaignDefinition | null;
+  unsaved: boolean;
+  form: RefObject<HTMLFormElement | null>;
+  setCampaign(campaign: Campaign): void;
+  setEdited: Dispatch<SetStateAction<CampaignDefinition | null>>;
+}): TextId | null {
+  const [failure, setFailure] = useState<TextId | null>(null);
+  // It runs again on each new campaign from the server, so a change typed while a save ran saves
+  // in its turn.
+  useEffect(() => {
+    if (campaign?.status !== "draft" || edited === null || !unsaved) return;
+    const timer = setTimeout(() => {
+      if (form.current?.checkValidity() !== true) return;
+      api.saveCampaign(edited).then(
+        (saved) => {
+          setFailure(null);
+          setCampaign(saved.campaign);
+          setEdited((current) => (current === edited ? null : current));
+        },
+        (error: unknown) => setFailure(campaignFailure(error)),
+      );
+    }, AUTOSAVE_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [api, campaign, edited, unsaved, form, setCampaign, setEdited]);
+  return failure;
 }
 
 /** "Saved 2 minutes ago", or that the changes wait for a save. */
@@ -438,6 +475,15 @@ function CampaignPage({
     onSaved,
     onDeleted: onBack,
   });
+  const autosaveFailure = useDraftAutosave({
+    api,
+    campaign,
+    edited,
+    unsaved,
+    form,
+    setCampaign,
+    setEdited,
+  });
   const submit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const submitter = (event.nativeEvent as SubmitEvent).submitter;
@@ -475,7 +521,7 @@ function CampaignPage({
           }
         />
         <div className="page-body">
-          <ErrorNote text={failure} />
+          <ErrorNote text={failure ?? autosaveFailure} />
           {campaign !== null && (
             <Choices<"edit" | "results">
               label={t("campaignTabs")}
@@ -512,7 +558,8 @@ function CampaignPage({
                   api={api}
                   definition={definition}
                   members={members}
-                  meId={me.id}
+                  // "Now you" only to someone whose save makes them the sender.
+                  meId={editable ? me.id : null}
                   language={language}
                   editable={editable}
                   onLanguage={setLanguage}

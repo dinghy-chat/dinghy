@@ -7,15 +7,16 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 ### Added
 
 - Delete a campaign that never sent a message, such as a draft or a trial run, from its ⋯ menu or its row in the list. Test messages do not count. One that sent keeps its results, so it can only end. API: `DELETE /campaigns/{id}`, `dinghy.campaigns.delete()` and the MCP tool `delete_campaign`.
-- Each campaign in the list has a menu to rename, end or delete it.
+- Each campaign in the list has a menu to rename it, and to delete it while it never sent a message or end it once it did.
+- A saved draft campaign saves itself as you type.
 - The campaign editor suggests the attribute keys and event names your recent contacts have. API: `GET /campaigns/names`.
 
 ### Changed
 
 - **Go live** asks first, with what the campaign will do.
-- The campaign editor's buttons are **Save draft** and **Go live**, with **Send me a test**, **Copy as code**, **End campaign** and **Delete campaign** in the ⋯ menu. On the Campaigns page, **Pause all campaigns** moved to the ⋯ menu and shows only while a campaign is live.
+- The campaign editor's buttons are **Save** and **Go live**, with **Send me a test**, **Copy as code**, and **Delete campaign** or **End campaign** in the ⋯ menu. On the Campaigns page, **Pause all campaigns** moved to the ⋯ menu and shows only while a campaign is live.
 - A campaign's sender reads "Whoever saves it (now you)" in place of "The person who saves it", and its A/B variants show their shares in percent.
-- The phone preview of a campaign looks like a phone, the name shows a pencil to rename it, and the message says which visitors get each translation.
+- The phone preview of a campaign shows the top of a phone, the name shows a pencil to rename it, and the message says which visitors get each translation.
 - Simpler words across the Campaigns page and the templates.
 
 ### Fixed

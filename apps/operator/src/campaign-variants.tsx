@@ -69,7 +69,7 @@ function VariantRow({
   variant: Variant;
   definition: CampaignDefinition;
   members: Member[];
-  meId: string;
+  meId: string | null;
   language: Language;
   canRemove: boolean;
   /** Only one variant may be the control group. */
@@ -172,7 +172,7 @@ export function VariantsFields({
 }: {
   definition: CampaignDefinition;
   members: Member[];
-  meId: string;
+  meId: string | null;
   language: Language;
   onLanguage(language: Language): void;
   onChange(variants: Variant[] | undefined): void;

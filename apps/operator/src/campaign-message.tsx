@@ -324,7 +324,7 @@ function SenderField({
 }: {
   sender: CampaignMessage["sender"];
   members: Member[];
-  meId: string;
+  meId: string | null;
   onChange(sender: CampaignMessage["sender"]): void;
 }) {
   const value =
@@ -496,7 +496,7 @@ export function MessageFields({
   message: CampaignMessage;
   trigger: CampaignTrigger["type"];
   members: Member[];
-  meId: string;
+  meId: string | null;
   /** The language on show, which the preview shows too. */
   language: Language;
   onLanguage(language: Language): void;

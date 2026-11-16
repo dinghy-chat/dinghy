@@ -8604,19 +8604,19 @@ button.quote:hover {
 .sample-line:first-child {
   height: 16px;
 }
-/* A phone, where the chat fills the screen and a message shows as a card: a bezel, the island
-   and the address under it, and the home bar. */
+/* The top of a phone, where the chat fills the screen and a message shows as a card: a bezel, the
+   island and the address under it, cut off under the chat. The screen keeps the 360px the chat is
+   drawn for, and the whole phone shows smaller. */
 .preview-phone {
   display: flex;
-  position: relative;
   flex-direction: column;
-  /* The screen inside the bezel keeps the 360px the chat is drawn for. */
-  width: min(380px, 100%);
-  aspect-ratio: 9 / 17;
+  width: 380px;
   margin: 0 auto;
+  zoom: 0.8;
   border: 10px solid var(--phone-bezel);
-  border-radius: 46px;
-  box-shadow: 0 18px 40px rgb(11 34 57 / 14%);
+  border-bottom: 0;
+  border-radius: 46px 46px 0 0;
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 48px), transparent);
 }
 .preview-phone .browser-bar {
   flex-direction: column;
@@ -8633,22 +8633,6 @@ button.quote:hover {
   width: 100%;
   margin: 0;
   text-align: center;
-}
-.preview-phone .sample-page {
-  flex: 1;
-  align-content: start;
-}
-.preview-phone::after {
-  position: absolute;
-  bottom: 8px;
-  left: 50%;
-  width: 34%;
-  height: 4px;
-  translate: -50% 0;
-  border-radius: 2px;
-  background: var(--navy);
-  content: "";
-  opacity: 0.3;
 }
 .preview-note {
   display: flex;

@@ -430,7 +430,8 @@ export function createCampaigns({ db, live }: { db: Database; live: Live }) {
           .for("update");
         await lockWorkspace(tx, workspaceId);
         // FOR UPDATE, unlike the lock of a change, waits for a send that holds the campaign's key
-        // for its foreign key, such as a page campaign's first show, so hasSent sees its tally.
+        // for its foreign key, such as a page campaign's first show of the day, so hasSent sees its
+        // new day. hasSent locks the days that exist.
         const [row] = await selectCampaign(tx, workspaceId, ref).for("update");
         if (row === undefined) return "not_found" as const;
         if (row.status === "live") return "live" as const;

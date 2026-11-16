@@ -13,7 +13,7 @@ import type {
   WorkspaceApi,
 } from "./api.ts";
 import { PausedBanner, type PausedTexts } from "./bots.tsx";
-import { EndingConfirm, RenameDialog } from "./campaign-dialogs.tsx";
+import { deleteCampaign, EndingConfirm, RenameDialog } from "./campaign-dialogs.tsx";
 import { CampaignEditor, campaignFailure } from "./campaign-editor.tsx";
 import { CampaignRow, type RowAction } from "./campaign-row.tsx";
 import { freeKey, TEMPLATES } from "./campaign-templates.ts";
@@ -301,7 +301,7 @@ function CampaignList({
       () =>
         action === "end"
           ? api.setCampaignStatus(campaign.id, "end")
-          : api.deleteCampaign(campaign.id),
+          : deleteCampaign(api, campaign),
       action === "end" ? "campaignEndedToast" : "campaignDeleted",
     ).then(setFailure);
   };

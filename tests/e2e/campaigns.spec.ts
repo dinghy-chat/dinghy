@@ -193,6 +193,7 @@ test("a member reads campaigns and cannot change them", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Translation" })).toHaveCount(0);
   await page.getByRole("button", { name: "More actions" }).click();
   await expect(page.getByRole("menuitem", { name: "End campaign" })).toHaveCount(0);
+  await expect(page.getByRole("menuitem", { name: "Delete campaign" })).toHaveCount(0);
   await page.getByRole("menuitem", { name: "Copy as code" }).click();
   await expect(page.getByRole("dialog").getByText('"key": "trial-help"')).toBeVisible();
 });
@@ -362,7 +363,12 @@ test("a pause keeps the changes not saved yet", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
 });
 
-test("Enter in a field saves, and never starts a draft or resumes a pause", async ({ page }) => {
+/** The name the server has for a campaign. */
+const savedName = async (key: string) =>
+  ((await api("GET", `/campaigns/by-key/${key}`)).json.campaign as { definition: { name: string } })
+    .definition.name;
+
+test("a draft saves itself, and Enter never starts it or resumes a pause", async ({ page }) => {
   const definition = {
     name: "Enter stays",
     trigger: { type: "api" },
@@ -378,16 +384,12 @@ test("Enter in a field saves, and never starts a draft or resumes a pause", asyn
   await page.getByRole("button", { name: /^Enter stays/ }).click();
   const name = page.getByLabel("Name", { exact: true });
   const chip = page.locator(".campaign-title .chip");
-  // Nothing to save: Save is there but off, so Enter does nothing.
-  await expect(page.getByRole("button", { name: "Save draft" })).toBeDisabled();
-  await name.press("Enter");
-  await name.press("Enter");
-  await expect(chip).toHaveText("Draft");
-  // A change: Enter saves it, and the campaign stays a draft.
+  // A saved draft has no Save: a change saves itself, and Enter never starts it.
+  await expect(page.getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
   await name.fill("Enter stays here");
   await name.press("Enter");
-  await expect(page.getByText("Campaign saved.")).toBeVisible();
-  await name.press("Enter");
+  await expect.poll(() => savedName("enter-draft")).toBe("Enter stays here");
+  await expect(page.getByText(/^Saved/)).toBeVisible();
   await expect(chip).toHaveText("Draft");
 
   expect((await api("POST", "/campaigns/by-key/enter-draft/resume")).status).toBe(200);
@@ -409,8 +411,7 @@ test("a campaign keeps its key when it is renamed after its first save", async (
   await expect(page.locator(".campaign-head code")).toHaveText("keeps-its-key");
   await name.fill("Renamed after saving");
   await expect(page.locator(".campaign-head code")).toHaveText("keeps-its-key");
-  await page.getByRole("button", { name: "Save draft" }).click();
-  await expect(page.getByText("Campaign saved.")).toBeVisible();
+  await expect.poll(() => savedName("keeps-its-key")).toBe("Renamed after saving");
   const list = await api("GET", "/campaigns");
   const keys = (list.json.campaigns as { definition: { key: string } }[]).map(
     (one) => one.definition.key,
@@ -476,7 +477,9 @@ test("the list: tabs count only what they hold, and a goal's bar counts the cont
   expect(width).toBeLessThanOrEqual(100);
 });
 
-test("a row's menu renames a campaign, and deletes one that never sent", async ({ page }) => {
+test("a row's menu renames a campaign, deletes one that never sent and ends one that did", async ({
+  page,
+}) => {
   for (const key of ["row-trial", "row-sent"]) {
     const saved = await api("PUT", `/campaigns/by-key/${key}`, {
       key,
@@ -502,11 +505,10 @@ test("a row's menu renames a campaign, and deletes one that never sent", async (
   await rename.getByRole("button", { name: "Save" }).click();
   await expect(page.getByText("Campaign renamed.")).toBeVisible();
 
-  // One that sent keeps its results: its delete says why it is not there.
+  // One that sent keeps its results, so it ends and has no delete.
   await page.getByRole("button", { name: "Actions for Row sent" }).click();
-  await expect(page.getByRole("menuitem", { name: /Delete campaign/ })).toContainText(
-    "It sent messages",
-  );
+  await expect(page.getByRole("menuitem", { name: "End campaign" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Delete campaign" })).toHaveCount(0);
   await page.keyboard.press("Escape");
 
   await page.getByRole("button", { name: "Actions for Row renamed" }).click();

@@ -1,13 +1,14 @@
 /** @jsxImportSource react */
 import { useId, useState } from "react";
 import { CAMPAIGN_NAME_MAX } from "../../../packages/widget/src/shared.ts";
-import type { Campaign, CampaignDefinition, OutboundStatusReason } from "./api.ts";
+import type { Campaign, CampaignDefinition, OutboundStatusReason, WorkspaceApi } from "./api.ts";
 import { definitionJson, upsertCode } from "./campaign-draft.ts";
 import { campaignSentence } from "./campaign-summary.ts";
 import { sendCode } from "./campaign-trigger.tsx";
+import { Icon } from "./icons.tsx";
 import { CodeBlock } from "./install.tsx";
 import { reasonText } from "./outbound.tsx";
-import { Confirm } from "./popup.tsx";
+import { Confirm, type MenuItem } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 import { Choices, Field, FormDialog, Modal } from "./ui.tsx";
 
@@ -17,11 +18,32 @@ import { Choices, Field, FormDialog, Modal } from "./ui.tsx";
 const SDK_PACKAGE = "@dinghy-chat/sdk";
 const SDK_URL = "https://www.npmjs.com/package/@dinghy-chat/sdk";
 
-/** Why a campaign cannot be deleted, or null when it can: one that sent keeps its results. */
-export function deleteBlock(campaign: Campaign): TextId | null {
-  if (campaign.totals.sent > 0) return "campaignDeleteSent";
-  if (campaign.status === "live") return "campaignDeleteLive";
-  return null;
+/**
+ * The one way a campaign's menu offers to stop it for good: a delete while it never sent, since
+ * nothing is lost, and an end once it did, so it keeps its results. Null for one that ended.
+ */
+export function endingItem(campaign: Campaign, onAction: (kind: Ending) => void): MenuItem | null {
+  if (campaign.totals.sent === 0) {
+    return {
+      label: t("campaignDelete"),
+      lead: <Icon name="trash" size={18} />,
+      danger: true,
+      onSelect: () => onAction("delete"),
+    };
+  }
+  if (campaign.status === "ended") return null;
+  return {
+    label: t("campaignEnd"),
+    lead: <Icon name="prohibit" size={18} />,
+    danger: true,
+    onSelect: () => onAction("end"),
+  };
+}
+
+/** Deletes a campaign that never sent. The server deletes no live one, so it pauses it first. */
+export async function deleteCampaign(api: WorkspaceApi, campaign: Campaign) {
+  if (campaign.status === "live") await api.setCampaignStatus(campaign.id, "pause");
+  await api.deleteCampaign(campaign.id);
 }
 
 /** "Copy as code": the JSON, and the SDK calls that keep it in a repository and send it. */
@@ -196,6 +218,8 @@ const ENDINGS = {
   delete: { title: "campaignDeleteTitle", text: "campaignDeleteText", confirm: "campaignDelete" },
 } as const satisfies Record<string, Record<string, TextId>>;
 
+export type Ending = keyof typeof ENDINGS;
+
 /** "End {name}?" or "Delete {name}?", which cannot be undone. */
 export function EndingConfirm({
   kind,
@@ -203,7 +227,7 @@ export function EndingConfirm({
   onConfirm,
   onCancel,
 }: {
-  kind: keyof typeof ENDINGS;
+  kind: Ending;
   name: string;
   onConfirm(): void;
   onCancel(): void;

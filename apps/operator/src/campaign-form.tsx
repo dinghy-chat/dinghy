@@ -98,8 +98,8 @@ export function CampaignSteps({
   api: WorkspaceApi;
   definition: CampaignDefinition;
   members: Member[];
-  /** The member on this page, who becomes the sender "you" on a save. */
-  meId: string;
+  /** The member on this page, who becomes the sender on a save, or null when they cannot save. */
+  meId: string | null;
   language: Language;
   editable: boolean;
   onLanguage(language: Language): void;

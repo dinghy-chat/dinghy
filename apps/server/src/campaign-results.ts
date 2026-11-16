@@ -155,18 +155,20 @@ export async function sentLastWeek(tx: Transaction, workspaceId: string): Promis
   return row?.sent ?? 0;
 }
 
-/** Whether the campaign sent a message to anyone but a test visitor. */
+/**
+ * Whether the campaign sent a message to anyone but a test visitor. It locks the campaign's days
+ * first, so a count that a send is adding now commits before the read, and none comes after it.
+ */
 export async function hasSent(tx: Transaction, workspaceId: string, campaignId: string) {
+  const ofCampaign = and(
+    eq(campaignDay.workspaceId, workspaceId),
+    eq(campaignDay.campaignId, campaignId),
+  );
+  await tx.select({ one: sql`1` }).from(campaignDay).where(ofCampaign).for("update");
   const [row] = await tx
     .select({ one: sql`1` })
     .from(campaignDay)
-    .where(
-      and(
-        eq(campaignDay.workspaceId, workspaceId),
-        eq(campaignDay.campaignId, campaignId),
-        gt(campaignDay.sent, 0),
-      ),
-    )
+    .where(and(ofCampaign, gt(campaignDay.sent, 0)))
     .limit(1);
   return row !== undefined;
 }

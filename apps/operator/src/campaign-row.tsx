@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import { percent, shareOf } from "./analytics.tsx";
 import type { Campaign } from "./api.ts";
-import { deleteBlock } from "./campaign-dialogs.tsx";
+import { endingItem } from "./campaign-dialogs.tsx";
 import { campaignSentence } from "./campaign-summary.ts";
 import { StatusChip } from "./campaign-tile.tsx";
 import { TriggerTile } from "./campaign-trigger.tsx";
@@ -69,35 +69,19 @@ function RowStats({ campaign }: { campaign: Campaign }) {
 /** What a row's menu asks the list to do with its campaign. */
 export type RowAction = "rename" | "end" | "delete";
 
-/** The row's menu: a new name, an end, and a delete for a campaign that never sent. */
+/** The row's menu: a new name while it can change, then its end or its delete. */
 function rowItems(campaign: Campaign, onAction: (action: RowAction) => void): MenuItem[] {
-  const block = deleteBlock(campaign);
-  const ended = campaign.status === "ended";
-  return [
-    ...(ended
-      ? []
-      : [
-          {
-            label: t("campaignRename"),
-            lead: <Icon name="pencil" size={18} />,
-            onSelect: () => onAction("rename"),
-          },
-          {
-            label: t("campaignEnd"),
-            lead: <Icon name="prohibit" size={18} />,
-            danger: true,
-            divider: true,
-            onSelect: () => onAction("end"),
-          },
-        ]),
-    {
-      label: t("campaignDelete"),
-      lead: <Icon name="trash" size={18} />,
-      danger: true,
-      ...(block !== null && { unavailable: t(block) }),
-      onSelect: () => onAction("delete"),
-    },
-  ];
+  const items: MenuItem[] = [];
+  if (campaign.status !== "ended") {
+    items.push({
+      label: t("campaignRename"),
+      lead: <Icon name="pencil" size={18} />,
+      onSelect: () => onAction("rename"),
+    });
+  }
+  const ending = endingItem(campaign, onAction);
+  if (ending !== null) items.push({ ...ending, divider: items.length > 0 });
+  return items;
 }
 
 /**
@@ -115,6 +99,8 @@ export function CampaignRow({
   onAction: ((action: RowAction) => void) | null;
 }) {
   const { definition } = campaign;
+  // An ended campaign that sent has nothing left to change.
+  const items = onAction === null ? [] : rowItems(campaign, onAction);
   return (
     <li className="campaign-item">
       <button type="button" className="campaign-row" onClick={onOpen}>
@@ -129,13 +115,13 @@ export function CampaignRow({
         ) : (
           <RowStats campaign={campaign} />
         )}
-        {onAction === null && <Icon name="chevronRight" size={16} />}
+        {items.length === 0 && <Icon name="chevronRight" size={16} />}
       </button>
-      {onAction !== null && (
+      {items.length > 0 && (
         <Menu
           label={t("campaignActions", { name: definition.name })}
           buttonClass="round row-menu"
-          items={rowItems(campaign, onAction)}
+          items={items}
         >
           <Icon name="dots" />
         </Menu>
