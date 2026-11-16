@@ -9,7 +9,6 @@ import {
   CampaignDefinitionSchema,
   CampaignKey,
   CampaignListQuery,
-  CampaignNamesSchema,
   CampaignPatchSchema,
   type CampaignRefusal,
   CampaignResultsSchema,
@@ -20,7 +19,7 @@ import {
   EstimateSchema,
   ResultsQuery,
 } from "./campaign-schemas.ts";
-import { type CampaignRef, type Campaigns, RECENT_CONTACTS } from "./campaigns.ts";
+import type { CampaignRef, Campaigns } from "./campaigns.ts";
 import {
   errorAnswer,
   FORBIDDEN,
@@ -166,21 +165,6 @@ const readSettingsRoute = createRoute({
   summary: "Read the settings for every campaign",
   request: { params: workspaceParams },
   responses: { ...KEY_LIMITED, 200: settingsAnswer, ...MEMBER_ERRORS },
-});
-
-const namesRoute = createRoute({
-  method: "get",
-  path: `${PATH}/names`,
-  security: SESSION_OR_KEY,
-  summary:
-    "The attribute keys and event names of recently seen contacts, for an audience or a trigger",
-  description: `It reads the ${RECENT_CONTACTS.toLocaleString("en")} contacts seen last, and test visitors are left out.`,
-  request: { params: workspaceParams },
-  responses: {
-    ...KEY_LIMITED,
-    200: jsonAnswer("The names", CampaignNamesSchema),
-    ...MEMBER_ERRORS,
-  },
 });
 
 const saveSettingsRoute = createRoute({
@@ -388,10 +372,6 @@ export function registerCampaignRoutes(
     if (typeof outcome === "string" || outcome instanceof z.ZodError) return refused(c, outcome);
     return c.json({ campaign: outcome.view }, 201);
   });
-
-  app.openapi(namesRoute, async (c) =>
-    c.json(await campaigns.names(c.get("memberWorkspaceId")), 200),
-  );
 
   // Before the routes by ID, so `by-key` never reads as an ID.
   app.openapi(upsertRoute, async (c) => {

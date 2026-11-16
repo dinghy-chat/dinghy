@@ -8693,3 +8693,9 @@ button.quote:hover {
 .who-lines > .mono {
   font-size: 12.5px;
 }
+/* Contacts > Attributes and events: a table for each, under its heading. */
+.contact-data {
+  display: grid;
+  gap: 8px;
+  margin-top: 20px;
+}

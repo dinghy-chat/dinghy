@@ -25,6 +25,12 @@ export type CampaignCounts = Campaign["totals"];
 
 /** How many contacts a choice reaches, up to 10,000, with `more` past that. */
 type Reach = { count: number; more: boolean };
+/** The attribute keys and event names of the contacts seen last, A to Z. */
+export interface ContactFields {
+  attributes: { name: string; contacts: number; lastSeenAt: string }[];
+  events: { name: string; contacts: number; lastAt: string }[];
+}
+
 export interface CampaignEstimate {
   /** The contacts who match the audience now. */
   matching: Reach;
@@ -935,9 +941,8 @@ export function workspaceApi(workspaceId: string) {
     /** Deletes a campaign that never sent, as `deleteBlock` tells. */
     deleteCampaign: (id: string) =>
       call<{ ok: true }>(`${base}/campaigns/${id}`, { method: "DELETE" }),
-    /** The attribute keys and event names of recent contacts, for the editor to suggest. */
-    campaignNames: () =>
-      call<{ attributes: string[]; events: string[] }>(`${base}/campaigns/names`),
+    /** The attributes and events of the contacts seen last, for Contacts and the campaign editor. */
+    contactFields: () => call<ContactFields>(`${base}/contact-fields`),
     campaignResults: (id: string) => call<CampaignResults>(`${base}/campaigns/${id}/results`),
     /** The saved message to a test visitor named after the member, and the rule that would hold it. */
     testCampaign: (id: string) =>

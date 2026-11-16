@@ -3562,6 +3562,83 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/operator/workspaces/{workspaceId}/contact-fields": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * The attribute keys and event names of the contacts seen last
+     * @description It reads the 1,000 contacts seen last, and leaves out test visitors. Each list is A to Z, with at most 200 names.
+     */
+    get: {
+      parameters: {
+        query?: never;
+        header?: never;
+        path: {
+          workspaceId: string;
+        };
+        cookie?: never;
+      };
+      requestBody?: never;
+      responses: {
+        /** @description The attributes and events */
+        200: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["ContactFields"];
+          };
+        };
+        /** @description unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet */
+        401: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description payment_required: the workspace waits for payment */
+        402: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description not_found: it does not exist, or this operator is not a member */
+        404: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+        /** @description too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after` */
+        429: {
+          headers: {
+            [name: string]: unknown;
+          };
+          content: {
+            "application/json": components["schemas"]["Error"];
+          };
+        };
+      };
+    };
+    put?: never;
+    post?: never;
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/operator/workspaces/{workspaceId}/outbound-messages": {
     parameters: {
       query?: never;
@@ -4648,83 +4725,6 @@ export interface paths {
         };
       };
     };
-    post?: never;
-    delete?: never;
-    options?: never;
-    head?: never;
-    patch?: never;
-    trace?: never;
-  };
-  "/v1/operator/workspaces/{workspaceId}/campaigns/names": {
-    parameters: {
-      query?: never;
-      header?: never;
-      path?: never;
-      cookie?: never;
-    };
-    /**
-     * The attribute keys and event names of recently seen contacts, for an audience or a trigger
-     * @description It reads the 1,000 contacts seen last, and test visitors are left out.
-     */
-    get: {
-      parameters: {
-        query?: never;
-        header?: never;
-        path: {
-          workspaceId: string;
-        };
-        cookie?: never;
-      };
-      requestBody?: never;
-      responses: {
-        /** @description The names */
-        200: {
-          headers: {
-            [name: string]: unknown;
-          };
-          content: {
-            "application/json": components["schemas"]["CampaignNames"];
-          };
-        };
-        /** @description unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet */
-        401: {
-          headers: {
-            [name: string]: unknown;
-          };
-          content: {
-            "application/json": components["schemas"]["Error"];
-          };
-        };
-        /** @description payment_required: the workspace waits for payment */
-        402: {
-          headers: {
-            [name: string]: unknown;
-          };
-          content: {
-            "application/json": components["schemas"]["Error"];
-          };
-        };
-        /** @description not_found: it does not exist, or this operator is not a member */
-        404: {
-          headers: {
-            [name: string]: unknown;
-          };
-          content: {
-            "application/json": components["schemas"]["Error"];
-          };
-        };
-        /** @description too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after` */
-        429: {
-          headers: {
-            [name: string]: unknown;
-          };
-          content: {
-            "application/json": components["schemas"]["Error"];
-          };
-        };
-      };
-    };
-    put?: never;
     post?: never;
     delete?: never;
     options?: never;
@@ -8483,6 +8483,22 @@ export interface components {
         viewedAt: string;
       }[];
     };
+    ContactFields: {
+      attributes: {
+        name: string;
+        /** @description How many of those contacts have it */
+        contacts: number;
+        /** @description When one of them was last seen */
+        lastSeenAt: string;
+      }[];
+      events: {
+        name: string;
+        /** @description How many of those contacts have it */
+        contacts: number;
+        /** @description When one of them last did it */
+        lastAt: string;
+      }[];
+    };
     OutboundMessage: {
       id: string;
       /** @enum {string} */
@@ -8968,12 +8984,6 @@ export interface components {
       paused: boolean;
       /** @description The fewest hours between two campaign messages to one visitor. 0 turns it off */
       gapHours: number;
-    };
-    CampaignNames: {
-      /** @description Attribute keys, A to Z */
-      attributes: string[];
-      /** @description Event names, A to Z */
-      events: string[];
     };
     CampaignPatch: {
       /**

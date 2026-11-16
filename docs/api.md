@@ -405,6 +405,7 @@ An outbound message is a message from the team to one visitor, which may exist b
 | `GET /outbound-messages/{id}` | Reads one |
 | `POST /outbound-messages/{id}/cancel` | Cancels one that the visitor has not read, and answers it as it is now |
 | `POST /outbound-messages/cancel` | `{ "visitor": { "userId" } or { "id" }, "dedupeKey" }` cancels the one that the visitor's `dedupeKey` names. `outboundMessage` is null when there is none |
+| `GET /contact-fields` | The attributes and events of the 1,000 contacts seen last, A to Z, as `{ attributes, events }`. Each is `{ name, contacts }`, with `lastSeenAt` for an attribute and `lastAt` for an event. Every member and key reads it |
 | `PUT /contacts/by-user/{userId}` | Creates or updates a contact by your user ID, with `name`, `email` and `attributes`. It answers 201 with a new contact, 200 otherwise, as `GET /contacts/{visitorId}` does |
 
 A send's body has `clientId`, `visitor` (`{ userId, name?, email?, attributes? }`, which creates or updates the contact, or `{ id }`), `body`, and the optional `buttons`, `sender`, `assignOnReply`, `startConversation` (`on_reply` by default), `show` (`badge` by default), `ifConversationOpen` (`hold` by default), `dedupeKey`, `metadata`, `sendAt` or `delay`, `unless`, `expiresAt` or `expiresIn`, and `sendEmail` (`false` by default). A `clientId` is unique per author and never expires: a retry with it answers the first result. `metadata` is up to 20 keys of your own with text values, which come back on the message, its webhooks and the event stream, and never reach the visitor. [Send one](outbound-messages.md#send-one) describes each field and the answer.
@@ -451,7 +452,6 @@ A campaign is a saved rule that sends outbound messages: who gets one, when, wha
 | `POST /campaigns/{id}/send` | `{ clientId, visitor, data? }` runs a live campaign for one person |
 | `POST /campaigns/{id}/test` | With a session only: shows the message to a test visitor named after the member, and answers `{ outboundMessage, blockedBy }` |
 | `POST /campaigns/estimate` | `{ audience?, trigger? }`: how many contacts the editor's choices reach |
-| `GET /campaigns/names` | `{ attributes, events }`: the attribute keys and event names of the 1,000 contacts seen last, A to Z, for the editor to suggest |
 | `GET /campaign-settings` | `{ paused, gapHours, pausedBy, pausedAt }`, the rules for every campaign, and who paused them and when |
 | `PUT /campaign-settings` | Changes both. Owners, admins and Full access keys only |
 | `POST /track` | Tracks a server event about a contact. API keys only |

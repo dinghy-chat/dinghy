@@ -137,16 +137,16 @@ export const EVENT_NAMES = "event-names";
  * name can still be typed, for an attribute or an event no contact has yet.
  */
 export function NameLists({ api }: { api: WorkspaceApi }) {
-  const names = useLoad(() => api.campaignNames(), [api]).data;
+  const fields = useLoad(() => api.contactFields(), [api]).data;
   return (
     <>
       <datalist id={ATTRIBUTE_NAMES}>
-        {names?.attributes.map((name) => (
+        {fields?.attributes.map(({ name }) => (
           <option key={name} value={name} />
         ))}
       </datalist>
       <datalist id={EVENT_NAMES}>
-        {names?.events.map((name) => (
+        {fields?.events.map(({ name }) => (
           <option key={name} value={name} />
         ))}
       </datalist>

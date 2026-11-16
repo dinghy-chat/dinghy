@@ -56,10 +56,6 @@ const COUNT_TIMEOUT_MS = 2000;
 /** "Would have sent to N in the last 7 days". */
 const LOOK_BACK_MS = 7 * DAY_MS;
 
-/** How many of the contacts seen last the editor's suggestions read, and the most names of a kind. */
-export const RECENT_CONTACTS = 1000;
-const NAMES_MAX = 200;
-
 type Row = typeof campaign.$inferSelect;
 
 const whereRef = (ref: CampaignRef) =>
@@ -345,27 +341,6 @@ export function createCampaigns({ db, live }: { db: Database; live: Live }) {
         return viewsOf(tx, workspaceId, rows);
       });
     },
-
-    /** The attribute keys and event names of the contacts seen last, for the editor to suggest. */
-    names: (workspaceId: string) =>
-      withWorkspace(db, workspaceId, async (tx) => {
-        const result = await tx.execute<{ kind: "attribute" | "event"; name: string }>(sql`
-          with recent as (
-            select ${visitor.id} as id, ${visitor.attributes} as attributes from ${visitor}
-            where ${visitor.workspaceId} = ${workspaceId} and not ${visitor.isTest}
-            order by coalesce(${visitor.lastSeenAt}, ${visitor.createdAt}) desc
-            limit ${RECENT_CONTACTS}
-          )
-          (select distinct 'attribute' as kind, jsonb_object_keys(attributes) as name from recent
-            where jsonb_typeof(attributes) = 'object' order by name limit ${NAMES_MAX})
-          union all
-          (select distinct 'event', e.name from ${contactEvent} as e join recent
-            on e.workspace_id = ${workspaceId} and e.visitor_id = recent.id
-            order by e.name limit ${NAMES_MAX})`);
-        const named = (kind: "attribute" | "event") =>
-          result.rows.filter((row) => row.kind === kind).map((row) => row.name);
-        return { attributes: named("attribute"), events: named("event") };
-      }),
 
     sentLastWeek: (workspaceId: string) =>
       withWorkspace(db, workspaceId, (tx) => sentLastWeek(tx, workspaceId)),

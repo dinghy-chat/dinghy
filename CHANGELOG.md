@@ -9,7 +9,7 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Delete a campaign that never sent a message, such as a draft or a trial run, from its ⋯ menu or its row in the list. Test messages do not count. One that sent keeps its results, so it can only end. API: `DELETE /campaigns/{id}`, `dinghy.campaigns.delete()` and the MCP tool `delete_campaign`.
 - Each campaign in the list has a menu to rename it, and to delete it while it never sent a message or end it once it did.
 - A saved draft campaign saves itself as you type.
-- The campaign editor suggests the attribute keys and event names your recent contacts have. API: `GET /campaigns/names`.
+- **Contacts > Attributes and events** lists the attributes and events your app sends about the 1,000 contacts seen last, with how many have each, when it was last seen and the campaigns that read it. The campaign editor suggests the same names. API: `GET /contact-fields`.
 
 ### Changed
 

@@ -370,13 +370,6 @@ export const EstimateSchema = z.object({
   trigger: TriggerSchema.optional(),
 });
 
-export const CampaignNamesSchema = z
-  .object({
-    attributes: z.array(z.string()).openapi({ description: "Attribute keys, A to Z" }),
-    events: z.array(z.string()).openapi({ description: "Event names, A to Z" }),
-  })
-  .openapi("CampaignNames");
-
 /** Why a change to a campaign did not happen, by the error code its answer carries. */
 export const CAMPAIGN_REFUSALS = {
   not_found: SEND_REFUSALS.not_found,

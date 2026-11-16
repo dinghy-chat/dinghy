@@ -1323,6 +1323,20 @@ Ask me before you change anything outside the install. Never ask for a secret or
   infoRead: "Read in chat",
   infoNotSeen: "Not seen yet",
   infoDone: "Done",
+  contactsViews: "Contacts views",
+  contactsPeople: "People",
+  contactDataTab: "Attributes and events",
+  contactDataHelp:
+    "What your app tells Dinghy about people, from the 1,000 contacts seen last. Campaigns can use any of these.",
+  contactDataAttributes: "Attributes",
+  contactDataEvents: "Events",
+  contactDataNoAttributes:
+    "No attributes yet. Your app adds them when it tells Dinghy who someone is.",
+  contactDataNoEvents:
+    "No events yet. Your server sends them with track(), such as export.finished.",
+  contactDataLastTime: "Last time",
+  contactDataUsedIn: "Used in",
+  contactDataUnused: "No campaign",
   campaigns: "Campaigns",
   keysGoCampaigns: "Go to Campaigns",
   campaignsContext: "Automatic messages to the people you pick, at the right moment.",

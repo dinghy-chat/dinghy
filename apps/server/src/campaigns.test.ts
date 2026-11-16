@@ -870,20 +870,22 @@ describe("a delete", () => {
   });
 });
 
-describe("the editor's suggestions", () => {
-  test("list the attribute keys and event names of recent contacts", async () => {
-    const user = userId();
+describe("the contact fields", () => {
+  test("list the attributes and events of recent contacts, with how many have each", async () => {
     const attribute = `plan_${randomUUID().slice(0, 8)}`;
-    await upsertContact(user, { attributes: { [attribute]: "pro" } });
     const name = `export.${randomUUID().slice(0, 8)}`;
-    await withKey(app, server.token, "POST", inSpace("/track"), {
-      visitor: { userId: user },
-      name,
-    });
-    const response = await withKey(app, server.token, "GET", inSpace("/campaigns/names"));
-    const names = await json<{ attributes: string[]; events: string[] }>(response);
-    expect(names.attributes).toContain(attribute);
-    expect(names.events).toContain(name);
+    for (const user of [userId(), userId()]) {
+      await upsertContact(user, { attributes: { [attribute]: "pro" } });
+      await withKey(app, server.token, "POST", inSpace("/track"), {
+        visitor: { userId: user },
+        name,
+      });
+    }
+    const response = await withKey(app, server.token, "GET", inSpace("/contact-fields"));
+    type Named = { name: string; contacts: number };
+    const fields = await json<{ attributes: Named[]; events: Named[] }>(response);
+    expect(fields.attributes.find((one) => one.name === attribute)?.contacts).toBe(2);
+    expect(fields.events.find((one) => one.name === name)?.contacts).toBe(2);
   });
 });
 

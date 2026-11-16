@@ -520,3 +520,26 @@ test("a row's menu renames a campaign, deletes one that never sent and ends one 
   await expect(page.getByText("Campaign deleted.")).toBeVisible();
   await expect(page.getByRole("button", { name: /^Row renamed/ })).toHaveCount(0);
 });
+
+test("Contacts lists the attributes and events, with the campaigns that read them", async ({
+  page,
+}) => {
+  const saved = await api("PUT", "/campaigns/by-key/plan-reader", {
+    key: "plan-reader",
+    name: "Plan reader",
+    audience: { field: "attributes.plan", op: "eq", value: "pro" },
+    trigger: { type: "event", name: "signed.up" },
+    message: { body: "Hello" },
+    presentation: { startConversation: "on_reply", show: "preview", ifConversationOpen: "skip" },
+  });
+  expect(saved.status).toBe(201);
+  await openInbox(page, server, "julien@shipmail.example");
+  await page.getByRole("button", { name: "Contacts", exact: true }).click();
+  await page.getByRole("radio", { name: "Attributes and events" }).check();
+  const plan = page.getByRole("region", { name: "Attributes" }).getByRole("row", { name: /^plan/ });
+  await expect(plan).toContainText("Plan reader");
+  const signedUp = page
+    .getByRole("region", { name: "Events" })
+    .getByRole("row", { name: /^signed\.up/ });
+  await expect(signedUp).toContainText("Plan reader");
+});

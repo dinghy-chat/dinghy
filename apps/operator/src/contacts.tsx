@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
 import { type ReactNode, useEffect, useState } from "react";
 import type { Contact, ContactDetail, ContactSort, Role, WorkspaceApi } from "./api.ts";
+import { ContactData } from "./contact-data.tsx";
 import { duration, shortDate } from "./format.ts";
 import { Icon } from "./icons.tsx";
 import { useLoad, useSettled } from "./load.ts";
@@ -95,7 +96,16 @@ function ContactRow({ contact, onOpen }: { contact: Contact; onOpen(): void }) {
 }
 
 /** Everyone who chatted: a table to search, sort and page through, and a CSV of them all. */
-function ContactList({ api, onOpen }: { api: WorkspaceApi; onOpen(visitorId: string): void }) {
+function ContactList({
+  api,
+  tabs,
+  onOpen,
+}: {
+  api: WorkspaceApi;
+  /** People, or attributes and events, above the list. */
+  tabs: ReactNode;
+  onOpen(visitorId: string): void;
+}) {
   const [typed, setTyped] = useState("");
   const q = useSettled(typed);
   const [sort, setSort] = useState<ContactSort>("lastSeen");
@@ -135,6 +145,7 @@ function ContactList({ api, onOpen }: { api: WorkspaceApi; onOpen(visitorId: str
         </a>
       }
     >
+      {tabs}
       <div className="contacts-tools">
         <div className="search">
           <Icon name="search" size={18} />
@@ -664,5 +675,31 @@ export function ContactsPage({
       />
     );
   }
-  return <ContactList api={api} onOpen={onContact} />;
+  return <ContactsHome api={api} onOpen={onContact} />;
+}
+
+type ContactsView = "people" | "data";
+
+/** The list of people, or the attributes and events your app sends about them. */
+function ContactsHome({ api, onOpen }: { api: WorkspaceApi; onOpen(visitorId: string): void }) {
+  const [view, setView] = useState<ContactsView>("people");
+  const tabs = (
+    <Choices<ContactsView>
+      label={t("contactsViews")}
+      variant="pills"
+      value={view}
+      options={[
+        { value: "people", label: "contactsPeople" },
+        { value: "data", label: "contactDataTab" },
+      ]}
+      onChange={setView}
+    />
+  );
+  if (view === "people") return <ContactList api={api} tabs={tabs} onOpen={onOpen} />;
+  return (
+    <Page title={t("contacts")} context={t("contactsContext")}>
+      {tabs}
+      <ContactData api={api} />
+    </Page>
+  );
 }

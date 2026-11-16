@@ -2393,6 +2393,52 @@
           }
         ]
       },
+      "ContactFields": {
+        "type": "object",
+        "properties": {
+          "attributes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "contacts": {
+                  "type": "integer",
+                  "description": "How many of those contacts have it"
+                },
+                "lastSeenAt": {
+                  "type": "string",
+                  "description": "When one of them was last seen"
+                }
+              },
+              "required": ["name", "contacts", "lastSeenAt"]
+            }
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "contacts": {
+                  "type": "integer",
+                  "description": "How many of those contacts have it"
+                },
+                "lastAt": {
+                  "type": "string",
+                  "description": "When one of them last did it"
+                }
+              },
+              "required": ["name", "contacts", "lastAt"]
+            }
+          }
+        },
+        "required": ["attributes", "events"]
+      },
       "OutboundMessage": {
         "type": "object",
         "properties": {
@@ -3485,26 +3531,6 @@
           }
         },
         "required": ["paused", "gapHours"]
-      },
-      "CampaignNames": {
-        "type": "object",
-        "properties": {
-          "attributes": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Attribute keys, A to Z"
-          },
-          "events": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Event names, A to Z"
-          }
-        },
-        "required": ["attributes", "events"]
       },
       "CampaignPatch": {
         "type": "object",
@@ -16794,6 +16820,83 @@
         }
       }
     },
+    "/v1/operator/workspaces/{workspaceId}/contact-fields": {
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          },
+          {
+            "apiKey": []
+          }
+        ],
+        "summary": "The attribute keys and event names of the contacts seen last",
+        "description": "It reads the 1,000 contacts seen last, and leaves out test visitors. Each list is A to Z, with at most 200 names.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The attributes and events",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContactFields"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/operator/workspaces/{workspaceId}/outbound-messages": {
       "post": {
         "security": [
@@ -18196,83 +18299,6 @@
           },
           "503": {
             "description": "busy: the workspace is busy. Retry after `retry-after`",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/operator/workspaces/{workspaceId}/campaigns/names": {
-      "get": {
-        "security": [
-          {
-            "sessionCookie": []
-          },
-          {
-            "apiKey": []
-          }
-        ],
-        "summary": "The attribute keys and event names of recently seen contacts, for an audience or a trigger",
-        "description": "It reads the 1,000 contacts seen last, and test visitors are left out.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "format": "uuid"
-            },
-            "required": true,
-            "name": "workspaceId",
-            "in": "path"
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "The names",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CampaignNames"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "402": {
-            "description": "payment_required: the workspace waits for payment",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "not_found: it does not exist, or this operator is not a member",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "too_many_requests: over an API key's 300 requests a minute. Retry after `retry-after`",
             "content": {
               "application/json": {
                 "schema": {

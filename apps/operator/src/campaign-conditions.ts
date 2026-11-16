@@ -1,4 +1,5 @@
-import type { Condition } from "./api.ts";
+import { goalCondition } from "../../server/src/campaign-parts.ts";
+import type { CampaignDefinition, Condition } from "./api.ts";
 import { dateTimeInput } from "./format.ts";
 
 // The condition builder's model: a tree of groups and rules whose values are the text the operator
@@ -202,4 +203,22 @@ export function conditionOf(group: GroupDraft): Condition | undefined {
   if (group.match === "none") return { not: items.length === 1 ? only : { any: items } };
   if (items.length === 1) return only;
   return group.match === "all" ? { all: items } : { any: items };
+}
+
+/**
+ * The attribute keys and event names a campaign reads: in its audience, its exit and its goal, and
+ * the event that triggers it.
+ */
+export function namesRead({ audience, rules, trigger }: CampaignDefinition) {
+  const attributes = new Set<string>();
+  const events = new Set<string>();
+  const visit = (item: RuleDraft | GroupDraft) => {
+    if (isGroup(item)) for (const one of item.items) visit(one);
+    else if (item.field === "attribute") attributes.add(item.key);
+    else if (item.field === "eventCount" || item.field === "eventLastAt") events.add(item.key);
+  };
+  const goal = rules.goal === undefined ? undefined : goalCondition(rules.goal);
+  for (const condition of [audience, rules.exitWhen, goal]) visit(groupOf(condition));
+  if (trigger.type === "event") events.add(trigger.name);
+  return { attributes, events };
 }
