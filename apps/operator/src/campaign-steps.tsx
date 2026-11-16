@@ -4,20 +4,17 @@ import { Icon } from "./icons.tsx";
 import { t } from "./text.ts";
 
 // The cards of the campaign editor: a numbered step that stays open, and a part folded to one line
-// that opens in place. Each body is a fieldset, so a member reads it and changes nothing, while a
-// fold still opens for them.
+// that opens in place. The read-only overview uses the same steps.
 
 function StepCard({
   mark,
   title,
   aside,
-  disabled,
   children,
 }: {
   mark: ReactNode;
   title: string;
   aside: ReactNode;
-  disabled: boolean;
   children: ReactNode;
 }) {
   const titleId = useId();
@@ -28,12 +25,7 @@ function StepCard({
         <h3 id={titleId}>{title}</h3>
         {aside}
       </header>
-      {children !== null && (
-        <fieldset className="step-body" disabled={disabled}>
-          <legend className="visually-hidden">{title}</legend>
-          {children}
-        </fieldset>
-      )}
+      {children !== null && <div className="step-body">{children}</div>}
     </section>
   );
 }
@@ -43,13 +35,11 @@ export function Step({
   number,
   title,
   aside,
-  disabled,
   children,
 }: {
   number: number;
   title: string;
   aside?: ReactNode;
-  disabled: boolean;
   children: ReactNode;
 }) {
   const mark = (
@@ -62,7 +52,6 @@ export function Step({
       mark={mark}
       title={title}
       aside={aside !== undefined && <div className="step-aside">{aside}</div>}
-      disabled={disabled}
     >
       {children}
     </StepCard>
@@ -73,12 +62,10 @@ export function Step({
 export function Fold({
   title,
   summary,
-  disabled,
   children,
 }: {
   title: string;
   summary: string;
-  disabled: boolean;
   children: ReactNode;
 }) {
   const [isOpen, setOpen] = useState(false);
@@ -102,7 +89,7 @@ export function Fold({
     </>
   );
   return (
-    <StepCard mark={mark} title={title} aside={toggle} disabled={disabled}>
+    <StepCard mark={mark} title={title} aside={toggle}>
       {isOpen ? children : null}
     </StepCard>
   );

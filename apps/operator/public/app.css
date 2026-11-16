@@ -8051,11 +8051,8 @@ button.quote:hover {
   background: none;
   font: 700 28px / 1.15 var(--display);
 }
-.campaign-title .title-input:hover:not(:disabled) {
+.campaign-title .title-input:hover {
   background-color: var(--row-hover);
-}
-.campaign-title .title-input:disabled {
-  background: none;
 }
 /* A pencil after the name says it changes in place, and a click on it focuses the name. */
 .title-edit {
@@ -8156,6 +8153,36 @@ button.quote:hover {
   display: grid;
   gap: 14px;
   margin: 16px 0 0 38px;
+}
+/* A campaign read, not edited: each part as plain text. */
+.overview-line,
+.overview-body {
+  color: var(--text-strong);
+  font-size: 15px;
+  line-height: 1.5;
+}
+.overview-body {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.overview-message,
+.overview-variant {
+  display: grid;
+  gap: 6px;
+}
+.overview-variant + .overview-variant {
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+.overview-variant h4 {
+  color: var(--navy);
+  font-size: 14px;
+  font-weight: 600;
+}
+.overview-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 .count-badge {
   padding: 4px 11px;

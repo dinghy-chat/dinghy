@@ -242,7 +242,7 @@ const REPEAT_TEXT: Record<Extract<CampaignTrigger, { type: "schedule" }>["repeat
 export const DAY_NAMES = weekdayNames("short");
 
 /** When it goes, after who gets it: "1 hour after they match". */
-function triggerWords(trigger: CampaignTrigger): string {
+export function triggerWords(trigger: CampaignTrigger): string {
   switch (trigger.type) {
     case "match":
       return trigger.delay === undefined
@@ -273,6 +273,23 @@ const SHOW_WORDS: Record<Presentation["show"], TextId> = {
   chat: "summaryShowChat",
 };
 
+/** How it shows: "as a card". */
+export const showWords = (presentation: Presentation) => t(SHOW_WORDS[presentation.show]);
+
+/** A fragment as a line of its own, with a capital: "as a card" becomes "As a card". */
+export const asLine = (words: string) => words.charAt(0).toUpperCase() + words.slice(1);
+
+/**
+ * Who gets it in full, for a campaign read and not edited: one rule as the list says it, and
+ * several rules each in words.
+ */
+export function whoWords(audience: Condition | undefined): string {
+  if (audience === undefined || onlyRule(groupOf(audience)) !== null) {
+    return audienceWords(audience);
+  }
+  return asLine(conditionWords(audience));
+}
+
 /**
  * An event campaign whose audience counts the same event, said once: "After export.finished, once
  * they have done it 3 times", or null for any other campaign.
@@ -292,7 +309,7 @@ function eventCountWords(audience: Condition | undefined, trigger: CampaignTrigg
 
 /** The list's sentence: who, when and how it shows. */
 export function campaignSentence({ audience, trigger, presentation }: CampaignDefinition) {
-  const show = t(SHOW_WORDS[presentation.show]);
+  const show = showWords(presentation);
   const eventCount = eventCountWords(audience, trigger);
   if (eventCount !== null) return t("summarySentenceWhen", { when: eventCount, show });
   return t("summarySentence", { who: audienceWords(audience), when: triggerWords(trigger), show });
