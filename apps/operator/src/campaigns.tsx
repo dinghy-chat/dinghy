@@ -13,8 +13,15 @@ import type {
   WorkspaceApi,
 } from "./api.ts";
 import { PausedBanner, type PausedTexts } from "./bots.tsx";
-import { deleteCampaign, EndingConfirm, RenameDialog } from "./campaign-dialogs.tsx";
-import { CampaignEditor, campaignFailure } from "./campaign-editor.tsx";
+import {
+  campaignFailure,
+  type Ending,
+  EndingConfirm,
+  endedText,
+  stopCampaign,
+} from "./campaign-actions.tsx";
+import { RenameDialog } from "./campaign-dialogs.tsx";
+import { CampaignEditor } from "./campaign-editor.tsx";
 import { CampaignRow, type RowAction } from "./campaign-row.tsx";
 import { freeKey, TEMPLATES } from "./campaign-templates.ts";
 import { Tile } from "./campaign-tile.tsx";
@@ -166,21 +173,24 @@ function ListActions({
   onGap(): void;
   onNew(): void;
 }) {
-  if (settings === null) return null;
   const items: MenuItem[] = [];
-  if (canEdit && (settings.paused || isAnyLive)) {
+  if (settings !== null && canEdit && (settings.paused || isAnyLive)) {
     items.push({
       label: t(settings.paused ? "campaignsResumeAll" : "campaignsPauseAll"),
       lead: <Icon name={settings.paused ? "play" : "pause"} size={18} />,
       onSelect: () => onPause(!settings.paused),
     });
   }
-  items.push({ label: t("campaignGap"), lead: <Icon name="clock" size={18} />, onSelect: onGap });
+  if (settings !== null) {
+    items.push({ label: t("campaignGap"), lead: <Icon name="clock" size={18} />, onSelect: onGap });
+  }
   return (
     <>
-      <Menu label={t("moreActions")} buttonClass="round" items={items}>
-        <Icon name="dots" />
-      </Menu>
+      {items.length > 0 && (
+        <Menu label={t("moreActions")} buttonClass="round" items={items}>
+          <Icon name="dots" />
+        </Menu>
+      )}
       {canEdit && (
         <button type="button" className="pill dark" onClick={onNew}>
           <Icon name="plusBold" size={14} />
@@ -248,9 +258,7 @@ function CampaignRows({
 }
 
 /** A row's action that waits for a dialog. */
-type Asked =
-  | { campaign: Campaign; action: "rename" }
-  | { campaign: Campaign; action: "end" | "delete" };
+type Asked = { campaign: Campaign; action: "rename" } | { campaign: Campaign; action: Ending };
 
 /** Every campaign, by status, with Pause all, the gap between two messages, and the templates. */
 function CampaignList({
@@ -295,15 +303,9 @@ function CampaignList({
       return campaignFailure(error);
     }
   };
-  const confirmed = ({ campaign, action }: Extract<Asked, { action: "end" | "delete" }>) => {
+  const finish = (campaign: Campaign, kind: Ending) => {
     setAsked(null);
-    void run(
-      () =>
-        action === "end"
-          ? api.setCampaignStatus(campaign.id, "end")
-          : deleteCampaign(api, campaign),
-      action === "end" ? "campaignEndedToast" : "campaignDeleted",
-    ).then(setFailure);
+    void run(() => stopCampaign(api, campaign, kind), endedText(kind)).then(setFailure);
   };
   const pause = async (paused: boolean) =>
     setFailure(
@@ -378,7 +380,7 @@ function CampaignList({
         <EndingConfirm
           kind={asked.action}
           name={asked.campaign.definition.name}
-          onConfirm={() => confirmed(asked)}
+          onConfirm={() => finish(asked.campaign, asked.action)}
           onCancel={() => setAsked(null)}
         />
       )}

@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import { percent, shareOf } from "./analytics.tsx";
 import type { Campaign } from "./api.ts";
-import { endingItem } from "./campaign-dialogs.tsx";
+import { type Ending, endingItem } from "./campaign-actions.tsx";
 import { campaignSentence } from "./campaign-summary.ts";
 import { StatusChip } from "./campaign-tile.tsx";
 import { TriggerTile } from "./campaign-trigger.tsx";
@@ -67,7 +67,7 @@ function RowStats({ campaign }: { campaign: Campaign }) {
 }
 
 /** What a row's menu asks the list to do with its campaign. */
-export type RowAction = "rename" | "end" | "delete";
+export type RowAction = "rename" | Ending;
 
 /** The row's menu: a new name while it can change, then its end or its delete. */
 function rowItems(campaign: Campaign, onAction: (action: RowAction) => void): MenuItem[] {

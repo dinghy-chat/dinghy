@@ -25,12 +25,6 @@ export type CampaignCounts = Campaign["totals"];
 
 /** How many contacts a choice reaches, up to 10,000, with `more` past that. */
 type Reach = { count: number; more: boolean };
-/** The attribute keys and event names of the contacts seen last, A to Z. */
-export interface ContactFields {
-  attributes: { name: string; contacts: number; lastSeenAt: string }[];
-  events: { name: string; contacts: number; lastAt: string }[];
-}
-
 export interface CampaignEstimate {
   /** The contacts who match the audience now. */
   matching: Reach;
@@ -316,6 +310,12 @@ export interface LiveVisitor {
 }
 
 export type ContactSort = "lastSeen" | "firstSeen";
+
+/** The attribute keys and event names of the contacts seen last, A to Z. */
+export interface ContactFields {
+  attributes: { name: string; contacts: number; lastSeenAt: string }[];
+  events: { name: string; contacts: number; lastAt: string }[];
+}
 
 /** A person with at least one conversation. */
 export interface Contact extends VisitorIdentity {
@@ -938,7 +938,7 @@ export function workspaceApi(workspaceId: string) {
         method: "PATCH",
         body: JSON.stringify({ name }),
       }),
-    /** Deletes a campaign that never sent, as `deleteBlock` tells. */
+    /** Deletes a campaign that never sent a message and is not live. */
     deleteCampaign: (id: string) =>
       call<{ ok: true }>(`${base}/campaigns/${id}`, { method: "DELETE" }),
     /** The attributes and events of the contacts seen last, for Contacts and the campaign editor. */

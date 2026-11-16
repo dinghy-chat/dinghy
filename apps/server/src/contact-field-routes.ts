@@ -91,7 +91,7 @@ async function contactFields(db: Database, workspaceId: string) {
   };
 }
 
-export function registerContactNameRoutes(app: App, { db }: { db: Database }): void {
+export function registerContactFieldRoutes(app: App, { db }: { db: Database }): void {
   app.openapi(fieldsRoute, async (c) =>
     c.json(await contactFields(db, c.get("memberWorkspaceId")), 200),
   );

@@ -1,4 +1,4 @@
-import { and, eq, gt, gte, inArray, lte, type SQL, sql } from "drizzle-orm";
+import { and, eq, gte, inArray, lte, type SQL, sql } from "drizzle-orm";
 import { addCounts, type CampaignCount, type Counts, emptyCounts } from "./campaign-parts.ts";
 import { campaignDay, type OutboundEventKind, type outboundMessage } from "./db/schema.ts";
 import type { Transaction } from "./db/tenant.ts";
@@ -156,19 +156,14 @@ export async function sentLastWeek(tx: Transaction, workspaceId: string): Promis
 }
 
 /**
- * Whether the campaign sent a message to anyone but a test visitor. It locks the campaign's days
- * first, so a count that a send is adding now commits before the read, and none comes after it.
+ * Whether the campaign sent a message to anyone but a test visitor. It locks the campaign's days,
+ * so a count that a send is adding now commits before the read, and none comes after it.
  */
 export async function hasSent(tx: Transaction, workspaceId: string, campaignId: string) {
-  const ofCampaign = and(
-    eq(campaignDay.workspaceId, workspaceId),
-    eq(campaignDay.campaignId, campaignId),
-  );
-  await tx.select({ one: sql`1` }).from(campaignDay).where(ofCampaign).for("update");
-  const [row] = await tx
-    .select({ one: sql`1` })
+  const days = await tx
+    .select({ sent: campaignDay.sent })
     .from(campaignDay)
-    .where(and(ofCampaign, gt(campaignDay.sent, 0)))
-    .limit(1);
-  return row !== undefined;
+    .where(and(eq(campaignDay.workspaceId, workspaceId), eq(campaignDay.campaignId, campaignId)))
+    .for("update");
+  return days.some((day) => day.sent > 0);
 }

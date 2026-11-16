@@ -89,7 +89,7 @@ export function CampaignSteps({
   api,
   definition,
   members,
-  meId,
+  savesAsYou,
   language,
   editable,
   onLanguage,
@@ -98,8 +98,8 @@ export function CampaignSteps({
   api: WorkspaceApi;
   definition: CampaignDefinition;
   members: Member[];
-  /** The member on this page, who becomes the sender on a save, or null when they cannot save. */
-  meId: string | null;
+  /** Whether a save here makes the viewer the sender "whoever saves it". */
+  savesAsYou: boolean;
   language: Language;
   editable: boolean;
   onLanguage(language: Language): void;
@@ -147,7 +147,7 @@ export function CampaignSteps({
           message={definition.message}
           trigger={definition.trigger.type}
           members={members}
-          meId={meId}
+          savesAsYou={savesAsYou}
           language={language}
           onLanguage={onLanguage}
           onChange={(message) => change("message", message)}
@@ -156,7 +156,7 @@ export function CampaignSteps({
           <VariantsFields
             definition={definition}
             members={members}
-            meId={meId}
+            savesAsYou={savesAsYou}
             language={language}
             onLanguage={onLanguage}
             onChange={(variants) => change("variants", variants)}

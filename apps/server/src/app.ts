@@ -20,7 +20,7 @@ import { registerCampaignRoutes } from "./campaign-routes.ts";
 import { createCampaigns } from "./campaigns.ts";
 import { registerChatPage } from "./chat-link.ts";
 import { clientIp } from "./client-ip.ts";
-import { registerContactNameRoutes } from "./contact-names.ts";
+import { registerContactFieldRoutes } from "./contact-field-routes.ts";
 import { registerContactRoutes } from "./contacts.ts";
 import {
   AccountDeletedError,
@@ -563,7 +563,7 @@ export function createApp({
     registerOperatorPresence(app, db, presence);
     registerModerationRoutes(app, db, live);
     registerContactRoutes(app, { db, live, visitorPresence });
-    registerContactNameRoutes(app, { db });
+    registerContactFieldRoutes(app, { db });
     registerOutboundRoutes(app, { outbound, rateLimit });
     registerCampaignRoutes(app, { campaigns, rateLimit });
     registerTrackRoute(app, { tracking, rateLimit });

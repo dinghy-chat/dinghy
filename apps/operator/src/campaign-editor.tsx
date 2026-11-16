@@ -16,24 +16,24 @@ import {
   CAMPAIGN_NAME_MAX,
   type TeamFace,
 } from "../../../packages/widget/src/shared.ts";
-import {
-  ApiError,
-  type Campaign,
-  type CampaignDefinition,
-  type Me,
-  type Member,
-  type OutboundStatusReason,
-  type WorkspaceApi,
+import type {
+  Campaign,
+  CampaignDefinition,
+  Me,
+  Member,
+  OutboundStatusReason,
+  WorkspaceApi,
 } from "./api.ts";
 import { LeaveGuard } from "./appearance.tsx";
 import {
-  CodeDialog,
-  deleteCampaign,
+  campaignFailure,
+  type Ending,
   EndingConfirm,
+  endedText,
   endingItem,
-  GoLiveDialog,
-  TestDialog,
-} from "./campaign-dialogs.tsx";
+  stopCampaign,
+} from "./campaign-actions.tsx";
+import { CodeDialog, GoLiveDialog, TestDialog } from "./campaign-dialogs.tsx";
 import { keyFromName, newDefinition } from "./campaign-draft.ts";
 import { CampaignSteps } from "./campaign-form.tsx";
 import type { Language } from "./campaign-message.tsx";
@@ -45,24 +45,10 @@ import { useLoad } from "./load.ts";
 import { Menu, type MenuItem } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
-import { Choices, ErrorNote, failureText, Loading } from "./ui.tsx";
+import { Choices, ErrorNote, Loading } from "./ui.tsx";
 import { ago } from "./visitor.ts";
 
-/**
- * Why a save or an action failed. The editor checks the text's variables itself, so a definition
- * the server still refuses gets one general line.
- */
-export function campaignFailure(error: unknown): TextId {
-  if (error instanceof ApiError) {
-    if (error.code === "invalid_request") return "campaignInvalid";
-    if (error.code === "campaign_key_taken") return "campaignKeyTaken";
-    if (error.code === "campaign_ended") return "campaignEndedRefused";
-    if (error.code === "campaign_sent") return "campaignSentRefused";
-  }
-  return failureText(error, { 403: "campaignForbidden" }, "actionFailed");
-}
-
-type Action = "save" | "live" | "pause" | "resume" | "end" | "delete";
+type Action = "save" | "live" | "pause" | "resume" | Ending;
 
 /**
  * The page's buttons: a save, the one step the status allows next, go live, pause or resume, and
@@ -211,7 +197,7 @@ export function CampaignEditor({
 }
 
 type Dialog =
-  | { kind: "code" | "end" | "delete" | "live" }
+  | { kind: "code" | "live" | Ending }
   | { kind: "test"; blockedBy: OutboundStatusReason | null; conversationId: string | null };
 
 /**
@@ -266,16 +252,17 @@ function useCampaignActions({
     onSaved(created.id);
     return created;
   };
-  const setStatus = (action: "pause" | "end", done: TextId) => {
-    if (campaign === null) return;
-    run(async () => (await api.setCampaignStatus(campaign.id, action)).campaign, done, {
-      saves: false,
-    });
-  };
   const act = (action: Action) => {
     if (action === "end" || action === "delete") return setDialog({ kind: action });
     if (action === "save") return run(save, "campaignSaved", { saves: true });
-    if (action === "pause") return setStatus("pause", "campaignPausedToast");
+    if (action === "pause") {
+      if (campaign === null) return;
+      return run(
+        async () => (await api.setCampaignStatus(campaign.id, "pause")).campaign,
+        "campaignPausedToast",
+        { saves: false },
+      );
+    }
     // Going live or resuming saves the changes first.
     run(
       async () => {
@@ -286,16 +273,14 @@ function useCampaignActions({
       { saves: true },
     );
   };
-  const end = () => {
-    setDialog(null);
-    setStatus("end", "campaignEndedToast");
-  };
-  const remove = () => {
+  /** Ends or deletes it, once the operator confirmed. A delete leaves the page. */
+  const finish = (kind: Ending) => {
     setDialog(null);
     if (campaign === null) return;
     void busyWhile(async () => {
-      await deleteCampaign(api, campaign);
-      toast("campaignDeleted");
+      const after = await stopCampaign(api, campaign, kind);
+      toast(endedText(kind));
+      if (after !== null) return setCampaign(after);
       // Its changes not saved go with it, so leaving the page asks nothing.
       flushSync(() => setEdited(null));
       onDeleted();
@@ -311,7 +296,7 @@ function useCampaignActions({
         conversationId: sent.outboundMessage.conversationId,
       });
     });
-  return { busy, failure, act, end, remove, test };
+  return { busy, failure, act, finish, test };
 }
 
 /** How long a draft waits after the last change before it saves itself. */
@@ -464,7 +449,7 @@ function CampaignPage({
   const definition = edited ?? saved ?? blank;
   const unsaved = edited !== null && JSON.stringify(edited) !== JSON.stringify(saved);
   const editable = canEdit && campaign?.status !== "ended";
-  const { busy, failure, act, end, remove, test } = useCampaignActions({
+  const { busy, failure, act, finish, test } = useCampaignActions({
     api,
     campaign,
     definition,
@@ -490,6 +475,7 @@ function CampaignPage({
     act(submitter instanceof HTMLButtonElement ? (submitter.value as Action) : "save");
   };
   const title = definition.name.trim() === "" ? t("campaignNew") : definition.name;
+  const ending = dialog?.kind === "end" || dialog?.kind === "delete" ? dialog.kind : null;
   return (
     <section className="page campaign-page" aria-label={title}>
       <LeaveGuard unsaved={unsaved} />
@@ -558,8 +544,7 @@ function CampaignPage({
                   api={api}
                   definition={definition}
                   members={members}
-                  // "Now you" only to someone whose save makes them the sender.
-                  meId={editable ? me.id : null}
+                  savesAsYou={editable}
                   language={language}
                   editable={editable}
                   onLanguage={setLanguage}
@@ -581,11 +566,11 @@ function CampaignPage({
           onClose={() => setDialog(null)}
         />
       )}
-      {(dialog?.kind === "end" || dialog?.kind === "delete") && (
+      {ending !== null && (
         <EndingConfirm
-          kind={dialog.kind}
+          kind={ending}
           name={title}
-          onConfirm={dialog.kind === "end" ? end : remove}
+          onConfirm={() => finish(ending)}
           onCancel={() => setDialog(null)}
         />
       )}
