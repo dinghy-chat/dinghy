@@ -4,6 +4,7 @@
 import { Fragment, render } from "preact";
 import { useRef } from "preact/hooks";
 import { LAUNCHER_CSS, LAUNCHER_ICONS, type LauncherKind, paintColors } from "./launcher.ts";
+import { Choices } from "./outbound.tsx";
 import {
   Branding,
   ChatHead,
@@ -17,13 +18,13 @@ import {
   sayer,
   startsRun,
 } from "./panel.tsx";
-import type { SavedAppearance, TeamFace } from "./shared.ts";
+import type { OutboundButton, OutboundShow, SavedAppearance, TeamFace } from "./shared.ts";
 
 // The open panel, and under it the launcher on its side, as in the corner of a site. The panel
 // stays in its box, where on a phone it would fill the screen. `.stage .panel` is as specific as
 // the phone's rule, and this sheet comes after. The icon's wrapper is no box of its own.
 const PREVIEW_CSS =
-  ":host{display:block}.stage{display:flex;flex-direction:column;align-items:flex-end;gap:16px}:host([data-side=left]) .stage{align-items:flex-start}.stage .panel{position:relative;inset:auto;width:100%;max-width:370px;height:500px;max-height:none;border-radius:var(--dinghy-radius,var(--d-radius,16px))}.launcher i{display:contents}";
+  ":host{display:block}.stage .preview{position:static}.stage{display:flex;flex-direction:column;align-items:flex-end;gap:16px}:host([data-side=left]) .stage{align-items:flex-start}.stage .panel{position:relative;inset:auto;width:100%;max-width:370px;height:500px;max-height:none;border-radius:var(--dinghy-radius,var(--d-radius,16px))}.launcher i{display:contents}";
 
 /** The sample conversation, in the operator app's words. */
 interface PreviewSample {
@@ -33,11 +34,20 @@ interface PreviewSample {
   author: TeamFace;
 }
 
+/** A message from the team, which shows as it asks in place of the sample conversation. */
+interface PreviewOutbound {
+  body: string;
+  buttons: OutboundButton[];
+  show: OutboundShow;
+  author: TeamFace;
+}
+
 export interface PreviewProps {
   appearance: SavedAppearance;
   /** The colors the panel shows: the saved theme, or for auto, the visitor's device. */
   theme: "light" | "dark";
   sample: PreviewSample;
+  outbound?: PreviewOutbound;
 }
 
 const ignore = () => {};
@@ -59,9 +69,9 @@ const sampleOnline = ({ faces, team }: SavedAppearance) =>
   (faces.length > 0 ? faces : team).slice(0, 2).map((face) => face.id);
 
 /** The launcher as the loader draws it. The label carries the chat's title. */
-function Launcher({ kind, title }: { kind: LauncherKind; title: string }) {
+function Launcher({ kind, title, nudge }: { kind: LauncherKind; title: string; nudge: boolean }) {
   return (
-    <span class={`launcher ${kind}`}>
+    <span class={nudge ? `launcher ${kind} nudge` : `launcher ${kind}`}>
       {/* biome-ignore lint/security/noDangerouslySetInnerHtml: a fixed string from launcher.ts. */}
       <i dangerouslySetInnerHTML={{ __html: LAUNCHER_ICONS[kind] }} />
       {kind === "label" && <b>{title}</b>}
@@ -69,7 +79,46 @@ function Launcher({ kind, title }: { kind: LauncherKind; title: string }) {
   );
 }
 
-function Preview({ appearance, sample }: PreviewProps) {
+/** The team's message as a line of the chat, with its buttons. */
+function OutboundLine({ outbound }: { outbound: PreviewOutbound }) {
+  const line: Line = {
+    id: "outbound",
+    seq: null,
+    attachment: null,
+    status: "sent",
+    body: outbound.body,
+    fromVisitor: false,
+    author: { ...outbound.author, bot: false },
+  };
+  return (
+    <>
+      <ChatLine line={line} showAuthor onView={ignore} onUploadError={ignore} onRetry={ignore} />
+      <Choices one={{ id: line.id, buttons: outbound.buttons }} onPress={ignore} />
+    </>
+  );
+}
+
+function Preview(props: PreviewProps) {
+  const { appearance, outbound } = props;
+  const say = sayer(appearance);
+  // A badge or a card waits by the closed chat, so the launcher shows alone, with its dot.
+  if (outbound !== undefined && outbound.show !== "chat") {
+    const { launcher } = appearance;
+    return (
+      <div class="stage">
+        {outbound.show === "preview" && (
+          <aside class="preview">
+            <OutboundLine outbound={outbound} />
+          </aside>
+        )}
+        {launcher !== "hidden" && <Launcher kind={launcher} title={say("title")} nudge />}
+      </div>
+    );
+  }
+  return <OpenPreview {...props} />;
+}
+
+function OpenPreview({ appearance, sample, outbound }: PreviewProps) {
   const input = useRef<HTMLTextAreaElement>(null);
   const say = sayer(appearance);
   const { launcher, mascot, emailAsk } = appearance;
@@ -79,7 +128,7 @@ function Preview({ appearance, sample }: PreviewProps) {
     chatted: emailAsk !== "before_first",
     known: true,
   });
-  const lines = email.composer ? sampleLines(sample) : [];
+  const lines = email.composer && outbound === undefined ? sampleLines(sample) : [];
   const card = (
     <EmailCard
       face={appearance.team[0] ?? null}
@@ -104,7 +153,10 @@ function Preview({ appearance, sample }: PreviewProps) {
           onClose={ignore}
         />
         <div class="log">
-          {lines.length === 0 && <EmptyLog mascot={mascot} greeting={say("empty")} />}
+          {outbound !== undefined && <OutboundLine outbound={outbound} />}
+          {lines.length === 0 && outbound === undefined && (
+            <EmptyLog mascot={mascot} greeting={say("empty")} />
+          )}
           {lines.map((line, index) => (
             <Fragment key={line.id}>
               <ChatLine
@@ -133,7 +185,7 @@ function Preview({ appearance, sample }: PreviewProps) {
         {appearance.branding && <Branding />}
       </section>
       {/* A hidden launcher draws nothing, and the operator app says so. */}
-      {launcher !== "hidden" && <Launcher kind={launcher} title={say("title")} />}
+      {launcher !== "hidden" && <Launcher kind={launcher} title={say("title")} nudge={false} />}
     </div>
   );
 }
