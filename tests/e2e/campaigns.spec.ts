@@ -253,6 +253,19 @@ test("the editor's steps: option cards, value tokens, variables and folded parts
   await text.pressSequentially("{{ country }}");
   await page.getByLabel("Name", { exact: true }).focus();
   await expect(text.locator(".variable-token")).toHaveText(["first name", "country"]);
+  // A variable takes the place of the selected words.
+  await text.fill("Hi Alex");
+  await text.press("End");
+  for (let step = 0; step < 4; step += 1) await text.press("Shift+ArrowLeft");
+  await page.getByRole("button", { name: "First name", exact: true }).click();
+  await expect(text).toHaveText("Hi first name");
+  // Cut and paste keep the variable, not its words.
+  await text.press("ControlOrMeta+a");
+  await text.press("ControlOrMeta+x");
+  await expect(text).toHaveText("");
+  await text.press("ControlOrMeta+v");
+  await page.getByLabel("Name", { exact: true }).focus();
+  await expect(text.locator(".variable-token")).toHaveAttribute("title", "{{ firstName }}");
   // A variable that does not read is named under the text, so the form does not save.
   await text.fill("Hi {{ nickname }}");
   await expect(page.getByText("There is no variable nickname for this trigger.")).toBeVisible();

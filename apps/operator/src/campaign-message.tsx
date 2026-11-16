@@ -517,6 +517,7 @@ export function MessageFields({
         </BodyField>
       ) : (
         <TranslationFields
+          key={shown}
           locale={shown}
           message={message}
           trigger={trigger}

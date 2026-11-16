@@ -9,7 +9,7 @@ import { templateParts } from "../../../packages/widget/src/template.ts";
 // focus.
 
 export interface TemplateTextHandle {
-  /** Puts a tag where the caret last was, or at the end. */
+  /** Puts a tag in place of what was last selected, or at the end. */
   insert(tag: string): void;
   focus(): void;
 }
@@ -45,16 +45,23 @@ function textOf(parent: Node): string {
   return text;
 }
 
-/** How much of the template comes before the caret in the box, or null when it is elsewhere. */
-function caretOffset(box: HTMLElement): number | null {
+/** The selection in the box, or null when it is elsewhere. */
+function selectionIn(box: HTMLElement): Range | null {
   const selection = document.getSelection();
   if (selection === null || selection.rangeCount === 0) return null;
-  const caret = selection.getRangeAt(0);
-  if (!box.contains(caret.startContainer)) return null;
+  const range = selection.getRangeAt(0);
+  return box.contains(range.startContainer) && box.contains(range.endContainer) ? range : null;
+}
+
+/** Where the selection starts and ends in the template, or null when it is elsewhere. */
+function selectedSpan(box: HTMLElement): [number, number] | null {
+  const range = selectionIn(box);
+  if (range === null) return null;
   const before = document.createRange();
   before.selectNodeContents(box);
-  before.setEnd(caret.startContainer, caret.startOffset);
-  return textOf(before.cloneContents()).length;
+  before.setEnd(range.startContainer, range.startOffset);
+  const start = textOf(before.cloneContents()).length;
+  return [start, start + textOf(range.cloneContents()).length];
 }
 
 /** Puts the caret in the box after `offset` characters of the template. */
@@ -106,8 +113,8 @@ export function TemplateText({
   const box = useRef<HTMLDivElement>(null);
   // The value the box's nodes hold, so a change typed in it does not draw them again.
   const drawn = useRef<string | null>(null);
-  // Where the caret was when the box lost focus, as an offset in the template.
-  const lastCaret = useRef<number | null>(null);
+  // What was selected when the box lost focus, as offsets in the template.
+  const lastSpan = useRef<[number, number] | null>(null);
   const pendingCaret = useRef<number | null>(null);
   const draw = (text: string) => {
     box.current?.replaceChildren(...nodesOf(text, wordsOf));
@@ -126,11 +133,28 @@ export function TemplateText({
     current.contentEditable = isDisabled ? "false" : "plaintext-only";
     current.setAttribute("aria-disabled", String(isDisabled));
   });
+  const changed = () => {
+    if (box.current === null) return;
+    const text = textOf(box.current);
+    drawn.current = text;
+    onChange(text);
+  };
+  const copy = (event: ClipboardEvent, cut: boolean) => {
+    const range = box.current === null ? null : selectionIn(box.current);
+    if (range === null || event.clipboardData === null) return;
+    event.preventDefault();
+    event.clipboardData.setData("text/plain", textOf(range.cloneContents()));
+    if (!cut) return;
+    range.deleteContents();
+    changed();
+  };
   useImperativeHandle(ref, () => ({
     insert(tag) {
-      const at = Math.min(lastCaret.current ?? value.length, value.length);
-      pendingCaret.current = at + tag.length;
-      onChange(value.slice(0, at) + tag + value.slice(at));
+      const [start, end] = (lastSpan.current ?? [value.length, value.length]).map((at) =>
+        Math.min(at, value.length),
+      ) as [number, number];
+      pendingCaret.current = start + tag.length;
+      onChange(value.slice(0, start) + tag + value.slice(end));
     },
     focus: () => box.current?.focus(),
   }));
@@ -146,14 +170,12 @@ export function TemplateText({
       aria-invalid={describedBy !== undefined}
       data-placeholder={placeholder}
       className="template-text"
-      onInput={() => {
-        if (box.current === null) return;
-        const text = textOf(box.current);
-        drawn.current = text;
-        onChange(text);
-      }}
+      onInput={changed}
+      // The clipboard gets the tags, not the tokens' words, so a pasted copy keeps its variables.
+      onCopy={(event) => copy(event.nativeEvent, false)}
+      onCut={(event) => copy(event.nativeEvent, true)}
       onBlur={() => {
-        if (box.current !== null) lastCaret.current = caretOffset(box.current);
+        if (box.current !== null) lastSpan.current = selectedSpan(box.current);
         // A tag typed whole becomes a token.
         draw(value);
       }}
