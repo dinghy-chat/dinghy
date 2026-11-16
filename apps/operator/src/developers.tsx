@@ -2,9 +2,7 @@
 import { type ReactNode, useState } from "react";
 import {
   type ApiKey,
-  type ApiKeyLevel,
   type ApiKeyPermission,
-  type ReplyMode,
   WEBHOOK_EVENTS,
   type Webhook,
   type WebhookDelivery,
@@ -17,7 +15,7 @@ import { originLine } from "./consent.tsx";
 import { MINUTE_MS } from "./format.ts";
 import { Icon } from "./icons.tsx";
 import { type Loaded, useAction, useLoad } from "./load.ts";
-import { Confirm, Select } from "./popup.tsx";
+import { Confirm } from "./popup.tsx";
 import { ListSkeleton } from "./skeleton.tsx";
 import { plural, type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
@@ -26,6 +24,7 @@ import {
   CopyField,
   ErrorNote,
   Field,
+  FormDialog,
   failureText,
   Page,
   StatusNote,
@@ -110,6 +109,10 @@ function KeyItem({
         <strong className="item-name">{apiKey.name}</strong>
         <span className="item-line">
           <span className="lvl">{t(LEVEL_LABEL[apiKey.level])}</span>
+          <span>{accessLine(apiKey)}</span>
+          <span className="sep" aria-hidden="true">
+            ·
+          </span>
           <span>{madeLine(apiKey)}</span>
           {origin !== null && (
             <>
@@ -159,124 +162,144 @@ function Section({
   );
 }
 
-/** A key's or an app's reply mode, which saves as soon as it changes. */
-function ReplyModeSelect({
-  api,
-  apiKey,
-  onSaved,
-  onFailed,
+/** A key's permissions, each with its switch's label and hint. */
+const PERMISSIONS: { permission: ApiKeyPermission; label: TextId; hint: TextId }[] = [
+  {
+    permission: "send_as_member",
+    label: "apiKeyMaySendAsMember",
+    hint: "apiKeyMaySendAsMemberHint",
+  },
+  { permission: "send_email", label: "apiKeyMaySendEmail", hint: "apiKeyMaySendEmailHint" },
+];
+
+/** What a key may do: its level, how its replies go, and its permissions. */
+type Access = Pick<ApiKey, "level" | "replyMode" | "permissions">;
+
+const NEW_KEY_ACCESS: Access = { level: "conversations", replyMode: "draft", permissions: [] };
+
+/** How a key replies, then the permissions it has, for its row. */
+function accessLine({ replyMode, permissions }: Access): string {
+  const mode = REPLY_MODES.find((one) => one.value === replyMode);
+  return [
+    ...(mode === undefined ? [] : [t(mode.label)]),
+    ...PERMISSIONS.filter((one) => permissions.includes(one.permission)).map((one) => t(one.label)),
+  ].join(" · ");
+}
+
+/**
+ * The controls for what a key may do, in the new key's form and in its Permissions dialog. A
+ * connected app's level comes from its consent, so it shows only for a key made here.
+ */
+function AccessFields({
+  access,
+  hasLevel,
+  onChange,
 }: {
-  api: WorkspaceApi;
-  apiKey: ApiKey;
-  onSaved(key: ApiKey): void;
-  onFailed(error: unknown): void;
+  access: Access;
+  hasLevel: boolean;
+  onChange(access: Access): void;
 }) {
   return (
-    <Select<ReplyMode>
-      label={t("replyModeFor", { name: apiKey.name })}
-      value={apiKey.replyMode}
-      choices={REPLY_MODES.map((mode) => ({ value: mode.value, label: t(mode.label) }))}
-      side="end"
-      onChange={(replyMode) =>
-        void api.setReplyMode(apiKey.id, replyMode).then((saved) => {
-          onSaved(saved);
-          toast("saved");
-        }, onFailed)
-      }
-    />
+    <>
+      {hasLevel && (
+        <LevelChoice
+          className="key-level"
+          value={access.level}
+          onChange={(level) => onChange({ ...access, level })}
+        />
+      )}
+      <ReplyModeChoice
+        className="key-level"
+        value={access.replyMode}
+        onChange={(replyMode) => onChange({ ...access, replyMode })}
+      />
+      {PERMISSIONS.map(({ permission, label, hint }) => (
+        <Switch
+          key={permission}
+          label={t(label)}
+          hint={t(hint)}
+          checked={access.permissions.includes(permission)}
+          onChange={(checked) =>
+            onChange({
+              ...access,
+              permissions: [
+                ...access.permissions.filter((one) => one !== permission),
+                ...(checked ? [permission] : []),
+              ],
+            })
+          }
+        />
+      ))}
+    </>
   );
 }
 
-/** A key's permissions, each with its control's name and its two choices. */
-const PERMISSIONS: {
-  permission: ApiKeyPermission;
-  label: TextId;
-  off: TextId;
-  on: TextId;
-  hint: TextId;
-}[] = [
-  {
-    permission: "send_as_member",
-    label: "apiKeySenderFor",
-    off: "apiKeySendsAsItself",
-    on: "apiKeyMaySendAsMember",
-    hint: "apiKeyMaySendAsMemberHint",
-  },
-  {
-    permission: "send_email",
-    label: "apiKeyEmailFor",
-    off: "apiKeyChatOnly",
-    on: "apiKeyMaySendEmail",
-    hint: "apiKeyMaySendEmailHint",
-  },
-];
-
-/** One permission of a key, which saves as soon as it changes and keeps the others. */
-function PermissionSelect({
+/** A key's or an app's permissions, in one dialog that saves them together. */
+function PermissionsDialog({
   api,
   apiKey,
-  choice,
   onSaved,
-  onFailed,
+  onClose,
 }: {
   api: WorkspaceApi;
   apiKey: ApiKey;
-  choice: (typeof PERMISSIONS)[number];
   onSaved(key: ApiKey): void;
-  onFailed(error: unknown): void;
+  onClose(): void;
 }) {
-  const others = apiKey.permissions.filter((one) => one !== choice.permission);
+  const app = apiKey.source === "oauth";
+  const [access, setAccess] = useState<Access>(apiKey);
+  const { busy, failure, run } = useAction(async () => {});
   return (
-    <Select<"off" | "on">
-      label={t(choice.label, { name: apiKey.name })}
-      value={apiKey.permissions.includes(choice.permission) ? "on" : "off"}
-      choices={[
-        { value: "off", label: t(choice.off) },
-        { value: "on", label: t(choice.on) },
-      ]}
-      side="end"
-      onChange={(value) =>
-        void api
-          .setPermissions(apiKey.id, value === "on" ? [...others, choice.permission] : others)
-          .then((saved) => {
-            onSaved(saved);
-            toast("saved");
-          }, onFailed)
+    <FormDialog
+      title={t("apiKeyPermissionsTitle", { name: apiKey.name })}
+      help={t("apiKeyPermissionsHelp")}
+      failure={failure}
+      submitLabel={t("save")}
+      submitDisabled={busy}
+      onSubmit={(close) =>
+        void run(async () => {
+          const { level, replyMode, permissions } = access;
+          onSaved(
+            await api.updateApiKey(apiKey.id, {
+              ...(!app && { level }),
+              replyMode,
+              permissions,
+            }),
+          );
+          toast("saved");
+          close();
+        })
       }
-    />
+      onClose={onClose}
+    >
+      <AccessFields access={access} hasLevel={!app} onChange={setAccess} />
+    </FormDialog>
   );
 }
 
 type LoadedKeys = Loaded<{ apiKeys: ApiKey[] }>;
 
-/** A key's or an app's reply mode and its Revoke or Disconnect, which asks first. */
+/** A key's or an app's Permissions, and its Revoke or Disconnect, which asks first. */
 function KeyTools({
-  api,
   apiKey,
-  onSaved,
-  onFailed,
+  onEdit,
   onRevoke,
 }: {
-  api: WorkspaceApi;
   apiKey: ApiKey;
-  onSaved(key: ApiKey): void;
-  onFailed(error: unknown): void;
+  onEdit(): void;
   onRevoke(): void;
 }) {
   const app = apiKey.source === "oauth";
   return (
     <>
-      <ReplyModeSelect api={api} apiKey={apiKey} onSaved={onSaved} onFailed={onFailed} />
-      {PERMISSIONS.map((choice) => (
-        <PermissionSelect
-          key={choice.permission}
-          api={api}
-          apiKey={apiKey}
-          choice={choice}
-          onSaved={onSaved}
-          onFailed={onFailed}
-        />
-      ))}
+      <button
+        type="button"
+        className="pill small"
+        aria-label={t("apiKeyPermissionsOf", { name: apiKey.name })}
+        onClick={onEdit}
+      >
+        {t("apiKeyPermissions")}
+      </button>
       <button
         type="button"
         className="pill small danger-soft"
@@ -304,25 +327,23 @@ function KeysSection({
 }) {
   const app = source === "oauth";
   const [name, setName] = useState("");
-  const [level, setLevel] = useState<ApiKeyLevel>("conversations");
-  const [replyMode, setReplyMode] = useState<ReplyMode>("draft");
-  const [permissions, setPermissions] = useState<ApiKeyPermission[]>([]);
+  const [access, setAccess] = useState<Access>(NEW_KEY_ACCESS);
   // The new key's token, shown once in the key's own row.
   const [made, setMade] = useState<{ id: string; name: string; token: string } | null>(null);
   const { busy, failure, setFailure, run: act } = useAction(keys.reload);
   const [revoking, setRevoking] = useState<ApiKey | null>(null);
+  const [editing, setEditing] = useState<ApiKey | null>(null);
   // The new key's form shows only once the owner asks for it.
   const [adding, setAdding] = useState(false);
 
   const resetForm = () => {
     setAdding(false);
     setName("");
-    setLevel("conversations");
-    setReplyMode("draft");
-    setPermissions([]);
+    setAccess(NEW_KEY_ACCESS);
   };
   const create = () =>
     act(async () => {
+      const { level, replyMode, permissions } = access;
       const { token, ...key } = await api.createApiKey(name.trim(), level, replyMode, permissions);
       setMade({ id: key.id, name: key.name, token });
       resetForm();
@@ -370,10 +391,8 @@ function KeysSection({
               apiKey={key}
               tools={
                 <KeyTools
-                  api={api}
                   apiKey={key}
-                  onSaved={saved}
-                  onFailed={(error) => setFailure(failureText(error, {}))}
+                  onEdit={() => setEditing(key)}
                   onRevoke={() => setRevoking(key)}
                 />
               }
@@ -412,25 +431,18 @@ function KeysSection({
             value={name}
             onChange={setName}
           />
-          <LevelChoice className="key-level" value={level} onChange={setLevel} />
-          <ReplyModeChoice className="key-level" value={replyMode} onChange={setReplyMode} />
-          {PERMISSIONS.map(({ permission, on, hint }) => (
-            <Switch
-              key={permission}
-              label={t(on)}
-              hint={t(hint)}
-              checked={permissions.includes(permission)}
-              onChange={(checked) =>
-                setPermissions((current) => [
-                  ...current.filter((one) => one !== permission),
-                  ...(checked ? [permission] : []),
-                ])
-              }
-            />
-          ))}
+          <AccessFields access={access} hasLevel onChange={setAccess} />
         </AddForm>
       )}
       <ErrorNote text={failure ?? keys.failure} />
+      {editing !== null && (
+        <PermissionsDialog
+          api={api}
+          apiKey={editing}
+          onSaved={saved}
+          onClose={() => setEditing(null)}
+        />
+      )}
       {revoking !== null && (
         <Confirm
           title={t(app ? "appDisconnectTitle" : "apiKeyRevokeTitle", { name: revoking.name })}

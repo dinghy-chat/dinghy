@@ -4,6 +4,10 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- Each API key and connected app has one **Permissions** button in Settings > API & webhooks. It opens a dialog with the key's access level, its replies and its permissions, saved together, in place of a menu for each. The row lists what the key may do.
+
 ## [0.35.0] - 2026-11-16
 
 ### Upgrading
