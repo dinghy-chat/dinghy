@@ -1,3 +1,4 @@
+/** @jsxImportSource preact */
 // Outbound messages: what the team sent this visitor outside any conversation. They wait as a badge,
 // a card above the launcher or the open chat, until the visitor answers, dismisses or leaves them.
 // All of this is in the chat bundle, so the loader only learns from its beat that one waits.
