@@ -214,13 +214,23 @@ export interface ReceivedMessage {
   id: string | null;
   body: string | null;
   sender: { name: string | null; pictureUrl: string | null };
-  /** An outbound message that waits outside a conversation, or null for a reply. */
-  outbound: { id: string; show: OutboundShow; buttons: OutboundButton[] } | null;
+  /**
+   * An outbound message that waits outside a conversation, or null for a reply. A page campaign's
+   * card has no ID until the visitor answers it.
+   */
+  outbound: {
+    id: string | null;
+    campaignId: string | null;
+    show: OutboundShow;
+    buttons: OutboundButton[];
+  } | null;
 }
 
 /** An outbound message the visitor read or dismissed, with the button they chose, if any. */
 export interface OutboundChange {
-  id: string;
+  /** Null for a page campaign's card, which has no ID until the visitor answers it. */
+  id: string | null;
+  campaignId: string | null;
   button: { value: string | null; label: string } | null;
 }
 
@@ -321,6 +331,8 @@ export interface WidgetContext {
   pageContext: unknown;
   /** The chat bundle sets this when it runs, then opens the chat if `wanted` asks for it. */
   chat?: ChatHandlers;
+  /** The page campaigns whose time on this page came, by ID, which the chat shows once each. */
+  pages?: string[];
   /** An open() made before the chat bundle ran, with its message. */
   wanted?: [string | undefined] | undefined;
   /** The loader's `Dinghy.state`, which the chat bundle keeps up to date. */

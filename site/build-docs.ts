@@ -68,6 +68,14 @@ export const PAGES: Page[] = [
       "Send a visitor a message from your server, an AI agent or the operator app, before any chat: once, later, unless a condition matches, with buttons.",
   },
   {
+    source: "campaigns.md",
+    slug: "campaigns",
+    nav: "Campaigns",
+    group: "Use it",
+    description:
+      "Send outbound messages by a rule: who, when, what and how often, from the operator app or your code, with results per day and A/B variant.",
+  },
+  {
     source: "troubleshooting.md",
     slug: "troubleshooting",
     nav: "Troubleshooting",

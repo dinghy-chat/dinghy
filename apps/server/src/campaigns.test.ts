@@ -814,6 +814,107 @@ describe("Send a test to me", () => {
   });
 });
 
+describe("a page campaign", () => {
+  /** A widget request, with a visitor's token or none. */
+  const widget = async (path: string, body: unknown, token?: string) => {
+    const response = await app.request(`/v1/widget/${space.publicKey}/${path}`, {
+      method: "POST",
+      headers: {
+        origin: SITE,
+        "content-type": "application/json",
+        ...(token === undefined ? {} : { authorization: `Bearer ${token}` }),
+      },
+      body: JSON.stringify(body),
+    });
+    return { status: response.status, json: (await response.json()) as Record<string, unknown> };
+  };
+  const beat = (token?: string) =>
+    widget("beat", { tab: "tab123456", page: `${SITE}/pricing` }, token);
+
+  test("stores nothing until the visitor answers, and counts shows, reads and clicks", async () => {
+    const key = keyOf("pricing");
+    const made = await live(key, {
+      trigger: { type: "page", url: "/pricing*", seconds: 20 },
+      presentation: { startConversation: "on_reply", show: "preview", ifConversationOpen: "skip" },
+      message: {
+        sender: { email: boss.email },
+        body: "Comparing plans? I can tell you which one fits.",
+        buttons: [
+          { label: "Yes", value: "yes" },
+          { label: "See plans", url: "https://example.com/plans", value: "plans" },
+        ],
+        translations: { fr: { body: "Vous comparez les offres ?" } },
+      },
+    });
+    // A visitor who does not exist yet sees it, in their language, from the beat on.
+    const { json: anonymous } = await beat();
+    expect(anonymous.pages).toContainEqual({ id: made.id, url: "/pricing*", seconds: 20 });
+    const shown = await widget(`campaigns/${made.id}/show`, { language: "fr" });
+    expect(shown.json.outboundMessage).toMatchObject({
+      id: made.id,
+      campaignId: made.id,
+      body: "Vous comparez les offres ?",
+      show: "preview",
+      authorName: "Julien",
+    });
+    expect((await widget(`campaigns/${made.id}/read`, {})).status).toBe(200);
+    expect((await widget(`campaigns/${made.id}/press`, { button: 1 })).status).toBe(200);
+    // A value button answers, which counts with the visitor's message instead.
+    expect((await widget(`campaigns/${made.id}/press`, { button: 0 })).status).toBe(404);
+    expect(await campaignMessages(made.id)).toEqual([]);
+
+    const { token, visitorId } = await newVisitor(app, space.publicKey);
+    const answer = await widget(
+      "messages",
+      { clientId: randomUUID(), body: "ignored", pageCampaign: { id: made.id, button: 0 } },
+      token,
+    );
+    expect(answer.status).toBe(201);
+    expect(answer.json).toMatchObject({ body: "Yes", button: { value: "yes", label: "Yes" } });
+    const [row] = await campaignMessages(made.id);
+    expect(row).toMatchObject({ visitorId, status: "replied", chosenButton: { value: "yes", label: "Yes" } });
+    const [conversationRow] = await owner.select().from(conversation).where(eq(conversation.visitorId, visitorId));
+    expect(conversationRow?.id).toBe(row?.conversationId);
+    // Once is once: the answered visitor's beat no longer lists it.
+    expect((await beat(token)).json.pages).not.toContainEqual(expect.objectContaining({ id: made.id }));
+
+    const results = await withKey(app, server.token, "GET", inSpace(`/campaigns/${made.id}/results`));
+    const { variants } = await json<{ variants: (Record<string, number> & { clicks: Record<string, number> })[] }>(results);
+    expect(variants).toEqual([
+      expect.objectContaining({
+        entered: 1,
+        sent: 1,
+        delivered: 1,
+        read: 1,
+        replied: 1,
+        conversationsStarted: 1,
+        clicks: { plans: 1, yes: 1 },
+      }),
+    ]);
+  });
+
+  test("an audience, an opt-out or a pause of every campaign keeps it from a visitor", async () => {
+    const key = keyOf("pricing-pro");
+    const made = await live(key, {
+      audience: { field: "attributes.plan", op: "eq", value: "pro" },
+      trigger: { type: "page", url: "/pricing", seconds: 0 },
+    });
+    const listed = async (token?: string) =>
+      ((await beat(token)).json.pages as { id: string }[]).some((one) => one.id === made.id);
+    expect(await listed()).toBe(false);
+    const { token, visitorId } = await newVisitor(app, space.publicKey);
+    expect(await listed(token)).toBe(false);
+    await owner.update(visitor).set({ attributes: { plan: "pro" } }).where(eq(visitor.id, visitorId));
+    expect(await listed(token)).toBe(true);
+    await owner.update(workspace).set({ campaignsPausedAt: new Date() }).where(eq(workspace.id, space.id));
+    expect(await listed(token)).toBe(false);
+    await owner.update(workspace).set({ campaignsPausedAt: null }).where(eq(workspace.id, space.id));
+    await widget("opt-out", { optedOut: true }, token);
+    expect(await listed(token)).toBe(false);
+    expect((await widget(`campaigns/${made.id}/show`, {}, token)).status).toBe(404);
+  });
+});
+
 describe("MCP", () => {
   test("upserts, starts, sends and reads results", async () => {
     const key = keyOf("mcp");

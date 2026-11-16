@@ -27,6 +27,22 @@ import { DEFAULT_TITLE, LAUNCHER_LABEL } from "./text.ts";
 // How often a tab that shows tells the live view it is still there.
 const BEAT_EVERY_MS = 60_000;
 
+/** A page campaign the beat names: after `seconds` on a page that matches `url`, the chat shows it. */
+interface PageCampaign {
+  id: string;
+  url: string;
+  seconds: number;
+}
+
+/**
+ * Whether the page matches a campaign's pattern, where `*` is any text. A path matches this page's
+ * path and query on any site, and a full URL the whole address.
+ */
+const onPage = (pattern: string) =>
+  new RegExp(`^${pattern.replace(/[.+?^${}()|[\]\\]/g, "\\$&").replaceAll("*", ".*")}$`).test(
+    pattern[0] === "/" ? location.pathname + location.search : location.href,
+  );
+
 type Color = "primary" | "accent";
 
 const script = document.currentScript as HTMLScriptElement | null;
@@ -240,6 +256,22 @@ if (script && publicKey) {
     const tab = Math.random().toString(36).slice(2, 14);
     const url = `${base}../v1/widget/${publicKey}/`;
     let referrer: string | undefined = document.referrer;
+    // Each page campaign once per page load, and once in this tab of a single-page app: the
+    // memory is this page's, and nothing is stored.
+    const timed = new Set<string>();
+    const watch = (pages: PageCampaign[]) => {
+      for (const { id, url, seconds } of pages) {
+        if (timed.has(id) || !onPage(url)) continue;
+        timed.add(id);
+        setTimeout(() => {
+          // The visitor left that page meanwhile, so the next beat may start the wait again.
+          if (!onPage(url)) return timed.delete(id);
+          // biome-ignore lint/suspicious/noAssignInExpressions: the shortest form, and this file has no bytes to spare.
+          (context.pages ??= []).push(id);
+          context.chat ? context.chat.outbound() : load();
+        }, seconds * 1000);
+      }
+    };
     const beat = () => {
       if (document.visibilityState !== "visible") return;
       // A signed-in visitor's own token, once the chat has one, so the contact gets its country.
@@ -267,7 +299,10 @@ if (script && publicKey) {
       })
         .then((answer) => answer.json())
         // A message waits, so the chat loads, or asks for it at once.
-        .then(({ waiting }) => waiting > 0 && (context.chat ? context.chat.outbound() : load()))
+        .then(({ waiting, pages }) => {
+          watch(pages ?? []);
+          if (waiting > 0) context.chat ? context.chat.outbound() : load();
+        })
         .catch(() => {});
       referrer = undefined;
     };

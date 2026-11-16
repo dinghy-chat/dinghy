@@ -7,6 +7,12 @@ import type { Logger } from "pino";
 import { firstName, LOCALES, OUTBOUND_ANSWERED_MAX } from "../../../packages/widget/src/shared.ts";
 import { VISITOR_TOKEN } from "./api-security.ts";
 import type { App, AppEnv } from "./app.ts";
+import {
+  answerPageCampaign,
+  countPageCampaign,
+  pageCampaigns,
+  showPageCampaign,
+} from "./campaign-pages.ts";
 import { chatLinkVisitor, chatLinkWorkspace, isChatLinkToken } from "./chat-link.ts";
 import {
   BEAT_FIELDS,
@@ -340,10 +346,17 @@ const beatRoute = createRoute({
   responses: {
     200: {
       description:
-        "Noted, or dropped. `waiting` counts the visitor's outbound messages that wait to show, so the loader fetches the chat only then",
+        "Noted, or dropped. `waiting` counts the visitor's outbound messages that wait to show, so the loader fetches the chat only then. `pages` lists the page campaigns the loader watches: after `seconds` on a page that matches `url`, the chat shows the campaign",
       content: {
         "application/json": {
-          schema: z.object({ ok: z.literal(true), waiting: z.number().int() }),
+          schema: z.object({
+            ok: z.literal(true),
+            waiting: z.number().int(),
+            // The live page campaigns for this visitor, which the loader watches.
+            pages: z.array(
+              z.object({ id: z.string(), url: z.string(), seconds: z.number().int() }),
+            ),
+          }),
         },
       },
     },
@@ -500,6 +513,13 @@ const sendMessageRoute = createRoute({
               .openapi({
                 description:
                   "A value button the visitor chose, by its place in the outbound message's buttons. The message's text becomes its label.",
+              }),
+            pageCampaign: z
+              .object({ id: z.uuid(), button: ButtonIndex.optional() })
+              .optional()
+              .openapi({
+                description:
+                  "The page campaign whose card the visitor read and this answers, and a value button they chose on it. Its message goes in the conversation first.",
               }),
           }),
           example: {
@@ -1086,9 +1106,69 @@ const WaitingSchema = z
     authorName: z.string().nullable(),
     authorPictureUrl: z.string().nullable(),
     authorId: z.string().nullable(),
+    // The campaign it comes from, or null.
+    campaignId: z.string().nullable(),
     createdAt: z.string(),
   })
   .openapi("WaitingMessage");
+
+const ButtonPress = z.object({ button: ButtonIndex });
+const campaignParams = params.extend({ id: z.uuid() });
+const VISITOR_TOKEN_OR_NONE = [...VISITOR_TOKEN, {}];
+
+const pageShowRoute = createRoute({
+  method: "post",
+  path: "/v1/widget/{key}/campaigns/{id}/show",
+  security: VISITOR_TOKEN_OR_NONE,
+  summary: "The card of a page campaign that the loader saw due, for this visitor",
+  description:
+    "With or without a token: a visitor who does not exist yet sees only a campaign for everyone. It counts as shown in the campaign's results, and stores nothing about the visitor.",
+  request: {
+    params: campaignParams,
+    body: {
+      required: true,
+      content: {
+        "application/json": { schema: z.object({ language: z.enum(LOCALES).optional() }) },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "The card",
+      content: { "application/json": { schema: z.object({ outboundMessage: WaitingSchema }) } },
+    },
+    ...WIDGET_WRITE_ERRORS,
+    404: errorAnswer("not_found: no such live page campaign for this visitor"),
+  },
+});
+
+const pageCountRoute = <B extends z.ZodObject>(path: "read" | "press", summary: string, body: B) =>
+  createRoute({
+    method: "post",
+    path: `/v1/widget/{key}/campaigns/{id}/${path}`,
+    security: VISITOR_TOKEN_OR_NONE,
+    summary,
+    request: {
+      params: campaignParams,
+      body: { required: true, content: { "application/json": { schema: body } } },
+    },
+    responses: {
+      200: { description: "Counted", content: okContent },
+      ...WIDGET_WRITE_ERRORS,
+      404: errorAnswer("not_found: no such live page campaign, or no such button"),
+    },
+  });
+
+const pageReadRoute = pageCountRoute(
+  "read",
+  "The visitor read a page campaign's card: it counts in the campaign's results",
+  z.object({}),
+);
+const pagePressRoute = pageCountRoute(
+  "press",
+  "The visitor chose a page campaign's button that opens a page or dismisses, by its place",
+  ButtonPress,
+);
 
 const outboundParams = params.extend({ id: z.uuid() });
 
@@ -1123,8 +1203,6 @@ const outboundReadRoute = createRoute({
     404: errorAnswer("not_found: not this visitor's, or it ended"),
   },
 });
-
-const ButtonPress = z.object({ button: ButtonIndex });
 
 const pressRoute = (path: "dismiss" | "click", summary: string) =>
   createRoute({
@@ -1164,6 +1242,7 @@ const waitingView = (
   buttons: one.buttons,
   show: one.show,
   read: one.readAt !== null,
+  campaignId: one.campaignId,
   ...visitorSender(urls, workspaceId, senders, one),
   createdAt: one.createdAt.toISOString(),
 });
@@ -1296,13 +1375,24 @@ export function registerWidgetRoutes(
         withWorkspace(db, found.id, async (tx) => {
           if (await isBlocked(tx, found.id, identified, ipHash)) return null;
           await noteVisitorAddress(tx, found.id, identified.visitorId, ipHash);
-          const { page, outboundIds, button, ...input } = c.req.valid("json");
+          const { page, outboundIds, button, pageCampaign, ...input } = c.req.valid("json");
+          const fromPage =
+            pageCampaign === undefined
+              ? null
+              : await answerPageCampaign(tx, found.id, pageCampaign.id, identified.visitorId);
+          const pressed =
+            fromPage !== null && pageCampaign?.button !== undefined
+              ? { outboundMessageId: fromPage, index: pageCampaign.button }
+              : button;
           const appended = await appendVisitorMessage(
             tx,
             found.id,
             { kind: "visitor", visitorId: identified.visitorId },
             { ...input, page: identified.link ? null : sitePage(page, c.req.header("origin")) },
-            { outboundIds, button },
+            {
+              outboundIds: fromPage === null ? outboundIds : [...outboundIds, fromPage],
+              button: pressed,
+            },
           );
           if (appended.created) {
             await recheckCampaigns(tx, found.id, identified.visitorId, CHAT_FIELDS);
@@ -1550,6 +1640,45 @@ export function registerWidgetRoutes(
     return c.json(await visitorView(db, found.id, identified), 200);
   });
 
+  /** The visitor behind an optional token, or null for one who does not exist yet. */
+  const maybeVisitor = async <P extends string, I extends Input>(c: Context<AppEnv, P, I>) => {
+    const token = c.get("widgetToken");
+    if (token.kind === null) return null;
+    return (await knownVisitor(db, c.get("workspace"), c.req.param("key") ?? "", token)) ?? null;
+  };
+
+  app.openapi(pageShowRoute, async (c) => {
+    const found = c.get("workspace");
+    const visitorId = await maybeVisitor(c);
+    const { language = null } = c.req.valid("json");
+    const { id } = c.req.valid("param");
+    const card = await withWorkspace(db, found.id, async (tx) => {
+      const one = await showPageCampaign(tx, found.id, id, { visitorId, language });
+      return one === null ? null : { one, senders: await sendersOf(tx, urls, found.id, [one]) };
+    });
+    if (card === null) return c.json(NOT_FOUND, 404);
+    return c.json({ outboundMessage: waitingView(urls, found.id, card.senders, card.one) }, 200);
+  });
+
+  /** Counts a read or a press of a page campaign's card. */
+  const countPage = async <P extends string, I extends Input>(
+    c: Context<AppEnv, P, I>,
+    campaignId: string,
+    action: Parameters<typeof countPageCampaign>[4],
+  ) => {
+    const found = c.get("workspace");
+    const visitorId = await maybeVisitor(c);
+    const counted = await withWorkspace(db, found.id, (tx) =>
+      countPageCampaign(tx, found.id, campaignId, visitorId, action),
+    );
+    return counted ? c.json({ ok: true as const }, 200) : c.json(NOT_FOUND, 404);
+  };
+
+  app.openapi(pageReadRoute, (c) => countPage(c, c.req.valid("param").id, { read: true }));
+  app.openapi(pagePressRoute, (c) =>
+    countPage(c, c.req.valid("param").id, { button: c.req.valid("json").button }),
+  );
+
   app.openapi(saveEmailRoute, async (c) => {
     const found = c.get("workspace");
     const identified = await identify(c);
@@ -1595,7 +1724,7 @@ export function registerWidgetRoutes(
     const token = c.get("widgetToken");
     const { tab, page, title, referrer, timeZone } = c.req.valid("json");
     const path = sitePage(page, c.req.header("origin"));
-    const nothing = { ok: true as const, waiting: 0 };
+    const nothing = { ok: true as const, waiting: 0, pages: [] };
     // A chat link's page is this server's, not the site's.
     if (path === null || token.kind === "link") return c.json(nothing, 200);
     if (!seenWidget.has(found.id)) {
@@ -1635,9 +1764,11 @@ export function registerWidgetRoutes(
       visitorId: visitorId ?? null,
       conversationId,
     });
-    if (visitorId === null || visitorId === undefined) return c.json(nothing, 200);
+    const known = visitorId ?? null;
+    const pages = await withWorkspace(db, found.id, (tx) => pageCampaigns(tx, found.id, known));
+    if (known === null) return c.json({ ...nothing, pages }, 200);
     return c.json(
-      { ok: true as const, waiting: await outbound.shownCount(found.id, visitorId) },
+      { ok: true as const, waiting: await outbound.shownCount(found.id, known), pages },
       200,
     );
   });

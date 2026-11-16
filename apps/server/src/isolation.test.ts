@@ -21,6 +21,7 @@ import {
   attachment,
   businessHours,
   campaign,
+  campaignDay,
   contactEvent,
   conversation,
   conversationLabel,
@@ -440,6 +441,29 @@ const CAMPAIGN_ATTACKS: Record<string, Attack> = {
     expect((await withKey(keyA.token, "POST", inWorkspace(a.id, "/track"), body)).status).toBe(404);
     expect(await theirs()).toEqual(before);
   },
+  ...Object.fromEntries(
+    (
+      [
+        ["show", {}],
+        ["read", {}],
+        ["press", { button: 0 }],
+      ] as const
+    ).map(([action, body]) => [
+      `POST /v1/widget/:key/campaigns/:id/${action}`,
+      async ({ widget, a, b, one, campaignB }: World) => {
+        const theirs = () =>
+          owner.select().from(campaignDay).where(eq(campaignDay.campaignId, campaignB.id));
+        const before = await theirs();
+        const path = `campaigns/${campaignB.id}/${action}`;
+        // Another workspace's campaign is nothing here, with a token or without one.
+        expect((await widget(a.publicKey, "POST", path, one.token, SITE_A, body)).status).toBe(404);
+        expect((await widget(a.publicKey, "POST", path, null, SITE_A, body)).status).toBe(404);
+        // Its own workspace's widget, from a site it does not allow.
+        expect((await widget(b.publicKey, "POST", path, null, SITE_A, body)).status).toBe(403);
+        expect(await theirs()).toEqual(before);
+      },
+    ]),
+  ),
   "POST /v1/widget/:key/opt-out": async ({ widget, a, b, one, two }) => {
     const twoBefore = (await owner.select().from(visitor).where(eq(visitor.id, two.id)))[0];
     const own = await widget(a.publicKey, "POST", "opt-out", one.token, SITE_A, {

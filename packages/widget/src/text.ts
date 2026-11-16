@@ -66,6 +66,9 @@ const en = {
   botTyping: "{name} is typing...",
   outboundCard: "A message from the team",
   outboundClose: "Close this message",
+  menu: "More options",
+  automaticOff: "Turn off automatic messages",
+  automaticOn: "Turn on automatic messages",
 };
 
 export type Texts = typeof en;

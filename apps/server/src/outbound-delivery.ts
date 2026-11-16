@@ -46,7 +46,7 @@ const EXPIRES_AFTER_MS = 30 * DAY_MS;
 const RECHECK_MS = MINUTE_MS;
 
 /** Who the visitor sees on the message, when not its author. */
-const senderMark = (row: Row) =>
+export const senderMark = (row: Pick<Row, "senderKind" | "senderOperatorId">) =>
   row.senderKind === "team"
     ? ("team" as const)
     : row.senderKind === "member" && row.senderOperatorId !== null
@@ -455,7 +455,14 @@ export async function conversationsDeleted(
 /** A message the widget shows before it is in a conversation. */
 export type WidgetOutbound = Pick<
   Row,
-  "id" | "body" | "show" | "authorOperatorId" | "authorApiKeyId" | "createdAt" | "readAt"
+  | "id"
+  | "body"
+  | "show"
+  | "authorOperatorId"
+  | "authorApiKeyId"
+  | "createdAt"
+  | "readAt"
+  | "campaignId"
 > & { buttons: OutboundButton[]; outbound: { sender: ReturnType<typeof senderMark> } };
 
 /** The visitor's `on_reply` messages that wait to show, oldest first. */
@@ -496,6 +503,7 @@ export const widgetOutbound = (row: Row): WidgetOutbound => ({
   authorApiKeyId: row.authorApiKeyId,
   createdAt: row.createdAt,
   readAt: row.readAt,
+  campaignId: row.campaignId,
   buttons: row.buttons,
   outbound: { sender: senderMark(row) },
 });

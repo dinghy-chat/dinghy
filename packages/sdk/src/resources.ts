@@ -24,6 +24,7 @@ const CONVERSATION = `${CONVERSATIONS}/{conversationId}` as const;
 const MESSAGES = `${CONVERSATION}/messages` as const;
 const CONTACT_BY_USER = `${IN_WORKSPACE}/contacts/by-user/{userId}` as const;
 const OUTBOUND = `${IN_WORKSPACE}/outbound-messages` as const;
+const CAMPAIGNS = `${IN_WORKSPACE}/campaigns` as const;
 const WEBHOOKS = `${IN_WORKSPACE}/webhooks` as const;
 const WEBHOOK = `${WEBHOOKS}/{webhookId}` as const;
 
@@ -110,6 +111,60 @@ export function outboundMessages(request: Request) {
         : request("post", `${OUTBOUND}/cancel`, { body: input }),
   };
 }
+
+/** A campaign by its key, as a repository keeps it, or by its ID. */
+type CampaignRef = string | { id: string };
+type ByKey<T extends string> = `${typeof CAMPAIGNS}/by-key/{ref}${T}`;
+type Definition = Body<typeof CAMPAIGNS, "post">;
+
+/** A campaign's path by key or by ID. Both answer alike, so the type of one serves. */
+const campaignAt = <T extends string>(ref: CampaignRef, tail: T) => ({
+  at: (typeof ref === "string"
+    ? `${CAMPAIGNS}/by-key/{ref}${tail}`
+    : `${CAMPAIGNS}/{ref}${tail}`) as ByKey<T>,
+  path: { ref: typeof ref === "string" ? ref : ref.id },
+});
+
+export function campaigns(request: Request) {
+  const status = (action: "/pause" | "/resume" | "/end") => (ref: CampaignRef) => {
+    const { at, path } = campaignAt(ref, action);
+    return request("post", at, { path });
+  };
+  return {
+    list: (query: QueryOf<typeof CAMPAIGNS, "get"> = {}) => request("get", CAMPAIGNS, { query }),
+    get: (ref: CampaignRef) => {
+      const { at, path } = campaignAt(ref, "");
+      return request("get", at, { path });
+    },
+    /** A new campaign, as a draft. Its key must be free. */
+    create: (body: Definition) => request("post", CAMPAIGNS, { body }),
+    /** Creates the campaign with this key as a draft, or replaces it. Its status stays. */
+    upsert: ({ key, ...rest }: Definition) =>
+      request("put", `${CAMPAIGNS}/by-key/{key}`, { path: { key }, body: { key, ...rest } }),
+    /** Replaces the parts the patch gives. */
+    update: (ref: CampaignRef, body: Body<ByKey<"">, "patch">) => {
+      const { at, path } = campaignAt(ref, "");
+      return request("patch", at, { path, body });
+    },
+    pause: status("/pause"),
+    /** Starts a draft, or resumes a paused campaign. */
+    resume: status("/resume"),
+    end: status("/end"),
+    results: (ref: CampaignRef, query: QueryOf<ByKey<"/results">, "get"> = {}) => {
+      const { at, path } = campaignAt(ref, "/results");
+      return request("get", at, { path, query });
+    },
+    /** Runs a live campaign for one person: it skips the audience and the trigger. */
+    send: (ref: CampaignRef, input: Send<Body<ByKey<"/send">, "post">>) => {
+      const { at, path } = campaignAt(ref, "/send");
+      return request("post", at, { path, body: withClientId(input) });
+    },
+  };
+}
+
+/** Counts an event on a contact, from your server. */
+export const track = (request: Request) => (body: Body<`${typeof IN_WORKSPACE}/track`, "post">) =>
+  request("post", `${IN_WORKSPACE}/track`, { body });
 
 type NewWebhook = Body<typeof WEBHOOKS, "post">;
 

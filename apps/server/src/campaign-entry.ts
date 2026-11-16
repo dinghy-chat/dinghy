@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { and, desc, eq, gt, isNotNull, or } from "drizzle-orm";
 import { LOCALES, MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
-import { type CampaignRow, reachedContact } from "./campaign-checks.ts";
+import { type CampaignRow, inAudience, reachedContact } from "./campaign-checks.ts";
 import type { CampaignDefinition, CampaignMessage } from "./campaign-schemas.ts";
 import { outboundMessage, visitor } from "./db/schema.ts";
 import type { Transaction } from "./db/tenant.ts";
@@ -25,6 +25,8 @@ export interface EntryInput {
   clientId?: string;
   data?: Record<string, string | number | boolean> | undefined;
   event?: { properties: Record<string, unknown> } | undefined;
+  /** The visitor answers a page campaign's card, which the widget showed and counted. */
+  fromPage?: boolean;
 }
 
 export type Entry =
@@ -73,7 +75,7 @@ async function frequencyBlocker(
 }
 
 /** The contact's A/B variant: the same one every time, from a hash of the campaign and the contact. */
-function variantOf(
+export function variantOf(
   definition: Pick<CampaignDefinition, "variants">,
   campaignId: string,
   visitorId: string,
@@ -153,9 +155,55 @@ const authorOf = (found: Pick<CampaignRow, "authorOperatorId" | "authorApiKeyId"
     : { kind: "operator", operatorId: found.authorOperatorId ?? "" };
 
 /**
+ * The campaign's message for a contact, or for a visitor who does not exist yet: its A/B variant,
+ * its text in their language with the variables filled, and who the visitor sees. Null for a place
+ * in the control group, and a refusal when the saver may no longer show its sender.
+ */
+export async function composeMessage(
+  tx: Transaction,
+  workspaceId: string,
+  found: CampaignRow,
+  who: { visitorId: string } | { language: string | null },
+  input: EntryInput,
+) {
+  const { definition } = found;
+  const variant = "visitorId" in who ? variantOf(definition, found.id, who.visitorId) : null;
+  const message = variant !== null && "message" in variant ? variant.message : undefined;
+  const chosen = message ?? definition.message;
+  const contact = "visitorId" in who ? await contactOf(tx, workspaceId, who.visitorId) : null;
+  const language = contact === null ? ("language" in who ? who.language : null) : contact.language;
+  const lookup = contact === null ? () => undefined : lookupIn(contact, input);
+  const actor = authorOf(found);
+  const key = actor.kind === "key" ? await keyState(tx, workspaceId, actor.apiKeyId) : null;
+  const as = await sendsAs(tx, workspaceId, actor, key, chosen.sender);
+  if (typeof as === "string") return as;
+  return {
+    variant: variant?.key ?? null,
+    control: variant !== null && "control" in variant,
+    ...localized(chosen, language, lookup),
+    actor,
+    as,
+  };
+}
+
+/** Whether the contact may enter the campaign now: in its audience, and not kept out by frequency. */
+export async function mayEnter(
+  tx: Transaction,
+  workspaceId: string,
+  found: CampaignRow,
+  visitorId: string,
+) {
+  return (
+    (await frequencyBlocker(tx, workspaceId, found, visitorId)) === null &&
+    (await inAudience(tx, workspaceId, visitorId, found.definition))
+  );
+}
+
+/**
  * Puts the contact in the campaign: a message made now or after the trigger's delay, unless its
- * frequency keeps them out. A control group's contact gets a row with no text. The caller holds the
- * visitor's lock, then the workspace's.
+ * frequency keeps them out. A control group's contact gets a row with no text, and a page
+ * campaign's card that the visitor answers comes in read, as the widget counted it already. The
+ * caller holds the visitor's lock, then the workspace's.
  */
 export async function enterCampaign(
   tx: Transaction,
@@ -166,31 +214,22 @@ export async function enterCampaign(
 ): Promise<Entry> {
   const blocker = await frequencyBlocker(tx, workspaceId, found, visitorId);
   if (blocker !== null) return { kind: "existing", id: blocker };
-  const { definition } = found;
-  const variant = variantOf(definition, found.id, visitorId);
-  const control = variant !== null && "control" in variant;
-  const message = variant !== null && "message" in variant ? variant.message : undefined;
-  const chosen = message ?? definition.message;
-  const contact = await contactOf(tx, workspaceId, visitorId);
-  const { body, buttons } = localized(chosen, contact.language, lookupIn(contact, input));
-  const actor = authorOf(found);
-  const key = actor.kind === "key" ? await keyState(tx, workspaceId, actor.apiKeyId) : null;
-  const as = await sendsAs(tx, workspaceId, actor, key, chosen.sender);
-  if (typeof as === "string") return { kind: "refused", refusal: as };
-  const { presentation, delivery } = definition;
+  const composed = await composeMessage(tx, workspaceId, found, { visitorId }, input);
+  if (typeof composed === "string") return { kind: "refused", refusal: composed };
+  const { presentation, delivery } = found.definition;
   const sendAt = new Date(Date.now() + (input.delay === undefined ? 0 : toMs(input.delay)));
   const placed = await placeOutbound(
     tx,
     {
       workspaceId,
       visitorId,
-      actor,
+      actor: composed.actor,
       via: null,
-      as,
+      as: composed.as,
       input: {
         clientId: campaignClientId(found.id, input.clientId ?? crypto.randomUUID()),
-        body,
-        buttons,
+        body: composed.body,
+        buttons: composed.buttons,
         ...presentation,
         assignOnReply: delivery.assignOnReply,
         sendEmail: delivery.sendEmail || delivery.emailIfUnread !== undefined,
@@ -205,8 +244,8 @@ export async function enterCampaign(
       campaign: {
         id: found.id,
         runId: input.runId ?? null,
-        variant: variant?.key ?? null,
-        control,
+        variant: composed.variant,
+        kind: composed.control ? "control" : input.fromPage === true ? "page" : "message",
       },
     },
     botsPaused,

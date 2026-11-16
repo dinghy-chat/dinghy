@@ -147,6 +147,10 @@ export const OutboundMessageSchema = z
     sendEmail: z.boolean(),
     conversationId: z.string().nullable(),
     messageId: z.string().nullable(),
+    // The campaign that made it, the schedule's run, and its A/B variant. Null otherwise.
+    campaignId: z.string().nullable(),
+    campaignRunId: z.string().nullable(),
+    variant: z.string().nullable(),
     dedupeKey: z.string().nullable(),
     sendAt: z.string(),
     expiresAt: z.string().nullable(),
@@ -168,6 +172,7 @@ export const ListQuery = z.object({
   dedupeKey: DedupeKey.optional(),
   status: z.enum(OUTBOUND_STATUSES).optional(),
   apiKeyId: z.uuid().optional(),
+  campaignId: z.uuid().optional(),
   cursor: TimeCursor.optional().openapi({ description: "The `next` of the page before" }),
   limit: z.coerce.number().int().min(1).max(PAGE_SIZE_MAX).default(50),
 });

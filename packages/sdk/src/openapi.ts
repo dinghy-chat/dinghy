@@ -3587,6 +3587,7 @@ export interface paths {
             | "cancelled"
             | "expired";
           apiKeyId?: string;
+          campaignId?: string;
           /** @description The `next` of the page before */
           cursor?: string;
           limit?: number;
@@ -7656,6 +7657,7 @@ export interface components {
       authorName: string | null;
       authorPictureUrl: string | null;
       authorId: string | null;
+      campaignId: string | null;
       createdAt: string;
     };
     Visitor: {
@@ -8242,6 +8244,9 @@ export interface components {
       sendEmail: boolean;
       conversationId: string | null;
       messageId: string | null;
+      campaignId: string | null;
+      campaignRunId: string | null;
+      variant: string | null;
       dedupeKey: string | null;
       sendAt: string;
       expiresAt: string | null;
@@ -8437,9 +8442,9 @@ export interface components {
        *       "sendEmail": false
        *     }
        */
-      delivery: {
+      delivery?: {
         /** @default false */
-        sendEmail: boolean;
+        sendEmail?: boolean;
         assignOnReply?: boolean;
         /**
          * @description A number with m, h or d, such as 1h
@@ -8459,12 +8464,12 @@ export interface components {
        *       "endsAt": null
        *     }
        */
-      rules: {
+      rules?: {
         /**
          * @description `"once"` per contact, or `{ "every": "7d" }` at most
          * @default once
          */
-        frequency:
+        frequency?:
           | "once"
           | {
               /**
@@ -8477,7 +8482,7 @@ export interface components {
          * @description Send only during the workspace's business hours
          * @default false
          */
-        businessHours: boolean;
+        businessHours?: boolean;
         /** @description Send only between these times on the visitor's own clock */
         sendWindow?: {
           /** @example 09:00 */
@@ -8489,7 +8494,7 @@ export interface components {
          * Format: date-time
          * @default null
          */
-        endsAt: string | null;
+        endsAt?: string | null;
         exitWhen?: components["schemas"]["CampaignCondition"];
         /**
          * @description A condition, plus `within`: a contact who matches it within that time after a message reached the goal, which ends the campaign for them and counts in results
@@ -8558,7 +8563,7 @@ export interface components {
            */
           endDate?: string;
           /** @default UTC */
-          timeZone: string;
+          timeZone?: string;
         }
       | {
           /** @enum {string} */
@@ -8678,9 +8683,9 @@ export interface components {
        *       "sendEmail": false
        *     }
        */
-      delivery: {
+      delivery?: {
         /** @default false */
-        sendEmail: boolean;
+        sendEmail?: boolean;
         assignOnReply?: boolean;
         /**
          * @description A number with m, h or d, such as 1h
@@ -8700,12 +8705,12 @@ export interface components {
        *       "endsAt": null
        *     }
        */
-      rules: {
+      rules?: {
         /**
          * @description `"once"` per contact, or `{ "every": "7d" }` at most
          * @default once
          */
-        frequency:
+        frequency?:
           | "once"
           | {
               /**
@@ -8718,7 +8723,7 @@ export interface components {
          * @description Send only during the workspace's business hours
          * @default false
          */
-        businessHours: boolean;
+        businessHours?: boolean;
         /** @description Send only between these times on the visitor's own clock */
         sendWindow?: {
           /** @example 09:00 */
@@ -8730,7 +8735,7 @@ export interface components {
          * Format: date-time
          * @default null
          */
-        endsAt: string | null;
+        endsAt?: string | null;
         exitWhen?: components["schemas"]["CampaignCondition"];
         /**
          * @description A condition, plus `within`: a contact who matches it within that time after a message reached the goal, which ends the campaign for them and counts in results

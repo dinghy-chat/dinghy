@@ -139,6 +139,9 @@ function viewOf(named: Named): OutboundView {
     sendEmail: row.sendEmail,
     conversationId: row.conversationId,
     messageId: row.messageId,
+    campaignId: row.campaignId,
+    campaignRunId: row.campaignRunId,
+    variant: row.variant,
     dedupeKey: row.dedupeKey,
     sendAt: row.sendAt.toISOString(),
     expiresAt: iso(row.expiresAt),
@@ -291,6 +294,7 @@ function listFilter(tx: Transaction, workspaceId: string, filter: z.infer<typeof
     given(filter.dedupeKey, (key) => eq(outboundMessage.dedupeKey, key)),
     given(filter.status, (status) => eq(outboundMessage.status, status)),
     given(filter.apiKeyId, (id) => eq(outboundMessage.authorApiKeyId, id)),
+    given(filter.campaignId, (id) => eq(outboundMessage.campaignId, id)),
     beforeCursor(filter.cursor, outboundMessage.createdAt, outboundMessage.id),
   );
 }

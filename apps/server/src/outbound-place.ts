@@ -41,13 +41,15 @@ export type Author = { kind: "key"; apiKeyId: string } | { kind: "operator"; ope
 
 /**
  * The campaign a message comes from, the schedule's run that made it, and its A/B variant. A
- * contact in the control group gets a row with no text, so the goal's results still count them.
+ * contact in the control group gets a row with no text, so the goal's results still count them. A
+ * page campaign's card that the visitor answers comes in read: the widget showed it and counted
+ * the show and the read in the results.
  */
 interface FromCampaign {
   id: string;
   runId: string | null;
   variant: string | null;
-  control: boolean;
+  kind: "message" | "control" | "page";
 }
 
 /** A send that passed the author's checks, with the visitor and the sender it resolved to. */
@@ -137,7 +139,24 @@ async function refusal(
   return null;
 }
 
-/** Inserts a new scheduled message, and its `dedupeKey`, or a control group's row. */
+/** How a campaign's row starts, beside the scheduled message that any send makes. */
+const STARTS = {
+  message: () => ({}),
+  // It ends at once, with no text.
+  control: () => ({
+    body: null,
+    status: "cancelled" as const,
+    statusReason: "control_group" as const,
+    cancelledAt: new Date(),
+    dueAt: null,
+  }),
+  page: () => {
+    const now = new Date();
+    return { status: "read" as const, sentAt: now, deliveredAt: now, readAt: now, dueAt: null };
+  },
+};
+
+/** Inserts a new scheduled message, and its `dedupeKey`, or a campaign's row as it starts. */
 async function insertOutbound(tx: Transaction, send: NewSend): Promise<Row> {
   const { workspaceId, visitorId, actor, via, as, input, times, campaign } = send;
   const [row] = await tx
@@ -168,14 +187,7 @@ async function insertOutbound(tx: Transaction, send: NewSend): Promise<Row> {
       campaignId: campaign?.id ?? null,
       campaignRunId: campaign?.runId ?? null,
       variant: campaign?.variant ?? null,
-      // A control group's row ends at once, with no text.
-      ...(campaign?.control === true && {
-        body: null,
-        status: "cancelled" as const,
-        statusReason: "control_group" as const,
-        cancelledAt: new Date(),
-        dueAt: null,
-      }),
+      ...(campaign !== null && STARTS[campaign.kind]()),
     })
     .returning();
   if (row === undefined) throw new Error("The outbound insert returned no row");
@@ -203,12 +215,13 @@ export async function placeOutbound(
   const refused = await refusal(tx, send, { botsPaused, scheduled });
   if (refused !== null) return refused;
   const row = await insertOutbound(tx, send);
-  if (send.campaign !== null) {
+  const kind = send.campaign?.kind ?? "message";
+  if (send.campaign !== null && kind !== "page") {
     const { id: campaignId, variant } = send.campaign;
     await tally(tx, send.workspaceId, { campaignId, variant, visitorId: send.visitorId }, [
       "entered",
     ]);
   }
-  if (scheduled || send.campaign?.control === true) return row;
+  if (scheduled || kind !== "message") return row;
   return advance(tx, send.workspaceId, row, botsPaused);
 }

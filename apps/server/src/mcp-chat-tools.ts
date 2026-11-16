@@ -562,7 +562,7 @@ export function chatTools(options: ChatToolsOptions): Tool[] {
       name: "list_outbound_messages",
       title: "List outbound messages",
       description:
-        "Lists outbound messages, newest first, with their `status` (`scheduled`, `sent`, `delivered`, `read`, `replied`, `dismissed`, `cancelled` or `expired`) and `statusReason`, which says why one waits or was cancelled. Filter by `visitorId`, `userId`, `dedupeKey`, `status` or `apiKeyId`. Pass `next` back as `cursor` for the next page.",
+        "Lists outbound messages, newest first, with their `status` (`scheduled`, `sent`, `delivered`, `read`, `replied`, `dismissed`, `cancelled` or `expired`) and `statusReason`, which says why one waits or was cancelled. Filter by `visitorId`, `userId`, `dedupeKey`, `status`, `apiKeyId` or `campaignId`. Pass `next` back as `cursor` for the next page.",
       input: ListQuery,
       readOnly: true,
       run: async (input, { workspaceId }) => ({ data: await outbound.list(workspaceId, input) }),

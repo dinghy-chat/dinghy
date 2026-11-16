@@ -55,14 +55,14 @@ export async function tally(
 ): Promise<void> {
   if (counts.length === 0 && click === undefined) return;
   const ones = counts.map(() => sql`1`);
-  const clicks = click === undefined ? sql`'{}'::jsonb` : sql`jsonb_build_object(${click}, 1)`;
+  const clicks = click === undefined ? sql`'{}'::jsonb` : sql`jsonb_build_object(${click}::text, 1)`;
   const added = counts.map(
     (count) =>
       sql`${sql.identifier(COUNTS[count].name)} = campaign_day.${sql.identifier(COUNTS[count].name)} + 1`,
   );
   if (click !== undefined) {
-    added.push(sql`clicks = jsonb_set(campaign_day.clicks, array[${click}],
-      to_jsonb(coalesce((campaign_day.clicks ->> ${click})::int, 0) + 1))`);
+    added.push(sql`clicks = jsonb_set(campaign_day.clicks, array[${click}::text],
+      to_jsonb(coalesce((campaign_day.clicks ->> ${click}::text)::int, 0) + 1))`);
   }
   const columns = counts.map((count) => sql.identifier(COUNTS[count].name));
   const notTest: SQL =
