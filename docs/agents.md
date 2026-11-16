@@ -134,7 +134,7 @@ A Full access key also gets these:
 - `end_campaign` ends a campaign for good and cancels its messages that wait. It is marked destructive.
 - `delete_campaign` deletes a campaign that never sent a message, such as a draft you made to try something. It answers `campaign_live` for a live one and `campaign_sent` for one that sent. It is marked destructive.
 
-A new campaign is a draft until `resume_campaign`, so a person can check it first with **Send a test to me** in the operator app. Errors to expect:
+A new campaign is a draft until `resume_campaign`, so a person can check it first with **Send me a test** in the operator app. Errors to expect:
 
 | Code | Meaning | What to do |
 |---|---|---|

@@ -18,6 +18,7 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - A campaign's sender reads "Whoever saves it (now you)" in place of "The person who saves it", and its A/B variants show their shares in percent.
 - The phone preview of a campaign shows the top of a phone, the name shows a pencil to rename it, and the message says which visitors get each translation.
 - Simpler words across the Campaigns page and the templates.
+- The landing page, the README, llms.txt and the operator guide cover campaigns, outbound messages, server events and the SDK.
 
 ### Fixed
 
