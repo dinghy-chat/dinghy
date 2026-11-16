@@ -1,6 +1,5 @@
 /** @jsxImportSource react */
 import { type ReactNode, useEffect, useId, useRef, useState } from "react";
-import { insertEmoji } from "../../../packages/widget/src/emoji.ts";
 import {
   BUTTON_LABEL_MAX,
   BUTTON_VALUE_MAX,
@@ -17,8 +16,10 @@ import {
 } from "../../../packages/widget/src/template.ts";
 import type { CampaignDefinition, CampaignTrigger, Member } from "./api.ts";
 import { keyFromName, replaceAt, withPart } from "./campaign-draft.ts";
+import { variableWords } from "./campaign-summary.ts";
 import { Icon } from "./icons.tsx";
 import { Menu, Select } from "./popup.tsx";
+import { TemplateText, type TemplateTextHandle } from "./template-text.tsx";
 import { type TextId, t } from "./text.ts";
 import { Choices, Switch } from "./ui.tsx";
 
@@ -56,15 +57,6 @@ function otherVariables(trigger: CampaignTrigger["type"]): string[] {
   return [...CONTACT_VARIABLES.filter((name) => name !== "firstName"), ...extra];
 }
 
-const VARIABLE = /(\{\{[^}]*\}\})/;
-
-/** The text with each variable marked, drawn under the transparent box at the same place. */
-const marked = (body: string) =>
-  body.split(VARIABLE).map((part, index) =>
-    // biome-ignore lint/suspicious/noArrayIndexKey: the parts of one text, in order.
-    index % 2 === 1 ? <mark key={index}>{part}</mark> : part,
-  );
-
 /** A problem with a variable of the text, in words. */
 function problemText(problem: TemplateProblem): string {
   switch (problem.kind) {
@@ -82,8 +74,8 @@ function problemText(problem: TemplateProblem): string {
 }
 
 /**
- * The text, with its variables marked, then `children` (its buttons), then the variables that go
- * in at the caret. A variable that does not read is named under the box.
+ * The text, with its variables as tokens in words, then `children` (its buttons), then the
+ * variables that go in at the caret. A variable that does not read is named under the box.
  */
 function BodyField({
   body,
@@ -96,37 +88,45 @@ function BodyField({
   onChange(body: string): void;
   children: ReactNode;
 }) {
-  const box = useRef<HTMLTextAreaElement>(null);
-  const id = useId();
+  const box = useRef<TemplateTextHandle>(null);
+  const check = useRef<HTMLTextAreaElement>(null);
+  const labelId = useId();
   const problemsId = useId();
-  const problems = templateProblems(body, knownVariable(trigger)).map(problemText);
+  const problems = [
+    ...templateProblems(body, knownVariable(trigger)).map(problemText),
+    ...(body.length > MESSAGE_MAX
+      ? [t("campaignBodyTooLong", { max: MESSAGE_MAX.toLocaleString() })]
+      : []),
+  ];
   const firstProblem = problems[0] ?? "";
   // The form refuses to save while a variable does not read, as the server would.
-  useEffect(() => box.current?.setCustomValidity(firstProblem), [firstProblem]);
-  // It puts any text at the caret, as it does an emoji.
-  const insert = (name: string) => {
-    if (box.current !== null) onChange(insertEmoji(box.current, `{{ ${name} }}`));
-  };
+  useEffect(() => check.current?.setCustomValidity(firstProblem), [firstProblem]);
+  const insert = (name: string) => box.current?.insert(`{{ ${name} }}`);
   return (
     <>
-      <label htmlFor={id} className="visually-hidden">
+      <span id={labelId} className="visually-hidden">
         {t("campaignBody")}
-      </label>
+      </span>
       <div className="composer-text">
-        <div className="composer-marks" aria-hidden="true">
-          {marked(body)}{" "}
-        </div>
-        <textarea
+        <TemplateText
           ref={box}
-          id={id}
-          rows={3}
-          required
-          maxLength={MESSAGE_MAX}
-          placeholder={t("campaignBodyPlaceholder")}
+          labelId={labelId}
           value={body}
-          aria-invalid={problems.length > 0}
-          aria-describedby={problems.length > 0 ? problemsId : undefined}
+          placeholder={t("campaignBodyPlaceholder")}
+          describedBy={problems.length > 0 ? problemsId : undefined}
+          wordsOf={variableWords}
+          onChange={onChange}
+        />
+        {/* The form's checks read this copy of the text, which sends its focus to the box. */}
+        <textarea
+          ref={check}
+          className="composer-check"
+          tabIndex={-1}
+          aria-hidden="true"
+          required
+          value={body}
           onChange={(event) => onChange(event.target.value)}
+          onFocus={() => box.current?.focus()}
         />
       </div>
       {children}
@@ -147,7 +147,7 @@ function BodyField({
           buttonClass="add-chip"
           side="start"
           items={otherVariables(trigger).map((name) => ({
-            label: name,
+            label: variableWords(name),
             onSelect: () => insert(name),
           }))}
         >

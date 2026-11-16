@@ -70,6 +70,25 @@ export function renderTemplate(text: string, lookup: (path: string) => unknown):
   });
 }
 
+/** A part of a text: its words, or a tag with the variable it reads, null when it does not read. */
+export type TemplatePart =
+  | { kind: "text"; text: string }
+  | { kind: "tag"; tag: string; path: string | null };
+
+/** The text as its words and its tags, in order. */
+export function templateParts(text: string): TemplatePart[] {
+  const parts: TemplatePart[] = [];
+  let end = 0;
+  for (const match of text.matchAll(TAG)) {
+    if (match.index > end) parts.push({ kind: "text", text: text.slice(end, match.index) });
+    const tag = parseTag(match[1] ?? "");
+    parts.push({ kind: "tag", tag: match[0], path: "filters" in tag ? tag.path : null });
+    end = match.index + match[0].length;
+  }
+  if (end < text.length) parts.push({ kind: "text", text: text.slice(end) });
+  return parts;
+}
+
 /** Why the text's variables do not read, one problem each. */
 export function templateProblems(text: string, knows: (path: string) => boolean) {
   const problems: TemplateProblem[] = [];

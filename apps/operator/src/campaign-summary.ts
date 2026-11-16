@@ -1,4 +1,5 @@
-import { WEEKDAYS } from "../../../packages/widget/src/shared.ts";
+import { CONTACT_VARIABLES, WEEKDAYS } from "../../../packages/widget/src/shared.ts";
+import { VARIABLE_PREFIXES } from "../../../packages/widget/src/template.ts";
 import { goalCondition } from "../../server/src/campaign-parts.ts";
 import type { CampaignDefinition, CampaignTrigger, Condition } from "./api.ts";
 import {
@@ -9,7 +10,7 @@ import {
   kindOf,
   type Op,
   type RuleDraft,
-  takesKey,
+  takesList,
   takesValue,
 } from "./campaign-conditions.ts";
 import { weekdayNames } from "./format.ts";
@@ -82,21 +83,96 @@ export function durationWords(duration: string): string {
   return plural(Number(duration.slice(0, -1)), one, many);
 }
 
-/** A rule in words: "plan is one of trial, pro", or "Signed in" for a yes. */
-function ruleWords(rule: RuleDraft): string {
-  const field =
-    rule.field === "attribute"
-      ? rule.key
-      : takesKey(rule.field)
-        ? `${t(FIELD_TEXT[rule.field])} ${rule.key}`
-        : t(FIELD_TEXT[rule.field]);
-  if (kindOf(rule.field) === "boolean" && (rule.op === "eq" || rule.op === "ne")) {
-    const isYes = (rule.text === "true") === (rule.op === "eq");
-    return isYes ? field : t("summaryNot", { field });
+type BooleanField = "signedIn" | "hasChatted" | "optedOut" | "repliedToCampaign";
+
+/** What a yes, then a no, of a field says the person did, after "they" or "people who". */
+const DID_TEXT: Record<BooleanField, [TextId, TextId]> = {
+  signedIn: ["summarySignedIn", "summaryNotSignedIn"],
+  hasChatted: ["summaryChatted", "summaryNotChatted"],
+  optedOut: ["summaryOptedOut", "summaryNotOptedOut"],
+  repliedToCampaign: ["summaryReplied", "summaryNotReplied"],
+};
+const isBooleanField = (field: FieldChoice): field is BooleanField =>
+  Object.hasOwn(DID_TEXT, field);
+
+/** A field inside a sentence, in lower case. An attribute goes by its key. */
+const FIELD_WORDS: Record<Exclude<FieldChoice, BooleanField | "attribute">, TextId> = {
+  name: "summaryFieldName",
+  firstName: "summaryFieldFirstName",
+  email: "summaryFieldEmail",
+  userId: "summaryFieldUserId",
+  language: "summaryFieldLanguage",
+  country: "summaryFieldCountry",
+  timeZone: "summaryFieldTimeZone",
+  conversationCount: "summaryFieldConversations",
+  firstSeenAt: "summaryFieldFirstSeen",
+  lastSeenAt: "summaryFieldLastSeen",
+  eventCount: "summaryFieldEventCount",
+  eventLastAt: "summaryFieldEventLastAt",
+};
+
+/** How many times an event happened, by the comparison: "at least 3 times". */
+const TIMES_TEXT: Partial<Record<Op, TextId>> = {
+  eq: "summaryTimesEq",
+  ne: "summaryTimesNe",
+  gt: "summaryTimesGt",
+  gte: "summaryTimesGte",
+  lt: "summaryTimesLt",
+  lte: "summaryTimesLte",
+};
+
+const OR_LIST = new Intl.ListFormat(undefined, { type: "disjunction" });
+
+/** A rule's value in words: "trial or pro", "7 days", or a day. */
+function valueWords(rule: RuleDraft): string {
+  if (takesList(rule.op)) {
+    return OR_LIST.format(
+      rule.text
+        .split(",")
+        .map((part) => part.trim())
+        .filter((part) => part !== ""),
+    );
   }
-  if (!takesValue(rule.op)) return `${field} ${opText(rule.field, rule.op)}`;
-  const value = rule.op === "older_than" ? durationWords(rule.text) : rule.text;
-  return `${field} ${opText(rule.field, rule.op)} ${value}`;
+  if (rule.op === "older_than") return durationWords(rule.text);
+  return kindOf(rule.field) === "time" ? new Date(rule.text).toLocaleDateString() : rule.text;
+}
+
+/** A list compares as one value: "is trial or pro", "is not trial or pro". */
+const opWords = (rule: RuleDraft) =>
+  rule.op === "in"
+    ? t("conditionIs")
+    : rule.op === "not_in"
+      ? t("conditionIsNot")
+      : opText(rule.field, rule.op);
+
+/**
+ * A rule as what the person did, "signed in" or "did export.finished at least 3 times", or as what
+ * a field of theirs is, "plan is trial or pro".
+ */
+function rulePhrase(rule: RuleDraft): { kind: "did" | "is"; words: string } {
+  const { field, op } = rule;
+  if (isBooleanField(field)) {
+    // A yes or no compares only as is, or is not.
+    const isYes = (rule.text === "true") === (op !== "ne");
+    return { kind: "did", words: t(DID_TEXT[field][isYes ? 0 : 1]) };
+  }
+  const times = TIMES_TEXT[op];
+  if (field === "eventCount" && times !== undefined) {
+    const count = plural(Number(rule.text), "summaryTimeOne", "summaryTimeMany");
+    return {
+      kind: "did",
+      words: t("summaryDidEvent", { event: rule.key, times: t(times, { count }) }),
+    };
+  }
+  const fieldWords = field === "attribute" ? rule.key : t(FIELD_WORDS[field], { event: rule.key });
+  const words = `${fieldWords} ${opWords(rule)}`;
+  return { kind: "is", words: takesValue(op) ? `${words} ${valueWords(rule)}` : words };
+}
+
+/** A rule as a clause: "they signed in", or "plan is trial or pro". */
+function ruleWords(rule: RuleDraft): string {
+  const phrase = rulePhrase(rule);
+  return phrase.kind === "did" ? t("summaryThey", { did: phrase.words }) : phrase.words;
 }
 
 const JOINS: Record<"all" | "any", TextId> = { all: "summaryAnd", any: "summaryOr" };
@@ -113,9 +189,40 @@ function groupWords(group: GroupDraft, nested: boolean): string {
 /** A condition in words, as one line. */
 export const conditionWords = (condition: Condition) => groupWords(groupOf(condition), false);
 
-/** Who gets it: everyone, or the audience's rules. */
-const audienceWords = (audience: Condition | undefined) =>
-  audience === undefined ? t("summaryEveryone") : conditionWords(audience);
+const ruleCount = (group: GroupDraft): number =>
+  group.items.reduce((count, item) => count + (isGroup(item) ? ruleCount(item) : 1), 0);
+
+const WHO_MATCH: Record<GroupDraft["match"], TextId> = {
+  all: "summaryWhoAll",
+  any: "summaryWhoAny",
+  none: "summaryWhoNone",
+};
+
+/**
+ * Who gets it, short enough for the list's one line: everyone, one rule in words, such as "People
+ * whose plan is trial or pro", or how many rules they match.
+ */
+function audienceWords(audience: Condition | undefined): string {
+  if (audience === undefined) return t("summaryEveryone");
+  const group = groupOf(audience);
+  const [only, ...others] = group.items;
+  if (only !== undefined && others.length === 0 && !isGroup(only) && group.match !== "none") {
+    const phrase = rulePhrase(only);
+    return phrase.kind === "did"
+      ? t("summaryWhoDid", { did: phrase.words })
+      : t("summaryWhoIs", { rule: phrase.words });
+  }
+  const rules = plural(ruleCount(group), "summaryRulesOne", "summaryRulesMany");
+  return t(WHO_MATCH[group.match], { rules });
+}
+
+/** A variable of a message's text in words: "first name", or the key of an attribute or data. */
+export function variableWords(path: string): string {
+  const field = CONTACT_VARIABLES.find((one) => one === path);
+  if (field !== undefined) return t(FIELD_WORDS[field]);
+  const prefix = Object.values(VARIABLE_PREFIXES).find((one) => path.startsWith(one));
+  return prefix === undefined ? path : path.slice(prefix.length);
+}
 
 const REPEAT_TEXT: Record<Extract<CampaignTrigger, { type: "schedule" }>["repeat"], TextId> = {
   once: "summaryScheduleOnce",

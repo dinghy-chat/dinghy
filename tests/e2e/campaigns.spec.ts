@@ -125,7 +125,7 @@ test("an owner writes a campaign, starts it, tests it and reads its results", as
   await expect(page.getByText("1 live · 1 sent in the last 7 days")).toBeVisible();
   const row = page.getByRole("button", { name: /Pro welcome/ });
   await expect(row.locator(".chip")).toHaveText("Live");
-  await expect(row).toContainText("plan is pro, when your code sends it · card above the launcher");
+  await expect(row).toContainText("People whose plan is pro, when your code sends it · as a card");
   await expect(row.locator(".row-stat").first()).toContainText("1sent");
 
   // Pause all campaigns, with who paused them, and the resume.
@@ -174,9 +174,9 @@ test("a member reads campaigns and cannot change them", async ({ page }) => {
   await row.click();
   await expect(page.getByText("Only owners and admins can change campaigns.")).toBeVisible();
   await expect(page.getByLabel("Name", { exact: true })).toBeDisabled();
-  await expect(page.getByLabel("Text", { exact: true })).toHaveValue(
-    "Your export finished. Need help with it?",
-  );
+  const text = page.getByLabel("Text", { exact: true });
+  await expect(text).toHaveText("Your export finished. Need help with it?");
+  await expect(text).toHaveAttribute("contenteditable", "false");
   await expect(page.getByRole("radio", { name: "After an event" })).toBeDisabled();
   // A member still opens a folded part to read it.
   await page.getByRole("button", { name: "Edit Rules" }).click();
@@ -225,19 +225,40 @@ test("the editor's steps: option cards, value tokens, variables and folded parts
 
   // The variables go in at the caret, and the preview fills them with a sample contact.
   await page.getByLabel("Name", { exact: true }).fill("Variables");
+  // The text shows each variable in words, and keeps the template, which "Copy as code" gives.
   const text = page.getByLabel("Text", { exact: true });
   await text.fill("Hi ");
   await page.getByRole("button", { name: "First name", exact: true }).click();
-  await expect(text).toHaveValue("Hi {{ firstName }}");
+  await expect(text).toHaveText("Hi first name");
+  await expect(text.locator(".variable-token")).toHaveAttribute("title", "{{ firstName }}");
   await expect(preview(page).getByText("Hi Alex")).toBeVisible();
   await expect(page.getByText("As a sample contact named Alex")).toBeVisible();
   await page.getByRole("button", { name: "Other field" }).click();
   await page.getByRole("menuitem", { name: "email" }).click();
-  await expect(text).toHaveValue("Hi {{ firstName }}{{ email }}");
+  await expect(text.locator(".variable-token")).toHaveText(["first name", "email"]);
+  await page.getByRole("button", { name: "More actions" }).click();
+  await page.getByRole("menuitem", { name: "Copy as code" }).click();
+  const code = page.getByRole("dialog", { name: "Copy as code" });
+  await expect(code.getByText('"body": "Hi {{ firstName }}{{ email }}"')).toBeVisible();
+  await code.getByRole("button", { name: "Done" }).click();
+  // With the keyboard: the caret steps over a token, and Backspace removes it whole.
+  await text.press("End");
+  await text.press("Backspace");
+  await expect(text.locator(".variable-token")).toHaveText(["first name"]);
+  await text.press("ArrowLeft");
+  await text.pressSequentially("dear ");
+  await expect(text).toHaveText("Hi dear first name");
+  // A tag typed whole becomes a token once the text loses focus.
+  await text.press("End");
+  await text.pressSequentially("{{ country }}");
+  await page.getByLabel("Name", { exact: true }).focus();
+  await expect(text.locator(".variable-token")).toHaveText(["first name", "country"]);
   // A variable that does not read is named under the text, so the form does not save.
   await text.fill("Hi {{ nickname }}");
   await expect(page.getByText("There is no variable nickname for this trigger.")).toBeVisible();
-  await expect(text).toHaveJSProperty("validity.valid", false);
+  await expect(text).toHaveAttribute("aria-invalid", "true");
+  await page.getByRole("button", { name: "Save as draft" }).click();
+  await expect(page.getByText("Not saved yet")).toBeVisible();
   await text.fill("Hi {{ firstName }}");
 
   // How it shows: a badge leaves only the launcher's dot, so the text is not in the preview.
@@ -251,6 +272,19 @@ test("the editor's steps: option cards, value tokens, variables and folded parts
   await expect(page.getByRole("radio", { name: "French" }).first()).toBeChecked();
   await page.getByRole("button", { name: "A/B variant" }).click();
   await expect(page.getByRole("heading", { name: "A/B test" })).toBeVisible();
+  // A variant's own message adds its own languages, and the message's head offers a language
+  // while any message lacks it.
+  await page.getByRole("button", { name: "Add a translation to variant b" }).click();
+  await page.getByRole("menuitem", { name: "Spanish" }).click();
+  await page.getByRole("button", { name: "Translation", exact: true }).click();
+  await expect(page.getByRole("menuitem")).toHaveText(["English", "Spanish"]);
+  // English goes in both messages, so variant b has every language, and the head still offers
+  // Spanish, which only variant b has.
+  await page.getByRole("menuitem", { name: "English" }).click();
+  await expect(page.getByRole("button", { name: "Add a translation to variant b" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Translation", exact: true }).click();
+  await expect(page.getByRole("menuitem")).toHaveText(["Spanish"]);
+  await page.keyboard.press("Escape");
   await page.getByRole("button", { name: "Stop the test" }).click();
   await expect(page.getByRole("heading", { name: "A/B test" })).toHaveCount(0);
 
@@ -277,7 +311,7 @@ test("a template makes a draft with a free key, and opens it", async ({ page }) 
 
   await page.getByRole("button", { name: "Campaigns", exact: true }).first().click();
   await expect(page.getByRole("button", { name: /^Welcome new users/ }).first()).toContainText(
-    "Signed in, as they start to match · card above the launcher",
+    "People who signed in, as they start to match · as a card",
   );
   await page.getByRole("button", { name: /Welcome new users.*Say hello/ }).click();
   await expect(page.locator(".campaign-head code")).toHaveText("welcome-2");
@@ -304,6 +338,120 @@ test("a pause keeps the changes not saved yet", async ({ page }) => {
   await expect(page.getByText("Changes not saved")).toBeVisible();
   await page.getByRole("button", { name: "Pause", exact: true }).click();
   await expect(page.locator(".campaign-title .chip")).toHaveText("Paused");
-  await expect(text).toHaveValue("A text not saved yet");
+  await expect(text).toHaveText("A text not saved yet");
   await expect(page.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
+});
+
+test("Enter in a field saves, and never starts a draft or resumes a pause", async ({ page }) => {
+  const definition = {
+    name: "Enter stays",
+    trigger: { type: "api" },
+    message: { body: "Hello" },
+    presentation: { startConversation: "on_reply", show: "badge", ifConversationOpen: "skip" },
+  };
+  const draft = await api("PUT", "/campaigns/by-key/enter-draft", {
+    ...definition,
+    key: "enter-draft",
+  });
+  expect(draft.status).toBe(201);
+  await openCampaigns(page, "julien@shipmail.example");
+  await page.getByRole("button", { name: /^Enter stays/ }).click();
+  const name = page.getByLabel("Name", { exact: true });
+  const chip = page.locator(".campaign-title .chip");
+  // Nothing to save: Save is there but off, so Enter does nothing.
+  await expect(page.getByRole("button", { name: "Save as draft" })).toBeDisabled();
+  await name.press("Enter");
+  await name.press("Enter");
+  await expect(chip).toHaveText("Draft");
+  // A change: Enter saves it, and the campaign stays a draft.
+  await name.fill("Enter stays here");
+  await name.press("Enter");
+  await expect(page.getByText("Campaign saved.")).toBeVisible();
+  await name.press("Enter");
+  await expect(chip).toHaveText("Draft");
+
+  expect((await api("POST", "/campaigns/by-key/enter-draft/resume")).status).toBe(200);
+  expect((await api("POST", "/campaigns/by-key/enter-draft/pause")).status).toBe(200);
+  await page.getByRole("button", { name: "Campaigns", exact: true }).first().click();
+  await page.getByRole("button", { name: /^Enter stays here/ }).click();
+  await expect(chip).toHaveText("Paused");
+  await name.press("Enter");
+  await expect(chip).toHaveText("Paused");
+});
+
+test("a campaign keeps its key when it is renamed after its first save", async ({ page }) => {
+  await openCampaigns(page, "julien@shipmail.example");
+  await page.getByRole("button", { name: "New campaign" }).click();
+  const name = page.getByLabel("Name", { exact: true });
+  await name.fill("Keeps its key");
+  await page.getByLabel("Text", { exact: true }).fill("Hello");
+  await page.getByRole("button", { name: "Save as draft" }).click();
+  await expect(page.locator(".campaign-head code")).toHaveText("keeps-its-key");
+  await name.fill("Renamed after saving");
+  await expect(page.locator(".campaign-head code")).toHaveText("keeps-its-key");
+  await page.getByRole("button", { name: "Save as draft" }).click();
+  await expect(page.getByText("Campaign saved.")).toBeVisible();
+  const list = await api("GET", "/campaigns");
+  const keys = (list.json.campaigns as { definition: { key: string } }[]).map(
+    (one) => one.definition.key,
+  );
+  expect(keys).toContain("keeps-its-key");
+  expect(keys).not.toContain("renamed-after-saving");
+});
+
+test("the list: tabs count only what they hold, and a goal's bar counts the control group", async ({
+  page,
+}) => {
+  // Almost everyone is in the control group, which gets no message but counts for the goal.
+  const saved = await api("PUT", "/campaigns/by-key/goal-control", {
+    key: "goal-control",
+    name: "Goal with a control group",
+    trigger: { type: "api" },
+    message: { body: "Verify your domain?" },
+    presentation: { startConversation: "on_reply", show: "badge", ifConversationOpen: "skip" },
+    variants: [
+      { key: "message", weight: 1 },
+      { key: "control", weight: 99, control: true },
+    ],
+    rules: {
+      frequency: "once",
+      businessHours: false,
+      endsAt: null,
+      goal: { field: "attributes.verified", op: "eq", value: true, within: "7d" },
+    },
+  });
+  expect(saved.status).toBe(201);
+  expect((await api("POST", "/campaigns/by-key/goal-control/resume")).status).toBe(200);
+  for (const userId of ["goal-1", "goal-2", "goal-3"]) {
+    const sent = await api("POST", "/campaigns/by-key/goal-control/send", {
+      clientId: randomUUID(),
+      visitor: { userId },
+    });
+    expect(sent.status).toBe(201);
+    const tracked = await api("POST", "/track", {
+      visitor: { userId, attributes: { verified: true } },
+      name: "domain.verified",
+    });
+    expect(tracked.status).toBe(200);
+  }
+  const list = await api("GET", "/campaigns");
+  type Totals = { goalReached: number; entered: number };
+  const found = (list.json.campaigns as { definition: { key: string }; totals: Totals }[]).find(
+    (one) => one.definition.key === "goal-control",
+  );
+  const { goalReached, entered } = found?.totals ?? { goalReached: 0, entered: 0 };
+  expect(entered).toBe(3);
+  await openCampaigns(page, "julien@shipmail.example");
+  const tabs = page.getByRole("group", { name: "Status" });
+  await expect(tabs.getByRole("radio", { name: /^Drafts/ })).toBeVisible();
+  const ended = tabs.locator("label").filter({ hasText: "Ended" });
+  await expect(ended.locator(".choice-count")).toHaveCount(0);
+  const row = page.getByRole("button", { name: /^Goal with a control group/ });
+  const goal = row.locator(".row-stat").last();
+  await expect(goal).toContainText(`${goalReached}goal reached`);
+  const width = await goal
+    .locator(".row-bar > span")
+    .evaluate((bar) => Number.parseFloat((bar as HTMLElement).style.width));
+  expect(width).toBeCloseTo((goalReached / entered) * 100);
+  expect(width).toBeLessThanOrEqual(100);
 });

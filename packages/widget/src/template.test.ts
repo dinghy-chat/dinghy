@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { knownVariable, renderTemplate, templateProblems } from "./template.ts";
+import { knownVariable, renderTemplate, templateParts, templateProblems } from "./template.ts";
 
 const values: Record<string, unknown> = {
   firstName: "Ada",
@@ -59,5 +59,17 @@ describe("knownVariable", () => {
     expect(knownVariable("api")("data.plan")).toBe(true);
     expect(knownVariable("event")("event.properties.rows")).toBe(true);
     expect(match("nickname")).toBe(false);
+  });
+});
+
+describe("templateParts", () => {
+  test("splits a text into its words and its tags, each with the variable it reads", () => {
+    expect(templateParts('Hi {{ firstName | default: "there" }}, {{ 1x }}!')).toEqual([
+      { kind: "text", text: "Hi " },
+      { kind: "tag", tag: '{{ firstName | default: "there" }}', path: "firstName" },
+      { kind: "text", text: ", " },
+      { kind: "tag", tag: "{{ 1x }}", path: null },
+      { kind: "text", text: "!" },
+    ]);
   });
 });

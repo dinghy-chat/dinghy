@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
 import { CampaignDefinitionSchema } from "../../server/src/campaign-schemas.ts";
+import type { CampaignDefinition } from "./api.ts";
 import { newDefinition } from "./campaign-draft.ts";
 import {
   campaignSentence,
@@ -17,12 +18,17 @@ test("a duration reads in words, one or many", () => {
   expect(durationWords("7d")).toBe("7 days");
 });
 
-test("a condition reads as one line: a list, a yes, and a group", () => {
+test("a condition reads as one line: a list, a yes, a count and a group", () => {
   expect(conditionWords({ field: "attributes.plan", op: "in", value: ["trial", "pro"] })).toBe(
-    "plan is one of trial, pro",
+    "plan is trial or pro",
   );
-  expect(conditionWords({ field: "signedIn", op: "eq", value: true })).toBe("Signed in");
-  expect(conditionWords({ field: "hasChatted", op: "eq", value: false })).toBe("not Has chatted");
+  expect(conditionWords({ field: "signedIn", op: "eq", value: true })).toBe("they signed in");
+  expect(conditionWords({ field: "hasChatted", op: "eq", value: false })).toBe(
+    "they have never chatted",
+  );
+  expect(conditionWords({ field: "events.export.finished.count", op: "gte", value: 1 })).toBe(
+    "they did export.finished at least 1 time",
+  );
   expect(
     conditionWords({
       all: [
@@ -35,28 +41,41 @@ test("a condition reads as one line: a list, a yes, and a group", () => {
         },
       ],
     }),
-  ).toBe("plan is pro and (Country is FR or Country is BE)");
+  ).toBe("plan is pro and (country is FR or country is BE)");
 });
 
-test("the list's sentence says who, when and how it shows", () => {
-  const definition = {
-    ...newDefinition(),
-    audience: { field: "attributes.plan", op: "in" as const, value: ["trial", "pro"] },
-    trigger: { type: "match" as const, delay: "1h" },
-  };
-  expect(campaignSentence(definition)).toBe(
-    "plan is one of trial, pro, 1 hour after they match · card above the launcher",
-  );
+test("the list's sentence says who, when and how it shows, in plain words", () => {
+  const sentence = (parts: Partial<CampaignDefinition>) =>
+    campaignSentence({ ...newDefinition(), ...parts });
   expect(
-    campaignSentence({
-      ...newDefinition(),
+    sentence({
+      audience: { field: "attributes.plan", op: "in", value: ["trial", "pro"] },
+      trigger: { type: "match", delay: "1h" },
+    }),
+  ).toBe("People whose plan is trial or pro, 1 hour after they match · as a card");
+  expect(
+    sentence({
+      audience: { field: "events.export.finished.count", op: "gte", value: 3 },
+      trigger: { type: "event", name: "export.finished" },
+    }),
+  ).toBe("People who did export.finished at least 3 times, after export.finished · as a card");
+  expect(
+    sentence({
+      audience: {
+        all: [
+          { field: "signedIn", op: "eq", value: true },
+          { field: "attributes.plan", op: "eq", value: "pro" },
+        ],
+      },
+      trigger: { type: "api" },
+    }),
+  ).toBe("People who match 2 rules, when your code sends it · as a card");
+  expect(
+    sentence({
       trigger: { type: "page", url: "/pricing", seconds: 20 },
       presentation: { ...newDefinition().presentation, show: "badge" },
     }),
-  ).toBe("Everyone, on /pricing for 20 seconds · dot on the launcher");
-  expect(
-    campaignSentence({ ...newDefinition(), trigger: { type: "event", name: "export.finished" } }),
-  ).toBe("Everyone, when your server tracks export.finished · card above the launcher");
+  ).toBe("Everyone, on /pricing for 20 seconds · as a dot on the launcher");
 });
 
 test("the folded parts read as one line each", () => {
@@ -69,7 +88,7 @@ test("the folded parts read as one line each", () => {
       businessHours: true,
       exitWhen: { field: "repliedToCampaign", op: "eq", value: true },
     }),
-  ).toBe("At most every 7 days · stops when Replied to this campaign · business hours only");
+  ).toBe("At most every 7 days · stops when they replied to it · business hours only");
   expect(goalWords(undefined)).toBe("No goal.");
   expect(
     goalWords({ field: "attributes.domainVerified", op: "eq", value: true, within: "7d" }),

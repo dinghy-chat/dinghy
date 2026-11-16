@@ -8359,35 +8359,39 @@ button.quote:hover {
 .composer-text {
   display: grid;
 }
-.composer-marks,
-.composer-text textarea {
+.template-text {
   grid-area: 1 / 1;
+  min-height: calc(3lh + 28px);
   padding: 14px;
+  border-radius: 14px;
+  color: var(--navy);
   font: 400 15px / 1.55 var(--body);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.composer-marks {
-  color: transparent;
-  pointer-events: none;
-}
-.composer-marks mark {
-  border-radius: 4px;
-  background: var(--tile-blue);
-  box-shadow: 0 0 0 2px var(--tile-blue);
-  color: transparent;
-}
-.composer-text textarea {
-  field-sizing: content;
-  min-height: 0;
-  overflow: hidden;
-  border: 0;
-  border-radius: 14px;
-  background: none;
-  resize: none;
-}
-.composer-text textarea:focus-visible {
+.template-text:focus-visible {
   outline: 0;
+}
+.template-text:empty::before {
+  content: attr(data-placeholder);
+  color: var(--mute);
+}
+/* A variable, in words, as one piece of the text. */
+.variable-token {
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--tile-blue);
+  color: var(--navy);
+  font-weight: 600;
+  white-space: nowrap;
+}
+/* The copy of the text that the form's checks read: under the box, where their message points. */
+.composer-check {
+  grid-area: 1 / 1;
+  min-height: 0;
+  opacity: 0;
+  pointer-events: none;
+  resize: none;
 }
 .composer-buttons,
 .composer-tools,
