@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 // Outbound messages in the operator app: a contact's list with what became of each, and the
 // Message button, which sends one by hand to someone who may have no conversation yet.
-import { type FormEvent, useId, useState } from "react";
+import { useState } from "react";
 import { newClientId } from "../../../packages/widget/src/compose.ts";
 import { MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
 import type { OutboundMessage, OutboundStatusReason, WorkspaceApi } from "./api.ts";
@@ -9,7 +9,7 @@ import { timeOrDate } from "./format.ts";
 import { Icon } from "./icons.tsx";
 import { type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
-import { ErrorNote, failureText, useModal } from "./ui.tsx";
+import { FormDialog, failureText } from "./ui.tsx";
 
 const REASON_TEXT: Record<OutboundStatusReason, TextId> = {
   open_conversation: "outboundReasonOpenConversation",
@@ -143,57 +143,40 @@ function MessageDialog({
   onSent(): void;
   onClose(): void;
 }) {
-  const dialog = useModal();
-  const titleId = useId();
   const [body, setBody] = useState("");
   // One ID for this message, so a retry after a lost answer sends it once.
   const [clientId] = useState(newClientId);
   const [failure, setFailure] = useState<TextId | null>(null);
-  const send = async (event: FormEvent) => {
-    event.preventDefault();
+  const send = async (close: () => void) => {
     setFailure(null);
     try {
       await api.sendOutbound(visitorId, clientId, body.trim());
       toast("outboundSent");
       onSent();
-      dialog.current?.close();
+      close();
     } catch (error) {
       setFailure(failureText(error, {}, "actionFailed"));
     }
   };
   return (
-    // biome-ignore lint/a11y/useKeyWithClickEvents: Escape closes a dialog.
-    <dialog
-      ref={dialog}
-      className="dialog"
-      aria-labelledby={titleId}
+    <FormDialog
+      title={t("outboundMessageTo", { name })}
+      help={t("outboundMessageHelp")}
+      failure={failure}
+      submitLabel={t("outboundSend")}
+      submitDisabled={body.trim() === ""}
+      onSubmit={(close) => void send(close)}
       onClose={onClose}
-      onClick={(event) => {
-        if (event.target === event.currentTarget) dialog.current?.close();
-      }}
     >
-      <form className="dialog-body" onSubmit={(event) => void send(event)}>
-        <h2 id={titleId}>{t("outboundMessageTo", { name })}</h2>
-        <p className="dialog-text">{t("outboundMessageHelp")}</p>
-        <label className="identity-field">
-          {t("outboundMessageLabel")}
-          <textarea
-            rows={4}
-            value={body}
-            maxLength={MESSAGE_MAX}
-            onChange={(event) => setBody(event.target.value)}
-          />
-        </label>
-        <ErrorNote text={failure} />
-        <div className="dialog-actions">
-          <button type="button" className="pill" onClick={() => dialog.current?.close()}>
-            {t("cancel")}
-          </button>
-          <button type="submit" className="pill dark" disabled={body.trim() === ""}>
-            {t("outboundSend")}
-          </button>
-        </div>
-      </form>
-    </dialog>
+      <label className="identity-field">
+        {t("outboundMessageLabel")}
+        <textarea
+          rows={4}
+          value={body}
+          maxLength={MESSAGE_MAX}
+          onChange={(event) => setBody(event.target.value)}
+        />
+      </label>
+    </FormDialog>
   );
 }

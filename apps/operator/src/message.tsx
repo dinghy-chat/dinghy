@@ -6,7 +6,7 @@ import { timeOrDate } from "./format.ts";
 import { Icon } from "./icons.tsx";
 import { Menu, type MenuItem } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
-import { useModal } from "./ui.tsx";
+import { Modal } from "./ui.tsx";
 
 /** Who wrote a quoted message: the name the server gave, or the visitor's name in this thread. */
 const quoteAuthor = (quote: Quote, visitorName: string) =>
@@ -137,7 +137,6 @@ export function MessageInfo({
   line: InfoLine;
   onClose(): void;
 }) {
-  const dialog = useModal();
   const titleId = useId();
   const [receipt, setReceipt] = useState<string[] | null>(null);
   // Primitives, so the thread's own renders do not ask for the times again.
@@ -162,43 +161,36 @@ export function MessageInfo({
           } as const
         )[line.via];
   return (
-    // biome-ignore lint/a11y/useKeyWithClickEvents: Escape closes a dialog.
-    <dialog
-      ref={dialog}
-      className="dialog message-info"
-      aria-labelledby={titleId}
-      onClose={onClose}
-      onClick={(event) => {
-        if (event.target === event.currentTarget) dialog.current?.close();
-      }}
-    >
-      <div className="dialog-body">
-        <h2 id={titleId}>{t("infoTitle")}</h2>
-        <dl>
-          <dt>{t("infoSentLabel")}</dt>
-          <dd className="info-time">
-            {new Date(line.createdAt).toLocaleString([], {
-              dateStyle: "full",
-              timeStyle: "short",
-            })}
-          </dd>
-          <dt>{t("infoAuthorLabel")}</dt>
-          <dd>{via === null ? line.author : t(via, { name: line.author })}</dd>
-          {wantsReceipt && (
-            <>
-              <dt>{t("infoSeenLabel")}</dt>
-              {(receipt ?? [t("loading")]).map((text) => (
-                <dd key={text}>{text}</dd>
-              ))}
-            </>
-          )}
-        </dl>
-        <div className="dialog-actions">
-          <button type="button" className="pill dark" onClick={() => dialog.current?.close()}>
-            {t("infoDone")}
-          </button>
+    <Modal className="dialog message-info" labelledBy={titleId} onClose={onClose}>
+      {(close) => (
+        <div className="dialog-body">
+          <h2 id={titleId}>{t("infoTitle")}</h2>
+          <dl>
+            <dt>{t("infoSentLabel")}</dt>
+            <dd className="info-time">
+              {new Date(line.createdAt).toLocaleString([], {
+                dateStyle: "full",
+                timeStyle: "short",
+              })}
+            </dd>
+            <dt>{t("infoAuthorLabel")}</dt>
+            <dd>{via === null ? line.author : t(via, { name: line.author })}</dd>
+            {wantsReceipt && (
+              <>
+                <dt>{t("infoSeenLabel")}</dt>
+                {(receipt ?? [t("loading")]).map((text) => (
+                  <dd key={text}>{text}</dd>
+                ))}
+              </>
+            )}
+          </dl>
+          <div className="dialog-actions">
+            <button type="button" className="pill dark" onClick={close}>
+              {t("infoDone")}
+            </button>
+          </div>
         </div>
-      </div>
-    </dialog>
+      )}
+    </Modal>
   );
 }

@@ -22,7 +22,7 @@ import {
 } from "./thread-line.tsx";
 import type { Line } from "./thread-lines.ts";
 import { toast } from "./toast.tsx";
-import { ErrorNote, useModal } from "./ui.tsx";
+import { ErrorNote, Modal } from "./ui.tsx";
 import { replyAuthor, title } from "./visitor.ts";
 
 /**
@@ -81,36 +81,33 @@ function ImageViewer({
   onClose(): void;
   onError(): void;
 }) {
-  const viewer = useModal();
   const file = useImageFile(url);
   return (
-    // biome-ignore lint/a11y/useKeyWithClickEvents: Escape closes a dialog.
-    <dialog
-      ref={viewer}
-      className="viewer"
-      onClose={onClose}
-      onClick={() => viewer.current?.close()}
-    >
-      <img src={url} alt={t("imageAlt")} onError={onError} />
-      {/* A phone has no Escape key and little backdrop around a wide image. */}
-      <div className="viewer-actions">
-        <button
-          type="button"
-          className="icon-button"
-          aria-label={t("imageSave")}
-          disabled={file === null}
-          onClick={(event) => {
-            event.stopPropagation();
-            if (file !== null) saveImage(file);
-          }}
-        >
-          <Icon name="download" size={20} />
-        </button>
-        <button type="button" className="icon-button" aria-label={t("close")}>
-          <Icon name="close" size={20} />
-        </button>
-      </div>
-    </dialog>
+    <Modal className="viewer" isClosedByAnyClick onClose={onClose}>
+      {() => (
+        <>
+          <img src={url} alt={t("imageAlt")} onError={onError} />
+          {/* A phone has no Escape key and little backdrop around a wide image. */}
+          <div className="viewer-actions">
+            <button
+              type="button"
+              className="icon-button"
+              aria-label={t("imageSave")}
+              disabled={file === null}
+              onClick={(event) => {
+                event.stopPropagation();
+                if (file !== null) saveImage(file);
+              }}
+            >
+              <Icon name="download" size={20} />
+            </button>
+            <button type="button" className="icon-button" aria-label={t("close")}>
+              <Icon name="close" size={20} />
+            </button>
+          </div>
+        </>
+      )}
+    </Modal>
   );
 }
 

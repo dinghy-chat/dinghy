@@ -22,11 +22,11 @@ import {
   ErrorNote,
   Field,
   failureText,
+  Modal,
   Page,
   PageRow,
   ROLE_TEXT,
   Tip,
-  useModal,
 } from "./ui.tsx";
 import { visitorName } from "./visitor.ts";
 
@@ -335,7 +335,6 @@ function InviteDialog({
   emailAvailable: boolean;
   onClose(): void;
 }) {
-  const dialog = useModal();
   const titleId = useId();
   const [email, setEmail] = useState("");
   const [inviteRole, setInviteRole] = useState<"admin" | "member">("member");
@@ -369,90 +368,83 @@ function InviteDialog({
   };
 
   return (
-    // biome-ignore lint/a11y/useKeyWithClickEvents: Escape closes a dialog.
-    <dialog
-      ref={dialog}
-      className="dialog"
-      aria-labelledby={titleId}
-      onClose={onClose}
-      onClick={(event) => {
-        if (event.target === event.currentTarget) dialog.current?.close();
-      }}
-    >
-      <form className="dialog-body" onSubmit={(event) => void send(event)}>
-        {made?.url === null ? (
-          <div className="success" role="status">
-            <span className="success-icon">
-              <Icon name="check" size={22} />
-            </span>
-            <h2 id={titleId}>{t("inviteSentTitle")}</h2>
-            <p>
-              <b>{made.email}</b> {t("inviteSentDays")}
-            </p>
-          </div>
-        ) : (
-          <h2 id={titleId}>{t("invitesTitle")}</h2>
-        )}
-        {made === null && (
-          <p className="dialog-text">{t(emailAvailable ? "inviteHelpMail" : "inviteHelpLink")}</p>
-        )}
-        {made === null ? (
-          <>
-            <Field
-              label={t("email")}
-              type="email"
-              required
-              maxLength={254}
-              autoComplete="off"
-              autoFocus
-              value={email}
-              onChange={setEmail}
-            />
-            {role === "owner" ? (
-              <RolePicker value={inviteRole} onChange={setInviteRole} />
-            ) : (
-              <p className="hint">{t("inviteMemberHelp")}</p>
-            )}
-          </>
-        ) : made.url === null ? null : (
-          <CopyField
-            hint={t("inviteLink", { email: made.email })}
-            label={t("inviteLinkLabel")}
-            copyLabel={t("inviteLinkCopy")}
-            value={made.url}
-          />
-        )}
-        <ErrorNote text={error} />
-        <div className={made?.url === null ? "dialog-actions centered" : "dialog-actions"}>
+    <Modal labelledBy={titleId} onClose={onClose}>
+      {(close) => (
+        <form className="dialog-body" onSubmit={(event) => void send(event)}>
+          {made?.url === null ? (
+            <div className="success" role="status">
+              <span className="success-icon">
+                <Icon name="check" size={22} />
+              </span>
+              <h2 id={titleId}>{t("inviteSentTitle")}</h2>
+              <p>
+                <b>{made.email}</b> {t("inviteSentDays")}
+              </p>
+            </div>
+          ) : (
+            <h2 id={titleId}>{t("invitesTitle")}</h2>
+          )}
+          {made === null && (
+            <p className="dialog-text">{t(emailAvailable ? "inviteHelpMail" : "inviteHelpLink")}</p>
+          )}
           {made === null ? (
             <>
-              <button type="button" className="pill" onClick={() => dialog.current?.close()}>
-                {t("cancel")}
-              </button>
-              <button type="submit" className="pill dark" disabled={busy}>
-                {t(busy ? "inviteSending" : emailAvailable ? "inviteSend" : "inviteCreate")}
-              </button>
+              <Field
+                label={t("email")}
+                type="email"
+                required
+                maxLength={254}
+                autoComplete="off"
+                autoFocus
+                value={email}
+                onChange={setEmail}
+              />
+              {role === "owner" ? (
+                <RolePicker value={inviteRole} onChange={setInviteRole} />
+              ) : (
+                <p className="hint">{t("inviteMemberHelp")}</p>
+              )}
             </>
-          ) : (
-            <>
-              <button
-                type="button"
-                className="pill"
-                onClick={() => {
-                  setMade(null);
-                  setEmail("");
-                }}
-              >
-                {t("inviteAnother")}
-              </button>
-              <button type="button" className="pill dark" onClick={() => dialog.current?.close()}>
-                {t("done")}
-              </button>
-            </>
+          ) : made.url === null ? null : (
+            <CopyField
+              hint={t("inviteLink", { email: made.email })}
+              label={t("inviteLinkLabel")}
+              copyLabel={t("inviteLinkCopy")}
+              value={made.url}
+            />
           )}
-        </div>
-      </form>
-    </dialog>
+          <ErrorNote text={error} />
+          <div className={made?.url === null ? "dialog-actions centered" : "dialog-actions"}>
+            {made === null ? (
+              <>
+                <button type="button" className="pill" onClick={close}>
+                  {t("cancel")}
+                </button>
+                <button type="submit" className="pill dark" disabled={busy}>
+                  {t(busy ? "inviteSending" : emailAvailable ? "inviteSend" : "inviteCreate")}
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="pill"
+                  onClick={() => {
+                    setMade(null);
+                    setEmail("");
+                  }}
+                >
+                  {t("inviteAnother")}
+                </button>
+                <button type="button" className="pill dark" onClick={close}>
+                  {t("done")}
+                </button>
+              </>
+            )}
+          </div>
+        </form>
+      )}
+    </Modal>
   );
 }
 
