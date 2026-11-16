@@ -889,16 +889,15 @@ export function workspaceApi(workspaceId: string) {
         replyMode,
         permissions,
       }),
-    setPermissions: (id: string, permissions: ApiKeyPermission[]) =>
-      call<ApiKey>(`${base}/api-keys/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ permissions }),
-      }),
-    setReplyMode: (id: string, replyMode: ReplyMode) =>
-      call<ApiKey>(`${base}/api-keys/${id}`, {
-        method: "PATCH",
-        body: JSON.stringify({ replyMode }),
-      }),
+    /** Changes what a key may do: any of its level, reply mode and permissions, in one request. */
+    updateApiKey: (
+      id: string,
+      access: Partial<{
+        level: ApiKeyLevel;
+        replyMode: ReplyMode;
+        permissions: ApiKeyPermission[];
+      }>,
+    ) => call<ApiKey>(`${base}/api-keys/${id}`, { method: "PATCH", body: JSON.stringify(access) }),
     setBotsPaused: (paused: boolean) =>
       call<{ paused: boolean; pausedBy: string | null }>(`${base}/bots-paused`, {
         method: "PUT",

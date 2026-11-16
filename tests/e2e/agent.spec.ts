@@ -182,12 +182,11 @@ test("an agent connects with OAuth, tests with a visitor, drafts a reply an oper
 
   // The owner lets the agent send directly, so a person's handling is what stops its replies.
   await openSettings(page, "API & webhooks");
-  const replies = page
-    .locator(".item-row", { hasText: AGENT })
-    .getByRole("button", { name: /Replies from/ });
-  await replies.click();
-  await page.getByRole("option", { name: "Send directly" }).click();
-  await expect(replies).toContainText("Send directly");
+  const row = page.locator(".item-row", { hasText: AGENT });
+  await row.getByRole("button", { name: /Permissions of/ }).click();
+  await page.getByRole("dialog").getByRole("radio", { name: "Send directly" }).check();
+  await page.getByRole("dialog").getByRole("button", { name: "Save" }).click();
+  await expect(row).toContainText("Send directly");
 
   const handedOff = await mcp.call("hand_off", {
     conversationId,

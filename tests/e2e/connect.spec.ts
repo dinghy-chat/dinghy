@@ -117,15 +117,19 @@ test("an owner approves an app with Full access and Drafts only, then sees it in
   await expect(row).not.toContainText("This computer");
   await expect(row).not.toContainText("Returns to");
   await expect(page.locator(".status-card")).toContainText("1 connected app, 0 API keys");
-  const replies = row.getByRole("button", { name: /Replies from Claude Code/ });
-  await expect(replies).toContainText("Drafts only");
-  await replies.click();
-  await page.getByRole("option", { name: "Send directly" }).click();
-  await expect(replies).toContainText("Send directly");
+  await expect(row).toContainText("Drafts only");
+  await row.getByRole("button", { name: "Permissions of Claude Code" }).click();
+  const dialog = page.getByRole("dialog");
+  // A connected app's level comes from its consent, so the dialog does not offer it.
+  await expect(dialog.getByRole("radio", { name: "Full access" })).toHaveCount(0);
+  await dialog.getByRole("radio", { name: "Send directly" }).check();
+  await dialog.getByRole("checkbox", { name: "May send as a member" }).check();
+  await dialog.getByRole("button", { name: "Save" }).click();
+  await expect(row).toContainText("Send directly · May send as a member");
   await page.reload();
-  await expect(
-    page.locator(".item-row", { hasText: "Claude Code" }).getByRole("button", { name: /Replies/ }),
-  ).toContainText("Send directly");
+  await expect(page.locator(".item-row", { hasText: "Claude Code" })).toContainText(
+    "Send directly · May send as a member",
+  );
   await page.context().close();
 });
 
