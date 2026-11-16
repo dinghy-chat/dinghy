@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.35.0] - 2026-11-16
+
 ### Upgrading
 
 - A visitor's `externalId` is now `userId`, in every route, field, webhook and MCP tool, and in the export.
@@ -610,7 +612,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.34.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.35.0...HEAD
+[0.35.0]: https://github.com/dinghy-chat/dinghy/compare/v0.34.0...v0.35.0
 [0.34.0]: https://github.com/dinghy-chat/dinghy/compare/v0.33.1...v0.34.0
 [0.33.1]: https://github.com/dinghy-chat/dinghy/compare/v0.33.0...v0.33.1
 [0.33.0]: https://github.com/dinghy-chat/dinghy/compare/v0.32.0...v0.33.0
