@@ -1,6 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import type { Locale } from "../../../packages/widget/src/shared.ts";
-import { type CampaignRow, campaignRows } from "./campaign-checks.ts";
+import { type CampaignRow, campaignRows, inAudience } from "./campaign-checks.ts";
 import { composeMessage, enterCampaign, frequencyBlocker } from "./campaign-entry.ts";
 import type { CampaignCount } from "./campaign-parts.ts";
 import { sendsEmail } from "./campaign-parts.ts";
@@ -10,7 +10,7 @@ import type { Transaction } from "./db/tenant.ts";
 import { lockVisitors } from "./journey.ts";
 import { lockWorkspace } from "./messages.ts";
 import { senderMark, type WidgetOutbound } from "./outbound-delivery.ts";
-import { decide, situation } from "./outbound-rules.ts";
+import { decide, isMember, keyState, situation, visitorFlags } from "./outbound-rules.ts";
 
 // Page campaigns run in the widget: the loader matches the page's URL and waits the seconds, then
 // the chat shows the card. The server stores nothing about the visitor for it until they answer,
@@ -36,8 +36,8 @@ const livePageCampaigns = (tx: Transaction, workspaceId: string, campaignId?: st
     ),
   );
 
-/** What the send's one decision says of the card now, as of a message about to become sent. */
-async function verdictOf(
+/** Whether the send's one decision lets the card go now, alone or in their open conversation. */
+async function mayGo(
   tx: Transaction,
   workspaceId: string,
   found: CampaignRow,
@@ -61,32 +61,49 @@ async function verdictOf(
     sendEmail: sendsEmail(found.definition.delivery),
   };
   const state = await situation(tx, workspaceId, draft, { botsPaused: false, atSendTime: true });
-  return decide(message, state).kind;
+  const { kind } = decide(message, state);
+  return kind === "go" || kind === "join";
 }
 
 /**
- * The card for this viewer, when it may show now: the frequency lets them in, and the send's
- * decision lets it go. A visitor who does not exist yet sees only a campaign for everyone with no
- * A/B variants, as an answer picks the variant from the ID they get then.
+ * Whether the campaign's audience and frequency let the viewer in. A visitor who does not exist yet
+ * sees only a campaign for everyone with no A/B variants, as an answer picks the variant from the
+ * ID they get then.
  */
+async function letsIn(
+  tx: Transaction,
+  workspaceId: string,
+  found: CampaignRow,
+  visitorId: string | null,
+) {
+  const { definition } = found;
+  if (visitorId === null) {
+    return definition.audience === undefined && definition.variants === undefined;
+  }
+  return (
+    (await inAudience(tx, workspaceId, visitorId, definition)) &&
+    (await frequencyBlocker(tx, workspaceId, found, visitorId)) === null
+  );
+}
+
+/** The card for this viewer, when the campaign lets them in and the send's decision lets it go. */
 async function cardFor(
   tx: Transaction,
   workspaceId: string,
   found: CampaignRow,
   viewer: Viewer,
 ): Promise<Card | null> {
-  const { audience, variants } = found.definition;
   const { visitorId, language } = viewer;
-  if (visitorId === null && (audience !== undefined || variants !== undefined)) return null;
-  if (visitorId !== null && (await frequencyBlocker(tx, workspaceId, found, visitorId)) !== null) {
-    return null;
-  }
+  if (!(await letsIn(tx, workspaceId, found, visitorId))) return null;
   const card = await composeMessage(tx, workspaceId, found, visitorId, { language });
   if (typeof card === "string" || card.control) return null;
-  return (await verdictOf(tx, workspaceId, found, viewer, card)) === "go" ? card : null;
+  return (await mayGo(tx, workspaceId, found, viewer, card)) ? card : null;
 }
 
-/** The page campaigns the loader watches for this visitor, from its beat. */
+/**
+ * The page campaigns the loader watches for this visitor, from its beat: only those that let them
+ * in, as the show runs the send's whole decision.
+ */
 export async function pageCampaigns(
   tx: Transaction,
   workspaceId: string,
@@ -95,11 +112,13 @@ export async function pageCampaigns(
   const pages = [];
   for (const found of await livePageCampaigns(tx, workspaceId)) {
     const { trigger } = found.definition;
-    if (trigger.type !== "page") continue;
-    if ((await cardFor(tx, workspaceId, found, { visitorId, language: null })) === null) continue;
+    if (trigger.type !== "page" || found.allPaused) continue;
+    if (!(await letsIn(tx, workspaceId, found, visitorId))) continue;
     pages.push({ id: found.id, url: trigger.url, seconds: trigger.seconds });
   }
-  return pages;
+  if (pages.length === 0 || visitorId === null) return pages;
+  const { blocked, optedOut } = await visitorFlags(tx, workspaceId, visitorId);
+  return blocked || optedOut ? [] : pages;
 }
 
 /**
@@ -165,10 +184,20 @@ export async function countPageCampaign(
   return true;
 }
 
+/** Whether the card's sender may still send it: its key is not revoked, its member is on the team. */
+async function senderMaySend(tx: Transaction, workspaceId: string, { actor, as }: Card) {
+  if (actor.kind === "key" && (await keyState(tx, workspaceId, actor.apiKeyId)).revoked) {
+    return false;
+  }
+  return as.senderOperatorId === null || isMember(tx, workspaceId, as.senderOperatorId);
+}
+
 /**
  * The visitor answers a page campaign's card: its message comes in as an outbound message they
- * read, in the language the card showed, so it goes in the conversation before the answer. Null
- * when the campaign may no longer reach them, and the answer goes in alone.
+ * read, in the language the card showed, so it goes in the conversation before the answer. The
+ * show decided: the answer checks only what makes adding the card unsafe now, as the campaign's
+ * end or pause, and the visitor's block or opt-out at its placement. Null when one stops it, and
+ * the answer goes in alone.
  */
 export async function answerPageCampaign(
   tx: Transaction,
@@ -176,16 +205,15 @@ export async function answerPageCampaign(
   campaignId: string,
   viewer: Viewer & { visitorId: string },
 ): Promise<string | null> {
-  const [found] = await livePageCampaigns(tx, workspaceId, campaignId);
-  if (found === undefined) return null;
   const { visitorId, language } = viewer;
   await lockVisitors(tx, workspaceId, [visitorId]);
   const { botsPaused } = await lockWorkspace(tx, workspaceId);
+  // Under the workspace's lock, which an end or a pause takes first, so its status holds.
+  const [found] = await livePageCampaigns(tx, workspaceId, campaignId);
+  if (found === undefined || found.allPaused) return null;
   const card = await composeMessage(tx, workspaceId, found, visitorId, { language });
   if (typeof card === "string" || card.control) return null;
-  // The answer starts their conversation or joins the open one, as its presentation allows.
-  const verdict = await verdictOf(tx, workspaceId, found, viewer, card);
-  if (verdict !== "go" && verdict !== "join") return null;
+  if (!(await senderMaySend(tx, workspaceId, card))) return null;
   const entry = await enterCampaign(tx, workspaceId, found, visitorId, {
     botsPaused,
     options: { fromPage: true, language },

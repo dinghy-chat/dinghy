@@ -21,6 +21,7 @@ import {
   campaign,
   campaignRun,
   conversation,
+  message,
   outboundMessage,
   visitor,
   workspace,
@@ -954,7 +955,7 @@ describe("a page campaign", () => {
     expect(await listed(token)).toBe(false);
     expect((await widget(`campaigns/${made.id}/show`, {}, token)).status).toBe(404);
   });
-  test("shows only when the send's rules let a message go", async () => {
+  test("the beat lists what lets them in, and the show runs the send's rules", async () => {
     const pricing = {
       trigger: { type: "page", url: "/pricing", seconds: 0 },
       presentation: { startConversation: "on_reply", show: "preview", ifConversationOpen: "skip" },
@@ -966,16 +967,16 @@ describe("a page campaign", () => {
     await owner
       .insert(businessHours)
       .values({ workspaceId: space.id, enabled: true, timeZone: "UTC", week: closed });
-    expect(await listed(hours.id)).toBe(false);
+    expect(await listed(hours.id)).toBe(true);
     expect((await widget(`campaigns/${hours.id}/show`, {})).status).toBe(404);
     await withKey(app, admin.token, "POST", inSpace(`/campaigns/${hours.id}/end`));
 
-    // An open conversation and `skip`: no card, and an answer goes in alone.
+    // An open conversation and `skip`: no card. The show decides, so a card shown before the
+    // conversation opened still goes in with its answer.
     const open = await live(keyOf("page-open"), pricing);
     const { token } = await newVisitor(app, space.publicKey);
-    expect(await listed(open.id, token)).toBe(true);
+    expect((await widget(`campaigns/${open.id}/show`, {}, token)).status).toBe(200);
     await visitorSays(app, space.publicKey, token, "Hello");
-    expect(await listed(open.id, token)).toBe(false);
     expect((await widget(`campaigns/${open.id}/show`, {}, token)).status).toBe(404);
     const answer = await widget(
       "messages",
@@ -983,7 +984,7 @@ describe("a page campaign", () => {
       token,
     );
     expect(answer.status).toBe(201);
-    expect(await campaignMessages(open.id)).toEqual([]);
+    expect(await campaignMessages(open.id)).toMatchObject([{ status: "replied" }]);
     await withKey(app, admin.token, "POST", inSpace(`/campaigns/${open.id}/end`));
 
     // Another campaign message within the workspace's gap.
@@ -993,8 +994,85 @@ describe("a page campaign", () => {
     await live(other);
     const reached = await newVisitor(app, space.publicKey);
     await sendCampaign(other, { visitor: { id: reached.visitorId } });
-    expect(await listed(capped.id, reached.token)).toBe(false);
+    expect(await listed(capped.id, reached.token)).toBe(true);
+    expect((await widget(`campaigns/${capped.id}/show`, {}, reached.token)).status).toBe(404);
     await withKey(app, admin.token, "POST", inSpace(`/campaigns/${capped.id}/end`));
+  });
+
+  const page = {
+    trigger: { type: "page", url: "/pricing", seconds: 0 },
+    presentation: { startConversation: "on_reply", show: "preview", ifConversationOpen: "skip" },
+  };
+  /** The visitor's message that answers the page campaign's card. */
+  const answerCard = (campaignId: string, token: string, body = "About pricing") =>
+    widget("messages", { clientId: randomUUID(), body, pageCampaign: { id: campaignId } }, token);
+  const end = (campaignId: string) =>
+    withKey(app, admin.token, "POST", inSpace(`/campaigns/${campaignId}/end`));
+
+  test("with `join`, shows to a visitor in a conversation, and the answer goes in it", async () => {
+    const made = await live(keyOf("page-join"), {
+      ...page,
+      presentation: { ...page.presentation, ifConversationOpen: "join" },
+    });
+    const { token } = await newVisitor(app, space.publicKey);
+    const { conversationId } = await visitorSays(app, space.publicKey, token, "Hello");
+    expect((await beat(token)).json.pages).toContainEqual(expect.objectContaining({ id: made.id }));
+    expect((await widget(`campaigns/${made.id}/show`, {}, token)).status).toBe(200);
+    expect((await answerCard(made.id, token)).status).toBe(201);
+    expect(await campaignMessages(made.id)).toMatchObject([{ status: "replied", conversationId }]);
+    await end(made.id);
+  });
+
+  test("an answer counts a goal of repliedToCampaign at once", async () => {
+    const made = await live(keyOf("page-goal"), {
+      ...page,
+      rules: { goal: { field: "repliedToCampaign", op: "eq", value: true, within: "7d" } },
+    });
+    const { token } = await newVisitor(app, space.publicKey);
+    await answerCard(made.id, token);
+    const [row] = await campaignMessages(made.id);
+    expect(row?.goalReachedAt).not.toBeNull();
+    await end(made.id);
+  });
+
+  test("the answer keeps the card the visitor saw, though their first send entered another campaign", async () => {
+    await owner.update(workspace).set({ campaignGapHours: 24 }).where(eq(workspace.id, space.id));
+    const card = await live(keyOf("page-first"), {
+      ...page,
+      message: { body: "Comparing plans?" },
+    });
+    const welcome = await live(keyOf("welcome"), { trigger: { type: "match" } });
+    expect((await widget(`campaigns/${card.id}/show`, {})).status).toBe(200);
+    // The widget creates the visitor on their first send, which enters them in `welcome`.
+    const { token, visitorId } = await newVisitor(app, space.publicKey);
+    expect((await answerCard(card.id, token, "Which plan?")).status).toBe(201);
+    const [placed] = await campaignMessages(card.id);
+    expect(placed).toMatchObject({ visitorId, status: "replied" });
+    expect(await campaignMessages(welcome.id)).toMatchObject([{ visitorId, status: "sent" }]);
+    const history = await owner
+      .select({ body: message.body })
+      .from(message)
+      .where(eq(message.conversationId, placed?.conversationId ?? randomUUID()))
+      .orderBy(message.seq);
+    expect(history.map((one) => one.body)).toEqual(["Comparing plans?", "Which plan?"]);
+    await end(card.id);
+    await end(welcome.id);
+  });
+
+  test("an answered card counts for the workspace's gap", async () => {
+    await owner.update(workspace).set({ campaignGapHours: 24 }).where(eq(workspace.id, space.id));
+    const made = await live(keyOf("page-gap-first"), page);
+    const later = keyOf("after-card");
+    await live(later);
+    const { token, visitorId } = await newVisitor(app, space.publicKey);
+    await answerCard(made.id, token);
+    expect(await campaignMessages(made.id)).toMatchObject([{ status: "replied" }]);
+    const capped = await sendCampaign(later, { visitor: { id: visitorId } });
+    expect(capped.outboundMessage).toMatchObject({
+      status: "cancelled",
+      statusReason: "frequency_capped",
+    });
+    await end(made.id);
   });
 
   test("with A/B variants, waits for a visitor who exists, so the answer keeps the variant", async () => {

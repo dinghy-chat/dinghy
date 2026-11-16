@@ -81,7 +81,7 @@ async function markGoal(
           isNull(outboundMessage.goalReachedAt),
           reachedContact,
           sql`${reachedAt} > ${new Date(Date.now() - toMs(goal.within))}`,
-          sql`${reachedAt} <= now()`,
+          sql`${reachedAt} <= ${new Date()}`,
         ),
       );
   if ((await counted()).length === 0) return false;
