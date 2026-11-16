@@ -629,6 +629,8 @@ describe("the workspace's rules", () => {
 });
 
 describe("A/B variants", () => {
+  const MAX_AB_CONTACTS = 60;
+
   test("each contact keeps one variant, and the control group gets a row with no text", async () => {
     const key = keyOf("ab");
     const made = await live(key, {
@@ -638,8 +640,10 @@ describe("A/B variants", () => {
         { key: "control", weight: 1, control: true },
       ],
     });
+    // Contacts are random, so enter them until every variant shows; 60 misses one about once in 1e10.
     const seen = new Set<string>();
-    for (let index = 0; index < 12; index += 1) {
+    let entered = 0;
+    for (; entered < MAX_AB_CONTACTS && seen.size < 3; entered += 1) {
       const sent = await sendCampaign(key, { visitor: { userId: userId() } });
       const row = await rowOf(sent.outboundMessage.id);
       seen.add(row?.variant ?? "");
@@ -662,7 +666,7 @@ describe("A/B variants", () => {
     );
     const { variants } = await json<{ variants: { variant: string; entered: number }[] }>(results);
     expect(variants.map((one) => one.variant).sort()).toEqual(["control", "long", "short"]);
-    expect(variants.reduce((sum, one) => sum + one.entered, 0)).toBe(12);
+    expect(variants.reduce((sum, one) => sum + one.entered, 0)).toBe(entered);
   });
 });
 
