@@ -333,7 +333,7 @@ The **Campaigns** page lists the campaigns with their status and results, and fi
 - the message, beside a live preview of the widget with its variables filled for a sample contact, in light and dark, in each language and at phone width;
 - under **More options**, the variants, the presentation, the delivery and the rules.
 
-An attribute key or an event name suggests the ones your recent contacts have, from `GET .../campaigns/names`, and takes a new one too. The variants' weights show as shares that add up to 100%.
+An attribute key or an event name suggests the ones your recent contacts have, from `GET .../campaigns/names`, and takes a new one too. The variants' weights show as shares in percent, and a note says when they add up to another total.
 
 **Go live** asks first, with what the campaign will do. The ⋯ menu holds **Send me a test**, which shows the message to a test visitor named after you, in a conversation you can open, whatever the rules say, and names the rule that would hold a real message now, such as `outside_business_hours`. It also holds **Copy as code**, which gives the JSON and the SDK call, **End campaign** and **Delete campaign**. Each row of the list has a menu to rename, end or delete its campaign. **Pause all campaigns**, in the page's ⋯ menu while a campaign is live, sets the workspace's `paused`.
 

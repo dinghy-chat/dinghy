@@ -1,5 +1,4 @@
 /** @jsxImportSource react */
-import { useEffect, useRef } from "react";
 import {
   CAMPAIGN_VARIANTS_MAX,
   VARIANT_WEIGHT_MAX,
@@ -64,7 +63,6 @@ function VariantRow({
   language,
   canRemove,
   canControl,
-  sharesProblem,
   onLanguage,
   onChange,
 }: {
@@ -76,16 +74,12 @@ function VariantRow({
   canRemove: boolean;
   /** Only one variant may be the control group. */
   canControl: boolean;
-  /** Why the shares cannot be saved, or empty when they add up. */
-  sharesProblem: string;
   onLanguage(language: Language): void;
   onChange(variant: Variant | null): void;
 }) {
   const kind = kindOfVariant(variant);
   const own = variantMessage(variant);
   const kinds = VARIANT_KINDS.filter((one) => canControl || one.value !== "control");
-  const share = useRef<HTMLInputElement>(null);
-  useEffect(() => share.current?.setCustomValidity(sharesProblem), [sharesProblem]);
   return (
     <li className="variant">
       <div className="variant-head">
@@ -102,7 +96,6 @@ function VariantRow({
           {t("variantShare")}
           <span className="percent-input">
             <input
-              ref={share}
               className="percent-box"
               type="number"
               min={VARIANT_WEIGHT_MIN}
@@ -187,7 +180,8 @@ export function VariantsFields({
   const variants = definition.variants ?? [];
   const hasControl = variants.some((one) => "control" in one);
   const total = variants.reduce((sum, one) => sum + one.weight, 0);
-  const sharesProblem = total === SHARES_TOTAL ? "" : t("variantSharesTotal", { total });
+  // Weights from code may add up to anything, and each still gets its part of the total.
+  const sharesNote = total === SHARES_TOTAL ? "" : t("variantSharesTotal", { total });
   return (
     <div className="variants-test">
       <div className="variants-head">
@@ -209,7 +203,6 @@ export function VariantsFields({
             language={language}
             canRemove={variants.length > VARIANTS_MIN}
             canControl={!hasControl || "control" in variant}
-            sharesProblem={sharesProblem}
             onLanguage={onLanguage}
             onChange={(next) => {
               const changed = replaceAt(variants, index, next);
@@ -218,9 +211,9 @@ export function VariantsFields({
           />
         ))}
       </ul>
-      {sharesProblem !== "" && (
+      {sharesNote !== "" && (
         <p className="hint" role="status">
-          {sharesProblem}
+          {sharesNote}
         </p>
       )}
       {variants.length < CAMPAIGN_VARIANTS_MAX && (

@@ -313,8 +313,8 @@ const SENDER_AUTHOR = "author";
 const SENDER_TEAM = "team";
 
 /**
- * Who the visitor sees: the team, a member, or whoever saves the campaign. A save here makes you
- * that one, so it reads "You", and you are not listed again under your name.
+ * Who the visitor sees: the team, a member, or whoever saves the campaign last, which a save here
+ * makes you, so it says so.
  */
 function SenderField({
   sender,
@@ -335,9 +335,6 @@ function SenderField({
         : "operatorId" in sender
           ? sender.operatorId
           : (members.find((one) => one.email === sender.email)?.id ?? sender.email);
-  const me = members.find((one) => one.id === meId);
-  // You by name only when the campaign names you, as code may.
-  const listed = members.filter((one) => one.id !== meId || value === meId);
   return (
     <div className="composer-from">
       <span aria-hidden="true">{t("campaignSender")}</span>
@@ -347,10 +344,10 @@ function SenderField({
         choices={[
           {
             value: SENDER_AUTHOR,
-            label: me === undefined ? t("senderAuthor") : t("senderYou", { name: me.name }),
+            label: t(members.some((one) => one.id === meId) ? "senderAuthorYou" : "senderAuthor"),
           },
           { value: SENDER_TEAM, label: t("outboundTeam") },
-          ...listed.map((one) => ({ value: one.id, label: one.name })),
+          ...members.map((one) => ({ value: one.id, label: one.name })),
           // An email from code that names no member here, or none yet: kept as it is.
           ...([SENDER_AUTHOR, SENDER_TEAM, ...members.map((one) => one.id)].includes(value)
             ? []

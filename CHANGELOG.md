@@ -14,7 +14,7 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 - **Go live** asks first, with what the campaign will do.
 - The campaign editor's buttons are **Save draft** and **Go live**, with **Send me a test**, **Copy as code**, **End campaign** and **Delete campaign** in the ⋯ menu. On the Campaigns page, **Pause all campaigns** moved to the ⋯ menu and shows only while a campaign is live.
-- A campaign's sender reads "Julien (you)" in place of "The person who saves it", and its A/B variants take shares in percent that add up to 100.
+- A campaign's sender reads "Whoever saves it (now you)" in place of "The person who saves it", and its A/B variants show their shares in percent.
 - The phone preview of a campaign looks like a phone, the name shows a pencil to rename it, and the message says which visitors get each translation.
 - Simpler words across the Campaigns page and the templates.
 

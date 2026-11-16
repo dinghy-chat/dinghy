@@ -369,7 +369,7 @@ function CampaignList({
         <RenameDialog
           name={asked.campaign.definition.name}
           onSave={(name) =>
-            run(() => api.saveCampaign({ ...asked.campaign.definition, name }), "campaignRenamed")
+            run(() => api.renameCampaign(asked.campaign.id, name), "campaignRenamed")
           }
           onClose={() => setAsked(null)}
         />

@@ -1368,8 +1368,7 @@ Ask me before you change anything outside the install. Never ask for a secret or
   campaignRenamed: "Campaign renamed.",
   campaignDelete: "Delete campaign",
   campaignDeleteTitle: "Delete {name}?",
-  campaignDeleteText:
-    "It never sent a message, so no results are lost. Its test messages go too. This can't be undone.",
+  campaignDeleteText: "It never sent a message. This can't be undone.",
   campaignDeleted: "Campaign deleted.",
   campaignDeleteSent: "It sent messages, so it stays for its results. End it instead.",
   campaignDeleteLive: "Pause or end it first.",
@@ -1378,9 +1377,9 @@ Ask me before you change anything outside the install. Never ask for a secret or
   campaignActions: "Actions for {name}",
   campaignLanguagesHelp:
     "People get the version in their chat's language, set in Appearance. Everyone else gets Default.",
-  senderYou: "{name} (you)",
+  senderAuthorYou: "Whoever saves it (now you)",
   variantShare: "Share",
-  variantSharesTotal: "The shares add up to {total}%. Make them 100%.",
+  variantSharesTotal: "These add up to {total}%, so each one gets its part of {total}.",
   campaignEndedToast: "Campaign ended.",
   campaignInvalid: "Couldn't save this campaign. Check the fields and try again.",
   campaignKeyTaken: "Another campaign has this key. Choose another one.",

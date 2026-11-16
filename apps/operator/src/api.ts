@@ -926,7 +926,13 @@ export function workspaceApi(workspaceId: string) {
       }),
     setCampaignStatus: (id: string, action: "pause" | "resume" | "end") =>
       post<{ campaign: Campaign }>(`${base}/campaigns/${id}/${action}`, {}),
-    /** Deletes a campaign that never sent, as `canDelete` tells. */
+    /** Changes only the name, so a change saved meanwhile stays. */
+    renameCampaign: (id: string, name: string) =>
+      call<{ campaign: Campaign }>(`${base}/campaigns/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name }),
+      }),
+    /** Deletes a campaign that never sent, as `deleteBlock` tells. */
     deleteCampaign: (id: string) =>
       call<{ ok: true }>(`${base}/campaigns/${id}`, { method: "DELETE" }),
     /** The attribute keys and event names of recent contacts, for the editor to suggest. */
