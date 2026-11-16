@@ -127,7 +127,7 @@ export const CampaignPreview = memo(function CampaignPreview({
     >
       <div className={device === "phone" ? "browser-frame preview-phone" : "browser-frame"}>
         <div className="browser-bar" aria-hidden="true">
-          <span className="browser-dots" />
+          <span className={device === "phone" ? "phone-island" : "browser-dots"} />
           <span className="browser-address">{t("previewSampleAddress")}</span>
         </div>
         <div className="sample-page">

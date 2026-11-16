@@ -4,7 +4,7 @@ import type { Actor } from "./api-keys.ts";
 import { type CampaignRow, campaignRow, closedNow } from "./campaign-checks.ts";
 import { campaignClientId, enterCampaign } from "./campaign-entry.ts";
 import { emptyCounts, goalCondition, messagesOf, sendsEmail } from "./campaign-parts.ts";
-import { campaignResults, campaignTotals, sentLastWeek } from "./campaign-results.ts";
+import { campaignResults, campaignTotals, hasSent, sentLastWeek } from "./campaign-results.ts";
 import type {
   CampaignDefinition,
   CampaignPatchSchema,
@@ -21,6 +21,7 @@ import {
   type CampaignPayload,
   type CampaignStatus,
   campaign,
+  campaignRun,
   campaignTrigger,
   contactEvent,
   event,
@@ -383,6 +384,42 @@ export function createCampaigns({ db, live }: { db: Database; live: Live }) {
       for (const visitorId of outcome.visitors) tellOutbound(live, workspaceId, visitorId);
       changed(workspaceId);
       return outcome.view;
+    },
+
+    /**
+     * Deletes a campaign that never sent to anyone, such as a draft or a trial run. One that sent
+     * keeps its results, so it can only end. A live one pauses or ends first.
+     */
+    async remove(workspaceId: string, ref: CampaignRef) {
+      const refusal = await withWorkspace(db, workspaceId, async (tx) => {
+        const found = await readCampaign(tx, workspaceId, ref);
+        if (found === undefined) return "not_found" as const;
+        // The worker locks a run before the workspace, so its open runs go first here too, or the
+        // cascade below would wait for a run while the worker waits for the workspace.
+        await tx
+          .select({ id: campaignRun.id })
+          .from(campaignRun)
+          .where(
+            and(eq(campaignRun.workspaceId, workspaceId), eq(campaignRun.campaignId, found.id)),
+          )
+          .for("update");
+        await lockWorkspace(tx, workspaceId);
+        // FOR UPDATE, unlike the lock of a change, waits for a send that holds the campaign's key
+        // for its foreign key, such as a page campaign's first show of the day, so hasSent sees its
+        // new day. hasSent locks the days that exist.
+        const [row] = await selectCampaign(tx, workspaceId, ref).for("update");
+        if (row === undefined) return "not_found" as const;
+        if (row.status === "live") return "live" as const;
+        if (await hasSent(tx, workspaceId, row.id)) return "sent" as const;
+        // Open lists drop it on this event. Its test messages, runs and days go with it.
+        await recordCampaign(tx, workspaceId, row.id);
+        await tx
+          .delete(campaign)
+          .where(and(eq(campaign.workspaceId, workspaceId), eq(campaign.id, row.id)));
+        return null;
+      });
+      if (refusal === null) changed(workspaceId);
+      return refusal;
     },
 
     async results(workspaceId: string, ref: CampaignRef, range: z.infer<typeof ResultsQuery>) {

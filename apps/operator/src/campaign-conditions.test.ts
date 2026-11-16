@@ -1,6 +1,14 @@
 import { describe, expect, test } from "vitest";
 import type { Condition } from "./api.ts";
-import { conditionOf, groupOf, isGroup, newRule, type RuleDraft } from "./campaign-conditions.ts";
+import {
+  conditionOf,
+  groupOf,
+  isGroup,
+  namesRead,
+  newRule,
+  type RuleDraft,
+} from "./campaign-conditions.ts";
+import { newDefinition } from "./campaign-draft.ts";
 
 const roundTrip = (condition: Condition) => conditionOf(groupOf(condition));
 
@@ -71,4 +79,24 @@ describe("the condition builder's model", () => {
     );
     expect(conditionOf(group)).toEqual({ field: "lastSeenAt", op: "gt", value: at });
   });
+});
+
+test("a campaign reads the names in its audience, exit, goal and event trigger", () => {
+  const read = namesRead({
+    ...newDefinition(),
+    audience: {
+      all: [
+        { field: "attributes.plan", op: "eq", value: "pro" },
+        { not: { field: "events.export.finished.count", op: "gte", value: 1 } },
+      ],
+    },
+    trigger: { type: "event", name: "signed.up" },
+    rules: {
+      ...newDefinition().rules,
+      exitWhen: { field: "attributes.setupDone", op: "eq", value: true },
+      goal: { field: "events.upgraded.lastAt", op: "exists", within: "7d" },
+    },
+  });
+  expect([...read.attributes].sort()).toEqual(["plan", "setupDone"]);
+  expect([...read.events].sort()).toEqual(["export.finished", "signed.up", "upgraded"]);
 });

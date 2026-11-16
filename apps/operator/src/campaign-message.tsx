@@ -312,14 +312,19 @@ function ButtonsField({
 const SENDER_AUTHOR = "author";
 const SENDER_TEAM = "team";
 
-/** Who the visitor sees: whoever saved it last, the team, or a member. */
+/**
+ * Who the visitor sees: the team, a member, or whoever saves the campaign last, which a save here
+ * makes you, so it says so.
+ */
 function SenderField({
   sender,
   members,
+  savesAsYou,
   onChange,
 }: {
   sender: CampaignMessage["sender"];
   members: Member[];
+  savesAsYou: boolean;
   onChange(sender: CampaignMessage["sender"]): void;
 }) {
   const value =
@@ -337,7 +342,10 @@ function SenderField({
         label={t("campaignSender")}
         value={value}
         choices={[
-          { value: SENDER_AUTHOR, label: t("senderAuthor") },
+          {
+            value: SENDER_AUTHOR,
+            label: t(savesAsYou ? "senderAuthorYou" : "senderAuthor"),
+          },
           { value: SENDER_TEAM, label: t("outboundTeam") },
           ...members.map((one) => ({ value: one.id, label: one.name })),
           // An email from code that names no member here, or none yet: kept as it is.
@@ -480,6 +488,7 @@ export function MessageFields({
   message,
   trigger,
   members,
+  savesAsYou,
   language,
   onLanguage,
   onChange,
@@ -487,6 +496,7 @@ export function MessageFields({
   message: CampaignMessage;
   trigger: CampaignTrigger["type"];
   members: Member[];
+  savesAsYou: boolean;
   /** The language on show, which the preview shows too. */
   language: Language;
   onLanguage(language: Language): void;
@@ -500,10 +510,14 @@ export function MessageFields({
         <SenderField
           sender={message.sender}
           members={members}
+          savesAsYou={savesAsYou}
           onChange={(sender) => onChange(withPart(message, "sender", sender))}
         />
         <LanguageTabs message={message} language={shown} onLanguage={onLanguage} />
       </div>
+      {message.translations !== undefined && (
+        <p className="hint composer-hint">{t("campaignLanguagesHelp")}</p>
+      )}
       {shown === "default" ? (
         <BodyField
           body={message.body}

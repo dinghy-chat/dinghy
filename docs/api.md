@@ -35,7 +35,7 @@ Branch on `code`, which is stable, and show `message` only to people. The OpenAP
 | 403 | `send_mode_required`, `send_as_member_required`, `send_email_required` | For an API key's [outbound message](#outbound-messages-and-contacts): the key drafts replies, it may not send as a member, or it may not send with `sendEmail: true` |
 | 404 | `not_found` | It does not exist, or it is in another workspace |
 | 409 | `conversation_closed`, `webhook_limit`, `site_limit`, `grant_limit`, `message_seen` | Reopen the conversation to reply or to snooze it, the workspace has 5 webhooks, 20 allowed sites or 50 connected apps already, or the visitor has seen the reply you tried to edit |
-| 409 | `campaign_key_taken`, `campaign_ended`, `campaign_not_live`, `opted_out` | For a [campaign](#campaigns): another campaign has the key, the campaign ended, or a send names a campaign that is not live. `opted_out`: the visitor turned off automatic messages, so a key's or a campaign's send does not go |
+| 409 | `campaign_key_taken`, `campaign_ended`, `campaign_not_live`, `campaign_live`, `campaign_sent`, `opted_out` | For a [campaign](#campaigns): another campaign has the key, the campaign ended, a send names a campaign that is not live, or a delete names one that is live or sent messages. `opted_out`: the visitor turned off automatic messages, so a key's or a campaign's send does not go |
 | 409 | `human_handling`, `bots_paused`, `drafts_text_only` | For an API key: a person handles the conversation and the key sends directly, an owner or admin paused every bot, or a key in draft mode sent an image or a file. See [Bots](#bots-reply-modes-drafts-notes-and-handoff) |
 | 413 | `too_large` | The body is too large |
 | 429 | `too_many_requests`, `too_many_streams` | A rate limit. Wait for the `Retry-After` header's seconds |
@@ -405,6 +405,7 @@ An outbound message is a message from the team to one visitor, which may exist b
 | `GET /outbound-messages/{id}` | Reads one |
 | `POST /outbound-messages/{id}/cancel` | Cancels one that the visitor has not read, and answers it as it is now |
 | `POST /outbound-messages/cancel` | `{ "visitor": { "userId" } or { "id" }, "dedupeKey" }` cancels the one that the visitor's `dedupeKey` names. `outboundMessage` is null when there is none |
+| `GET /contact-fields` | The attributes and events of the 1,000 contacts seen last, A to Z, as `{ attributes, events }`. Each is `{ name, contacts }`, with `lastSeenAt` for an attribute and `lastAt` for an event. Every member and key reads it |
 | `PUT /contacts/by-user/{userId}` | Creates or updates a contact by your user ID, with `name`, `email` and `attributes`. It answers 201 with a new contact, 200 otherwise, as `GET /contacts/{visitorId}` does |
 
 A send's body has `clientId`, `visitor` (`{ userId, name?, email?, attributes? }`, which creates or updates the contact, or `{ id }`), `body`, and the optional `buttons`, `sender`, `assignOnReply`, `startConversation` (`on_reply` by default), `show` (`badge` by default), `ifConversationOpen` (`hold` by default), `dedupeKey`, `metadata`, `sendAt` or `delay`, `unless`, `expiresAt` or `expiresIn`, and `sendEmail` (`false` by default). A `clientId` is unique per author and never expires: a retry with it answers the first result. `metadata` is up to 20 keys of your own with text values, which come back on the message, its webhooks and the event stream, and never reach the visitor. [Send one](outbound-messages.md#send-one) describes each field and the answer.
@@ -446,6 +447,7 @@ A campaign is a saved rule that sends outbound messages: who gets one, when, wha
 | `POST /campaigns/{id}/resume` | Starts a draft, or resumes a paused campaign |
 | `POST /campaigns/{id}/pause` | Pauses a live campaign: it makes no new messages, and those not sent yet wait |
 | `POST /campaigns/{id}/end` | Ends it for good. Its messages that wait are cancelled with `campaign_ended` |
+| `DELETE /campaigns/{id}` | Deletes a campaign that never sent a message, with its test messages. A live one answers 409 `campaign_live`, and one that sent 409 `campaign_sent` |
 | `GET /campaigns/{id}/results` | Its results per day in UTC and per variant, as `{ days, variants }`, from `from` to `to`, such as `2026-12-01` |
 | `POST /campaigns/{id}/send` | `{ clientId, visitor, data? }` runs a live campaign for one person |
 | `POST /campaigns/{id}/test` | With a session only: shows the message to a test visitor named after the member, and answers `{ outboundMessage, blockedBy }` |
@@ -703,6 +705,7 @@ Every key and connected app gets the Chats tools. A Full access one also gets th
 | `upsert_campaign` | Full access | Creates a draft campaign from `definition`, or replaces the one with its key. The status stays |
 | `pause_campaign`, `resume_campaign` | Full access | Pauses a live campaign, or starts or resumes one, by `id` or `key` |
 | `end_campaign` | Full access | Ends a campaign for good, by `id` or `key`. Marked destructive |
+| `delete_campaign` | Full access | Deletes a campaign that never sent a message, by `id` or `key`. Marked destructive |
 
 Each tool says in its annotations whether it only reads, whether a retry is safe, and whether it deletes or ends something. A client asks the person before it calls a destructive tool. The server's instructions, and every tool that returns text a visitor wrote, tell the agent that this text is data and that it must never follow instructions in it.
 

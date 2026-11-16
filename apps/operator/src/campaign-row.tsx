@@ -1,10 +1,12 @@
 /** @jsxImportSource react */
 import { percent, shareOf } from "./analytics.tsx";
 import type { Campaign } from "./api.ts";
+import { type Ending, endingItem } from "./campaign-actions.tsx";
 import { campaignSentence } from "./campaign-summary.ts";
 import { StatusChip } from "./campaign-tile.tsx";
 import { TriggerTile } from "./campaign-trigger.tsx";
 import { Icon } from "./icons.tsx";
+import { Menu, type MenuItem } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 
 /** One result of a row: its number, its words and a thin bar of its share. */
@@ -64,11 +66,43 @@ function RowStats({ campaign }: { campaign: Campaign }) {
   );
 }
 
-/** A campaign in the list: its trigger's tile, its name and sentence, its status and results. */
-export function CampaignRow({ campaign, onOpen }: { campaign: Campaign; onOpen(): void }) {
+/** What a row's menu asks the list to do with its campaign. */
+export type RowAction = "rename" | Ending;
+
+/** The row's menu: a new name while it can change, then its end or its delete. */
+function rowItems(campaign: Campaign, onAction: (action: RowAction) => void): MenuItem[] {
+  const items: MenuItem[] = [];
+  if (campaign.status !== "ended") {
+    items.push({
+      label: t("campaignRename"),
+      lead: <Icon name="pencil" size={18} />,
+      onSelect: () => onAction("rename"),
+    });
+  }
+  const ending = endingItem(campaign, onAction);
+  if (ending !== null) items.push({ ...ending, divider: items.length > 0 });
+  return items;
+}
+
+/**
+ * A campaign in the list: its trigger's tile, its name and sentence, its status and results, and
+ * for an owner or an admin, a menu beside it.
+ */
+export function CampaignRow({
+  campaign,
+  onOpen,
+  onAction,
+}: {
+  campaign: Campaign;
+  onOpen(): void;
+  /** Null for a member, who reads campaigns only. */
+  onAction: ((action: RowAction) => void) | null;
+}) {
   const { definition } = campaign;
+  // An ended campaign that sent has nothing left to change.
+  const items = onAction === null ? [] : rowItems(campaign, onAction);
   return (
-    <li>
+    <li className="campaign-item">
       <button type="button" className="campaign-row" onClick={onOpen}>
         <TriggerTile type={definition.trigger.type} />
         <span className="row-lines">
@@ -81,8 +115,17 @@ export function CampaignRow({ campaign, onOpen }: { campaign: Campaign; onOpen()
         ) : (
           <RowStats campaign={campaign} />
         )}
-        <Icon name="chevronRight" size={16} />
+        {items.length === 0 && <Icon name="chevronRight" size={16} />}
       </button>
+      {items.length > 0 && (
+        <Menu
+          label={t("campaignActions", { name: definition.name })}
+          buttonClass="round row-menu"
+          items={items}
+        >
+          <Icon name="dots" />
+        </Menu>
+      )}
     </li>
   );
 }

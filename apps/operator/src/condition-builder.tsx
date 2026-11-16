@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import { useState } from "react";
-import type { Condition } from "./api.ts";
+import type { Condition, WorkspaceApi } from "./api.ts";
 import {
   conditionOf,
   FIELD_CHOICES,
@@ -22,6 +22,7 @@ import {
 import { replaceAt } from "./campaign-draft.ts";
 import { FIELD_TEXT, opText } from "./campaign-summary.ts";
 import { Icon } from "./icons.tsx";
+import { useLoad } from "./load.ts";
 import { Select } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 
@@ -127,6 +128,32 @@ function ValueInput({ rule, onChange }: { rule: RuleDraft; onChange(text: string
   );
 }
 
+/** The IDs of the lists of names that `NameLists` suggests as a rule's key is typed. */
+const ATTRIBUTE_NAMES = "attribute-names";
+export const EVENT_NAMES = "event-names";
+
+/**
+ * The attribute keys and event names of recent contacts, as lists a key field suggests from. A new
+ * name can still be typed, for an attribute or an event no contact has yet.
+ */
+export function NameLists({ api }: { api: WorkspaceApi }) {
+  const fields = useLoad(() => api.contactFields(), [api]).data;
+  return (
+    <>
+      <datalist id={ATTRIBUTE_NAMES}>
+        {fields?.attributes.map(({ name }) => (
+          <option key={name} value={name} />
+        ))}
+      </datalist>
+      <datalist id={EVENT_NAMES}>
+        {fields?.events.map(({ name }) => (
+          <option key={name} value={name} />
+        ))}
+      </datalist>
+    </>
+  );
+}
+
 function RuleRow({
   rule,
   fields,
@@ -148,6 +175,7 @@ function RuleRow({
       />
       {takesKey(rule.field) && (
         <input
+          list={rule.field === "attribute" ? ATTRIBUTE_NAMES : EVENT_NAMES}
           aria-label={t(
             rule.field === "attribute" ? "conditionAttributeKey" : "conditionEventName",
           )}

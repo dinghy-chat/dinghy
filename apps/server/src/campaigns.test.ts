@@ -843,6 +843,52 @@ describe("Send a test to me", () => {
   });
 });
 
+describe("a delete", () => {
+  test("removes a campaign that sent only tests, and keeps one that sent for its results", async () => {
+    const remove = (key: string, token = admin.token) =>
+      withKey(app, token, "DELETE", inSpace(`/campaigns/by-key/${key}`));
+    const trial = await live(keyOf("trial"), {}, false);
+    await asOperator(app, boss.cookie, "POST", inSpace(`/campaigns/${trial.id}/test`));
+    const deleted = await asOperator(app, boss.cookie, "DELETE", inSpace(`/campaigns/${trial.id}`));
+    expect(deleted.status).toBe(200);
+    expect(await campaignMessages(trial.id)).toEqual([]);
+    const gone = await withKey(app, admin.token, "GET", inSpace(`/campaigns/${trial.id}`));
+    expect(gone.status).toBe(404);
+
+    const key = keyOf("sent");
+    await live(key);
+    expect((await remove(key, server.token)).status).toBe(403);
+    expect((await json(await remove(key))).error?.code).toBe("campaign_live");
+    expect((await sendCampaign(key, { visitor: { userId: userId() } })).status).toBe(201);
+    await withKey(app, admin.token, "POST", inSpace(`/campaigns/by-key/${key}/end`));
+    expect((await json(await remove(key))).error?.code).toBe("campaign_sent");
+
+    const draft = await live(keyOf("mcp-draft"), {}, false);
+    const deletedByTool = await callTool(app, admin.token, "delete_campaign", { id: draft.id });
+    expect(deletedByTool.isError).toBeFalsy();
+    expect(await owner.select().from(campaign).where(eq(campaign.id, draft.id))).toEqual([]);
+  });
+});
+
+describe("the contact fields", () => {
+  test("list the attributes and events of recent contacts, with how many have each", async () => {
+    const attribute = `plan_${randomUUID().slice(0, 8)}`;
+    const name = `export.${randomUUID().slice(0, 8)}`;
+    for (const user of [userId(), userId()]) {
+      await upsertContact(user, { attributes: { [attribute]: "pro" } });
+      await withKey(app, server.token, "POST", inSpace("/track"), {
+        visitor: { userId: user },
+        name,
+      });
+    }
+    const response = await withKey(app, server.token, "GET", inSpace("/contact-fields"));
+    type Named = { name: string; contacts: number };
+    const fields = await json<{ attributes: Named[]; events: Named[] }>(response);
+    expect(fields.attributes.find((one) => one.name === attribute)?.contacts).toBe(2);
+    expect(fields.events.find((one) => one.name === name)?.contacts).toBe(2);
+  });
+});
+
 describe("a page campaign", () => {
   /** A widget request, with a visitor's token or none. */
   const widget = async (path: string, body: unknown, token?: string) => {

@@ -30,6 +30,7 @@ import {
   MEMBER_ERRORS,
   MEMBER_WRITE_ERRORS,
   NOT_FOUND,
+  okContent,
   ROLE_WRITE_ERRORS,
   zodFailure,
 } from "./errors.ts";
@@ -203,6 +204,27 @@ const patchRoutes = refPaths("").map(({ path, params }) =>
       ...ROLE_WRITE_ERRORS,
       403: errorAnswer(`forbidden: this role or key may not. ${AUTHOR_TEXT}`),
       409: errorAnswer(REFUSED_TEXT),
+    },
+  }),
+);
+
+const deleteRoutes = refPaths("").map(({ path, params }) =>
+  createRoute({
+    method: "delete",
+    path,
+    security: SESSION_OR_SETUP_KEY,
+    summary:
+      "Delete a campaign that never sent a message, such as a draft. Owners, admins and Full access keys only",
+    description:
+      "Test messages do not count. A campaign that sent keeps its results, so it can only end.",
+    request: { params },
+    responses: {
+      ...KEY_LIMITED,
+      200: { description: "Deleted", content: okContent },
+      ...ROLE_WRITE_ERRORS,
+      409: errorAnswer(
+        "campaign_live: pause or end the campaign first. campaign_sent: the campaign sent messages",
+      ),
     },
   }),
 );
@@ -385,6 +407,16 @@ export function registerCampaignRoutes(
       );
       if (typeof outcome === "string" || outcome instanceof z.ZodError) return refused(c, outcome);
       return c.json({ campaign: outcome.view }, 200);
+    });
+  }
+
+  for (const route of deleteRoutes) {
+    app.openapi(route, async (c) => {
+      if (!mayChange(c)) return c.json(FORBIDDEN, 403);
+      const ref = parseRef(c.req.valid("param").ref);
+      const refusal = await campaigns.remove(c.get("memberWorkspaceId"), ref);
+      if (refusal !== null) return refused(c, refusal);
+      return c.json({ ok: true as const }, 200);
     });
   }
 

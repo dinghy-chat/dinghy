@@ -52,7 +52,7 @@ test("the list's sentence says who, when and how it shows, in plain words", () =
       audience: { field: "attributes.plan", op: "in", value: ["trial", "pro"] },
       trigger: { type: "match", delay: "1h" },
     }),
-  ).toBe("People whose plan is trial or pro, 1 hour after they match · as a card");
+  ).toBe("People whose plan is trial or pro, 1 hour after they qualify · as a card");
   expect(
     sentence({
       audience: { field: "events.export.finished.count", op: "gte", value: 3 },
@@ -82,7 +82,7 @@ test("the list's sentence says who, when and how it shows, in plain words", () =
       trigger: { type: "page", url: "/pricing", seconds: 20 },
       presentation: { ...newDefinition().presentation, show: "badge" },
     }),
-  ).toBe("Everyone, on /pricing for 20 seconds · as a dot on the launcher");
+  ).toBe("Everyone, on /pricing for 20 seconds · as a dot on the chat button");
 });
 
 test("the folded parts read as one line each", () => {

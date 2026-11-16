@@ -311,6 +311,12 @@ export interface LiveVisitor {
 
 export type ContactSort = "lastSeen" | "firstSeen";
 
+/** The attribute keys and event names of the contacts seen last, A to Z. */
+export interface ContactFields {
+  attributes: { name: string; contacts: number; lastSeenAt: string }[];
+  events: { name: string; contacts: number; lastAt: string }[];
+}
+
 /** A person with at least one conversation. */
 export interface Contact extends VisitorIdentity {
   /** The host site signed who this is, so the name and email are read-only. */
@@ -926,6 +932,17 @@ export function workspaceApi(workspaceId: string) {
       }),
     setCampaignStatus: (id: string, action: "pause" | "resume" | "end") =>
       post<{ campaign: Campaign }>(`${base}/campaigns/${id}/${action}`, {}),
+    /** Changes only the name, so a change saved meanwhile stays. */
+    renameCampaign: (id: string, name: string) =>
+      call<{ campaign: Campaign }>(`${base}/campaigns/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify({ name }),
+      }),
+    /** Deletes a campaign that never sent a message and is not live. */
+    deleteCampaign: (id: string) =>
+      call<{ ok: true }>(`${base}/campaigns/${id}`, { method: "DELETE" }),
+    /** The attributes and events of the contacts seen last, for Contacts and the campaign editor. */
+    contactFields: () => call<ContactFields>(`${base}/contact-fields`),
     campaignResults: (id: string) => call<CampaignResults>(`${base}/campaigns/${id}/results`),
     /** The saved message to a test visitor named after the member, and the rule that would hold it. */
     testCampaign: (id: string) =>

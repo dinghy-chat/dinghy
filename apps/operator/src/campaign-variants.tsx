@@ -18,7 +18,22 @@ type VariantKind = "campaign" | "own" | "control";
 
 const VARIANTS_MIN = 2;
 const VARIANT_KEYS = ["a", "b", "c", "d", "e"];
-const EVEN_WEIGHT = 50;
+/** The shares of every variant, in percent, add up to this. */
+const SHARES_TOTAL = 100;
+
+/** `count` shares as even as whole percents allow: 34, 33 and 33 for three. */
+function evenShares(count: number): number[] {
+  const share = Math.floor(SHARES_TOTAL / count);
+  return Array.from({ length: count }, (_, index) =>
+    index < SHARES_TOTAL - share * count ? share + 1 : share,
+  );
+}
+
+/** The variants, shared out evenly again after one is added or removed. */
+const evenly = (variants: Variant[]) => {
+  const shares = evenShares(variants.length);
+  return variants.map((variant, index) => ({ ...variant, weight: shares[index] ?? 0 }));
+};
 
 const VARIANT_KINDS: { value: VariantKind; label: TextId }[] = [
   { value: "campaign", label: "variantCampaign" },
@@ -44,6 +59,7 @@ function VariantRow({
   variant,
   definition,
   members,
+  savesAsYou,
   language,
   canRemove,
   canControl,
@@ -53,6 +69,7 @@ function VariantRow({
   variant: Variant;
   definition: CampaignDefinition;
   members: Member[];
+  savesAsYou: boolean;
   language: Language;
   canRemove: boolean;
   /** Only one variant may be the control group. */
@@ -76,15 +93,21 @@ function VariantRow({
           />
         </label>
         <label className="variant-field">
-          {t("variantWeight")}
-          <input
-            type="number"
-            min={VARIANT_WEIGHT_MIN}
-            max={VARIANT_WEIGHT_MAX}
-            required
-            value={variant.weight}
-            onChange={(event) => onChange({ ...variant, weight: Number(event.target.value) })}
-          />
+          {t("variantShare")}
+          <span className="percent-input">
+            <input
+              className="percent-box"
+              type="number"
+              min={VARIANT_WEIGHT_MIN}
+              max={VARIANT_WEIGHT_MAX}
+              required
+              value={variant.weight}
+              onChange={(event) => onChange({ ...variant, weight: Number(event.target.value) })}
+            />
+            <span className="percent-sign" aria-hidden="true">
+              %
+            </span>
+          </span>
         </label>
         <Select<VariantKind>
           label={t("variantKind")}
@@ -118,6 +141,7 @@ function VariantRow({
           message={own}
           trigger={definition.trigger.type}
           members={members}
+          savesAsYou={savesAsYou}
           language={language}
           onLanguage={onLanguage}
           onChange={(message) => onChange({ ...variant, message })}
@@ -128,10 +152,11 @@ function VariantRow({
 }
 
 /** Two even variants to start a test: the campaign's message, and a copy to change. */
-export const newVariants = (message: CampaignDefinition["message"]): Variant[] => [
-  { key: "a", weight: EVEN_WEIGHT },
-  { key: "b", weight: EVEN_WEIGHT, message },
-];
+export const newVariants = (message: CampaignDefinition["message"]): Variant[] =>
+  evenly([
+    { key: "a", weight: 0 },
+    { key: "b", weight: 0, message },
+  ]);
 
 /**
  * A/B variants by weight, each with the campaign's message or its own, and a control group, under
@@ -140,18 +165,23 @@ export const newVariants = (message: CampaignDefinition["message"]): Variant[] =
 export function VariantsFields({
   definition,
   members,
+  savesAsYou,
   language,
   onLanguage,
   onChange,
 }: {
   definition: CampaignDefinition;
   members: Member[];
+  savesAsYou: boolean;
   language: Language;
   onLanguage(language: Language): void;
   onChange(variants: Variant[] | undefined): void;
 }) {
   const variants = definition.variants ?? [];
   const hasControl = variants.some((one) => "control" in one);
+  const total = variants.reduce((sum, one) => sum + one.weight, 0);
+  // Weights from code may add up to anything, and each still gets its part of the total.
+  const sharesNote = total === SHARES_TOTAL ? "" : t("variantSharesTotal", { total });
   return (
     <div className="variants-test">
       <div className="variants-head">
@@ -169,26 +199,37 @@ export function VariantsFields({
             variant={variant}
             definition={definition}
             members={members}
+            savesAsYou={savesAsYou}
             language={language}
             canRemove={variants.length > VARIANTS_MIN}
             canControl={!hasControl || "control" in variant}
             onLanguage={onLanguage}
-            onChange={(next) => onChange(replaceAt(variants, index, next))}
+            onChange={(next) => {
+              const changed = replaceAt(variants, index, next);
+              onChange(next === null ? evenly(changed) : changed);
+            }}
           />
         ))}
       </ul>
+      {sharesNote !== "" && (
+        <p className="hint" role="status">
+          {sharesNote}
+        </p>
+      )}
       {variants.length < CAMPAIGN_VARIANTS_MAX && (
         <button
           type="button"
           className="text-button"
           onClick={() =>
-            onChange([
-              ...variants,
-              {
-                key: VARIANT_KEYS.find((key) => !variants.some((one) => one.key === key)) ?? "",
-                weight: EVEN_WEIGHT,
-              },
-            ])
+            onChange(
+              evenly([
+                ...variants,
+                {
+                  key: VARIANT_KEYS.find((key) => !variants.some((one) => one.key === key)) ?? "",
+                  weight: 0,
+                },
+              ]),
+            )
           }
         >
           {t("variantAdd")}

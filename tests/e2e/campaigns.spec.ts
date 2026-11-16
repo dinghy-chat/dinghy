@@ -68,11 +68,11 @@ test("an owner writes a campaign, starts it, tests it and reads its results", as
 
   // Who gets it: the attribute plan is pro, with the count of who matches now in the step's head.
   const who = page.getByRole("region", { name: "Who gets it" });
-  await expect(who.getByText("3 people now")).toBeVisible();
+  await expect(who.getByText("3 people match now")).toBeVisible();
   await who.getByRole("button", { name: "Add a rule" }).click();
   await who.getByPlaceholder("Attribute key").fill("plan");
   await who.getByLabel("Value", { exact: true }).fill("pro");
-  await expect(who.getByText("2 people now")).toBeVisible();
+  await expect(who.getByText("2 people match now")).toBeVisible();
   await expect(page.getByText("Would have reached 2 people in the last 7 days.")).toBeVisible();
 
   // When it goes: the customer's code, which shows the call to make.
@@ -88,14 +88,19 @@ test("an owner writes a campaign, starts it, tests it and reads its results", as
   await expect(preview(page).getByText("Welcome to Pro! Want a tour?")).toBeVisible();
   await expect(preview(page).getByRole("button", { name: "Yes please" })).toBeVisible();
 
+  // Going live asks first, with what the campaign does.
   await page.getByRole("button", { name: "Go live" }).click();
+  const goLive = page.getByRole("dialog", { name: "Go live with Pro welcome?" });
+  await expect(goLive).toContainText("People whose plan is pro, when your code sends it");
+  await goLive.getByRole("button", { name: "Go live" }).click();
   await expect(page.getByText("Campaign live.")).toBeVisible();
   await expect(page.locator(".campaign-title .chip")).toHaveText("Live");
   await expect(page.getByText(/^Saved/)).toBeVisible();
 
-  await page.getByRole("button", { name: "Send a test to me" }).click();
+  await page.getByRole("button", { name: "More actions" }).click();
+  await page.getByRole("menuitem", { name: "Send me a test" }).click();
   const test = page.getByRole("dialog", { name: "Test sent" });
-  await expect(test.getByText("Nothing would hold a real message now.")).toBeVisible();
+  await expect(test.getByText("Right now, nothing would hold back a real message.")).toBeVisible();
   await test.getByRole("button", { name: "Close" }).click();
 
   const sent = await api("POST", "/campaigns/by-key/pro-welcome/send", {
@@ -123,29 +128,31 @@ test("an owner writes a campaign, starts it, tests it and reads its results", as
   // The row says who, when and how in one sentence, and the results so far.
   await page.getByRole("button", { name: "Campaigns", exact: true }).first().click();
   await expect(page.getByText("1 live · 1 sent in the last 7 days")).toBeVisible();
-  const row = page.getByRole("button", { name: /Pro welcome/ });
+  const row = page.getByRole("button", { name: /^Pro welcome/ });
   await expect(row.locator(".chip")).toHaveText("Live");
   await expect(row).toContainText("People whose plan is pro, when your code sends it · as a card");
   await expect(row.locator(".row-stat").first()).toContainText("1sent");
 
-  // Pause all campaigns, with who paused them, and the resume.
-  await page.getByRole("button", { name: "Pause all" }).click();
+  // Pause all campaigns from the header's menu, with who paused them, and the resume.
+  const header = page.locator(".page-actions");
+  await header.getByRole("button", { name: "More actions" }).click();
+  await page.getByRole("menuitem", { name: "Pause all campaigns" }).click();
   const banner = page.getByRole("status").filter({ hasText: "All campaigns are paused." });
   await expect(banner).toContainText("julien@shipmail.example paused them at");
-  await banner.getByRole("button", { name: "Resume all" }).click();
+  await banner.getByRole("button", { name: "Resume all campaigns" }).click();
   await expect(banner).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Pause all" })).toBeVisible();
 
-  // The hours between two messages sit in the header's menu.
-  await page.getByRole("button", { name: "More actions" }).click();
-  await page.getByRole("menuitem", { name: "Hours between campaign messages" }).click();
-  const gap = page.getByRole("dialog", { name: "Hours between campaign messages" });
+  // The time between two messages sits in the same menu.
+  await header.getByRole("button", { name: "More actions" }).click();
+  await expect(page.getByRole("menuitem", { name: "Pause all campaigns" })).toBeVisible();
+  await page.getByRole("menuitem", { name: "Time between messages" }).click();
+  const gap = page.getByRole("dialog", { name: "Time between messages" });
   await gap.getByLabel("Hours").fill("4");
   await gap.getByRole("button", { name: "Save" }).click();
   await expect(gap).toHaveCount(0);
   await expect(page.getByText("Saved.")).toBeVisible();
-  await page.getByRole("button", { name: "More actions" }).click();
-  await page.getByRole("menuitem", { name: "Hours between campaign messages" }).click();
+  await header.getByRole("button", { name: "More actions" }).click();
+  await page.getByRole("menuitem", { name: "Time between messages" }).click();
   await expect(gap.getByLabel("Hours")).toHaveValue("4");
 });
 
@@ -160,11 +167,11 @@ test("a member reads campaigns and cannot change them", async ({ page }) => {
   expect(saved.status).toBe(201);
   await openCampaigns(page, "ben@shipmail.example");
   await expect(page.getByRole("button", { name: "New campaign" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Pause all" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Start from a template" })).toHaveCount(0);
   await page.getByRole("button", { name: "More actions" }).click();
-  await page.getByRole("menuitem", { name: "Hours between campaign messages" }).click();
-  const gap = page.getByRole("dialog", { name: "Hours between campaign messages" });
+  await expect(page.getByRole("menuitem", { name: "Pause all campaigns" })).toHaveCount(0);
+  await page.getByRole("menuitem", { name: "Time between messages" }).click();
+  const gap = page.getByRole("dialog", { name: "Time between messages" });
   await expect(gap.getByLabel("Hours")).toBeDisabled();
   await expect(gap.getByRole("button", { name: "Save" })).toBeDisabled();
   await gap.getByRole("button", { name: "Cancel" }).click();
@@ -172,7 +179,7 @@ test("a member reads campaigns and cannot change them", async ({ page }) => {
   const row = page.getByRole("button", { name: /Trial help/ });
   await expect(row).toContainText("Not live yet");
   await row.click();
-  await expect(page.getByText("Only owners and admins can change campaigns.")).toBeVisible();
+  await expect(page.getByText("Only owners and admins can edit campaigns.")).toBeVisible();
   await expect(page.getByLabel("Name", { exact: true })).toBeDisabled();
   const text = page.getByLabel("Text", { exact: true });
   await expect(text).toHaveText("Your export finished. Need help with it?");
@@ -182,10 +189,11 @@ test("a member reads campaigns and cannot change them", async ({ page }) => {
   await page.getByRole("button", { name: "Edit Rules" }).click();
   await expect(page.getByLabel("Ends at")).toBeDisabled();
   await expect(page.getByRole("button", { name: "Go live" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Save as draft" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Save draft" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Translation" })).toHaveCount(0);
   await page.getByRole("button", { name: "More actions" }).click();
   await expect(page.getByRole("menuitem", { name: "End campaign" })).toHaveCount(0);
+  await expect(page.getByRole("menuitem", { name: "Delete campaign" })).toHaveCount(0);
   await page.getByRole("menuitem", { name: "Copy as code" }).click();
   await expect(page.getByRole("dialog").getByText('"key": "trial-help"')).toBeVisible();
 });
@@ -195,7 +203,7 @@ test("the editor's steps: option cards, value tokens, variables and folded parts
 }) => {
   await openCampaigns(page, "julien@shipmail.example");
   await page.getByRole("button", { name: "New campaign" }).click();
-  for (const step of ["Who gets it", "When it goes", "The message", "How it shows"]) {
+  for (const step of ["Who gets it", "When it sends", "The message", "How it looks"]) {
     await expect(page.getByRole("heading", { name: step })).toBeVisible();
   }
 
@@ -217,11 +225,11 @@ test("the editor's steps: option cards, value tokens, variables and folded parts
 
   // Each trigger is a card with its help, and its own settings go under the cards.
   const fromCode = page.getByRole("radio", { name: "From code", exact: true });
-  await expect(fromCode).toHaveAccessibleDescription("One API call");
-  await expect(page.getByRole("radio", { name: "They match" })).toBeChecked();
+  await expect(fromCode).toHaveAccessibleDescription("Your code sends it");
+  await expect(page.getByRole("radio", { name: "They qualify" })).toBeChecked();
   await page.getByRole("button", { name: /^Wait before sending/ }).click();
   await page.getByRole("option", { name: "1 hour", exact: true }).click();
-  await expect(page.getByText("after they match")).toBeVisible();
+  await expect(page.getByText("after they qualify")).toBeVisible();
 
   // The variables go in at the caret, and the preview fills them with a sample contact.
   await page.getByLabel("Name", { exact: true }).fill("Variables");
@@ -232,7 +240,7 @@ test("the editor's steps: option cards, value tokens, variables and folded parts
   await expect(text).toHaveText("Hi first name");
   await expect(text.locator(".variable-token")).toHaveAttribute("title", "{{ firstName }}");
   await expect(preview(page).getByText("Hi Alex")).toBeVisible();
-  await expect(page.getByText("As a sample contact named Alex")).toBeVisible();
+  await expect(page.getByText("Shown to a sample contact, Alex")).toBeVisible();
   await page.getByRole("button", { name: "Other field" }).click();
   await page.getByRole("menuitem", { name: "email" }).click();
   await expect(text.locator(".variable-token")).toHaveText(["first name", "email"]);
@@ -270,7 +278,7 @@ test("the editor's steps: option cards, value tokens, variables and folded parts
   await text.fill("Hi {{ nickname }}");
   await expect(page.getByText("There is no variable nickname for this trigger.")).toBeVisible();
   await expect(text).toHaveAttribute("aria-invalid", "true");
-  await page.getByRole("button", { name: "Save as draft" }).click();
+  await page.getByRole("button", { name: "Save draft" }).click();
   await expect(page.getByText("Not saved yet")).toBeVisible();
   await text.fill("Hi {{ firstName }}");
 
@@ -283,7 +291,7 @@ test("the editor's steps: option cards, value tokens, variables and folded parts
   await page.getByRole("button", { name: "Translation" }).click();
   await page.getByRole("menuitem", { name: "French" }).click();
   await expect(page.getByRole("radio", { name: "French" }).first()).toBeChecked();
-  await page.getByRole("button", { name: "A/B variant" }).click();
+  await page.getByRole("button", { name: "A/B test" }).click();
   await expect(page.getByRole("heading", { name: "A/B test" })).toBeVisible();
   // A variant's own message adds its own languages, and the message's head offers a language
   // while any message lacks it.
@@ -298,7 +306,7 @@ test("the editor's steps: option cards, value tokens, variables and folded parts
   await page.getByRole("button", { name: "Translation", exact: true }).click();
   await expect(page.getByRole("menuitem")).toHaveText(["Spanish"]);
   await page.keyboard.press("Escape");
-  await page.getByRole("button", { name: "Stop the test" }).click();
+  await page.getByRole("button", { name: "Remove test" }).click();
   await expect(page.getByRole("heading", { name: "A/B test" })).toHaveCount(0);
 
   // Rules, the goal and delivery are folded to one line, and open in place.
@@ -324,9 +332,9 @@ test("a template makes a draft with a free key, and opens it", async ({ page }) 
 
   await page.getByRole("button", { name: "Campaigns", exact: true }).first().click();
   await expect(page.getByRole("button", { name: /^Welcome new users/ }).first()).toContainText(
-    "People who signed in, as they start to match · as a card",
+    "People who signed in, as soon as they qualify · as a card",
   );
-  await page.getByRole("button", { name: /Welcome new users.*Say hello/ }).click();
+  await page.getByRole("button", { name: /Welcome new users.*Say hi/ }).click();
   await expect(page.locator(".campaign-head code")).toHaveText("welcome-2");
 });
 
@@ -355,7 +363,12 @@ test("a pause keeps the changes not saved yet", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Save", exact: true })).toBeEnabled();
 });
 
-test("Enter in a field saves, and never starts a draft or resumes a pause", async ({ page }) => {
+/** The name the server has for a campaign. */
+const savedName = async (key: string) =>
+  ((await api("GET", `/campaigns/by-key/${key}`)).json.campaign as { definition: { name: string } })
+    .definition.name;
+
+test("a draft saves itself, and Enter never starts it or resumes a pause", async ({ page }) => {
   const definition = {
     name: "Enter stays",
     trigger: { type: "api" },
@@ -371,16 +384,12 @@ test("Enter in a field saves, and never starts a draft or resumes a pause", asyn
   await page.getByRole("button", { name: /^Enter stays/ }).click();
   const name = page.getByLabel("Name", { exact: true });
   const chip = page.locator(".campaign-title .chip");
-  // Nothing to save: Save is there but off, so Enter does nothing.
-  await expect(page.getByRole("button", { name: "Save as draft" })).toBeDisabled();
-  await name.press("Enter");
-  await name.press("Enter");
-  await expect(chip).toHaveText("Draft");
-  // A change: Enter saves it, and the campaign stays a draft.
+  // A saved draft has no Save: a change saves itself, and Enter never starts it.
+  await expect(page.getByRole("button", { name: "Save", exact: true })).toHaveCount(0);
   await name.fill("Enter stays here");
   await name.press("Enter");
-  await expect(page.getByText("Campaign saved.")).toBeVisible();
-  await name.press("Enter");
+  await expect.poll(() => savedName("enter-draft")).toBe("Enter stays here");
+  await expect(page.getByText(/^Saved/)).toBeVisible();
   await expect(chip).toHaveText("Draft");
 
   expect((await api("POST", "/campaigns/by-key/enter-draft/resume")).status).toBe(200);
@@ -398,12 +407,11 @@ test("a campaign keeps its key when it is renamed after its first save", async (
   const name = page.getByLabel("Name", { exact: true });
   await name.fill("Keeps its key");
   await page.getByLabel("Text", { exact: true }).fill("Hello");
-  await page.getByRole("button", { name: "Save as draft" }).click();
+  await page.getByRole("button", { name: "Save draft" }).click();
   await expect(page.locator(".campaign-head code")).toHaveText("keeps-its-key");
   await name.fill("Renamed after saving");
   await expect(page.locator(".campaign-head code")).toHaveText("keeps-its-key");
-  await page.getByRole("button", { name: "Save as draft" }).click();
-  await expect(page.getByText("Campaign saved.")).toBeVisible();
+  await expect.poll(() => savedName("keeps-its-key")).toBe("Renamed after saving");
   const list = await api("GET", "/campaigns");
   const keys = (list.json.campaigns as { definition: { key: string } }[]).map(
     (one) => one.definition.key,
@@ -467,4 +475,71 @@ test("the list: tabs count only what they hold, and a goal's bar counts the cont
     .evaluate((bar) => Number.parseFloat((bar as HTMLElement).style.width));
   expect(width).toBeCloseTo((goalReached / entered) * 100);
   expect(width).toBeLessThanOrEqual(100);
+});
+
+test("a row's menu renames a campaign, deletes one that never sent and ends one that did", async ({
+  page,
+}) => {
+  for (const key of ["row-trial", "row-sent"]) {
+    const saved = await api("PUT", `/campaigns/by-key/${key}`, {
+      key,
+      name: key === "row-trial" ? "Row trial" : "Row sent",
+      trigger: { type: "api" },
+      message: { body: "Hello" },
+      presentation: { startConversation: "on_reply", show: "preview", ifConversationOpen: "skip" },
+    });
+    expect(saved.status).toBe(201);
+  }
+  expect((await api("POST", "/campaigns/by-key/row-sent/resume")).status).toBe(200);
+  const sent = await api("POST", "/campaigns/by-key/row-sent/send", {
+    clientId: randomUUID(),
+    visitor: { userId: "row-sent-1" },
+  });
+  expect(sent.status).toBe(201);
+  await openCampaigns(page, "julien@shipmail.example");
+
+  await page.getByRole("button", { name: "Actions for Row trial" }).click();
+  await page.getByRole("menuitem", { name: "Rename" }).click();
+  const rename = page.getByRole("dialog", { name: "Rename campaign" });
+  await rename.getByLabel("Name").fill("Row renamed");
+  await rename.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByText("Campaign renamed.")).toBeVisible();
+
+  // One that sent keeps its results, so it ends and has no delete.
+  await page.getByRole("button", { name: "Actions for Row sent" }).click();
+  await expect(page.getByRole("menuitem", { name: "End campaign" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Delete campaign" })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+
+  await page.getByRole("button", { name: "Actions for Row renamed" }).click();
+  await page.getByRole("menuitem", { name: "Delete campaign" }).click();
+  await page
+    .getByRole("alertdialog", { name: "Delete Row renamed?" })
+    .getByRole("button", { name: "Delete campaign" })
+    .click();
+  await expect(page.getByText("Campaign deleted.")).toBeVisible();
+  await expect(page.getByRole("button", { name: /^Row renamed/ })).toHaveCount(0);
+});
+
+test("Contacts lists the attributes and events, with the campaigns that read them", async ({
+  page,
+}) => {
+  const saved = await api("PUT", "/campaigns/by-key/plan-reader", {
+    key: "plan-reader",
+    name: "Plan reader",
+    audience: { field: "attributes.plan", op: "eq", value: "pro" },
+    trigger: { type: "event", name: "signed.up" },
+    message: { body: "Hello" },
+    presentation: { startConversation: "on_reply", show: "preview", ifConversationOpen: "skip" },
+  });
+  expect(saved.status).toBe(201);
+  await openInbox(page, server, "julien@shipmail.example");
+  await page.getByRole("button", { name: "Contacts", exact: true }).click();
+  await page.getByRole("radio", { name: "Attributes and events" }).check();
+  const plan = page.getByRole("region", { name: "Attributes" }).getByRole("row", { name: /^plan/ });
+  await expect(plan).toContainText("Plan reader");
+  const signedUp = page
+    .getByRole("region", { name: "Events" })
+    .getByRole("row", { name: /^signed\.up/ });
+  await expect(signedUp).toContainText("Plan reader");
 });

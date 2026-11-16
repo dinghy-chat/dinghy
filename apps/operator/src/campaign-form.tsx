@@ -7,7 +7,7 @@ import { Fold, Step } from "./campaign-steps.tsx";
 import { deliveryWords, goalWords, peopleWords, rulesWords } from "./campaign-summary.ts";
 import { TriggerFields } from "./campaign-trigger.tsx";
 import { newVariants, VariantsFields } from "./campaign-variants.tsx";
-import { ConditionBuilder } from "./condition-builder.tsx";
+import { ConditionBuilder, NameLists } from "./condition-builder.tsx";
 import { Icon } from "./icons.tsx";
 import { type Loaded, useLoad, useSettled } from "./load.ts";
 import { t } from "./text.ts";
@@ -89,6 +89,7 @@ export function CampaignSteps({
   api,
   definition,
   members,
+  savesAsYou,
   language,
   editable,
   onLanguage,
@@ -97,6 +98,8 @@ export function CampaignSteps({
   api: WorkspaceApi;
   definition: CampaignDefinition;
   members: Member[];
+  /** Whether a save here makes the viewer the sender "whoever saves it". */
+  savesAsYou: boolean;
   language: Language;
   editable: boolean;
   onLanguage(language: Language): void;
@@ -109,6 +112,7 @@ export function CampaignSteps({
   const isPage = definition.trigger.type === "page";
   return (
     <div className="campaign-steps">
+      <NameLists api={api} />
       <Step
         number={1}
         title={t("stepWho")}
@@ -143,6 +147,7 @@ export function CampaignSteps({
           message={definition.message}
           trigger={definition.trigger.type}
           members={members}
+          savesAsYou={savesAsYou}
           language={language}
           onLanguage={onLanguage}
           onChange={(message) => change("message", message)}
@@ -151,6 +156,7 @@ export function CampaignSteps({
           <VariantsFields
             definition={definition}
             members={members}
+            savesAsYou={savesAsYou}
             language={language}
             onLanguage={onLanguage}
             onChange={(variants) => change("variants", variants)}

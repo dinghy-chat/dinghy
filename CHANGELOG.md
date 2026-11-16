@@ -4,6 +4,26 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- Delete a campaign that never sent a message, such as a draft or a trial run, from its ⋯ menu or its row in the list. Test messages do not count. One that sent keeps its results, so it can only end. API: `DELETE /campaigns/{id}`, `dinghy.campaigns.delete()` and the MCP tool `delete_campaign`.
+- Each campaign in the list has a menu to rename it, and to delete it while it never sent a message or end it once it did.
+- A saved draft campaign saves itself as you type.
+- **Contacts > Attributes and events** lists the attributes and events your app sends about the 1,000 contacts seen last, with how many have each, when it was last seen and the campaigns that read it. The campaign editor suggests the same names. API: `GET /contact-fields`.
+
+### Changed
+
+- **Go live** asks first, with what the campaign will do.
+- The campaign editor's buttons are **Save** and **Go live**, with **Send me a test**, **Copy as code**, and **Delete campaign** or **End campaign** in the ⋯ menu. On the Campaigns page, **Pause all campaigns** moved to the ⋯ menu and shows only while a campaign is live.
+- A campaign's sender reads "Whoever saves it (now you)" in place of "The person who saves it", and its A/B variants show their shares in percent.
+- The phone preview of a campaign shows the top of a phone, the name shows a pencil to rename it, and the message says which visitors get each translation.
+- Simpler words across the Campaigns page and the templates.
+- The landing page, the README, llms.txt and the operator guide cover campaigns, outbound messages, server events and the SDK.
+
+### Fixed
+
+- A campaign's delivery summary said it waits for an open conversation, when it waits for the open conversation to close.
+
 ## [0.37.0] - 2026-11-16
 
 ### Added

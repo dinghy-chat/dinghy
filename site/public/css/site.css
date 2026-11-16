@@ -1982,6 +1982,87 @@ main {
 }
 
 /* Visitors toy: the live map and list */
+/* Campaigns: a short list as the operator app shows it, each with its status and one result. */
+.campaign-window {
+  overflow: hidden;
+  border-radius: 16px 16px 0 0;
+  background: #fff;
+  box-shadow: 0 12px 32px rgb(11 34 57 / .14);
+}
+
+.campaign-head {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 12px 16px;
+  color: var(--navy);
+  font-size: 14px;
+}
+
+.campaign-head small {
+  color: var(--mute);
+  font-size: 12px;
+}
+
+.campaign-line {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto 64px;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 16px;
+  border-top: 1px solid var(--line);
+}
+
+.campaign-icon {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  color: var(--navy);
+}
+
+.campaign-name {
+  display: grid;
+  min-width: 0;
+}
+
+.campaign-name b {
+  color: var(--navy);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.campaign-name small,
+.campaign-stat small {
+  overflow: hidden;
+  color: var(--mute);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chip-live {
+  background: #dff5ea;
+  color: var(--green);
+}
+
+.campaign-stat {
+  display: grid;
+  justify-items: end;
+}
+
+.campaign-stat b {
+  color: var(--navy);
+  font-size: 14px;
+}
+
+/* The track call of "Messages from your code", in the terminal's colors. */
+.code-window {
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 12px 32px rgb(11 34 57 / .14);
+}
+
 .live-window {
   overflow: hidden;
   border-radius: 16px 16px 0 0;
@@ -2234,7 +2315,7 @@ main {
     height: auto;
   }
 
-  .agent-term {
+  .agent-window .agent-term {
     display: none;
   }
 
@@ -4161,5 +4242,16 @@ main:has(> .lost) {
 
   .air {
     opacity: .5;
+  }
+}
+
+@media (max-width: 560px) {
+  /* A phone keeps each campaign's name and status, and leaves out its result. */
+  .campaign-line {
+    grid-template-columns: 30px minmax(0, 1fr) auto;
+  }
+
+  .campaign-stat {
+    display: none;
   }
 }

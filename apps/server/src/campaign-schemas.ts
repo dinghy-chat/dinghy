@@ -385,6 +385,14 @@ export const CAMPAIGN_REFUSALS = {
     status: 409,
     body: failure("campaign_ended", "This campaign ended. Make a new one with another key."),
   },
+  live: {
+    status: 409,
+    body: failure("campaign_live", "This campaign is live. Pause or end it first."),
+  },
+  sent: {
+    status: 409,
+    body: failure("campaign_sent", "This campaign sent messages, so it keeps its results. End it."),
+  },
   send_as_member_required: SEND_REFUSALS.send_as_member_required,
   send_email_required: SEND_REFUSALS.send_email_required,
   send_mode_required: SEND_REFUSALS.send_mode_required,

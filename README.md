@@ -18,6 +18,8 @@ The installer asks a few questions, installs Docker if it is missing, gets an HT
 
 It has text, images and files in both directions, several operators, labels, saved replies, notes with mentions, bulk actions and keyboard shortcuts. It also has web push and email alerts, replies by email, business hours, a widget in English, French and Spanish, verified users, two-step sign-in, and export and import.
 
+It can also write first. Campaigns send a message by themselves to the people you pick, on a match, a schedule, an event from your server or time on a page, with A/B tests and results. Your server can send one message to one person too, with the API or [`@dinghy-chat/sdk`](https://www.npmjs.com/package/@dinghy-chat/sdk). [Campaigns](docs/campaigns.md) and [Outbound messages](docs/outbound-messages.md) have the details.
+
 An AI agent can install it on your site and answer chats through its MCP server, with OAuth in the browser, drafts that a person approves, and a handoff to your team. [Use Dinghy with AI agents](docs/agents.md) has the steps.
 
 One Hetzner CX23 ran the full install with 5,000 open streams in under 600 MB. [The measurements](docs/measurements.md) have the numbers and their limits.
@@ -39,6 +41,7 @@ The code is the same. A paid cloud plan is planned, and it is not open yet.
 - [Self-hosting](docs/self-hosting.md), including settings, backups, restore and upgrades
 - [Add the chat to your website](docs/add-to-your-site.md)
 - [Use the operator app](docs/operator-guide.md)
+- [Outbound messages](docs/outbound-messages.md) and [Campaigns](docs/campaigns.md)
 - [Use Dinghy with AI agents](docs/agents.md)
 - [API](docs/api.md)
 - [Troubleshooting](docs/troubleshooting.md)
