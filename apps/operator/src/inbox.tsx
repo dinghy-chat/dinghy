@@ -7,7 +7,9 @@ import { pauseBots } from "./bots.tsx";
 import { CampaignsPage } from "./campaigns.tsx";
 import { ContactsPage } from "./contacts.tsx";
 import { NO_DRAFT, useDrafts } from "./drafts.ts";
+import type { PaneLook } from "./empty-look.ts";
 import { GetStarted } from "./get-started.tsx";
+import { GullPane } from "./gull.tsx";
 import { InboxBanners } from "./inbox-banners.tsx";
 import { useInboxData } from "./inbox-data.ts";
 import {
@@ -18,9 +20,9 @@ import {
   sameFilter,
 } from "./inbox-filters.tsx";
 import { InboxList } from "./inbox-list.tsx";
+import { useLoad } from "./load.ts";
 import { leave, NAVIGATE_EVENT, navigate, pushAddress, replaceAddress } from "./nav.ts";
 import { useDeviceSync } from "./notifications.tsx";
-import { Harbor } from "./scene.tsx";
 import { Settings, type SettingsPage, settingsAddress, settingsInAddress } from "./settings.tsx";
 import { ShortcutsDialog, useShortcuts } from "./shortcuts.tsx";
 import { Sidebar, type View } from "./sidebar.tsx";
@@ -193,6 +195,10 @@ export function Inbox({
   const setBotsPaused =
     role === "member" ? null : (paused: boolean) => void pauseBots(api, paused, onAccountChanged);
   const billing = useBilling(api, me.billing && role === "owner", accountVersion);
+  // The first steps, for the sidebar's Get started and for the empty Inbox's scene.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: version asks for a load.
+  const steps = useLoad(() => api.getStarted(), [api, version]);
+  const [look, setLook] = useState<PaneLook>({ kind: "loading" });
   // The conversation a link opened, whose status picks Open or Closed once it loads.
   const linked = useRef(selected);
   // A notification clicked while the app is open, or Back and Forward, open the address's
@@ -308,9 +314,7 @@ export function Inbox({
           botsPaused={botsPaused}
           onBotsPaused={setBotsPaused}
           steps={
-            role === "member" ? null : (
-              <GetStarted api={api} version={version} onOpen={openSettings} />
-            )
+            role === "member" ? null : <GetStarted api={api} steps={steps} onOpen={openSettings} />
           }
           onView={openView}
           onShortcuts={openKeys}
@@ -418,14 +422,17 @@ export function Inbox({
                 drafts={drafts}
                 reads={data.reads}
                 replying={data.replying}
+                steps={steps.data}
+                maySetUp={role !== "member" && !readOnly && !suspended}
                 onFilter={showFilter}
                 onSelect={setSelected}
                 onMore={data.loadMore}
                 onChanged={reload}
+                onLook={setLook}
               />
               {selected === null ? (
                 <div className="thread">
-                  <Harbor title={t("pickOne")} />
+                  <GullPane look={look} rowCount={data.conversations.length} api={api} />
                 </div>
               ) : (
                 <Thread

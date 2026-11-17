@@ -2262,20 +2262,35 @@ img.ws-tile {
   flex: 1;
   align-content: stretch;
 }
-/* An empty list: a small drawing, a line that says the list is empty, and a hint. */
+/* An empty Inbox list: the pixel buoy, a title, one line and at most one action, in the column's
+   middle. list-empty.tsx draws the buoy. */
 .list-empty {
   display: grid;
+  flex: 1;
+  place-content: center;
   justify-items: center;
-  gap: 4px;
-  padding: 40px 16px;
-  color: var(--mute);
-  font-size: 14px;
+  gap: 6px;
+  padding: 0 28px 20%;
   text-align: center;
+}
+.list-empty canvas {
+  margin-bottom: 12px;
 }
 .list-empty b {
   color: var(--navy);
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 16px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+.list-empty span {
+  max-width: 230px;
+  color: var(--mute);
+  font-size: 14.5px;
+}
+.list-empty .btn {
+  gap: 8px;
+  margin-top: 12px;
+  border-radius: 999px;
 }
 /* The empty-list drawing: navy line work on the paper, with the pennant the only colour. */
 .empty-art {
@@ -2308,10 +2323,6 @@ img.ws-tile {
   stroke: var(--mute);
   stroke-width: 2;
   opacity: 0.5;
-}
-.empty-star {
-  fill: var(--mute);
-  opacity: 0.6;
 }
 .empty-sail {
   fill: var(--surface);
@@ -2361,6 +2372,148 @@ img.ws-tile {
 .thread.drop {
   outline: 3px dashed var(--blue);
   outline-offset: -10px;
+}
+/* The gull's pane while no conversation is open: a pixel scene over its title and line, which
+   gull.tsx draws. The art keeps its own colors in the dark, as a picture does. */
+.gull-pane {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+  padding: 20px 24px 44px;
+  overflow: hidden;
+  text-align: center;
+}
+.gull-pane h3 {
+  color: var(--navy);
+  font: 700 28px / 1.15 var(--display);
+  letter-spacing: -0.01em;
+}
+.gull-sub {
+  margin-top: 8px;
+  color: var(--text-strong);
+  font-size: 16px;
+}
+.gull-key kbd {
+  display: inline-grid;
+  place-items: center;
+  min-width: 24px;
+  height: 24px;
+  margin: 0 2px;
+  padding: 0 6px;
+  border-radius: 7px;
+  background: var(--surface);
+  box-shadow:
+    inset 0 0 0 1.5px var(--line),
+    0 2px 0 var(--line);
+  color: var(--navy);
+  font: 650 12.5px / 1 var(--body);
+  vertical-align: 1px;
+}
+/* A touch screen has no J key. */
+@media (hover: none) {
+  .gull-key {
+    display: none;
+  }
+}
+.gull-stage {
+  position: relative;
+  margin: 0 0 4px;
+  line-height: 0;
+}
+.gull-stage canvas,
+.gull-corner {
+  display: block;
+  cursor: pointer;
+}
+.gull-corner {
+  position: absolute;
+  right: 34px;
+  bottom: 10px;
+}
+/* The bird in flight, over the page. It never takes a click, so it covers no control. */
+.gull-flyer {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 30;
+  pointer-events: none;
+}
+/* The message board on its post: a navy pixel frame with cut corners, a cream field and a yellow
+   key. Fixed colors, as it is part of the picture. */
+.gull-board {
+  --pixel: 6px;
+  position: absolute;
+  display: flex;
+  width: 280px;
+  padding: var(--pixel);
+  background: #0b2239;
+  line-height: 1.5;
+  transform: translate(-50%, -100%);
+  clip-path: polygon(
+    var(--pixel) 0,
+    calc(100% - var(--pixel)) 0,
+    calc(100% - var(--pixel)) var(--pixel),
+    100% var(--pixel),
+    100% calc(100% - var(--pixel)),
+    calc(100% - var(--pixel)) calc(100% - var(--pixel)),
+    calc(100% - var(--pixel)) 100%,
+    var(--pixel) 100%,
+    var(--pixel) calc(100% - var(--pixel)),
+    0 calc(100% - var(--pixel)),
+    0 var(--pixel),
+    var(--pixel) var(--pixel)
+  );
+}
+.gull-board input {
+  flex: 1;
+  min-width: 0;
+  height: 42px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 0;
+  outline: 0;
+  background: #fff8df;
+  color: #0b2239;
+  font: inherit;
+  font-size: 15px;
+}
+.gull-board input::placeholder {
+  color: #5f6e80;
+}
+.gull-board input:focus {
+  background: #fff;
+}
+.gull-send {
+  min-height: 42px;
+  padding: 0 14px;
+  background: #ffc81e;
+  box-shadow: inset calc(-1 * var(--pixel)) calc(-1 * var(--pixel)) 0 #d9a400;
+  color: #0b2239;
+  font-weight: 650;
+}
+.gull-send:hover:not(:disabled) {
+  background: #ffd54d;
+}
+/* An empty board cannot send, and the key keeps its color: it is part of the picture. */
+.gull-send:disabled {
+  opacity: 1;
+  cursor: not-allowed;
+}
+.gull-board:focus-within {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+.gull-board-note {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  left: 0;
+  color: var(--red);
+  font-size: 14px;
 }
 /* One slim row: who, and what the operator can do. The rest of the visitor is in the panel. */
 .thread-head {
@@ -3599,41 +3752,6 @@ button.quote:hover {
   flex: none;
 }
 
-/* The boat on a patch of sea, for an empty pane */
-.harbor {
-  display: grid;
-  flex: 1;
-  place-content: center;
-  justify-items: center;
-  gap: 8px;
-  padding: 32px 16px;
-  color: var(--mute);
-  text-align: center;
-}
-.harbor-art {
-  width: 280px;
-  height: 180px;
-  margin-bottom: 14px;
-  border-radius: 28px;
-  background: var(--pond);
-}
-.harbor-sun {
-  position: absolute;
-  top: 44px;
-  left: calc(78% - 30px);
-  width: 60px;
-  height: 60px;
-  border-radius: 50%;
-  background: var(--cream);
-  box-shadow:
-    0 0 0 9px light-dark(rgb(255 248 223 / 0.42), rgb(255 248 223 / 0.1)),
-    0 0 0 18px light-dark(rgb(255 248 223 / 0.2), rgb(255 248 223 / 0.05));
-}
-.harbor b {
-  color: var(--navy);
-  font: 700 22px / 1.2 var(--display);
-  letter-spacing: -0.02em;
-}
 /* The image at full size, scaled down to fit the screen whole. The dialog drops a browser's own
    size limits, which are smaller than the image's on a phone. */
 .viewer {

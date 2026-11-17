@@ -55,7 +55,11 @@ test("a new workspace shows Get started, whose steps open settings, until it is 
   // The server keeps it hidden, so a reload, or another device, shows no steps either.
   await page.reload();
   await page.getByRole("button", { name: "Inbox" }).click();
-  await expect(page.getByText("No open conversations.")).toBeVisible();
+  // A new workspace with no widget yet: the board, to send the first message.
+  await expect(page.getByText("No conversations yet.")).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Send yourself the first message." }),
+  ).toBeVisible();
   await expect(button).toHaveCount(0);
 });
 
@@ -100,7 +104,8 @@ test("a workspace whose conversations are all closed has its test chat done", as
   await server.closeConversations();
   await server.createOperator("closed@example.com");
   await openLink(page, await server.signInLink("closed@example.com"));
-  await expect(page.getByText("No open conversations.")).toBeVisible();
+  await expect(page.getByText("Nothing open.")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "All caught up." })).toBeVisible();
   await page.getByRole("button", { name: /^Get started/ }).click();
   await expect(
     page
@@ -108,4 +113,35 @@ test("a workspace whose conversations are all closed has its test chat done", as
       .getByRole("listitem")
       .filter({ hasText: "Send a test chat" }),
   ).toHaveClass("done");
+});
+
+test("a new workspace sends itself a test from the board, and the chat lands in the list", async ({
+  page,
+}) => {
+  await server.createSecondWorkspace("Board", "board@example.com");
+  await openLink(page, await server.signInLink("board@example.com"));
+  await expect(
+    page.getByRole("heading", { name: "Send yourself the first message." }),
+  ).toBeVisible();
+  const field = page.getByRole("textbox", { name: "Write a message as a visitor" });
+  const send = page.getByRole("button", { name: "Send", exact: true });
+  await expect(send).toBeDisabled();
+  await field.fill("Do you ship to Spain?");
+  await send.click();
+  // The real test visitor's conversation arrives through the live updates, marked as a test.
+  const row = page.locator(".list .row", { hasText: "Do you ship to Spain?" });
+  await expect(row).toBeVisible();
+  await expect(row.getByText("Test")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "A message came in." })).toBeVisible();
+  await expect(field).toHaveValue("");
+
+  // A search that finds nothing shows the gull's telescope, and clearing it brings the row back.
+  await page.getByRole("searchbox", { name: "Search conversations" }).fill("zebra");
+  await expect(page.getByRole("heading", { name: "The gull can't see it either." })).toBeVisible();
+  await page.getByRole("button", { name: "Clear search" }).click();
+  await expect(row).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Select a conversation." })).toBeVisible();
+  // Opening the conversation takes the gull away.
+  await row.click();
+  await expect(page.locator(".gull-pane")).toHaveCount(0);
 });

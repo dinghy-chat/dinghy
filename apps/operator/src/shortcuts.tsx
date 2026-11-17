@@ -45,12 +45,16 @@ const OWNS_KEYS =
 /** Open over the page, so Escape is for it, even when a click left the focus elsewhere. */
 const OPEN_OVER = "[role='menu'], [role='listbox'], dialog[open]";
 
+/** The key went to something that takes keys itself, such as a field or a menu. */
+export const takesKeys = (target: EventTarget | null) =>
+  target instanceof Element && target.closest(OWNS_KEYS) !== null;
+
 /** A plain key, pressed outside anything that takes keys itself, with nothing open over the page. */
 function isShortcut(event: KeyboardEvent): boolean {
   if (event.ctrlKey || event.metaKey || event.altKey || event.isComposing) return false;
   // A page that hides the Inbox keeps its open menus mounted, so only a visible one counts.
   if ([...document.querySelectorAll(OPEN_OVER)].some(shown)) return false;
-  return !(event.target instanceof Element && event.target.closest(OWNS_KEYS) !== null);
+  return !takesKeys(event.target);
 }
 
 /** A key, or two in a row such as "g i", and what it does. */

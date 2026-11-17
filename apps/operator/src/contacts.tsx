@@ -178,7 +178,7 @@ function ContactList({
         </Loading>
       ) : pages.contacts.length === 0 ? (
         <div className="nothing empty-boat">
-          <EmptyArt scene="day" />
+          <EmptyArt />
           <b>{t(searching ? "contactsNone" : "contactsEmpty")}</b>
           {!searching && t("contactsEmptyHint")}
         </div>

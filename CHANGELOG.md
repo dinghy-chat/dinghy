@@ -4,6 +4,11 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- The Inbox's empty states have a pixel gull on a mooring post in place of the boat. It sleeps when every conversation is closed, looks through its telescope when a search or a filter finds nothing, and watches for the first message once the widget is installed. Each state says the same in words, and the gull keeps still when the system asks for less motion.
+- A new workspace whose widget is not installed shows a board in the Inbox: an owner or admin writes on it, and a test visitor's conversation arrives in the list, with its **Test** label. The gull carries the first message of an empty inbox to the list.
+
 ## [0.40.0] - 2026-11-17
 
 ### Changed

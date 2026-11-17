@@ -54,18 +54,16 @@ export function Logo() {
 }
 
 // The landing page's three swells, as each scene sets them.
-const PATCH: SeaOptions = {
+const POND: SeaOptions = {
   layers: [
     { level: 0.5, swell: 2.5, ...FAR },
     { level: 0.68, swell: 3, ...MIDDLE },
     { level: 0.86, swell: 3, ...NEAR },
   ],
   boatLayer: 1,
-  boatAt: 0.45,
-  drift: 10,
-  sunAt: 0.78,
+  boatAt: 0.5,
+  drift: 8,
 };
-const POND: SeaOptions = { ...PATCH, boatAt: 0.5, drift: 8, sunAt: undefined };
 const SHORE: SeaOptions = {
   layers: [
     { level: 0.52, swell: 3, ...FAR },
@@ -89,14 +87,12 @@ function Sea({
   boatAt = options.boatAt,
   sunAt = options.sunAt,
   size,
-  children,
 }: {
   className: string;
   options: SeaOptions;
   boatAt?: number;
   sunAt?: number | undefined;
   size: number;
-  children?: ReactNode;
 }) {
   const host = useRef<HTMLDivElement>(null);
   // The sea reads these each frame, so a change moves the boat without a new start.
@@ -119,7 +115,6 @@ function Sea({
   }, [boatAt, sunAt, start]);
   return (
     <div className={`sea ${className}`} ref={host} aria-hidden="true">
-      {children}
       <canvas className="sea-back" />
       <span className="float">
         <Boat kind="sail" size={size} />
@@ -129,42 +124,17 @@ function Sea({
   );
 }
 
-/** The boat on a small patch of sea in the sun, with the text that says the same thing. */
-export function Harbor({ title, children }: { title: string; children?: ReactNode }) {
-  return (
-    <div className="harbor">
-      <Sea className="harbor-art" options={PATCH} size={96}>
-        <span className="harbor-sun" />
-      </Sea>
-      <b>{title}</b>
-      {children !== undefined && <p>{children}</p>}
-    </div>
-  );
-}
-
 /** A smaller patch of sea, for an empty list. */
 export function Pond() {
   return <Sea className="pond" options={POND} size={64} />;
 }
 
-/**
- * A drawing for an empty list: the boat in the day for an empty inbox, and the same boat under the
- * moon for an empty list of closed conversations. The text beside it says the same.
- */
-export function EmptyArt({ scene }: { scene: "day" | "evening" }) {
+/** A drawing for an empty list: the boat in the day. The text beside it says the same. */
+export function EmptyArt() {
   return (
     <svg className="empty-art" viewBox="0 0 120 120" aria-hidden="true">
       <rect className="empty-sky" width="120" height="120" />
       <circle className="empty-sun" cx="30" cy="38" r="10" />
-      {scene === "evening" && (
-        <>
-          <circle className="empty-sky" cx="35" cy="34" r="9" />
-          <path
-            className="empty-star"
-            d="M88 30l1.2 3.3 3.3 1.2-3.3 1.2L88 39l-1.2-3.3-3.3-1.2 3.3-1.2zM98 46l.8 2.2 2.2.8-2.2.8L98 52l-.8-2.2-2.2-.8 2.2-.8z"
-          />
-        </>
-      )}
       <path
         className="empty-water"
         d="M0 82c10 0 10-3 20-3s10 3 20 3 10-3 20-3 10 3 20 3 10-3 20-3 10 3 20 3V120H0z"
