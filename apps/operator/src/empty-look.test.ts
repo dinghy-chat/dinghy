@@ -7,9 +7,11 @@ const BUSY = { install: true, chat: true };
 const base = { shows: "empty", isFiltered: false, steps: NEW, maySetUp: true } as const;
 
 test("a list with rows asks for a pick (A), whatever the workspace's steps", () => {
-  expect(chooseLook({ ...base, shows: "rows" })).toEqual({ kind: "pick" });
+  expect(chooseLook({ ...base, shows: "rows" })).toEqual({ kind: "pick", bySearch: false });
+  expect(chooseLook({ ...base, shows: "searchRows" })).toEqual({ kind: "pick", bySearch: true });
   expect(chooseLook({ ...base, shows: "rows", steps: null, isFiltered: true })).toEqual({
     kind: "pick",
+    bySearch: false,
   });
 });
 
@@ -56,6 +58,6 @@ test("only an empty inbox gets the arrival flight", () => {
   expect(isEmptyInbox({ kind: "caughtUp" })).toBe(true);
   expect(isEmptyInbox({ kind: "board" })).toBe(true);
   expect(isEmptyInbox({ kind: "live" })).toBe(true);
-  expect(isEmptyInbox({ kind: "pick" })).toBe(false);
+  expect(isEmptyInbox({ kind: "pick", bySearch: false })).toBe(false);
   expect(isEmptyInbox({ kind: "noMatch", by: "search" })).toBe(false);
 });

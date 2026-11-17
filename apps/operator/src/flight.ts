@@ -109,8 +109,9 @@ export function createFlights(scale: number): Flights {
     flyer.hidden = true;
     carrying = null;
     isFlying = false;
-    if (isStopped) return;
+    // Set even when stopped: a new controller reuses this perch, and "away" would hide the gull.
     gull.setMode("idle");
+    if (isStopped) return;
     after();
   }
 

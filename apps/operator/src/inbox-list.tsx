@@ -250,8 +250,15 @@ function listContext(status: Status, waiting: number): string {
 }
 
 /** What the list shows: rows, nothing yet, or nothing at all, from a search or not. */
-function listShows(found: Conversation[] | null, listed: boolean, count: number): ListShows {
-  if (found !== null) return found.length === 0 ? "searchEmpty" : "rows";
+function listShows(
+  found: Conversation[] | null,
+  searching: boolean,
+  listed: boolean,
+  count: number,
+): ListShows {
+  // A search still running holds the last query's answer, so "no match" waits for the new one.
+  if (found !== null && found.length === 0) return searching ? "loading" : "searchEmpty";
+  if (found !== null) return "searchRows";
   if (!listed) return "loading";
   return count === 0 ? "empty" : "rows";
 }
@@ -405,7 +412,7 @@ export function InboxList({
   const rows = found ?? conversations;
   const selection = useSelection(rows, selected);
   const look = chooseLook({
-    shows: listShows(found, listed, conversations.length),
+    shows: listShows(found, searching, listed, conversations.length),
     isFiltered: isFiltered(filter),
     steps,
     maySetUp,

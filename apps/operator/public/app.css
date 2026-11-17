@@ -2450,9 +2450,16 @@ img.ws-tile {
   display: flex;
   width: 280px;
   padding: var(--pixel);
-  background: #0b2239;
   line-height: 1.5;
   transform: translate(-50%, -100%);
+}
+/* The frame is clipped on its own layer, so the error note under the board stays visible. */
+.gull-board::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background: #0b2239;
   clip-path: polygon(
     var(--pixel) 0,
     calc(100% - var(--pixel)) 0,

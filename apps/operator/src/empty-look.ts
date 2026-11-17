@@ -2,7 +2,8 @@
 // to test.
 
 /** What the list shows now. */
-export type ListShows = "loading" | "rows" | "empty" | "searchEmpty";
+/** `searchRows` are a search's results, which must not read as conversations that came in. */
+export type ListShows = "loading" | "rows" | "searchRows" | "empty" | "searchEmpty";
 
 /** The two get-started steps that tell a new workspace from a quiet one. */
 export interface FirstSteps {
@@ -23,7 +24,7 @@ export interface FirstSteps {
  * - `loading`: not known yet, so nothing shows.
  */
 export type PaneLook =
-  | { kind: "pick" }
+  | { kind: "pick"; bySearch: boolean }
   | { kind: "caughtUp" }
   | { kind: "noMatch"; by: "search" | "filter" }
   | { kind: "board" }
@@ -44,7 +45,8 @@ export function chooseLook({
   /** An owner or admin, who may send a test message. */
   maySetUp: boolean;
 }): PaneLook {
-  if (shows === "rows") return { kind: "pick" };
+  if (shows === "rows") return { kind: "pick", bySearch: false };
+  if (shows === "searchRows") return { kind: "pick", bySearch: true };
   if (shows === "searchEmpty") return { kind: "noMatch", by: "search" };
   if (shows === "loading") return { kind: "loading" };
   if (isFiltered) return { kind: "noMatch", by: "filter" };

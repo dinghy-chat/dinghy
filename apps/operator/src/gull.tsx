@@ -82,7 +82,7 @@ type Held = { look: SceneLook; why: "cleared" | "landed" };
 const lookKey = (look: PaneLook) => (look.kind === "noMatch" ? `noMatch-${look.by}` : look.kind);
 
 function nextHeld(from: PaneLook, to: PaneLook): Held | null {
-  if (to.kind === "pick" && isEmptyInbox(from)) {
+  if (to.kind === "pick" && !to.bySearch && isEmptyInbox(from)) {
     return { look: from, why: "landed" };
   }
   if (from.kind === "noMatch" && to.kind !== "noMatch" && !isLessMotion()) {
@@ -324,6 +324,7 @@ function GullScene({
   const scale = useFitScale(pane);
   const { canvas, perch, flights } = useGull("big", scale);
   const scene = SCENES[look.kind];
+  const keysOn = useShortcutsOn();
   useMode(perch, why === null ? scene.mode : "idle", scene.extra);
   // A test sent from the board flies from there. Set on Send, as the row can come before the answer.
   const isFromBoard = useRef(false);
@@ -366,7 +367,7 @@ function GullScene({
       </div>
       <h3>{why === "landed" ? plural(rowCount, "arrivedOne", "arrivedMany") : t(scene.title)}</h3>
       {why === "landed" ? (
-        <KeyLine text="arrivedKey" />
+        keysOn && <KeyLine text="arrivedKey" />
       ) : (
         <p className="gull-sub">{t(sceneHint(look))}</p>
       )}
