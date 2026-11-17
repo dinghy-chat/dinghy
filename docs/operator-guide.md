@@ -286,7 +286,7 @@ Each workspace on Dinghy Cloud includes up to 5 team members and 1 GB of files. 
 
 This applies to Dinghy Cloud only. A self-hosted server has no billing.
 
-Dinghy Cloud costs $7 a month per workspace, and Stripe takes the payment. You pay when you create the workspace: after you name it, Dinghy opens Stripe's checkout, and the workspace opens once Stripe confirms the payment. Only an owner pays. A member who opens an unpaid workspace sees that it waits for an owner. The subscription renews each month.
+Dinghy Cloud costs $9 a month per workspace, and Stripe takes the payment. You pay when you create the workspace: after you name it, Dinghy opens Stripe's checkout, and the workspace opens once Stripe confirms the payment. Only an owner pays. A member who opens an unpaid workspace sees that it waits for an owner. The subscription renews each month.
 
 An owner sees the subscription's state in **Settings > Workspace**, under **Billing**. **Manage billing** opens Stripe, where you change the card, see invoices or cancel. A canceled subscription keeps the workspace working until the end of the month you paid for, and the owners get an email 3 days before that end.
 
