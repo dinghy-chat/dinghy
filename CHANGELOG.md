@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.41.0] - 2026-11-17
+
 ### Changed
 
 - The Inbox's empty states have a pixel gull on a mooring post in place of the boat. It sleeps when every conversation is closed, looks through its telescope when a search or a filter finds nothing, and watches for the first message once the widget is installed. Each state says the same in words, and the gull keeps still when the system asks for less motion.
@@ -681,7 +683,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.40.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.41.0...HEAD
+[0.41.0]: https://github.com/dinghy-chat/dinghy/compare/v0.40.0...v0.41.0
 [0.40.0]: https://github.com/dinghy-chat/dinghy/compare/v0.39.0...v0.40.0
 [0.39.0]: https://github.com/dinghy-chat/dinghy/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/dinghy-chat/dinghy/compare/v0.37.0...v0.38.0
