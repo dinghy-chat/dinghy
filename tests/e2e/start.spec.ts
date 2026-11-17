@@ -137,7 +137,14 @@ test("a new workspace sends itself a test from the board, and the chat lands in 
 
   // A search that finds nothing shows the gull's telescope, and clearing it brings the row back.
   await page.getByRole("searchbox", { name: "Search conversations" }).fill("zebra");
-  await expect(page.getByRole("heading", { name: "The gull can't see it either." })).toBeVisible();
+  const telescope = page.getByRole("heading", { name: "The gull can't see it either." });
+  await expect(telescope).toBeVisible();
+  await expect(page.getByText("No conversation matches “zebra”.")).toBeVisible();
+  // Refining keeps the telescope, and the list names the new query only once it was searched.
+  await page.getByRole("searchbox", { name: "Search conversations" }).fill("zebrax");
+  await expect(telescope).toBeVisible();
+  await expect(page.getByText("No conversation matches “zebrax”.")).toBeVisible();
+  await expect(telescope).toBeVisible();
   await page.getByRole("button", { name: "Clear search" }).click();
   await expect(row).toBeVisible();
   await expect(page.getByRole("heading", { name: "Select a conversation." })).toBeVisible();

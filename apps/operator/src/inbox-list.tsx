@@ -478,7 +478,7 @@ export function InboxList({
       </ul>
       {/* A running or failed search still holds the last query's answer, which would name the
           new query as matching nothing. The pane keeps its scene, as its words name no query. */}
-      {!searching && !searchFailed && (
+      {!((searching || searchFailed) && look.kind === "noMatch" && look.by === "search") && (
         <EmptyBlock
           look={look}
           filter={filter}
