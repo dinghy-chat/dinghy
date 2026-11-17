@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.41.1] - 2026-11-17
+
 ### Fixed
 
 - The Inbox's filter card no longer loses its left edge when the conversation list is narrow. The card now opens over the page, lined up with its button.
@@ -687,7 +689,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.41.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.41.1...HEAD
+[0.41.1]: https://github.com/dinghy-chat/dinghy/compare/v0.41.0...v0.41.1
 [0.41.0]: https://github.com/dinghy-chat/dinghy/compare/v0.40.0...v0.41.0
 [0.40.0]: https://github.com/dinghy-chat/dinghy/compare/v0.39.0...v0.40.0
 [0.39.0]: https://github.com/dinghy-chat/dinghy/compare/v0.38.0...v0.39.0
