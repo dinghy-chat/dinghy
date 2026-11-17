@@ -4,6 +4,10 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- Dinghy Cloud costs $9 a month per workspace instead of $7. The landing page, the terms, the operator guide and the dashboard's payment prompts say the new price.
+
 ## [0.39.0] - 2026-11-17
 
 ### Added

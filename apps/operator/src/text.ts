@@ -704,7 +704,7 @@ const en = {
   createAccount: "Create an account",
   signupTitle: "Create your account",
   signupHelp:
-    "This workspace costs $7 per month. Next, enter your payment details on Stripe to activate it.",
+    "This workspace costs $9 per month. Next, enter your payment details on Stripe to activate it.",
   signupWorkspace: "Workspace name",
   onboardingTitle: "Set up your workspace",
   signupSubmit: "Email me a sign-up link",
@@ -714,7 +714,7 @@ const en = {
   haveAccount: "I already have an account",
   payTitle: "Activate your workspace",
   payHelp:
-    'Activate this workspace for $7 per month. Select "Pay on Stripe" to enter your payment details.',
+    'Activate this workspace for $9 per month. Select "Pay on Stripe" to enter your payment details.',
   payButton: "Pay on Stripe",
   payNotOwner:
     "This workspace needs payment before you can use it. Ask a workspace owner to activate it.",
@@ -749,7 +749,7 @@ const en = {
   waitingBanner:
     "Visitor chat is not available yet. We'll email {email} when you can activate this workspace.",
   waitingBannerShort: "Visitor chat is not available yet. We'll email you when it is ready.",
-  turnOnBanner: "Activate this workspace for $7 per month",
+  turnOnBanner: "Activate this workspace for $9 per month",
   turnOnButton: "Continue to payment",
   turnOnMember:
     "This workspace is ready to activate. Ask a workspace owner to start its subscription.",
