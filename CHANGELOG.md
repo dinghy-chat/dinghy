@@ -4,6 +4,15 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- **Duplicate** saves a copy of a campaign as a new draft and opens it. It is the main button on an ended campaign, and in the ⋯ menu of the others. The copy drops an end date already past and a sender who left the workspace.
+
+### Changed
+
+- A campaign that can't change, because it ended or because a member opens it, shows each part as a sentence instead of fields that look editable. An ended campaign opens on **Results**, which comes first, and its header says when it ended.
+- A campaign's delivery summary also says when it emails an unread message, when the message expires and when answers stay unassigned. Its rules show the end time as well as the date.
+
 ## [0.38.0] - 2026-11-16
 
 ### Added
