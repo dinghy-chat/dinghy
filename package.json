@@ -27,7 +27,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^2.6.6",
-    "@playwright/test": "^1.65.0",
+    "@playwright/test": "^1.65.1",
     "@types/node": "24",
     "knip": "^6.45.0",
     "marked": "^18.1.3",
