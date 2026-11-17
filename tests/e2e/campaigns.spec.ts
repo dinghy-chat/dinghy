@@ -180,14 +180,18 @@ test("a member reads campaigns and cannot change them", async ({ page }) => {
   await expect(row).toContainText("Not live yet");
   await row.click();
   await expect(page.getByText("Only owners and admins can edit campaigns.")).toBeVisible();
-  await expect(page.getByLabel("Name", { exact: true })).toBeDisabled();
-  const text = page.getByLabel("Text", { exact: true });
-  await expect(text).toHaveText("Your export finished. Need help with it?");
-  await expect(text).toHaveAttribute("contenteditable", "false");
-  await expect(page.getByRole("radio", { name: "After an event" })).toBeDisabled();
-  // A member still opens a folded part to read it.
-  await page.getByRole("button", { name: "Edit Rules" }).click();
-  await expect(page.getByLabel("Ends at")).toBeDisabled();
+  await expect(page.getByRole("heading", { name: "Trial help" })).toBeVisible();
+  await expect(page.getByLabel("Name", { exact: true })).toHaveCount(0);
+  // A member reads each part as text, with no field to change.
+  await expect(page.getByRole("region", { name: "When it sends" })).toHaveText(
+    /After export\.finished/,
+  );
+  await expect(page.getByRole("region", { name: "The message" })).toContainText(
+    "Your export finished. Need help with it?",
+  );
+  await expect(page.getByRole("region", { name: "Rules" })).toContainText("Once per person");
+  await expect(page.getByLabel("Text", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("radio", { name: "After an event" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Go live" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Save draft" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Translation" })).toHaveCount(0);
@@ -475,6 +479,42 @@ test("the list: tabs count only what they hold, and a goal's bar counts the cont
     .evaluate((bar) => Number.parseFloat((bar as HTMLElement).style.width));
   expect(width).toBeCloseTo((goalReached / entered) * 100);
   expect(width).toBeLessThanOrEqual(100);
+});
+
+test("an ended campaign opens on its results, reads as text and duplicates as a draft", async ({
+  page,
+}) => {
+  const saved = await api("PUT", "/campaigns/by-key/ended-nudge", {
+    key: "ended-nudge",
+    name: "Ended nudge",
+    trigger: { type: "api" },
+    message: { body: "Need a hand?", buttons: [{ label: "Yes, please", value: "yes" }] },
+    presentation: { startConversation: "on_reply", show: "preview", ifConversationOpen: "skip" },
+  });
+  expect(saved.status).toBe(201);
+  expect((await api("POST", "/campaigns/by-key/ended-nudge/end")).status).toBe(200);
+  await openCampaigns(page, "julien@shipmail.example");
+  await page.getByRole("button", { name: /^Ended nudge/ }).click();
+
+  const tabs = page.getByRole("group", { name: "Campaign views" });
+  await expect(tabs.getByRole("radio").first()).toHaveAccessibleName("Results");
+  await expect(page.getByRole("radio", { name: "Results" })).toBeChecked();
+  await expect(page.getByText(/^Ended .* · key/)).toBeVisible();
+  await page.getByRole("radio", { name: "Campaign" }).check();
+  await expect(page.getByText("Duplicate it to send it again.", { exact: false })).toBeVisible();
+  const message = page.getByRole("region", { name: "The message" });
+  await expect(message).toContainText("Need a hand?");
+  await expect(message).toContainText("Yes, please");
+  await expect(page.getByRole("radio", { name: "From code" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Save" })).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Duplicate" }).click();
+  const name = page.getByLabel("Name", { exact: true });
+  await expect(name).toHaveValue("Copy of Ended nudge");
+  await expect(name).toBeEnabled();
+  await expect(page.getByText("ended-nudge-2", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Go live" })).toBeVisible();
+  await expect(page.getByRole("radio", { name: "From code" })).toBeChecked();
 });
 
 test("a row's menu renames a campaign, deletes one that never sent and ends one that did", async ({

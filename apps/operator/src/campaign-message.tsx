@@ -319,12 +319,10 @@ const SENDER_TEAM = "team";
 function SenderField({
   sender,
   members,
-  savesAsYou,
   onChange,
 }: {
   sender: CampaignMessage["sender"];
   members: Member[];
-  savesAsYou: boolean;
   onChange(sender: CampaignMessage["sender"]): void;
 }) {
   const value =
@@ -344,7 +342,7 @@ function SenderField({
         choices={[
           {
             value: SENDER_AUTHOR,
-            label: t(savesAsYou ? "senderAuthorYou" : "senderAuthor"),
+            label: t("senderAuthorYou"),
           },
           { value: SENDER_TEAM, label: t("outboundTeam") },
           ...members.map((one) => ({ value: one.id, label: one.name })),
@@ -488,7 +486,6 @@ export function MessageFields({
   message,
   trigger,
   members,
-  savesAsYou,
   language,
   onLanguage,
   onChange,
@@ -496,7 +493,6 @@ export function MessageFields({
   message: CampaignMessage;
   trigger: CampaignTrigger["type"];
   members: Member[];
-  savesAsYou: boolean;
   /** The language on show, which the preview shows too. */
   language: Language;
   onLanguage(language: Language): void;
@@ -510,7 +506,6 @@ export function MessageFields({
         <SenderField
           sender={message.sender}
           members={members}
-          savesAsYou={savesAsYou}
           onChange={(sender) => onChange(withPart(message, "sender", sender))}
         />
         <LanguageTabs message={message} language={shown} onLanguage={onLanguage} />

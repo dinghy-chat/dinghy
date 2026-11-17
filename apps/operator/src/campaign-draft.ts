@@ -1,6 +1,6 @@
 import { LOCALES, type Locale } from "../../../packages/widget/src/shared.ts";
 import { messagesOf } from "../../server/src/campaign-parts.ts";
-import type { CampaignDefinition } from "./api.ts";
+import type { CampaignDefinition, Member } from "./api.ts";
 
 // The editor's campaign: the same JSON the API takes, from a new one's first fields to the code
 // that "Copy as code" gives.
@@ -65,6 +65,9 @@ export const replaceAt = <T>(list: readonly T[], index: number, next: T | null):
 /** A day as a date input takes it, "2026-11-16", in this browser's time zone. */
 export const dateInput = (date: Date) => date.toLocaleDateString("en-CA");
 
+/** The longest key, as CAMPAIGN_KEY_PATTERN allows it. */
+export const KEY_MAX = 64;
+
 /** A key made from a name, as a new campaign suggests it: "DNS help" gives "dns-help". */
 export const keyFromName = (name: string) =>
   name
@@ -72,7 +75,59 @@ export const keyFromName = (name: string) =>
     .normalize("NFKD")
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
-    .slice(0, 64);
+    .slice(0, KEY_MAX);
+
+/** The member a message's sender names, by ID or by email in any case, as the server matches. */
+export const senderMember = (
+  sender: { operatorId: string } | { email: string },
+  members: Member[],
+) =>
+  members.find((one) =>
+    "operatorId" in sender
+      ? one.id === sender.operatorId
+      : one.email.toLowerCase() === sender.email.toLowerCase(),
+  );
+
+/** The message without a sender who is no longer a member, so it comes from whoever saves it. */
+function withKnownSender(message: Message, members: Member[]): Message {
+  const { sender } = message;
+  // No members means the list has not loaded, since the workspace has at least whoever copies.
+  if (sender === undefined || sender === "team" || members.length === 0) return message;
+  return senderMember(sender, members) === undefined
+    ? withPart(message, "sender", undefined)
+    : message;
+}
+
+/**
+ * A copy of a campaign as a new draft: an end already past would end it at once, so it goes, and a
+ * sender who left gives way to whoever saves it. A schedule keeps its dates, which the draft shows
+ * to change.
+ */
+export function copyOf(
+  definition: CampaignDefinition,
+  { name, key, members, now }: { name: string; key: string; members: Member[]; now: Date },
+): CampaignDefinition {
+  const { rules } = definition;
+  const variants = definition.variants?.map((variant) =>
+    "message" in variant && variant.message !== undefined
+      ? { ...variant, message: withKnownSender(variant.message, members) }
+      : variant,
+  );
+  return withPart(
+    {
+      ...definition,
+      name,
+      key,
+      message: withKnownSender(definition.message, members),
+      rules: {
+        ...rules,
+        endsAt: rules.endsAt !== null && new Date(rules.endsAt) <= now ? null : rules.endsAt,
+      },
+    },
+    "variants",
+    variants,
+  );
+}
 
 /** The definition as JSON, as the API, MCP and the SDK take it. */
 export const definitionJson = (definition: CampaignDefinition) =>

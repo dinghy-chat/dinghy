@@ -34,25 +34,28 @@ import {
   stopCampaign,
 } from "./campaign-actions.tsx";
 import { CodeDialog, GoLiveDialog, TestDialog } from "./campaign-dialogs.tsx";
-import { keyFromName, newDefinition } from "./campaign-draft.ts";
+import { copyOf, keyFromName, newDefinition } from "./campaign-draft.ts";
 import { CampaignSteps } from "./campaign-form.tsx";
 import type { Language } from "./campaign-message.tsx";
+import { CampaignOverview } from "./campaign-overview.tsx";
 import { CampaignPreview } from "./campaign-preview.tsx";
 import { CampaignResultsView } from "./campaign-results.tsx";
+import { freeKey } from "./campaign-templates.ts";
 import { StatusChip } from "./campaign-tile.tsx";
 import { Icon } from "./icons.tsx";
 import { useLoad } from "./load.ts";
 import { Menu, type MenuItem } from "./popup.tsx";
 import { type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
-import { Choices, ErrorNote, Loading } from "./ui.tsx";
+import { Choices, ErrorNote, Loading, type Option } from "./ui.tsx";
 import { ago } from "./visitor.ts";
 
-type Action = "save" | "live" | "pause" | "resume" | Ending;
+type Action = "save" | "live" | "pause" | "resume" | "duplicate" | Ending;
 
 /**
  * The page's buttons: a save, the one step the status allows next, go live, pause or resume, and
- * the rest in a menu: a test, the code, the end and the delete.
+ * the rest in a menu: a test, a duplicate, the code, the end and the delete. An ended campaign's
+ * one step is its duplicate.
  */
 function EditorActions({
   campaign,
@@ -95,6 +98,7 @@ function EditorActions({
     </button>
   );
   const editable = canEdit && status !== "ended";
+  const canDuplicate = canEdit && campaign !== null;
   const items: MenuItem[] = [];
   if (campaign !== null && status !== "ended") {
     items.push({
@@ -102,6 +106,14 @@ function EditorActions({
       lead: <Icon name="flask" size={18} />,
       ...(unsaved && { unavailable: t("campaignTestSaveFirst") }),
       onSelect: onTest,
+    });
+  }
+  if (canDuplicate && status !== "ended") {
+    items.push({
+      label: t("campaignDuplicate"),
+      lead: <Icon name="copy" size={18} />,
+      ...(unsaved && { unavailable: t("campaignDuplicateSaveFirst") }),
+      onSelect: () => onAction("duplicate"),
     });
   }
   items.push({ label: t("campaignCode"), lead: <Icon name="code" size={18} />, onSelect: onCode });
@@ -130,6 +142,16 @@ function EditorActions({
           {t("campaignPause")}
         </button>
       )}
+      {canDuplicate && status === "ended" && (
+        <button
+          type="button"
+          className="pill dark"
+          disabled={busy}
+          onClick={() => onAction("duplicate")}
+        >
+          {t("campaignDuplicate")}
+        </button>
+      )}
       <Menu label={t("moreActions")} buttonClass="round" items={items}>
         <Icon name="dots" />
       </Menu>
@@ -147,6 +169,7 @@ export function CampaignEditor({
   canEdit,
   onBack,
   onSaved,
+  onOpen,
   onOpenConversation,
 }: {
   api: WorkspaceApi;
@@ -159,6 +182,8 @@ export function CampaignEditor({
   onBack(): void;
   /** A new campaign was saved, so the address can name it. */
   onSaved(id: string): void;
+  /** Opens another campaign, such as a duplicate. */
+  onOpen(id: string): void;
   onOpenConversation(id: string): void;
 }) {
   const loaded = useLoad(
@@ -168,7 +193,9 @@ export function CampaignEditor({
   const appearance = useLoad(() => api.widget(), [api]);
   // A campaign saved here for the first time stays on screen while the address takes its ID.
   const [createdId, setCreatedId] = useState<string | null>(null);
-  if (campaignId !== null && campaignId !== createdId && loaded.data === null) {
+  // The load keeps the last campaign while the next one loads, as after a duplicate opens.
+  const current = loaded.data?.campaign.id === campaignId ? loaded.data.campaign : null;
+  if (campaignId !== null && campaignId !== createdId && current === null) {
     return (
       <section className="page">
         <div className="page-body">
@@ -179,11 +206,13 @@ export function CampaignEditor({
   }
   return (
     <CampaignPage
+      // A new page for each campaign, but not for a new one as it takes its ID.
+      key={campaignId === createdId ? "new" : (campaignId ?? "new")}
       api={api}
       me={me}
       members={members}
       workspace={workspace}
-      initial={loaded.data?.campaign ?? null}
+      initial={current}
       appearance={appearance.data}
       canEdit={canEdit}
       onBack={onBack}
@@ -191,6 +220,7 @@ export function CampaignEditor({
         setCreatedId(id);
         onSaved(id);
       }}
+      onOpen={onOpen}
       onOpenConversation={onOpenConversation}
     />
   );
@@ -208,21 +238,25 @@ function useCampaignActions({
   api,
   campaign,
   definition,
+  members,
   unsaved,
   setCampaign,
   setEdited,
   setDialog,
   onSaved,
+  onOpen,
   onDeleted,
 }: {
   api: WorkspaceApi;
   campaign: Campaign | null;
   definition: CampaignDefinition;
+  members: Member[];
   unsaved: boolean;
   setCampaign(campaign: Campaign): void;
   setEdited(definition: CampaignDefinition | null): void;
   setDialog(dialog: Dialog | null): void;
   onSaved(id: string): void;
+  onOpen(id: string): void;
   onDeleted(): void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -252,8 +286,23 @@ function useCampaignActions({
     onSaved(created.id);
     return created;
   };
+  /** Saves a copy of the saved campaign as a new draft with a free key, and opens it. */
+  const duplicate = () =>
+    void busyWhile(async () => {
+      if (campaign === null) return;
+      const saved = campaign.definition;
+      const { campaigns } = await api.campaigns();
+      const copy = copyOf(saved, {
+        name: t("campaignCopyName", { name: saved.name }).slice(0, CAMPAIGN_NAME_MAX),
+        key: freeKey(saved.key, new Set(campaigns.map((one) => one.definition.key))),
+        members,
+        now: new Date(),
+      });
+      onOpen((await api.createCampaign(copy)).campaign.id);
+    });
   const act = (action: Action) => {
     if (action === "end" || action === "delete") return setDialog({ kind: action });
+    if (action === "duplicate") return duplicate();
     if (action === "save") return run(save, "campaignSaved", { saves: true });
     if (action === "pause") {
       if (campaign === null) return;
@@ -298,6 +347,12 @@ function useCampaignActions({
     });
   return { busy, failure, act, finish, test };
 }
+
+/** The page's tabs. An ended campaign changes no more, so its results come first. */
+const TABS: Option<"edit" | "results">[] = [
+  { value: "edit", label: "campaignTabEdit" },
+  { value: "results", label: "campaignTabResults" },
+];
 
 /** How long a draft waits after the last change before it saves itself. */
 const AUTOSAVE_DELAY_MS = 800;
@@ -344,16 +399,18 @@ function useDraftAutosave({
   return failure;
 }
 
-/** "Saved 2 minutes ago", or that the changes wait for a save. */
+/** "Saved 2 minutes ago", "Ended 3 days ago", or that the changes wait for a save. */
 function savedText(campaign: Campaign | null, unsaved: boolean): string {
   if (campaign === null) return t("campaignNotSaved");
+  if (campaign.endedAt !== null) return t("campaignEndedAgo", { ago: ago(campaign.endedAt) });
   if (unsaved) return t("campaignUnsaved");
   return t("campaignSavedAgo", { ago: ago(campaign.updatedAt) });
 }
 
 /**
- * The campaign's name as the page's title, its status, when it was saved and its key. A new
- * campaign's key follows its name until someone types one, and a saved one's never changes.
+ * The campaign's name as the page's title, its status, when it was saved and its key. The name
+ * changes in place while the campaign can change. A new campaign's key follows its name until
+ * someone types one, and a saved one's never changes.
  */
 function CampaignHead({
   definition,
@@ -375,24 +432,27 @@ function CampaignHead({
     <header className="page-head campaign-head">
       <div className="page-title">
         <div className="campaign-title">
-          <label className="title-edit">
-            <input
-              className="title-input"
-              aria-label={t("campaignName")}
-              title={editable ? t("campaignRenameHint") : undefined}
-              placeholder={t("campaignNew")}
-              required
-              maxLength={CAMPAIGN_NAME_MAX}
-              disabled={!editable}
-              value={definition.name}
-              onChange={(event) => {
-                const name = event.target.value;
-                const followsName = campaign === null && !isKeyTyped;
-                onChange({ ...definition, name, ...(followsName && { key: keyFromName(name) }) });
-              }}
-            />
-            {editable && <Icon name="pencil" size={18} />}
-          </label>
+          {editable ? (
+            <label className="title-edit">
+              <input
+                className="title-input"
+                aria-label={t("campaignName")}
+                title={t("campaignRenameHint")}
+                placeholder={t("campaignNew")}
+                required
+                maxLength={CAMPAIGN_NAME_MAX}
+                value={definition.name}
+                onChange={(event) => {
+                  const name = event.target.value;
+                  const followsName = campaign === null && !isKeyTyped;
+                  onChange({ ...definition, name, ...(followsName && { key: keyFromName(name) }) });
+                }}
+              />
+              <Icon name="pencil" size={18} />
+            </label>
+          ) : (
+            <h2>{definition.name}</h2>
+          )}
           <StatusChip status={campaign?.status ?? "draft"} />
         </div>
         <p>
@@ -431,6 +491,7 @@ function CampaignPage({
   canEdit,
   onBack,
   onSaved,
+  onOpen,
   onOpenConversation,
 }: Omit<Parameters<typeof CampaignEditor>[0], "campaignId"> & {
   initial: Campaign | null;
@@ -439,7 +500,9 @@ function CampaignPage({
   const [campaign, setCampaign] = useState(initial);
   const [edited, setEdited] = useState<CampaignDefinition | null>(null);
   const [language, setLanguage] = useState<Language>("default");
-  const [tab, setTab] = useState<"edit" | "results">("edit");
+  const [tab, setTab] = useState<"edit" | "results">(
+    initial?.status === "ended" ? "results" : "edit",
+  );
   const [dialog, setDialog] = useState<Dialog | null>(null);
   // One object for a new campaign, so the preview's memo holds until the first change.
   const [blank] = useState(newDefinition);
@@ -453,11 +516,13 @@ function CampaignPage({
     api,
     campaign,
     definition,
+    members,
     unsaved,
     setCampaign,
     setEdited,
     setDialog,
     onSaved,
+    onOpen,
     onDeleted: onBack,
   });
   const autosaveFailure = useDraftAutosave({
@@ -513,10 +578,7 @@ function CampaignPage({
               label={t("campaignTabs")}
               variant="pills"
               value={tab}
-              options={[
-                { value: "edit", label: "campaignTabEdit" },
-                { value: "results", label: "campaignTabResults" },
-              ]}
+              options={campaign.status === "ended" ? [...TABS].reverse() : TABS}
               onChange={setTab}
             />
           )}
@@ -536,20 +598,28 @@ function CampaignPage({
                 />
               )}
               <div className="widget-form">
-                {!canEdit && <p className="note">{t("campaignMemberNote")}</p>}
+                {campaign?.status === "ended" ? (
+                  <p className="note">
+                    {t(canEdit ? "campaignEndedNoteCopy" : "campaignEndedNote")}
+                  </p>
+                ) : (
+                  !canEdit && <p className="note">{t("campaignMemberNote")}</p>
+                )}
                 {campaign?.status === "live" && canEdit && (
                   <p className="note">{t("campaignLiveNote")}</p>
                 )}
-                <CampaignSteps
-                  api={api}
-                  definition={definition}
-                  members={members}
-                  savesAsYou={editable}
-                  language={language}
-                  editable={editable}
-                  onLanguage={setLanguage}
-                  onChange={setEdited}
-                />
+                {editable ? (
+                  <CampaignSteps
+                    api={api}
+                    definition={definition}
+                    members={members}
+                    language={language}
+                    onLanguage={setLanguage}
+                    onChange={setEdited}
+                  />
+                ) : (
+                  <CampaignOverview definition={definition} members={members} language={language} />
+                )}
               </div>
             </div>
           )}

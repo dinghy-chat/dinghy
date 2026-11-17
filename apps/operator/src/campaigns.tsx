@@ -426,6 +426,7 @@ export function CampaignsPage({
       canEdit={canEdit}
       onBack={() => onCampaign(null)}
       onSaved={onCampaign}
+      onOpen={onCampaign}
       onOpenConversation={onOpenConversation}
     />
   );

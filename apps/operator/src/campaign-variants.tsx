@@ -59,7 +59,6 @@ function VariantRow({
   variant,
   definition,
   members,
-  savesAsYou,
   language,
   canRemove,
   canControl,
@@ -69,7 +68,6 @@ function VariantRow({
   variant: Variant;
   definition: CampaignDefinition;
   members: Member[];
-  savesAsYou: boolean;
   language: Language;
   canRemove: boolean;
   /** Only one variant may be the control group. */
@@ -141,7 +139,6 @@ function VariantRow({
           message={own}
           trigger={definition.trigger.type}
           members={members}
-          savesAsYou={savesAsYou}
           language={language}
           onLanguage={onLanguage}
           onChange={(message) => onChange({ ...variant, message })}
@@ -165,14 +162,12 @@ export const newVariants = (message: CampaignDefinition["message"]): Variant[] =
 export function VariantsFields({
   definition,
   members,
-  savesAsYou,
   language,
   onLanguage,
   onChange,
 }: {
   definition: CampaignDefinition;
   members: Member[];
-  savesAsYou: boolean;
   language: Language;
   onLanguage(language: Language): void;
   onChange(variants: Variant[] | undefined): void;
@@ -199,7 +194,6 @@ export function VariantsFields({
             variant={variant}
             definition={definition}
             members={members}
-            savesAsYou={savesAsYou}
             language={language}
             canRemove={variants.length > VARIANTS_MIN}
             canControl={!hasControl || "control" in variant}

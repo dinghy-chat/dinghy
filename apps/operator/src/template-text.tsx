@@ -128,10 +128,8 @@ export function TemplateText({
       placeCaret(current, pendingCaret.current);
       pendingCaret.current = null;
     }
-    // A box that is contentEditable ignores its fieldset's disabled, so it reads it.
-    const isDisabled = current.closest("fieldset:disabled") !== null;
-    current.contentEditable = isDisabled ? "false" : "plaintext-only";
-    current.setAttribute("aria-disabled", String(isDisabled));
+    // React types no "plaintext-only", so the box takes it here.
+    current.contentEditable = "plaintext-only";
   });
   const changed = () => {
     if (box.current === null) return;

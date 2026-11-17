@@ -242,7 +242,7 @@ const REPEAT_TEXT: Record<Extract<CampaignTrigger, { type: "schedule" }>["repeat
 export const DAY_NAMES = weekdayNames("short");
 
 /** When it goes, after who gets it: "1 hour after they match". */
-function triggerWords(trigger: CampaignTrigger): string {
+export function triggerWords(trigger: CampaignTrigger): string {
   switch (trigger.type) {
     case "match":
       return trigger.delay === undefined
@@ -273,6 +273,23 @@ const SHOW_WORDS: Record<Presentation["show"], TextId> = {
   chat: "summaryShowChat",
 };
 
+/** How it shows: "as a card". */
+export const showWords = (presentation: Presentation) => t(SHOW_WORDS[presentation.show]);
+
+/** A fragment as a line of its own, with a capital: "as a card" becomes "As a card". */
+export const asLine = (words: string) => words.charAt(0).toUpperCase() + words.slice(1);
+
+/**
+ * Who gets it in full, for a campaign read and not edited: one rule as the list says it, and
+ * several rules each in words.
+ */
+export function whoWords(audience: Condition | undefined): string {
+  if (audience === undefined || onlyRule(groupOf(audience)) !== null) {
+    return audienceWords(audience);
+  }
+  return asLine(conditionWords(audience));
+}
+
 /**
  * An event campaign whose audience counts the same event, said once: "After export.finished, once
  * they have done it 3 times", or null for any other campaign.
@@ -292,7 +309,7 @@ function eventCountWords(audience: Condition | undefined, trigger: CampaignTrigg
 
 /** The list's sentence: who, when and how it shows. */
 export function campaignSentence({ audience, trigger, presentation }: CampaignDefinition) {
-  const show = t(SHOW_WORDS[presentation.show]);
+  const show = showWords(presentation);
   const eventCount = eventCountWords(audience, trigger);
   if (eventCount !== null) return t("summarySentenceWhen", { when: eventCount, show });
   return t("summarySentence", { who: audienceWords(audience), when: triggerWords(trigger), show });
@@ -318,7 +335,11 @@ export function rulesWords(rules: Rules): string {
   if (rules.sendWindow !== undefined) parts.push(t("summaryWindow", rules.sendWindow));
   if (!rules.businessHours && rules.sendWindow === undefined) parts.push(t("summaryAnyTime"));
   if (rules.endsAt !== null) {
-    parts.push(t("summaryEnds", { date: new Date(rules.endsAt).toLocaleDateString() }));
+    const date = new Date(rules.endsAt).toLocaleString(undefined, {
+      dateStyle: "medium",
+      timeStyle: "short",
+    });
+    parts.push(t("summaryEnds", { date }));
   }
   return parts.join(" · ");
 }
@@ -342,11 +363,36 @@ const IF_OPEN_WORDS: Record<Presentation["ifConversationOpen"], TextId> = {
   skip: "summaryIfOpenSkip",
 };
 
-/** Delivery folded: when the conversation starts, an open one, and email. */
+/** Delivery folded: when the conversation starts, an open one, email, expiry and assignment. */
 export function deliveryWords({ presentation, delivery }: CampaignDefinition): string {
-  return [
+  const parts = [
     t(START_WORDS[presentation.startConversation]),
     t(IF_OPEN_WORDS[presentation.ifConversationOpen]),
-    t(delivery.sendEmail ? "summaryEmail" : "summaryNoEmail"),
-  ].join(" · ");
+    delivery.sendEmail
+      ? t("summaryEmail")
+      : delivery.emailIfUnread === undefined
+        ? t("summaryNoEmail")
+        : t("summaryEmailIfUnread", { after: durationWords(delivery.emailIfUnread) }),
+  ];
+  if (delivery.expiresIn !== undefined) {
+    parts.push(t("summaryExpires", { after: durationWords(delivery.expiresIn) }));
+  }
+  if (delivery.assignOnReply === false) parts.push(t("summaryNoAssign"));
+  return parts.join(" · ");
+}
+
+/**
+ * What a schedule's sentence leaves out: when a repeat starts and stops, and the time zone of its
+ * time, "Starts 2026-12-01 · until 2027-01-31 · Europe/Paris time".
+ */
+export function scheduleWords(trigger: Extract<CampaignTrigger, { type: "schedule" }>): string {
+  const parts =
+    trigger.repeat === "once"
+      ? []
+      : [
+          t("summaryStarts", { date: trigger.startDate }),
+          ...(trigger.endDate === undefined ? [] : [t("summaryUntil", { date: trigger.endDate })]),
+        ];
+  parts.push(t("summaryTimeZone", { zone: trigger.timeZone }));
+  return parts.join(" · ");
 }

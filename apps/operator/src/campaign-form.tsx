@@ -89,43 +89,32 @@ export function CampaignSteps({
   api,
   definition,
   members,
-  savesAsYou,
   language,
-  editable,
   onLanguage,
   onChange,
 }: {
   api: WorkspaceApi;
   definition: CampaignDefinition;
   members: Member[];
-  /** Whether a save here makes the viewer the sender "whoever saves it". */
-  savesAsYou: boolean;
   language: Language;
-  editable: boolean;
   onLanguage(language: Language): void;
   onChange(definition: CampaignDefinition): void;
 }) {
   const estimate = useEstimate(api, definition);
   const change = <K extends keyof CampaignDefinition>(key: K, value: CampaignDefinition[K]) =>
     onChange(withPart(definition, key, value));
-  const disabled = !editable;
   const isPage = definition.trigger.type === "page";
   return (
     <div className="campaign-steps">
       <NameLists api={api} />
-      <Step
-        number={1}
-        title={t("stepWho")}
-        aside={<MatchingBadge estimate={estimate} />}
-        disabled={disabled}
-      >
+      <Step number={1} title={t("stepWho")} aside={<MatchingBadge estimate={estimate} />}>
         <ConditionBuilder
           initial={definition.audience}
           emptyText="campaignAudienceEveryone"
           onChange={(audience) => change("audience", audience)}
         />
       </Step>
-      <Step number={2} title={t("stepWhen")} disabled={disabled}>
+      <Step number={2} title={t("stepWhen")}>
         <TriggerFields
           trigger={definition.trigger}
           campaignKey={definition.key}
@@ -136,18 +125,12 @@ export function CampaignSteps({
       <Step
         number={3}
         title={t("stepMessage")}
-        aside={
-          editable && (
-            <MessageAdds definition={definition} onLanguage={onLanguage} onChange={onChange} />
-          )
-        }
-        disabled={disabled}
+        aside={<MessageAdds definition={definition} onLanguage={onLanguage} onChange={onChange} />}
       >
         <MessageFields
           message={definition.message}
           trigger={definition.trigger.type}
           members={members}
-          savesAsYou={savesAsYou}
           language={language}
           onLanguage={onLanguage}
           onChange={(message) => change("message", message)}
@@ -156,34 +139,29 @@ export function CampaignSteps({
           <VariantsFields
             definition={definition}
             members={members}
-            savesAsYou={savesAsYou}
             language={language}
             onLanguage={onLanguage}
             onChange={(variants) => change("variants", variants)}
           />
         )}
       </Step>
-      <Step number={4} title={t("stepShow")} disabled={disabled}>
+      <Step number={4} title={t("stepShow")}>
         <ShowCards
           show={definition.presentation.show}
           isPage={isPage}
           onChange={(show) => change("presentation", { ...definition.presentation, show })}
         />
       </Step>
-      <Fold title={t("campaignRules")} summary={rulesWords(definition.rules)} disabled={disabled}>
+      <Fold title={t("campaignRules")} summary={rulesWords(definition.rules)}>
         <RulesFields rules={definition.rules} onRules={(rules) => change("rules", rules)} />
       </Fold>
-      <Fold
-        title={t("campaignGoal")}
-        summary={goalWords(definition.rules.goal)}
-        disabled={disabled}
-      >
+      <Fold title={t("campaignGoal")} summary={goalWords(definition.rules.goal)}>
         <GoalFields
           goal={definition.rules.goal}
           onChange={(goal) => change("rules", withPart(definition.rules, "goal", goal))}
         />
       </Fold>
-      <Fold title={t("campaignDelivery")} summary={deliveryWords(definition)} disabled={disabled}>
+      <Fold title={t("campaignDelivery")} summary={deliveryWords(definition)}>
         <DeliveryFields
           presentation={definition.presentation}
           delivery={definition.delivery}
