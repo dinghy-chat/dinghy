@@ -250,15 +250,8 @@ function listContext(status: Status, waiting: number): string {
 }
 
 /** What the list shows: rows, nothing yet, or nothing at all, from a search or not. */
-function listShows(
-  found: Conversation[] | null,
-  searching: boolean,
-  listed: boolean,
-  count: number,
-): ListShows {
-  // A search still running holds the last query's answer, so "no match" waits for the new one.
-  if (found !== null && found.length === 0) return searching ? "loading" : "searchEmpty";
-  if (found !== null) return "searchRows";
+function listShows(found: Conversation[] | null, listed: boolean, count: number): ListShows {
+  if (found !== null) return found.length === 0 ? "searchEmpty" : "searchRows";
   if (!listed) return "loading";
   return count === 0 ? "empty" : "rows";
 }
@@ -412,7 +405,7 @@ export function InboxList({
   const rows = found ?? conversations;
   const selection = useSelection(rows, selected);
   const look = chooseLook({
-    shows: listShows(found, searching, listed, conversations.length),
+    shows: listShows(found, listed, conversations.length),
     isFiltered: isFiltered(filter),
     steps,
     maySetUp,
@@ -483,13 +476,17 @@ export function InboxList({
           />
         ))}
       </ul>
-      <EmptyBlock
-        look={look}
-        filter={filter}
-        query={query}
-        onClearSearch={() => setQuery("")}
-        onFilter={onFilter}
-      />
+      {/* A running or failed search still holds the last query's answer, which would name the
+          new query as matching nothing. The pane keeps its scene, as its words name no query. */}
+      {!searching && !searchFailed && (
+        <EmptyBlock
+          look={look}
+          filter={filter}
+          query={query}
+          onClearSearch={() => setQuery("")}
+          onFilter={onFilter}
+        />
+      )}
       {hasMore && found === null && (
         <button type="button" className="text-button" onClick={onMore}>
           {t("loadMore")}
