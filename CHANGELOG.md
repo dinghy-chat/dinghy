@@ -4,6 +4,10 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Fixed
+
+- The Inbox's filter card no longer loses its left edge when the conversation list is narrow. The card now opens over the page, lined up with its button.
+
 ## [0.41.0] - 2026-11-17
 
 ### Changed
