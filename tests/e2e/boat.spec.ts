@@ -117,11 +117,13 @@ test.describe("each state shows its boat and its text", () => {
     const context = await browser.newContext();
     const page = await context.newPage();
     await openLink(page, await server.signInLink("anna@example.com"));
+    // The list's buoy, and the gull in the pane beside it, each with words that say the same.
     const empty = page.locator(".list-empty");
-    await expect(empty).toContainText("No open conversations.");
-    await expect(empty.locator("svg.empty-art")).toBeVisible();
-    // The pane beside the list keeps the moving boat.
-    await expect(page.locator(".harbor .ship svg")).toBeVisible();
+    await expect(empty.locator("canvas")).toBeVisible();
+    await expect(empty.locator("b")).not.toBeEmpty();
+    const pane = page.locator(".gull-pane");
+    await expect(pane.getByRole("img", { name: /^A gull/ })).toBeVisible();
+    await expect(pane.getByRole("heading", { level: 3 })).not.toBeEmpty();
     await context.close();
   });
 });
@@ -207,12 +209,40 @@ test.describe("reduced motion", () => {
     await page.context().close();
   });
 
-  test("the operator app's boat stops too", async ({ browser }) => {
+  // The gull's scene is a canvas, so a frame of it is its pixels.
+  const gullFrame = (page: Page) =>
+    page.getByRole("img", { name: /^A gull/ }).evaluate((canvas) => {
+      return (canvas as HTMLCanvasElement).toDataURL();
+    });
+
+  test("the operator app's gull moves by default", async ({ browser }) => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await openLink(page, await server.signInLink("anna@example.com"));
+    const first = await gullFrame(page);
+    await expect.poll(() => gullFrame(page)).not.toBe(first);
+    await context.close();
+  });
+
+  test("the operator app's gull keeps still too, and still squawks when clicked", async ({
+    browser,
+  }) => {
     const context = await browser.newContext({ reducedMotion: "reduce" });
     const page = await context.newPage();
     await openLink(page, await server.signInLink("anna@example.com"));
-    await expect(page.locator(".harbor .ship")).toBeVisible();
-    expect(await animations(page, ".harbor .ship")).toBe(0);
+    const still = await gullFrame(page);
+    await page.waitForTimeout(400);
+    expect(await gullFrame(page)).toBe(still);
+    // The gull stands in the middle of its 110 art pixels, its head 32 from the top.
+    const gull = page.getByRole("img", { name: /^A gull/ });
+    const pixel = ((await gull.boundingBox())?.width ?? 0) / 110;
+    await gull.click({ position: { x: 55 * pixel, y: 32 * pixel } });
+    await expect.poll(() => gullFrame(page)).not.toBe(still);
+    // Once the squawk is over, the gull keeps still again.
+    await page.waitForTimeout(800);
+    const after = await gullFrame(page);
+    await page.waitForTimeout(400);
+    expect(await gullFrame(page)).toBe(after);
     await context.close();
   });
 });

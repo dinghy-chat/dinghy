@@ -5,7 +5,7 @@ import { t } from "./text.ts";
 
 test("t fills each {name} in the text", () => {
   expect(t("searchMany", { count: 3 })).toBe("3 conversations match.");
-  expect(t("searchNone")).toBe("No conversations match.");
+  expect(t("noMatchSearch", { query: "refund" })).toBe("No conversation matches “refund”.");
 });
 
 test("t shows a value as it is, even with $ patterns or a placeholder in it", () => {

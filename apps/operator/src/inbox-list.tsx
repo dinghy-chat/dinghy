@@ -3,13 +3,27 @@ import { useEffect, useState } from "react";
 import { markdownText } from "../../../packages/widget/src/markdown.ts";
 import type { Conversation, Label, Member, OpenCounts, WorkspaceApi } from "./api.ts";
 import type { Draft } from "./drafts.ts";
+import {
+  chooseLook,
+  type FirstSteps,
+  type ListShows,
+  lookKey,
+  type PaneLook,
+} from "./empty-look.ts";
 import { dayTime, shortTime } from "./format.ts";
 import { rowHandler } from "./handler.tsx";
 import { Icon } from "./icons.tsx";
-import { emptyLook, type Filter, ListFilters, type Status } from "./inbox-filters.tsx";
+import {
+  ALL_OPEN,
+  emptyLook,
+  type Filter,
+  isFiltered,
+  ListFilters,
+  type Status,
+} from "./inbox-filters.tsx";
 import { BulkBar, type Selection, useSelection, useTouchSelect } from "./inbox-select.tsx";
 import { LabelPills } from "./labels.tsx";
-import { EmptyArt } from "./scene.tsx";
+import { ListEmpty } from "./list-empty.tsx";
 import { Keys, useShortcutsOn } from "./shortcuts.tsx";
 import { Bone, RowsSkeleton } from "./skeleton.tsx";
 import { plural, t } from "./text.ts";
@@ -241,6 +255,88 @@ function listContext(status: Status, waiting: number): string {
   return t("waitingMany", { count: waiting });
 }
 
+/** What the list shows: rows, nothing yet, or nothing at all, from a search or not. */
+function listShows(found: Conversation[] | null, listed: boolean, count: number): ListShows {
+  if (found !== null) return found.length === 0 ? "searchEmpty" : "searchRows";
+  if (!listed) return "loading";
+  return count === 0 ? "empty" : "rows";
+}
+
+/** The block in an empty list, which says why it is empty and offers the way out. */
+function EmptyBlock({
+  look,
+  filter,
+  query,
+  onClearSearch,
+  onFilter,
+}: {
+  look: PaneLook;
+  filter: Filter;
+  query: string;
+  onClearSearch(): void;
+  onFilter(filter: Filter): void;
+}) {
+  switch (look.kind) {
+    case "caughtUp":
+      return (
+        <ListEmpty
+          tone="done"
+          title={t("nothingOpen")}
+          hint={t("nothingOpenHint")}
+          action={
+            <button
+              type="button"
+              className="btn outline small"
+              onClick={() => onFilter({ ...filter, status: "closed" })}
+            >
+              {t("seeClosed")}
+            </button>
+          }
+        />
+      );
+    case "noMatch":
+      return look.by === "search" ? (
+        <ListEmpty
+          tone="fog"
+          title={t("noMatchSearch", { query: query.trim() })}
+          hint={t("noMatchSearchTry")}
+          action={
+            <button type="button" className="btn outline small" onClick={onClearSearch}>
+              {t("clearSearch")}
+              <Keys keys="Escape" />
+            </button>
+          }
+        />
+      ) : (
+        <ListEmpty
+          tone="fog"
+          title={t(emptyLook(filter))}
+          hint={filter.status === "closed" ? t("closedHint") : null}
+          action={
+            <button type="button" className="btn outline small" onClick={() => onFilter(ALL_OPEN)}>
+              {t("resetFilter")}
+            </button>
+          }
+        />
+      );
+    case "board":
+    case "waitingSetup":
+      return (
+        <ListEmpty tone="waiting" title={t("noConversationsYet")} hint={t("firstLandsHere")} />
+      );
+    case "live":
+      return (
+        <ListEmpty
+          tone="waiting"
+          title={t("noConversationsYet")}
+          hint={t("firstFromSiteLandsHere")}
+        />
+      );
+    default:
+      return null;
+  }
+}
+
 /**
  * The Inbox's list: the search and its filters, and a row for each conversation. While rows are
  * chosen, the bar of bulk actions takes the search's place.
@@ -263,10 +359,13 @@ export function InboxList({
   drafts,
   reads,
   replying,
+  steps,
+  maySetUp,
   onFilter,
   onSelect,
   onMore,
   onChanged,
+  onLook,
 }: {
   api: WorkspaceApi;
   filter: Filter;
@@ -291,11 +390,17 @@ export function InboxList({
   /** Grows with each conversation the operator reads. */
   reads: number;
   replying(conversationId: string): string | null;
+  /** The first steps that tell a new workspace from a quiet one, once loaded. */
+  steps: FirstSteps | null;
+  /** An owner or admin, who may send a test message. */
+  maySetUp: boolean;
   onFilter(filter: Filter): void;
   onSelect(conversationId: string): void;
   onMore(): void;
   /** A bulk action changed conversations, so the list loads again. */
   onChanged(): void;
+  /** The empty state changed, so the pane beside the list can follow. */
+  onLook(look: PaneLook): void;
 }) {
   const [query, setQuery] = useState("");
   // Grows with each bulk action, so a search shows its changes too.
@@ -303,9 +408,16 @@ export function InboxList({
   const { found, searching, failed: searchFailed } = useSearch(api, query, reads + bulkRuns);
   const searchTooShort = query.trim().length > 0 && query.trim().length < SEARCH_MIN;
   const { status } = filter;
-  const empty = emptyLook(filter);
   const rows = found ?? conversations;
   const selection = useSelection(rows, selected);
+  const look = chooseLook({
+    shows: listShows(found, listed, conversations.length),
+    isFiltered: isFiltered(filter),
+    steps,
+    maySetUp,
+  });
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the key stands for the look.
+  useEffect(() => onLook(look), [lookKey(look)]);
   return (
     <section className="list" aria-label={t("inbox")}>
       <PageHead
@@ -353,18 +465,6 @@ export function InboxList({
       )}
       {found === null && !listed && <RowsSkeleton />}
       <ul className={selection.chosen.length > 0 ? "rows selecting" : "rows"} aria-busy={searching}>
-        {found === null && listed && conversations.length === 0 && (
-          <li className="list-empty">
-            <EmptyArt scene={status === "open" ? "day" : "evening"} />
-            <b>{t(empty.empty)}</b>
-            {empty.hint !== null && t(empty.hint)}
-          </li>
-        )}
-        {found !== null && found.length === 0 && !searching && (
-          <li className="nothing">
-            <b>{t("searchNone")}</b>
-          </li>
-        )}
         {rows.map((conversation) => (
           <ConversationRow
             key={conversation.id}
@@ -381,6 +481,17 @@ export function InboxList({
           />
         ))}
       </ul>
+      {/* A running or failed search still holds the last query's answer, which would name the
+          new query as matching nothing. The pane keeps its scene, as its words name no query. */}
+      {!((searching || searchFailed) && look.kind === "noMatch" && look.by === "search") && (
+        <EmptyBlock
+          look={look}
+          filter={filter}
+          query={query}
+          onClearSearch={() => setQuery("")}
+          onFilter={onFilter}
+        />
+      )}
       {hasMore && found === null && (
         <button type="button" className="text-button" onClick={onMore}>
           {t("loadMore")}

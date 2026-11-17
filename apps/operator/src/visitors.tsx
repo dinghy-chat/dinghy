@@ -529,7 +529,7 @@ function LiveVisitors({
         <h3 id="live-people-title">{listTitle(show, country)}</h3>
         {visitors.length === 0 ? (
           <div className="nothing">
-            <EmptyArt scene="day" />
+            <EmptyArt />
             <b>{t("visitorsNone")}</b>
             {t("visitorsNoneHint")}
           </div>

@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { GetStarted as Steps, WorkspaceApi } from "./api.ts";
 import { Icon } from "./icons.tsx";
-import { useLoad } from "./load.ts";
+import type { Loaded } from "./load.ts";
 import type { SettingsPage } from "./settings.tsx";
 import { type TextId, t } from "./text.ts";
 
@@ -43,19 +43,21 @@ function ProgressRing({ done, total }: { done: number; total: number }) {
  */
 export function GetStarted({
   api,
-  version,
+  steps,
   onOpen,
 }: {
   api: WorkspaceApi;
-  /** Goes up on changes in the workspace, so a step done elsewhere shows. */
-  version: number;
+  /** The steps, which the Inbox loads again on changes in the workspace. */
+  steps: Loaded<Steps>;
   onOpen(page: SettingsPage): void;
 }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null);
   // Read again each time the steps open, as a step may have been done in Settings meanwhile.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: version and open ask for a load.
-  const steps = useLoad(() => api.getStarted(), [api, version, open]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: opening asks for a load.
+  useEffect(() => {
+    if (open) steps.reload();
+  }, [open]);
   useEffect(() => {
     if (!open) return;
     const away = (event: PointerEvent) => {

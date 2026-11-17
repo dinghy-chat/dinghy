@@ -880,6 +880,11 @@ export function workspaceApi(workspaceId: string) {
     contactsExportUrl: `${base}/contacts/export`,
     getStarted: () => call<GetStarted>(`${base}/get-started`),
     dismissGetStarted: () => post<{ ok: true }>(`${base}/get-started/dismiss`, {}),
+    /** Writes as a new test visitor, whose conversation reaches the Inbox like a real one. */
+    sendTestMessage: (body: string) =>
+      post<{ visitorId: string; conversationId: string }>(`${base}/test-visitors/messages`, {
+        body,
+      }),
     liveVisitors: () => call<{ visitors: LiveVisitor[] | null }>(`${base}/visitors/live`),
     liveCount: () => call<{ count: number | null }>(`${base}/visitors/live/count`),
     contacts: (query: {

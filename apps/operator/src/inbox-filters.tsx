@@ -10,11 +10,6 @@ export type Status = "open" | "closed";
 /** Whose conversations the Inbox lists. */
 export type Who = "all" | "mine" | "unassigned";
 
-const STATUS_EMPTY: Record<Status, { empty: TextId; hint: TextId }> = {
-  open: { empty: "noOpen", hint: "emptyHint" },
-  closed: { empty: "noClosed", hint: "closedHint" },
-};
-
 const STATUS_OPTIONS: Option<Status>[] = [
   { value: "open", label: "open" },
   { value: "closed", label: "closed" },
@@ -84,16 +79,19 @@ export function filterAddress(
   return `${url.pathname}${url.search}`;
 }
 
-/** The empty list's words: a filter's own, or the status's. */
-export function emptyLook({ status, who, label, started }: Filter): {
-  empty: TextId;
-  hint: TextId | null;
-} {
-  if (started === "team") return { empty: "noStartedByTeam", hint: null };
-  if (label !== null) return { empty: "noLabeled", hint: null };
-  if (who === "mine") return { empty: "noMine", hint: null };
-  if (who === "unassigned" && status === "open") return { empty: "noUnassigned", hint: null };
-  return STATUS_EMPTY[status];
+/** Every open conversation: the Inbox's own list, with no filter on it. */
+export const ALL_OPEN: Filter = { status: "open", who: "all", label: null, started: "anyone" };
+
+/** The list shows less than every open conversation. */
+export const isFiltered = (filter: Filter) => !sameFilter(filter, ALL_OPEN);
+
+/** What a filter that found nothing says. Every open conversation is no filter, so is not here. */
+export function emptyLook({ status, who, label, started }: Filter): TextId {
+  if (started === "team") return "noStartedByTeam";
+  if (label !== null) return "noLabeled";
+  if (who === "mine") return "noMine";
+  if (who === "unassigned" && status === "open") return "noUnassigned";
+  return "noClosed";
 }
 
 /**
@@ -116,7 +114,7 @@ export function ListFilters({
   onChange(filter: Filter): void;
 }) {
   const { status, who, label, started } = filter;
-  const filtered = status !== "open" || who !== "all" || label !== null || started !== "anyone";
+  const filtered = isFiltered(filter);
   return (
     <Popover
       label={t(filtered ? "listFiltered" : "listFilter")}
