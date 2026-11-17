@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.39.0] - 2026-11-17
+
 ### Added
 
 - **Duplicate** saves a copy of a campaign as a new draft and opens it. It is the main button on an ended campaign, and in the ⋯ menu of the others. The copy drops an end date already past and a sender who left the workspace.
@@ -668,7 +670,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.38.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.39.0...HEAD
+[0.39.0]: https://github.com/dinghy-chat/dinghy/compare/v0.38.0...v0.39.0
 [0.38.0]: https://github.com/dinghy-chat/dinghy/compare/v0.37.0...v0.38.0
 [0.37.0]: https://github.com/dinghy-chat/dinghy/compare/v0.36.0...v0.37.0
 [0.36.0]: https://github.com/dinghy-chat/dinghy/compare/v0.35.0...v0.36.0
