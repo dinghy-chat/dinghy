@@ -85,13 +85,13 @@ export const ALL_OPEN: Filter = { status: "open", who: "all", label: null, start
 /** The list shows less than every open conversation. */
 export const isFiltered = (filter: Filter) => !sameFilter(filter, ALL_OPEN);
 
-/** What a filter that found nothing says. */
+/** What a filter that found nothing says. Every open conversation is no filter, so is not here. */
 export function emptyLook({ status, who, label, started }: Filter): TextId {
   if (started === "team") return "noStartedByTeam";
   if (label !== null) return "noLabeled";
   if (who === "mine") return "noMine";
   if (who === "unassigned" && status === "open") return "noUnassigned";
-  return status === "open" ? "noOpen" : "noClosed";
+  return "noClosed";
 }
 
 /**

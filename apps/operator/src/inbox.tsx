@@ -24,7 +24,7 @@ import { useLoad } from "./load.ts";
 import { leave, NAVIGATE_EVENT, navigate, pushAddress, replaceAddress } from "./nav.ts";
 import { useDeviceSync } from "./notifications.tsx";
 import { Settings, type SettingsPage, settingsAddress, settingsInAddress } from "./settings.tsx";
-import { ShortcutsDialog, useShortcuts } from "./shortcuts.tsx";
+import { NEXT_ROW_KEY, ShortcutsDialog, useShortcuts } from "./shortcuts.tsx";
 import { Sidebar, type View } from "./sidebar.tsx";
 import { t } from "./text.ts";
 import { Thread } from "./thread.tsx";
@@ -285,7 +285,7 @@ export function Inbox({
     "g m": () => openView("campaigns"),
     "g s": () => openView("settings"),
     ...(view === "inbox" && {
-      j: () => openRow(rowFrom(1)),
+      [NEXT_ROW_KEY]: () => openRow(rowFrom(1)),
       k: () => openRow(rowFrom(-1)),
     }),
   });

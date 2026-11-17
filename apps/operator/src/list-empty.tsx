@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import { type ReactNode, useEffect, useRef } from "react";
-import { BUOY, CLOUD_B } from "./gull-sprites.ts";
+import { BUOY, CLOUD_B, WATER } from "./gull-sprites.ts";
 import {
   animate,
   blit,
@@ -12,36 +12,26 @@ import {
 } from "./pixel.ts";
 
 /** The buoy's flag: green when all is done, blue while the first message is awaited, grey in fog. */
-export type BuoyTone = "done" | "waiting" | "fog";
+type BuoyTone = "done" | "waiting" | "fog";
 
 const MARK_W = 22;
 const MARK_H = 20;
 const MARK_SCALE = 3;
-const FLAG: Record<BuoyTone, Record<string, string>> = {
-  done: { y: P.G },
-  waiting: { y: P.p },
-  fog: { y: P.d, r: P.d, R: "#7c8b9b" },
-};
-const FOG = { 1: "#f4f6f8", 2: "#ffffff", 3: "#dfe5ea" };
-const SPARKLE = "#d6eaff";
-/** The little water under the buoy: [fromX, toX, y, color]. */
-const WATER: [number, number, number, string][] = [
-  [2, 19, 14, P.l],
-  [0, 21, 15, P.b],
-  [0, 21, 16, P.b],
-  [1, 20, 17, P.B],
-  [3, 18, 18, P.B],
-];
+const FLAG = {
+  done: { y: "G" },
+  waiting: { y: "p" },
+  fog: { y: "d", r: "d", R: "D" },
+} as const satisfies Record<BuoyTone, object>;
+const FOG = { 1: "7", 2: "w", 3: "8" } as const;
 
 function drawMark(ctx: CanvasRenderingContext2D, tone: BuoyTone, time: number) {
   clearCanvas(ctx);
   const bob = Math.round(Math.sin(time * 2));
   blit(ctx, BUOY, 6, 3 + bob, { swap: FLAG[tone] });
-  for (const [from, to, y, color] of WATER) {
-    fillRun(ctx, color, from + (y === 14 ? bob : 0), y, to - from + 1);
-  }
-  if (Math.sin(time * 2) > 0) fillRun(ctx, SPARKLE, 3, 16, 3);
-  else fillRun(ctx, SPARKLE, 15, 15, 3);
+  fillRun(ctx, P.l, 2 + bob, 14, 18);
+  blit(ctx, WATER, 0, 15);
+  if (Math.sin(time * 2) > 0) fillRun(ctx, P.s, 3, 16, 3);
+  else fillRun(ctx, P.s, 15, 15, 3);
   if (tone === "fog") {
     blit(ctx, CLOUD_B, 3 + Math.round(Math.sin(time * 0.8) * 2), 5, { swap: FOG });
   }
@@ -58,7 +48,7 @@ function BuoyMark({ tone }: { tone: BuoyTone }) {
     return animate(element, (deltaS) => {
       if (!isLessMotion()) time += deltaS;
       drawMark(ctx, tone, time);
-    });
+    }).stop;
   }, [tone]);
   // A picture with no words of its own: the title beside it says what it shows.
   return (

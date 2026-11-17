@@ -224,13 +224,25 @@ test.describe("reduced motion", () => {
     await context.close();
   });
 
-  test("the operator app's gull keeps still too", async ({ browser }) => {
+  test("the operator app's gull keeps still too, and still squawks when clicked", async ({
+    browser,
+  }) => {
     const context = await browser.newContext({ reducedMotion: "reduce" });
     const page = await context.newPage();
     await openLink(page, await server.signInLink("anna@example.com"));
     const still = await gullFrame(page);
     await page.waitForTimeout(400);
     expect(await gullFrame(page)).toBe(still);
+    // The gull stands in the middle of its 110 art pixels, its head 32 from the top.
+    const gull = page.getByRole("img", { name: /^A gull/ });
+    const pixel = ((await gull.boundingBox())?.width ?? 0) / 110;
+    await gull.click({ position: { x: 55 * pixel, y: 32 * pixel } });
+    await expect.poll(() => gullFrame(page)).not.toBe(still);
+    // Once the squawk is over, the gull keeps still again.
+    await page.waitForTimeout(800);
+    const after = await gullFrame(page);
+    await page.waitForTimeout(400);
+    expect(await gullFrame(page)).toBe(after);
     await context.close();
   });
 });

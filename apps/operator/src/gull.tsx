@@ -1,7 +1,8 @@
 /** @jsxImportSource react */
 import { type FormEvent, type RefObject, useEffect, useRef, useState } from "react";
+import { MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
 import type { WorkspaceApi } from "./api.ts";
-import { isEmptyInbox, type PaneLook } from "./empty-look.ts";
+import { isEmptyInbox, lookKey, type PaneLook } from "./empty-look.ts";
 import { createFlights, type Flights, type Pickup } from "./flight.ts";
 import {
   BIG_SCENE,
@@ -13,12 +14,10 @@ import {
   type PondExtra,
 } from "./perch.ts";
 import { isLessMotion } from "./pixel.ts";
-import { takesKeys, useShortcutsOn } from "./shortcuts.tsx";
+import { isShortcut, NEXT_ROW_KEY, useShortcutsOn } from "./shortcuts.tsx";
 import { plural, type TextId, t } from "./text.ts";
 import { failureText } from "./ui.tsx";
 
-/** Left alone this long, the gull stretches its wings. */
-const IDLE_MS = 30_000;
 /** Woken from its nap, the gull dozes off again after this. */
 const NAP_AFTER_WAKE_MS = 6000;
 /** A cleared search keeps the scene this long, so the gull can lower its telescope and squawk. */
@@ -29,8 +28,6 @@ const BIG_SCALE = { most: 6, least: 2 };
 const PANE_ROOM_PX = { across: 48, down: 150 };
 /** Typed outside a field, this gives the gull its hat. */
 const HAT_WORD = "ahoy";
-/** The key that opens the first conversation, from inbox.tsx's shortcuts. */
-const FIRST_ROW_KEY = "J";
 
 type SceneKind = Exclude<PaneLook["kind"], "pick" | "loading">;
 type SceneLook = Extract<PaneLook, { kind: SceneKind }>;
@@ -78,8 +75,6 @@ const sceneHint = (look: SceneLook): TextId =>
  * telescope, `landed` once the first conversation came into an empty inbox.
  */
 type Held = { look: SceneLook; why: "cleared" | "landed" };
-
-const lookKey = (look: PaneLook) => (look.kind === "noMatch" ? `noMatch-${look.by}` : look.kind);
 
 function nextHeld(from: PaneLook, to: PaneLook): Held | null {
   if (to.kind === "pick" && !to.bySearch && isEmptyInbox(from)) {
@@ -138,10 +133,17 @@ function useGull(size: PerchSize, scale: number) {
   const firstScale = useRef(scale);
   useEffect(() => {
     if (canvas.current === null) return;
-    const made = createPerch(canvas.current, size, firstScale.current);
-    perch.current = made;
+    const gull = createPerch(canvas.current, size, firstScale.current);
+    perch.current = gull;
+    // Flights are motion, so someone who asks for less gets the squawk alone.
+    gull.onLoop = () => {
+      if (!isLessMotion()) flights.current?.loop(gull);
+    };
+    gull.onSecondLeap = (fish, take) => {
+      if (!isLessMotion()) flights.current?.snatch(gull, fish, take);
+    };
     return () => {
-      made.stop();
+      gull.stop();
       perch.current = null;
     };
   }, [size]);
@@ -149,57 +151,26 @@ function useGull(size: PerchSize, scale: number) {
     perch.current?.setScale(scale);
     const made = createFlights(scale);
     flights.current = made;
-    const gull = perch.current;
-    if (gull !== null) {
-      // Flights are motion, so someone who asks for less gets the squawk alone.
-      gull.onLoop = () => {
-        if (!isLessMotion()) made.loop(gull);
-      };
-      gull.onSecondLeap = (fish, take) => {
-        if (!isLessMotion()) made.snatch(gull, fish, take);
-      };
-    }
     return () => {
       made.stop();
       flights.current = null;
     };
   }, [scale]);
-  useGullLife(perch);
+  useHatWord(perch);
   return { canvas, perch, flights };
 }
 
-/** The idle stretch, and the hat that "ahoy" finds, typed anywhere but where keys are taken. */
-function useGullLife(perch: RefObject<Perch | null>) {
+/** The hat that "ahoy" finds, typed anywhere but where keys are taken. */
+function useHatWord(perch: RefObject<Perch | null>) {
   useEffect(() => {
-    let idle = 0;
     let typed = "";
-    const rest = () => {
-      clearTimeout(idle);
-      idle = window.setTimeout(() => {
-        perch.current?.stretch();
-        rest();
-      }, IDLE_MS);
-    };
     const onKey = (event: KeyboardEvent) => {
-      rest();
-      if (event.key.length !== 1 || event.ctrlKey || event.metaKey || event.altKey) return;
-      if (takesKeys(event.target)) return;
+      if (event.key.length !== 1 || !isShortcut(event)) return;
       typed = (typed + event.key.toLowerCase()).slice(-HAT_WORD.length);
-      const gull = perch.current;
-      if (typed !== HAT_WORD || gull === null) return;
-      gull.hatOn = !gull.hatOn;
-      gull.squawk();
+      if (typed === HAT_WORD) perch.current?.toggleHat();
     };
-    rest();
-    addEventListener("pointermove", rest);
-    addEventListener("pointerdown", rest);
     addEventListener("keydown", onKey);
-    return () => {
-      clearTimeout(idle);
-      removeEventListener("pointermove", rest);
-      removeEventListener("pointerdown", rest);
-      removeEventListener("keydown", onKey);
-    };
+    return () => removeEventListener("keydown", onKey);
   }, [perch]);
 }
 
@@ -209,7 +180,7 @@ function useMode(perch: RefObject<Perch | null>, mode: PerchMode, extra: PondExt
     const gull = perch.current;
     if (gull === null) return;
     gull.setExtra(extra);
-    if (gull.mode !== "away") gull.setMode(mode);
+    gull.setMode(mode);
     if (mode !== "sleep") return;
     let nap = 0;
     gull.onWake = () => {
@@ -233,7 +204,7 @@ function KeyLine({ text }: { text: TextId }) {
   return (
     <p className="gull-sub gull-key">
       {before}
-      <kbd>{FIRST_ROW_KEY}</kbd>
+      <kbd>{NEXT_ROW_KEY.toUpperCase()}</kbd>
       {after}
     </p>
   );
@@ -252,14 +223,12 @@ function Board({
   api,
   scale,
   form,
-  onSending,
-  onSent,
+  onSend,
 }: {
   api: WorkspaceApi;
   scale: number;
   form: RefObject<HTMLFormElement | null>;
-  onSending(isSending: boolean): void;
-  onSent(): void;
+  onSend(stage: "sending" | "sent" | "failed"): void;
 }) {
   const [text, setText] = useState("");
   const [isSending, setSending] = useState(false);
@@ -268,13 +237,13 @@ function Board({
     event.preventDefault();
     setSending(true);
     setFailure(null);
-    onSending(true);
+    onSend("sending");
     try {
       await api.sendTestMessage(text.trim());
       setText("");
-      onSent();
+      onSend("sent");
     } catch (error) {
-      onSending(false);
+      onSend("failed");
       setFailure(failureText(error, {}, "actionFailed"));
     } finally {
       setSending(false);
@@ -291,7 +260,7 @@ function Board({
         aria-label={t("boardLabel")}
         placeholder={t("boardPlaceholder")}
         autoComplete="off"
-        maxLength={1000}
+        maxLength={MESSAGE_MAX}
         value={text}
         onChange={(event) => setText(event.target.value)}
       />
@@ -338,7 +307,7 @@ function GullScene({
     if (gull === null || box === undefined || spot === null || !isPaneShown || isLessMotion()) {
       return;
     }
-    void flights.current?.deliver(gull, { from, box }, spot);
+    flights.current?.deliver(gull, { from, box }, spot);
   };
   // biome-ignore lint/correctness/useExhaustiveDependencies: each new hold plays once.
   useEffect(() => {
@@ -355,12 +324,10 @@ function GullScene({
             api={api}
             scale={scale}
             form={board}
-            onSending={(isSending) => {
-              isFromBoard.current = isSending;
-            }}
-            onSent={() => {
+            onSend={(stage) => {
+              isFromBoard.current = stage !== "failed";
               // The first test lands when its row comes. A later one flies from the board now.
-              if (why === "landed") deliver("board");
+              if (stage === "sent" && why === "landed") deliver("board");
             }}
           />
         )}

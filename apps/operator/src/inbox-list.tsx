@@ -3,7 +3,13 @@ import { useEffect, useState } from "react";
 import { markdownText } from "../../../packages/widget/src/markdown.ts";
 import type { Conversation, Label, Member, OpenCounts, WorkspaceApi } from "./api.ts";
 import type { Draft } from "./drafts.ts";
-import { chooseLook, type FirstSteps, type ListShows, type PaneLook } from "./empty-look.ts";
+import {
+  chooseLook,
+  type FirstSteps,
+  type ListShows,
+  lookKey,
+  type PaneLook,
+} from "./empty-look.ts";
 import { dayTime, shortTime } from "./format.ts";
 import { rowHandler } from "./handler.tsx";
 import { Icon } from "./icons.tsx";
@@ -410,9 +416,8 @@ export function InboxList({
     steps,
     maySetUp,
   });
-  const lookKey = JSON.stringify(look);
   // biome-ignore lint/correctness/useExhaustiveDependencies: the key stands for the look.
-  useEffect(() => onLook(look), [lookKey]);
+  useEffect(() => onLook(look), [lookKey(look)]);
   return (
     <section className="list" aria-label={t("inbox")}>
       <PageHead

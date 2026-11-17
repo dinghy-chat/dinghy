@@ -1,8 +1,7 @@
 // Which empty state the Inbox shows, from what it has already loaded. No art here, so it is easy
 // to test.
 
-/** What the list shows now. */
-/** `searchRows` are a search's results, which must not read as conversations that came in. */
+/** What the list shows. `searchRows` are a search's results, not conversations that came in. */
 export type ListShows = "loading" | "rows" | "searchRows" | "empty" | "searchEmpty";
 
 /** The two get-started steps that tell a new workspace from a quiet one. */
@@ -62,3 +61,7 @@ type EmptyInbox = Extract<PaneLook, { kind: (typeof EMPTY_INBOX)[number] }>;
 /** The looks of an empty inbox, where the first conversation's arrival gets a flight. */
 export const isEmptyInbox = (look: PaneLook): look is EmptyInbox =>
   EMPTY_INBOX.some((kind) => kind === look.kind);
+
+/** A key per look. Rows share one: `bySearch` counts only after an empty inbox, a key of its own. */
+export const lookKey = (look: PaneLook) =>
+  look.kind === "noMatch" ? `noMatch-${look.by}` : look.kind;

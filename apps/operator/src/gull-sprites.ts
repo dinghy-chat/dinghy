@@ -164,6 +164,26 @@ kckkkck
 kccccck
 kkkkkkk`);
 
+/** The gull's overlays, each placed on the standing gull's art. */
+export const TELESCOPE = sprite(`
+...........kkkkk.
+......kkkkkkhhhlk
+...kkkkhhhhkyhywk
+...kYYkyhyykyyylk
+...kkkkYYyYkYyYlk
+......kkkkkkYYYpk
+....kggggk.kkkkk.
+..kggggk.........
+kggggk...........`);
+
+/** The open beak of a squawk. */
+export const BEAK_OPEN = sprite(`
+oo.
+..o`);
+
+/** The eye shut for a blink. */
+export const BLINK = sprite("w");
+
 export const HAT = sprite(`
 ....kkk....
 ...kkkkk...
@@ -215,4 +235,12 @@ export const POST = build(8, 30, (set) => {
   set(3, 3, 14, "T");
   set(2, 2, 20, "T");
   set(4, 4, 24, "T");
+});
+
+/** The little water under the list's buoy, below its bobbing top line. */
+export const WATER = build(22, 4, (set) => {
+  set(0, 21, 0, "b");
+  set(0, 21, 1, "b");
+  set(1, 20, 2, "B");
+  set(3, 18, 3, "B");
 });

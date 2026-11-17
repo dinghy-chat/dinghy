@@ -2397,27 +2397,11 @@ img.ws-tile {
   color: var(--text-strong);
   font-size: 16px;
 }
+/* The key in a line of words. The cap itself is the keys sheet's, with the shortcuts' rules. */
 .gull-key kbd {
-  display: inline-grid;
-  place-items: center;
-  min-width: 24px;
-  height: 24px;
+  display: inline-block;
   margin: 0 2px;
-  padding: 0 6px;
-  border-radius: 7px;
-  background: var(--surface);
-  box-shadow:
-    inset 0 0 0 1.5px var(--line),
-    0 2px 0 var(--line);
-  color: var(--navy);
-  font: 650 12.5px / 1 var(--body);
   vertical-align: 1px;
-}
-/* A touch screen has no J key. */
-@media (hover: none) {
-  .gull-key {
-    display: none;
-  }
 }
 .gull-stage {
   position: relative;
@@ -2483,7 +2467,7 @@ img.ws-tile {
   border: 0;
   border-radius: 0;
   outline: 0;
-  background: #fff8df;
+  background: var(--cream);
   color: #0b2239;
   font: inherit;
   font-size: 15px;
@@ -7705,7 +7689,8 @@ button.quote:hover {
   gap: 3px;
 }
 .keys kbd,
-.keys-groups kbd {
+.keys-groups kbd,
+.gull-key kbd {
   min-width: 20px;
   height: 20px;
   padding: 0 5px;
@@ -7725,7 +7710,8 @@ button.quote:hover {
   display: none;
 }
 @media (hover: none) {
-  .keys {
+  .keys,
+  .gull-key {
     display: none;
   }
 }
@@ -7904,7 +7890,8 @@ button.quote:hover {
   gap: 5px;
   margin: 0;
 }
-.keys-groups kbd {
+.keys-groups kbd,
+.gull-key kbd {
   min-width: 24px;
   height: 24px;
   color: var(--navy);

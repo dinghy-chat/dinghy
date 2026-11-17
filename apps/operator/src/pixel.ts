@@ -24,16 +24,23 @@ export const PALETTE = {
   "1": "#fff3c4",
   "2": "#fffbe8",
   "3": "#ffe59a",
+  // A cloud on the gull's sky, then fog over the list's buoy and its grey flag.
+  "4": "#f1ecdb",
+  "5": "#f6f2e6",
+  "6": "#e7e1cf",
+  "7": "#f4f6f8",
+  "8": "#dfe5ea",
+  D: "#7c8b9b",
+  // Light on the water and on brass, and a gull's white in flight.
+  s: "#d6eaff",
+  h: "#ffe07a",
+  a: "#e6eef7",
 } as const;
 type PaletteKey = keyof typeof PALETTE;
-/** Colors that replace some letters for one drawing, such as the pale white of a gull in flight. */
-export type Swap = Partial<Record<string, string>>;
+/** Letters drawn as other letters for one drawing, such as the pale white of a gull in flight. */
+type Swap = Partial<Record<string, PaletteKey>>;
 
-export interface Sprite {
-  w: number;
-  h: number;
-  rows: string[];
-}
+export type Sprite = { w: number; h: number; rows: string[] };
 
 const isPaletteKey = (letter: string): letter is PaletteKey => letter in PALETTE;
 
@@ -73,9 +80,9 @@ export function blit(
   art.rows.forEach((row, j) => {
     for (let i = 0; i < row.length; i += 1) {
       const letter = row[i] ?? ".";
-      const color = swap?.[letter] ?? (isPaletteKey(letter) ? PALETTE[letter] : undefined);
-      if (color === undefined) continue;
-      ctx.fillStyle = color;
+      const key = swap?.[letter] ?? letter;
+      if (!isPaletteKey(key)) continue;
+      ctx.fillStyle = PALETTE[key];
       ctx.fillRect(left + (flip ? art.w - 1 - i : i), top + j, 1, 1);
     }
   });
@@ -137,46 +144,56 @@ export function fillRun(
   ctx.fillRect(Math.round(x), Math.round(y), w, h);
 }
 
-const LESS_MOTION = "(prefers-reduced-motion: reduce)";
-
-/** Read on each frame, so a change in the system setting stops the art at once. */
-export const isLessMotion = () => matchMedia(LESS_MOTION).matches;
+/** Live, so a change in the system setting stops the art at once. */
+const lessMotion = matchMedia("(prefers-reduced-motion: reduce)");
+export const isLessMotion = () => lessMotion.matches;
 
 /** The most time one frame may move the art, so a frame after a pause does not jump. */
 const MAX_FRAME_S = 0.05;
 
 /**
  * Calls `frame` on each animation frame with the seconds since the last. It sleeps while the tab is
- * in the background or the canvas is hidden, so a pane nobody sees costs nothing.
+ * in the background, the canvas is hidden or motion is reduced, so a still pane costs nothing.
+ * `redraw` draws once more, and keeps drawing for `forMs` even with less motion, as for a squawk.
  */
 export function animate(
   canvas: HTMLCanvasElement,
   frame: (deltaS: number, now: number) => void,
-): () => void {
+): { redraw(forMs?: number): void; stop(): void } {
   let raf = 0;
   let last = performance.now();
   let inView = true;
-  const isAwake = () => inView && document.visibilityState === "visible";
+  let busyUntil = 0;
+  const isShown = () => inView && document.visibilityState === "visible";
   const step = (now: number) => {
     frame(Math.min(MAX_FRAME_S, (now - last) / 1000), now);
     last = now;
-    raf = isAwake() ? requestAnimationFrame(step) : 0;
+    const isAwake = isShown() && (!lessMotion.matches || now < busyUntil);
+    raf = isAwake ? requestAnimationFrame(step) : 0;
   };
-  const wake = () => {
-    if (raf !== 0 || !isAwake()) return;
+  const start = () => {
+    if (raf !== 0 || !isShown()) return;
     last = performance.now();
     raf = requestAnimationFrame(step);
   };
   const watcher = new IntersectionObserver((entries) => {
     inView = entries.some((entry) => entry.isIntersecting);
-    wake();
+    start();
   });
   watcher.observe(canvas);
-  document.addEventListener("visibilitychange", wake);
+  document.addEventListener("visibilitychange", start);
+  lessMotion.addEventListener("change", start);
   raf = requestAnimationFrame(step);
-  return () => {
-    cancelAnimationFrame(raf);
-    watcher.disconnect();
-    document.removeEventListener("visibilitychange", wake);
+  return {
+    redraw(forMs = 0) {
+      busyUntil = Math.max(busyUntil, performance.now() + forMs);
+      start();
+    },
+    stop() {
+      cancelAnimationFrame(raf);
+      watcher.disconnect();
+      document.removeEventListener("visibilitychange", start);
+      lessMotion.removeEventListener("change", start);
+    },
   };
 }

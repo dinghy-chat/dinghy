@@ -1,6 +1,8 @@
 // The gull: one character on a mooring post. It watches the pointer, sleeps, squawks, searches with
 // a telescope, fishes, and stretches. Flights are in flight.ts: here it only stays home.
 import {
+  BEAK_OPEN,
+  BLINK,
   CLOUD_A,
   CLOUD_B,
   FISH,
@@ -14,6 +16,7 @@ import {
   HAT,
   POST,
   SKIFF,
+  TELESCOPE,
 } from "./gull-sprites.ts";
 import {
   animate,
@@ -26,21 +29,28 @@ import {
   type Sprite,
 } from "./pixel.ts";
 
-/** What the gull does: watch, sleep, look through its telescope, or fly (and so is not home). */
-export type PerchMode = "idle" | "sleep" | "search" | "away";
+/** What the gull does at home: watch, sleep, or look through its telescope. */
+export type PerchMode = "idle" | "sleep" | "search";
 /** What else is on the pond: the skiff of a live chat, or the post that holds the board. */
 export type PondExtra = "skiff" | "board" | null;
 
-export interface Point {
-  x: number;
-  y: number;
-}
+export type Point = { x: number; y: number };
+
+type Cloud = { art: Sprite; x: number; y: number; speed: number };
 
 /** The big scene in the empty pane, and the small one in the corner beside a list. */
 const SIZES = {
-  big: { w: 110, h: 78, pondScale: 1, clouds: true },
-  small: { w: 62, h: 60, pondScale: 0.78, clouds: false },
-} as const;
+  big: {
+    w: 110,
+    h: 78,
+    pondScale: 1,
+    clouds: [
+      { art: CLOUD_B, x: 6, y: 6, speed: 1.2 },
+      { art: CLOUD_A, x: 78, y: 16, speed: 0.8 },
+    ],
+  },
+  small: { w: 62, h: 60, pondScale: 0.78, clouds: [] },
+} satisfies Record<string, { w: number; h: number; pondScale: number; clouds: Cloud[] }>;
 export type PerchSize = keyof typeof SIZES;
 /** The big scene's size in art pixels, to fit it in the pane. */
 export const BIG_SCENE = { w: SIZES.big.w, h: SIZES.big.h };
@@ -56,8 +66,13 @@ export const BOARD_POST_TOP = {
 };
 /** Half the pond's width on each of its rows, top to bottom. */
 const POND_HALF_WIDTHS = [15, 23, 28, 31, 33, 34, 34, 33, 31, 28, 23, 15];
-const CLOUD_SWAP = { 1: "#f1ecdb", 2: "#f6f2e6", 3: "#e7e1cf" };
-const SPARKLE = "#d6eaff";
+const CLOUD_SWAP = { 1: "4", 2: "5", 3: "6" } as const;
+/** Where the skiff sails, from the scene's middle. */
+const SKIFF_RANGE = { from: -28, to: 16 };
+/** Where a click on the pond makes a fish leap, which stays inside the small scene's pond too. */
+const LEAP_RANGE = { from: -26, to: 16 };
+/** The gull, in art pixels from its post's top middle: where it is drawn, clicked and flies from. */
+const GULL_BOX = { left: -9, halfWidth: 12, top: -18, bottom: 2, middleY: -9 };
 
 const SQUAWK_MS = 520;
 /** The first part of a squawk lifts the gull off its feet. */
@@ -66,6 +81,8 @@ const HOP_PX = -2;
 const STRETCH_MS = 1500;
 const STRETCH_HALF_MS = 220;
 const STRETCH_BEAK_MS = { from: 500, to: 1100 };
+/** Left alone this long, the gull stretches its wings. */
+const IDLE_MS = 30_000;
 const GULP_MS = 900;
 const WATCH_MS = 1500;
 const POINTER_FRESH_MS = 2500;
@@ -80,75 +97,25 @@ const LEAP_S = 1.3;
 const LEAP_AIR_S = 0.8;
 const SPLASH_S = 0.45;
 
-/** A brass telescope in three parts that widen toward the lens: [fromX, toX, row, color]. */
-const SHINE = "#ffe07a";
-const column = (x: number, from: number, to: number, color: string) =>
-  Array.from({ length: to - from + 1 }, (_, at): Run => [x, x, from + at, color]);
-type Run = [number, number, number, string];
-// biome-ignore format: rows of pixel art read better as rows.
-const TELESCOPE: Run[] = [
-  [9, 12, 7, P.g], [8, 8, 7, P.k], [13, 13, 7, P.k],
-  [11, 14, 6, P.g], [10, 10, 6, P.k], [15, 15, 6, P.k],
-  [13, 16, 5, P.g], [12, 12, 5, P.k], [17, 17, 5, P.k],
-  [11, 13, 1, P.k], [11, 13, 3, P.k], [11, 11, 2, P.k], [12, 13, 2, P.Y],
-  ...column(14, 0, 4, P.k),
-  [15, 18, 0, P.k], [15, 18, 4, P.k], [15, 18, 1, SHINE], [15, 18, 2, P.y], [15, 18, 3, P.Y],
-  [16, 16, 2, SHINE], [17, 17, 3, P.y],
-  ...column(19, -1, 5, P.k),
-  [20, 23, -1, P.k], [20, 23, 5, P.k], [20, 22, 0, SHINE], [20, 22, 1, P.y], [20, 22, 2, P.y],
-  [20, 22, 3, P.y], [20, 22, 4, P.Y], [21, 21, 1, SHINE], [20, 20, 3, P.Y], [22, 22, 3, P.Y],
-  ...column(23, 0, 4, P.l),
-  [23, 23, 1, P.w], [23, 23, 4, P.p],
-  ...column(24, 0, 4, P.k),
-];
-/** The open beak of a squawk. */
-const BEAK_OPEN: Run[] = [
-  [16, 17, 5, P.o],
-  [18, 18, 6, P.o],
-];
+type Leap = { x: number; waterY: number; start: number };
 
-interface Leap {
-  x: number;
-  waterY: number;
-  start: number;
-}
+export type Perch = ReturnType<typeof createPerch>;
 
-export interface Perch {
-  readonly mode: PerchMode;
-  hatOn: boolean;
-  setMode(next: PerchMode): void;
-  setExtra(next: PondExtra): void;
-  setScale(scale: number): void;
-  squawk(): void;
-  stretch(): void;
-  gulp(): void;
-  /** The middle of the gull on the screen. */
-  at(): Point;
-  stop(): void;
-  onLoop: (() => void) | null;
-  onWake: (() => void) | null;
-  onSecondLeap: ((fish: Point, take: () => void) => void) | null;
-}
-
-export function createPerch(canvas: HTMLCanvasElement, size: PerchSize, scale: number): Perch {
-  const { w: W, h: H, pondScale, clouds: hasClouds } = SIZES[size];
-  const isSmall = size === "small";
+export function createPerch(canvas: HTMLCanvasElement, size: PerchSize, scale: number) {
+  const { w: W, h: H, pondScale } = SIZES[size];
   let ctx = pixelCanvas(canvas, W, H, scale);
   let pixel = scale;
   const CX = Math.round(W / 2);
   const POND = H - POND_FROM_BOTTOM;
   const TOP = POND - POST_ABOVE_POND;
   const widths = POND_HALF_WIDTHS.map((half) => Math.round(half * pondScale));
-  const clouds = hasClouds
-    ? [
-        { art: CLOUD_B, x: 6, y: 6, speed: 1.2 },
-        { art: CLOUD_A, x: 78, y: 16, speed: 0.8 },
-      ]
-    : [];
+  const clouds: Cloud[] = SIZES[size].clouds.map((cloud) => ({ ...cloud }));
   const leaps: Leap[] = [];
-  const skiff = { x: CX - 28, way: 1 };
+  const skiff = { x: CX + SKIFF_RANGE.from, way: 1 };
   const s = {
     mode: "idle" as PerchMode,
+    /** Flying, so not on its post. */
+    isAway: false,
     extra: null as PondExtra,
     flip: false,
     time: 0,
@@ -158,6 +125,9 @@ export function createPerch(canvas: HTMLCanvasElement, size: PerchSize, scale: n
     gulpUntil: 0,
     pointerX: null as number | null,
     pointerAt: 0,
+    /** The last pointer move, click or key anywhere on the page, and the last idle stretch. */
+    activeAt: performance.now(),
+    stretchAt: 0,
     watchUntil: 0,
     watchLeft: false,
     clicks: [] as number[],
@@ -179,7 +149,7 @@ export function createPerch(canvas: HTMLCanvasElement, size: PerchSize, scale: n
     for (let index = 0; index < 5; index += 1) {
       if (Math.sin(s.time * 1.5 + index * 2.1) < 0) continue;
       const x = CX - 24 + ((index * 13 + Math.floor(s.time * 3)) % 46);
-      fillRun(ctx, SPARKLE, x, POND + 1 + ((index * 2) % 9), 3);
+      fillRun(ctx, P.s, x, POND + 1 + ((index * 2) % 9), 3);
     }
   }
 
@@ -191,7 +161,6 @@ export function createPerch(canvas: HTMLCanvasElement, size: PerchSize, scale: n
   }
 
   function drawExtra() {
-    if (isSmall) return;
     if (s.extra === "skiff") {
       const bob = Math.round(Math.sin(s.time * 2.2));
       blit(ctx, SKIFF, skiff.x, POND - 5 + bob, { flip: skiff.way < 0 });
@@ -220,36 +189,28 @@ export function createPerch(canvas: HTMLCanvasElement, size: PerchSize, scale: n
     const isSquawking = now < s.squawkUntil;
     const hop = isSquawking && s.squawkUntil - now > HOP_MS ? HOP_PX : 0;
     const breathe = s.mode === "sleep" ? Math.round(Math.sin(s.time * 1.4) * 0.6) : 0;
-    const x = CX - 9;
+    const x = CX + GULL_BOX.left;
     const y = TOP - art.h + hop + breathe;
     // The stretch pose's head sits lower in its sprite.
     const top = y + (isFull ? 4 : 0);
     blit(ctx, art, x, y, { flip: s.flip });
-    const local = (i: number) => x + (s.flip ? art.w - 1 - i : i);
-    const runs = (list: Run[]) => {
-      for (const [from, to, row, color] of list) {
-        fillRun(ctx, color, Math.min(local(from), local(to)), top + row, to - from + 1);
-      }
-    };
+    /** Draws `part` at (dx, dy) on the gull's art, mirrored with the gull. */
+    const overlay = (part: Sprite, dx: number, dy: number) =>
+      blit(ctx, part, s.flip ? x + art.w - dx - part.w : x + dx, top + dy, { flip: s.flip });
     if (s.mode === "sleep") return drawSleep(y);
-    drawBlink(runs);
-    if (s.hat) blit(ctx, HAT, s.flip ? x + art.w - 1 - 16 : x + 6, top - 3, { flip: s.flip });
-    if (now < s.gulpUntil) blit(ctx, FISH_DOWN, s.flip ? local(18) - 1 : local(15), top + 3);
+    if (s.time > s.blinkAt && s.time < s.blinkAt + BLINK_S) overlay(BLINK, 12, 2);
+    if (s.hat) overlay(HAT, 6, -3);
+    if (now < s.gulpUntil) overlay(FISH_DOWN, 15, 3);
     else if (isSquawking) {
-      runs(BEAK_OPEN);
-      blit(ctx, GLYPH.bang, local(20), top - 5);
-      blit(ctx, GLYPH.bang, local(23), top - 3);
-    } else if (isFull && into > STRETCH_BEAK_MS.from && into < STRETCH_BEAK_MS.to) runs(BEAK_OPEN);
-    if (s.mode === "search" && art === GULL_STAND) {
-      runs(TELESCOPE);
-      blit(ctx, GLYPH.question, CX - 1, top - 10 + Math.round(Math.sin(s.time * 3)));
+      overlay(BEAK_OPEN, 16, 5);
+      overlay(GLYPH.bang, 20, -5);
+      overlay(GLYPH.bang, 23, -3);
+    } else if (isFull && into > STRETCH_BEAK_MS.from && into < STRETCH_BEAK_MS.to) {
+      overlay(BEAK_OPEN, 16, 5);
     }
-  }
-
-  function drawBlink(runs: (list: Run[]) => void) {
-    if (s.time > s.blinkAt && s.time < s.blinkAt + BLINK_S) runs([[12, 12, 2, P.w]]);
-    if (s.time > s.blinkAt + BLINK_S) {
-      s.blinkAt = s.time + BLINK_GAP_S.least + Math.random() * BLINK_GAP_S.more;
+    if (s.mode === "search" && art === GULL_STAND) {
+      overlay(TELESCOPE, 8, -1);
+      blit(ctx, GLYPH.question, CX - 1, top - 10 + Math.round(Math.sin(s.time * 3)));
     }
   }
 
@@ -303,19 +264,34 @@ export function createPerch(canvas: HTMLCanvasElement, size: PerchSize, scale: n
     drawExtra();
     blit(ctx, POST, CX - 4, TOP);
     drawLapping(CX, -6, 5, TOP + 28, 4);
-    if (s.mode !== "away") drawGull(now);
+    if (!s.isAway) drawGull(now);
     drawLeaps(now);
   }
 
   function move(deltaS: number) {
     s.time += deltaS;
+    if (s.time > s.blinkAt + BLINK_S) {
+      s.blinkAt = s.time + BLINK_GAP_S.least + Math.random() * BLINK_GAP_S.more;
+    }
     for (const cloud of clouds) {
       cloud.x += cloud.speed * deltaS;
       if (cloud.x > W + 2) cloud.x = -cloud.art.w;
     }
     skiff.x += skiff.way * SKIFF_SPEED_PX_S * deltaS;
-    if (skiff.x > CX + 16) skiff.way = -1;
-    if (skiff.x < CX - 28) skiff.way = 1;
+    if (skiff.x > CX + SKIFF_RANGE.to) skiff.way = -1;
+    if (skiff.x < CX + SKIFF_RANGE.from) skiff.way = 1;
+  }
+
+  /** What falls due at a moment: the squawk after a gulp, and a stretch when left alone. */
+  function due(now: number) {
+    if (s.gulpUntil !== 0 && now >= s.gulpUntil) {
+      s.gulpUntil = 0;
+      perch.squawk();
+    }
+    if (now - Math.max(s.activeAt, s.stretchAt) > IDLE_MS) {
+      s.stretchAt = now;
+      if (s.mode === "idle" && !s.isAway && !isLessMotion()) s.stretchUntil = now + STRETCH_MS;
+    }
   }
 
   /** Where the gull looks: around with the telescope, at the pointer, or after the skiff. */
@@ -325,25 +301,34 @@ export function createPerch(canvas: HTMLCanvasElement, size: PerchSize, scale: n
     if (now < s.watchUntil) s.flip = s.watchLeft;
     else if (s.pointerX !== null && now - s.pointerAt < POINTER_FRESH_MS) {
       s.flip = s.pointerX < canvas.getBoundingClientRect().left + CX * pixel;
-    } else if (s.extra === "skiff" && !isSmall) s.flip = skiff.x + 5 < CX;
+    } else if (s.extra === "skiff") s.flip = skiff.x + 5 < CX;
   }
 
-  const stopLoop = animate(canvas, (deltaS, now) => {
+  const loop = animate(canvas, (deltaS, now) => {
     if (!isLessMotion()) move(deltaS);
+    due(now);
     look(now);
     draw(now);
   });
 
+  const onActive = () => {
+    s.activeAt = performance.now();
+  };
   const onPointer = (event: PointerEvent) => {
     s.pointerX = event.clientX;
     s.pointerAt = performance.now();
+    s.activeAt = s.pointerAt;
+    loop.redraw();
   };
   addEventListener("pointermove", onPointer);
+  addEventListener("pointerdown", onActive);
+  addEventListener("keydown", onActive);
 
   function face(left: boolean) {
     s.flip = left;
     s.watchLeft = left;
     s.watchUntil = performance.now() + WATCH_MS;
+    loop.redraw(WATCH_MS);
   }
 
   function pokeGull() {
@@ -358,12 +343,12 @@ export function createPerch(canvas: HTMLCanvasElement, size: PerchSize, scale: n
   }
 
   function pokePond(x: number) {
-    const at = Math.round(Math.max(CX - 26, Math.min(CX + 16, x)));
+    const at = Math.round(Math.max(CX + LEAP_RANGE.from, Math.min(CX + LEAP_RANGE.to, x)));
     const now = performance.now();
     leaps.push({ x: at, waterY: POND + 4, start: now });
     face(x < CX);
     // The second fish in a row is one too many for the gull.
-    if (now - s.lastLeap < SECOND_LEAP_MS && s.mode === "idle") {
+    if (now - s.lastLeap < SECOND_LEAP_MS && s.mode === "idle" && !s.isAway) {
       s.lastLeap = 0;
       perch.onSecondLeap?.(toScreen(at + 5, POND - 10), () => leaps.pop());
     } else s.lastLeap = now;
@@ -373,53 +358,59 @@ export function createPerch(canvas: HTMLCanvasElement, size: PerchSize, scale: n
     const box = canvas.getBoundingClientRect();
     const x = (event.clientX - box.left) / pixel;
     const y = (event.clientY - box.top) / pixel;
-    const isOnGull = Math.abs(x - CX) < 12 && y > TOP - 18 && y < TOP + 2;
-    if (s.mode !== "away" && isOnGull) pokeGull();
+    const isOnGull =
+      Math.abs(x - CX) < GULL_BOX.halfWidth && y > TOP + GULL_BOX.top && y < TOP + GULL_BOX.bottom;
+    if (!s.isAway && isOnGull) pokeGull();
     else if (y >= POND - 2) pokePond(x);
   };
   canvas.addEventListener("click", onClick);
 
-  const perch: Perch = {
+  const perch = {
     get mode() {
       return s.mode;
     },
-    get hatOn() {
-      return s.hat;
-    },
-    set hatOn(on: boolean) {
-      s.hat = on;
-    },
-    setMode(next) {
+    setMode(next: PerchMode) {
       s.mode = next;
+      loop.redraw();
     },
-    setExtra(next) {
+    setAway(isAway: boolean) {
+      s.isAway = isAway;
+      loop.redraw();
+    },
+    setExtra(next: PondExtra) {
       s.extra = next;
+      loop.redraw();
     },
-    setScale(next) {
+    setScale(next: number) {
       if (next === pixel) return;
       pixel = next;
       ctx = pixelCanvas(canvas, W, H, next);
       draw(performance.now());
     },
+    toggleHat() {
+      s.hat = !s.hat;
+      perch.squawk();
+    },
     squawk() {
       s.squawkUntil = performance.now() + SQUAWK_MS;
+      loop.redraw(SQUAWK_MS);
     },
-    stretch() {
-      if (s.mode === "idle") s.stretchUntil = performance.now() + (isLessMotion() ? 0 : STRETCH_MS);
-    },
+    /** Swallows the fish it caught, and squawks when it is down. */
     gulp() {
       s.gulpUntil = performance.now() + GULP_MS;
-      setTimeout(() => perch.squawk(), GULP_MS);
     },
-    at: () => toScreen(CX, TOP - 9),
+    /** The middle of the gull on the screen. */
+    at: () => toScreen(CX, TOP + GULL_BOX.middleY),
     stop() {
-      stopLoop();
+      loop.stop();
       removeEventListener("pointermove", onPointer);
+      removeEventListener("pointerdown", onActive);
+      removeEventListener("keydown", onActive);
       canvas.removeEventListener("click", onClick);
     },
-    onLoop: null,
-    onWake: null,
-    onSecondLeap: null,
+    onLoop: null as (() => void) | null,
+    onWake: null as (() => void) | null,
+    onSecondLeap: null as ((fish: Point, take: () => void) => void) | null,
   };
   return perch;
 }

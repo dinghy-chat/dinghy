@@ -133,7 +133,6 @@ const en = {
   searching: "Searching",
   searchOne: "1 conversation matches.",
   searchMany: "{count} conversations match.",
-  noOpen: "No open conversations.",
   noClosed: "No closed conversations.",
   noMine: "Nothing is assigned to you.",
   noUnassigned: "Every open conversation has someone on it.",
