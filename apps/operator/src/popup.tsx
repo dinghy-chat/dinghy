@@ -694,8 +694,9 @@ export function Confirm({
 }
 
 /**
- * A button that opens a small card of controls under it, such as the Inbox's filters. A click
- * outside, Escape or Tab past its last control closes it, and Escape gives the focus back.
+ * A button that opens a small card of controls under it, such as the Inbox's filters. The card is
+ * placed in the window, so a narrow area that scrolls, such as the Inbox list, never cuts it off. A
+ * click outside, Escape or Tab past its last control closes it, and Escape gives the focus back.
  */
 export function Popover({
   label,
@@ -729,6 +730,7 @@ export function Popover({
   }, [open]);
   const close = useCallback(() => setOpen(false), []);
   useOutsidePress(open, wrap, close);
+  useFloating(open, button, card, "end", close);
 
   return (
     <div className="popup-wrap" ref={wrap}>
@@ -748,7 +750,7 @@ export function Popover({
       {open && (
         <div
           ref={card}
-          className="popup popover side-end"
+          className="popup popover floating"
           role="dialog"
           aria-labelledby={titleId}
           onBlur={(event) => {
