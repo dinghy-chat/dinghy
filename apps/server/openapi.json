@@ -1141,6 +1141,12 @@
               "isTest"
             ]
           },
+          "subject": {
+            "type": ["string", "null"]
+          },
+          "hasReadyDraft": {
+            "type": "boolean"
+          },
           "lastMessage": {
             "type": ["object", "null"],
             "properties": {

@@ -1,6 +1,10 @@
-import { Image, Pressable, Text, View } from "react-native";
+import { useState } from "react";
+import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { t } from "../../operator/src/text.ts";
 import { ApiError } from "./api";
+import { fonts } from "./fonts";
+import { Icon } from "./icon";
 import { type Palette, styles } from "./theme";
 import type { Conversation } from "./types";
 
@@ -30,18 +34,21 @@ export function Avatar({
   name,
   picture,
   small = false,
+  size = small ? 34 : 42,
   palette,
 }: {
   name: string;
   picture?: string | null;
   small?: boolean;
+  size?: number;
   palette: Palette;
 }) {
-  const size = small ? 34 : 42;
-  if (picture)
+  const [failed, setFailed] = useState<string | null>(null);
+  if (picture && picture !== failed)
     return (
       <Image
         source={{ uri: picture }}
+        onError={() => setFailed(picture)}
         style={{ width: size, height: size, borderRadius: size / 2 }}
       />
     );
@@ -52,42 +59,10 @@ export function Avatar({
         { width: size, height: size, borderRadius: size / 2, backgroundColor: palette.tint },
       ]}
     >
-      <Text style={[styles.avatarText, { color: palette.navy }]}>{initials(name)}</Text>
-    </View>
-  );
-}
-
-export function PillButton({
-  label,
-  onPress,
-  palette,
-  primary = false,
-  disabled = false,
-}: {
-  label: string;
-  onPress(): void;
-  palette: Palette;
-  primary?: boolean;
-  disabled?: boolean;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      disabled={disabled}
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.pillButton,
-        {
-          backgroundColor: primary ? palette.blue : palette.wash,
-          borderColor: primary ? palette.blue : palette.line,
-          opacity: disabled ? 0.45 : pressed ? 0.75 : 1,
-        },
-      ]}
-    >
-      <Text style={[styles.pillButtonText, { color: primary ? "#ffffff" : palette.ink }]}>
-        {label}
+      <Text style={[styles.avatarText, { color: palette.navy, fontFamily: fonts.bold }]}>
+        {initials(name)}
       </Text>
-    </Pressable>
+    </View>
   );
 }
 
@@ -101,10 +76,10 @@ export function ErrorBanner({
   onDismiss(): void;
 }) {
   return (
-    <View style={[styles.errorBanner, { backgroundColor: palette.navy }]}>
-      <Text style={styles.errorBannerText}>{message}</Text>
+    <View style={[styles.errorBanner, { backgroundColor: palette.ink }]}>
+      <Text style={[styles.errorBannerText, { color: palette.paper }]}>{message}</Text>
       <Pressable onPress={onDismiss} hitSlop={12}>
-        <Text style={styles.errorDismiss}>{t("mobileDismiss")}</Text>
+        <Text style={[styles.errorDismiss, { color: palette.paper }]}>{t("mobileDismiss")}</Text>
       </Pressable>
     </View>
   );
@@ -119,33 +94,69 @@ export function BottomNav({
   palette: Palette;
   onPage(page: Page): void;
 }) {
+  const { bottom } = useSafeAreaInsets();
+  const surface = { backgroundColor: palette.paper, borderColor: palette.line };
   return (
-    <View pointerEvents="box-none" style={styles.navWrap}>
-      <View style={[styles.nav, { backgroundColor: palette.paper, borderColor: palette.line }]}>
-        {[
-          ["inbox", t("inbox"), "▤"],
-          ["search", t("searchPlaceholder"), "⌕"],
-          ["settings", t("settings"), "⚙"],
-        ].map(([target, label, icon]) => {
-          const selected = page === target;
-          return (
-            <Pressable
-              accessibilityRole="tab"
-              accessibilityState={{ selected }}
-              key={target}
-              onPress={() => onPage(target as Page)}
-              style={[styles.navItem, selected && { backgroundColor: palette.tint }]}
-            >
-              <Text style={[styles.navIcon, { color: selected ? palette.blue : palette.ink }]}>
-                {icon}
-              </Text>
-              <Text style={[styles.navLabel, { color: selected ? palette.blue : palette.sub }]}>
+    <View pointerEvents="box-none" style={[dock.row, { bottom: Math.max(8, bottom - 4) }]}>
+      {(["inbox", "search", "settings"] as const).map((target) => {
+        const label = target === "search" ? t("searchLabel") : t(target);
+        return (
+          <Pressable
+            key={target}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: page === target }}
+            accessibilityLabel={label}
+            onPress={() => onPage(target)}
+            style={({ pressed }) => [
+              dock.control,
+              target === "search" && dock.search,
+              surface,
+              pressed && { opacity: 0.84 },
+            ]}
+          >
+            <Icon name={target} size={20} color={target === "search" ? palette.sub : palette.ink} />
+            {target === "search" && (
+              <Text numberOfLines={1} style={[dock.label, { color: palette.sub }]}>
                 {label}
               </Text>
-            </Pressable>
-          );
-        })}
-      </View>
+            )}
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
+
+const dock = StyleSheet.create({
+  row: {
+    position: "absolute",
+    left: 14,
+    right: 14,
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  control: {
+    height: 50,
+    width: 50,
+    borderRadius: 25,
+    borderWidth: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#183441",
+    shadowOpacity: 0.13,
+    shadowRadius: 9,
+    shadowOffset: { width: 0, height: 3 },
+    elevation: 4,
+  },
+  search: {
+    flex: 1,
+    flexDirection: "row",
+    justifyContent: "flex-start",
+    paddingHorizontal: 18,
+    gap: 10,
+    maxWidth: 340,
+  },
+  label: { fontFamily: fonts.body, fontSize: 16 },
+});

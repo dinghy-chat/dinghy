@@ -8056,6 +8056,8 @@ export interface components {
         pictureUrl: string | null;
         isTest: boolean;
       };
+      subject?: string | null;
+      hasReadyDraft?: boolean;
       lastMessage: {
         body: string | null;
         /** @enum {string} */

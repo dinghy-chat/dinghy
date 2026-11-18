@@ -1,3 +1,4 @@
+import { useFonts } from "expo-font";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -14,6 +15,7 @@ import { createOutbox, type PendingReply } from "./outbox";
 import { ApiError, DinghyApi } from "./src/api";
 import { clearSession, completeSignIn, readSession, saveSession } from "./src/auth";
 import { BottomNav, ErrorBanner, type Page, readableError } from "./src/common";
+import { fontFiles } from "./src/fonts";
 import { InboxScreen, SearchScreen, SettingsScreen } from "./src/inbox-screens";
 import {
   coldStartRoute,
@@ -26,7 +28,7 @@ import {
 import { SignInScreen } from "./src/sign-in-screen";
 import { day, night, type Palette, styles } from "./src/theme";
 import { ThreadScreen } from "./src/thread-screen";
-import type { Conversation, Me, NotificationRoute, Session, Thread } from "./src/types";
+import type { Conversation, Me, Member, NotificationRoute, Session, Thread } from "./src/types";
 
 function LoadingScreen({ palette }: { palette: Palette }) {
   return (
@@ -61,6 +63,7 @@ function SignedInApp({
     [session],
   );
   const [page, setPage] = useState<Page>("inbox");
+  const [members, setMembers] = useState<Member[]>([]);
   const [me, setMe] = useState<Me | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [waiting, setWaiting] = useState(0);
@@ -95,6 +98,22 @@ function SignedInApp({
     },
     [onSignedOut],
   );
+
+  useEffect(() => {
+    let active = true;
+    setMembers([]);
+    void api.members().then(
+      (result) => {
+        if (active) setMembers(result.members);
+      },
+      (failure) => {
+        if (active) void handleFailure(failure);
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [api, handleFailure]);
 
   const refreshInbox = useCallback(
     async (showLoading = true) => {
@@ -420,17 +439,18 @@ function SignedInApp({
     );
   };
 
-  const assign = async () => {
+  const assign = async (operatorId: string) => {
     const target = threadTarget.current;
     if (!target || target.scope !== scopeKey) return;
     try {
-      await api.assign(target.conversationId, session.operator.id);
+      await api.assign(target.conversationId, operatorId);
       if (threadTarget.current === target) await loadThread(target.conversationId);
       if (scopeRef.current === scopeKey) await refreshInbox();
     } catch (failure) {
       if (scopeRef.current === scopeKey && threadTarget.current === target) {
         await handleFailure(failure);
       }
+      throw failure;
     }
   };
 
@@ -477,7 +497,12 @@ function SignedInApp({
   };
 
   return (
-    <View style={[styles.app, { paddingTop: insets.top, backgroundColor: palette.paper }]}>
+    <View
+      style={[
+        styles.app,
+        { paddingTop: page === "thread" || error ? insets.top : 0, backgroundColor: palette.paper },
+      ]}
+    >
       {error && <ErrorBanner message={error} onDismiss={() => setError(null)} palette={palette} />}
       {page === "thread" && selected ? (
         <ThreadScreen
@@ -486,7 +511,9 @@ function SignedInApp({
           conversation={selected}
           loading={threadLoading}
           meId={session.operator.id}
-          onAssign={assign}
+          members={members}
+          onHandoff={assign}
+          onAssign={() => assign(session.operator.id).catch(() => undefined)}
           onBack={() => {
             threadTarget.current = null;
             threadRequest.current += 1;
@@ -519,11 +546,18 @@ function SignedInApp({
                 palette={palette}
                 pending={outbox.list()}
                 session={session}
+                meId={session.operator.id}
+                onAccount={() => setPage("settings")}
+                onSearch={() => setPage("search")}
+                topInset={error ? 0 : insets.top}
                 waiting={waiting}
               />
             )}
             {page === "search" && (
               <SearchScreen
+                me={me}
+                session={session}
+                topInset={error ? 0 : insets.top}
                 conversations={conversations}
                 onOpen={openConversation}
                 palette={palette}
@@ -531,6 +565,8 @@ function SignedInApp({
             )}
             {page === "settings" && (
               <SettingsScreen
+                session={session}
+                topInset={error ? 0 : insets.top}
                 me={me}
                 onAway={changeAway}
                 onEnablePush={() =>
@@ -551,6 +587,8 @@ function SignedInApp({
 }
 
 function AppContent() {
+  const [fontsLoaded, fontError] = useFonts(fontFiles);
+  const insets = useSafeAreaInsets();
   const isNight = useColorScheme() === "dark";
   const palette = isNight ? night : day;
   const [session, setSession] = useState<Session | null | undefined>(undefined);
@@ -581,12 +619,15 @@ function AppContent() {
       listener.remove();
     };
   }, [session]);
-  if (session === undefined) return <LoadingScreen palette={palette} />;
+  if (session === undefined || (!fontsLoaded && !fontError))
+    return <LoadingScreen palette={palette} />;
   return (
     <>
       <StatusBar barStyle={isNight ? "light-content" : "dark-content"} />
       {session === null ? (
         <SignInScreen
+          topInset={insets.top}
+          bottomInset={insets.bottom}
           completionError={authError}
           isNight={isNight}
           onStart={() => setAuthError(null)}

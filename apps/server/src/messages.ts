@@ -1203,7 +1203,26 @@ export interface LastMessage {
   createdAt: Date;
 }
 
+const conversationSubject = sql<string | null>`(
+  select nullif(left(btrim(split_part(m.body, chr(10), 1)), 120), '')
+  from ${message} as m
+  where m.workspace_id = ${conversation}.workspace_id and m.conversation_id = ${conversation}.id
+    and m.kind = 'text' and m.deleted_at is null
+  order by m.seq limit 1
+)`;
+
+const hasReadyDraft = (operatorId: string | null) =>
+  operatorId === null
+    ? sql<boolean>`false`
+    : sql<boolean>`exists (
+  select 1 from ${draftReply} as d
+  where d.workspace_id = ${conversation}.workspace_id and d.conversation_id = ${conversation}.id
+    and d.resolved is null and d.stale_at is null
+)`;
+
 export interface ConversationSummary extends ConversationRow {
+  hasReadyDraft: boolean;
+  subject: string | null;
   lastMessage: LastMessage | null;
   unread: boolean;
 }
@@ -1402,6 +1421,8 @@ export async function listConversations(
   const rows = await tx
     .select({
       ...conversationColumns,
+      subject: conversationSubject,
+      hasReadyDraft: hasReadyDraft(operatorId),
       unread: unreadBy(operatorId),
       lastBody: previewBody(newest.body, newest.metadata),
       lastKind: newest.kind,
@@ -2002,6 +2023,8 @@ export async function searchConversations(
   const rows = await tx
     .select({
       ...conversationColumns,
+      subject: conversationSubject,
+      hasReadyDraft: hasReadyDraft(operatorId),
       unread: unreadBy(operatorId),
       hitBody: hit.body,
       lastBody: previewBody(newest.body, newest.metadata),

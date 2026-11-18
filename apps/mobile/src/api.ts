@@ -94,8 +94,30 @@ export class DinghyApi {
     return this.call("/v1/auth/sign-out", { method: "POST", body: "{}" });
   }
 
+  private withVisitorPicture(conversation: Conversation): Conversation {
+    const visitor = conversation.visitor;
+    const path = visitor.attributes?.avatarPath;
+    // Signed visitor attributes can point to a public portrait on this instance.
+    const portrait =
+      visitor.pictureUrl ??
+      (typeof path === "string" && /^\/v1\/pictures\/[a-zA-Z0-9-]+$/.test(path) ? path : null);
+    if (!portrait) return conversation;
+    try {
+      const pictureUrl = new URL(portrait, this.auth.origin).href;
+      return { ...conversation, visitor: { ...visitor, pictureUrl } };
+    } catch {
+      return conversation;
+    }
+  }
+
   async conversations(): Promise<{ conversations: Conversation[]; waiting: number }> {
-    return this.call(this.workspace("/conversations?status=open&limit=100"));
+    const page = await this.call<{ conversations: Conversation[]; waiting: number }>(
+      this.workspace("/conversations?status=open&limit=100"),
+    );
+    return {
+      ...page,
+      conversations: page.conversations.map((item) => this.withVisitorPicture(item)),
+    };
   }
 
   async thread(conversationId: string): Promise<Thread> {
@@ -113,7 +135,15 @@ export class DinghyApi {
       if (!last) break;
       after = last.seq;
     } while (page.hasMore);
-    return { ...page, messages, hasMore: false };
+    const firstText = messages.find((message) => !message.deleted && message.kind === "text");
+    const subject =
+      page.conversation.subject ?? firstText?.body?.split("\n", 1)[0]?.trim().slice(0, 120) ?? null;
+    return {
+      ...page,
+      conversation: this.withVisitorPicture({ ...page.conversation, subject }),
+      messages,
+      hasMore: false,
+    };
   }
 
   reply(conversationId: string, clientId: string, body: string): Promise<Message> {

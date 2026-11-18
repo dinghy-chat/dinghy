@@ -32,8 +32,12 @@ export type Conversation = {
   id: string;
   status: "open" | "closed";
   updatedAt: string;
+  subject?: string | null;
+  hasReadyDraft?: boolean;
   assigneeOperatorId: string | null;
+  bot?: { apiKeyId: string; name: string } | null;
   visitor: {
+    attributes?: Record<string, unknown> | null;
     id: string;
     name: string | null;
     email: string | null;
