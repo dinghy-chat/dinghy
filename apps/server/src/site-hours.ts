@@ -329,6 +329,8 @@ const topKeys = (column: "pages" | "referrers") => sql`
   GROUP BY e.key ORDER BY count DESC, e.key LIMIT ${TOP_COUNT}`;
 
 interface StatsRow extends Record<string, unknown> {
+  /** Whether the workspace's stored hours reach back to the start of the previous period. */
+  has_previous: boolean;
   visits: number;
   visits_before: number;
   page_views: number;
@@ -355,6 +357,8 @@ async function readHours(
       SELECT * FROM hours WHERE hour < ${at(period.previousUntil)}
     )
     SELECT
+      coalesce((SELECT min(hour) FROM site_hour WHERE workspace_id = ${workspaceId})
+        <= ${at(period.previousSince)}, false) AS has_previous,
       (SELECT coalesce(sum(visits), 0) FROM period)::int AS visits,
       (SELECT coalesce(sum(visits), 0) FROM previous)::int AS visits_before,
       (SELECT coalesce(sum(page_views), 0) FROM period)::int AS page_views,
@@ -390,12 +394,14 @@ export async function readSiteStats(
   for (const { slot: index, visits } of row.series) {
     if (index >= 0 && index < series.length) series[index] = visits;
   }
+  const { chats, chatsBefore } = await countChats(tx, workspaceId, period);
   return {
     visits: row.visits,
-    visitsBefore: row.visits_before,
     pageViews: row.page_views,
-    pageViewsBefore: row.page_views_before,
-    ...(await countChats(tx, workspaceId, period)),
+    chats,
+    previous: row.has_previous
+      ? { visits: row.visits_before, pageViews: row.page_views_before, chats: chatsBefore }
+      : null,
     peak: row.peak === null ? null : { ...row.peak, at: new Date(row.peak.at).toISOString() },
     series,
     pages: row.pages,

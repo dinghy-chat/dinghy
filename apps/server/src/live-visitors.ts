@@ -255,11 +255,11 @@ const countRoute = createRoute({
 const VisitorStatsSchema = z
   .object({
     visits: Count,
-    visitsBefore: Count,
     pageViews: Count,
-    pageViewsBefore: Count,
     chats: Count,
-    chatsBefore: Count,
+    // The period of the same length just before, or null when the stored hours do not reach back to
+    // its start, as on a site that Dinghy has not counted for that long.
+    previous: z.object({ visits: Count, pageViews: Count, chats: Count }).nullable(),
     peak: z.object({ count: Count, at: z.string() }).nullable(),
     // Visits per hour for one day, per day in `tz` otherwise, oldest first.
     series: z.array(Count),
@@ -276,7 +276,7 @@ const statsRoute = createRoute({
   security: SESSION,
   summary: "Count the site's visits, page views, chats and busiest minute over 1, 7, 30 or 90 days",
   description:
-    "Counted by the hour with no cookie and no stored ID, and kept 182 days; the stored hours are at most about a minute behind. One day is the last 24 whole hours: the current hour and the 23 before it. A longer period runs from the start of the day, `days - 1` days ago, in `tz`, to now, as for analytics. The `Before` numbers are for a period of the same length just before. A visit is a tab that opened from another site or from nowhere; a page view is a tab that opened, or one whose page changed. `series` holds the visits per hour for one day, and per day in `tz` otherwise, oldest first. `peak` is the busiest minute, by the most tabs open at once. `pages` and `referrers` list the top 8, with a null `referrer` for none; an hour keeps at most 200 distinct pages and 200 referrers. `chats` counts the conversations that visitors started in the period, leaving out the welcome chat and test visitors.",
+    "Counted by the hour with no cookie and no stored ID, and kept 182 days; the stored hours are at most about a minute behind. One day is the last 24 whole hours: the current hour and the 23 before it. A longer period runs from the start of the day, `days - 1` days ago, in `tz`, to now, as for analytics. `previous` holds the numbers of a period of the same length just before, or null when the stored hours do not reach back to its start. A visit is a tab that opened from another site or from nowhere; a page view is a tab that opened, or one whose page changed. `series` holds the visits per hour for one day, and per day in `tz` otherwise, oldest first. `peak` is the busiest minute, by the most tabs open at once. `pages` and `referrers` list the top 8, with a null `referrer` for none; an hour keeps at most 200 distinct pages and 200 referrers. `chats` counts the conversations that visitors started in the period, leaving out the welcome chat and test visitors.",
   request: { params: workspaceParams, query: StatsQuery },
   responses: {
     200: {

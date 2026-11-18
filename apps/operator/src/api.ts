@@ -320,11 +320,10 @@ export type VisitorDays = 1 | 7 | 30 | 90;
 /** The site's numbers for a period, kept by the hour. */
 export interface VisitorStats {
   visits: number;
-  visitsBefore: number;
   pageViews: number;
-  pageViewsBefore: number;
   chats: number;
-  chatsBefore: number;
+  /** The period just before, or null when Dinghy has not counted the site for that long. */
+  previous: { visits: number; pageViews: number; chats: number } | null;
   peak: { count: number; at: string } | null;
   /** Visits per hour for one day, per day otherwise, oldest first. */
   series: number[];
