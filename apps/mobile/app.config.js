@@ -6,18 +6,15 @@ module.exports = {
   version: "0.1.0",
   userInterfaceStyle: "automatic",
   ios: {
-    buildNumber: "2",
+    buildNumber: "3",
     config: { usesNonExemptEncryption: false },
     bundleIdentifier: "chat.dinghy.operator",
-    icon: {
-      light: "./assets/icon.png",
-      dark: "./assets/icon-dark.png",
-    },
+    icon: { light: "./assets/icon.png", dark: "./assets/icon.png" },
     supportsTablet: false,
   },
   android: {
     adaptiveIcon: {
-      backgroundColor: "#E3F2EE",
+      backgroundColor: "#0b2239",
       foregroundImage: "./assets/adaptive-foreground.png",
       monochromeImage: "./assets/adaptive-monochrome.png",
     },

@@ -127,7 +127,6 @@ export function SignInScreen({
             screenStyles.panel,
             {
               backgroundColor: palette.authPanel,
-              borderColor: palette.authLine,
               paddingBottom: Math.max(bottomInset, 14) + 10,
             },
           ]}
@@ -364,7 +363,6 @@ const screenStyles = StyleSheet.create({
   panel: {
     minHeight: 330,
     marginTop: -30,
-    borderTopWidth: 1,
     borderTopLeftRadius: 32,
     borderTopRightRadius: 32,
     paddingHorizontal: 24,
