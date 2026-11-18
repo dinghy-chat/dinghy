@@ -1735,24 +1735,17 @@ button.workspace[aria-expanded="true"],
     grid-column: 1 / -1;
     margin-top: 12px;
   }
-  /* More choices than fit, such as the Visitors filters or the periods of Over time, scroll
-     sideways rather than wrap. */
-  .page-actions > .choices.outlined,
-  .over-time-head > .choices.outlined {
+  /* More choices than fit, such as the Visitors filters, scroll sideways rather than wrap. */
+  .page-actions > .choices.outlined {
     flex: 1;
     min-width: 0;
     overflow-x: auto;
     scrollbar-width: none;
   }
-  .page-actions > .choices.outlined label,
-  .over-time-head > .choices.outlined label {
+  .page-actions > .choices.outlined label {
     flex: 1 0 auto;
     justify-content: center;
     white-space: nowrap;
-  }
-  /* The periods take a row of their own under the heading. */
-  .over-time-head > .choices.outlined {
-    flex-basis: 100%;
   }
 }
 
@@ -4015,6 +4008,16 @@ button.quote:hover {
   display: grid;
   gap: 16px;
   padding-top: 14px;
+}
+/* Your site, after the support charts: its own heading over the same band and cards. */
+.site-numbers {
+  display: grid;
+  gap: 16px;
+  margin-top: 12px;
+}
+.site-numbers > h3 {
+  color: var(--navy);
+  font: 700 20px / 1.2 var(--display);
 }
 .stats {
   display: grid;
@@ -6699,17 +6702,15 @@ button.quote:hover {
   box-shadow: inset 0 0 0 1px var(--line);
 }
 .live-tile h3,
-.live-people h3,
-.over-time-head h3 {
+.live-people h3 {
+  margin-bottom: 10px;
   color: var(--navy);
   font: 700 16px / 1.2 var(--display);
 }
-.live-tile h3,
-.live-people h3 {
-  margin-bottom: 10px;
-}
+/* One column as wide as the tile: an auto column would grow to fit a label that does not wrap. */
 .live-bars {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   padding: 0;
   list-style: none;
@@ -6726,7 +6727,9 @@ button.quote:hover {
 .live-bars span {
   position: relative;
 }
+/* The label shrinks to its ellipsis, as a flex item is otherwise as wide as its words. */
 .live-bars span:nth-child(2) {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -6867,22 +6870,6 @@ button.quote:hover {
 }
 .live-credit a {
   color: var(--mute);
-}
-
-/* Over time, under the live part: a heading with the period on its right, then the Analytics
-   band and two tiles. */
-.over-time {
-  margin-top: 36px;
-}
-.over-time-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px 16px;
-}
-.over-time-head h3 {
-  font-size: 20px;
 }
 
 @media (max-width: 1100px) {

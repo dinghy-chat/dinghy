@@ -1,14 +1,13 @@
 /** @jsxImportSource react */
 import { type ReactNode, useEffect, useState } from "react";
-import type { Analytics, AnalyticsDays, WorkspaceApi } from "./api.ts";
-import { browserTimeZone, duration, weekdayNames } from "./format.ts";
+import type { Analytics, AnalyticsDays, VisitorStats, WorkspaceApi } from "./api.ts";
+import { browserTimeZone, dayAndTime, duration, weekdayNames } from "./format.ts";
 import { LabelDot } from "./labels.tsx";
 import { Pond } from "./scene.tsx";
-import { AnalyticsSkeleton } from "./skeleton.tsx";
+import { AnalyticsSkeleton, SiteSkeleton } from "./skeleton.tsx";
 import {
   Change,
   CountChange,
-  PERIOD_OPTIONS,
   percent,
   Ring,
   rateOf,
@@ -19,9 +18,16 @@ import {
   Tipped,
 } from "./stat.tsx";
 import { plural, type TextId, t } from "./text.ts";
-import { Avatar, Choices, DocLink, failureText, Loading, Page } from "./ui.tsx";
+import { Avatar, Choices, DocLink, failureText, Loading, type Option, Page } from "./ui.tsx";
+import { pageName, sourceName } from "./visitor.ts";
 
 type Period = `${AnalyticsDays}`;
+
+const PERIODS: readonly Option<Period>[] = [
+  { value: "7", label: "period7" },
+  { value: "30", label: "period30" },
+  { value: "90", label: "period90" },
+];
 
 /** A date of the period, "2026-11-08", as "Nov 8". */
 export function dayName(
@@ -375,30 +381,156 @@ function Labels({ numbers }: { numbers: Analytics }) {
   );
 }
 
-export function AnalyticsPage({ api }: { api: WorkspaceApi }) {
-  const [days, setDays] = useState<Period>("30");
-  const [numbers, setNumbers] = useState<Analytics | null>(null);
-  const [failure, setFailure] = useState<TextId | null>(null);
-  // The server checks the zone, and days and hours read in it.
-  const zone = browserTimeZone();
+/** The conversations' key numbers, then the charts. */
+function Support({ numbers, days }: { numbers: Analytics; days: Period }) {
+  return (
+    <>
+      <Stats numbers={numbers} days={days} />
+      <div className="charts">
+        <PerDay days={numbers.perDay} />
+        <Outcomes numbers={numbers} />
+        <Hours hours={numbers.hours} />
+        <Repliers numbers={numbers} />
+        <Labels numbers={numbers} />
+      </div>
+    </>
+  );
+}
 
+/**
+ * The site's key numbers, each against the period before. A period before Dinghy started counting
+ * the site has no numbers, so no change shows.
+ */
+function SiteStats({ site, compared }: { site: VisitorStats; compared: string }) {
+  const { visits, pageViews, chats, peak, previous } = site;
+  const rate = rateOf(chats, visits);
+  const rateBefore = previous === null ? null : rateOf(previous.chats, previous.visits);
+  return (
+    <div className="stats">
+      <Stat title="statsVisits">
+        <p className="stat-value">{visits.toLocaleString()}</p>
+        <CountChange count={visits} before={previous?.visits ?? 0} compared={compared} />
+        <Sparkline values={site.series} />
+      </Stat>
+      <Stat title="statsPageViews">
+        <p className="stat-value">{pageViews.toLocaleString()}</p>
+        <CountChange count={pageViews} before={previous?.pageViews ?? 0} compared={compared} />
+      </Stat>
+      <Stat title="statsChatRate" help="statsChatRateHelp">
+        {rate === null ? (
+          <p className="stat-value none">{t("statsNoneYet")}</p>
+        ) : (
+          <div className="stat-ring">
+            <Ring share={Math.min(1, rate)} />
+            <p className="stat-value">{percent(rate)}</p>
+          </div>
+        )}
+        <ShareChange share={rate} before={rateBefore} compared={compared} />
+        {rate !== null && (
+          <p className="stat-note">
+            {t("statsChatsFrom", {
+              chats: plural(chats, "statsChatsOne", "statsChats"),
+              visits: plural(visits, "statsVisitsOne", "statsVisitsMany"),
+            })}
+          </p>
+        )}
+      </Stat>
+      <Stat title="statsPeak" help="statsPeakHelp">
+        {peak === null ? (
+          <p className="stat-value none">{t("statsNoneYet")}</p>
+        ) : (
+          <>
+            <p className="stat-value">{peak.count}</p>
+            <p className="stat-note">{dayAndTime(peak.at)}</p>
+          </>
+        )}
+      </Stat>
+    </div>
+  );
+}
+
+/** The site's key numbers, then the pages people saw and where they came from. */
+function Site({
+  site,
+  failure,
+  days,
+}: {
+  site: VisitorStats | null;
+  failure: TextId | null;
+  days: Period;
+}) {
+  return (
+    <section className="site-numbers" aria-labelledby="site-title">
+      <h3 id="site-title">{t("siteTitle")}</h3>
+      {site === null ? (
+        <Loading failure={failure}>
+          <SiteSkeleton />
+        </Loading>
+      ) : (
+        <>
+          <SiteStats site={site} compared={t("vsPrevious", { days })} />
+          <div className="charts">
+            <ShareList
+              title="siteTopPages"
+              empty="siteNothing"
+              total={site.pageViews}
+              rows={site.pages.map(({ page, title, count }) => ({
+                key: page,
+                name: pageName(title, page),
+                count,
+              }))}
+            />
+            <ShareList
+              title="siteTopSources"
+              empty="siteNothing"
+              total={site.visits}
+              rows={site.referrers.map(({ referrer, count }) => ({
+                key: referrer ?? "",
+                name: sourceName(referrer),
+                count,
+              }))}
+            />
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
+/** The period's support numbers and site numbers, loaded together. */
+function usePeriodNumbers(api: WorkspaceApi, days: Period, zone: string) {
+  const [numbers, setNumbers] = useState<Analytics | null>(null);
+  const [site, setSite] = useState<VisitorStats | null>(null);
+  const [failure, setFailure] = useState<TextId | null>(null);
   useEffect(() => {
     // An answer for another period or workspace must not land here.
     let current = true;
     setNumbers(null);
+    setSite(null);
     setFailure(null);
-    api.analytics(Number(days) as AnalyticsDays, zone).then(
-      (next) => {
-        if (current) setNumbers(next);
-      },
-      (error: unknown) => {
-        if (current) setFailure(failureText(error, {}, "actionFailed"));
-      },
-    );
+    const fail = (error: unknown) => {
+      if (current) setFailure(failureText(error, {}, "actionFailed"));
+    };
+    const period = Number(days) as AnalyticsDays;
+    api.analytics(period, zone).then((next) => {
+      if (current) setNumbers(next);
+    }, fail);
+    api.visitorStats(period, zone).then((next) => {
+      if (current) setSite(next);
+    }, fail);
     return () => {
       current = false;
     };
   }, [api, days, zone]);
+  return { numbers, site, failure };
+}
+
+export function AnalyticsPage({ api }: { api: WorkspaceApi }) {
+  const [days, setDays] = useState<Period>("30");
+  // The server checks the zone, and days and hours read in it.
+  const zone = browserTimeZone();
+  const { numbers, site, failure } = usePeriodNumbers(api, days, zone);
+  const isSiteEmpty = site?.visits === 0;
 
   return (
     <Page
@@ -409,7 +541,7 @@ export function AnalyticsPage({ api }: { api: WorkspaceApi }) {
           label={t("period")}
           variant="outlined"
           value={days}
-          options={PERIOD_OPTIONS}
+          options={PERIODS}
           onChange={setDays}
         />
       }
@@ -418,24 +550,24 @@ export function AnalyticsPage({ api }: { api: WorkspaceApi }) {
         <Loading failure={failure}>
           <AnalyticsSkeleton />
         </Loading>
-      ) : numbers.started === 0 ? (
-        <div className="nothing empty-boat">
-          <Pond />
-          <b>{t("analyticsEmpty", { days })}</b>
-          {t("analyticsEmptyHint")}
-        </div>
       ) : (
-        <Tipped className="analytics">
-          <Stats numbers={numbers} days={days} />
-          <div className="charts">
-            <PerDay days={numbers.perDay} />
-            <Outcomes numbers={numbers} />
-            <Hours hours={numbers.hours} />
-            <Repliers numbers={numbers} />
-            <Labels numbers={numbers} />
-          </div>
-          <DocLink path="operator-guide#see-how-support-is-going" text="analyticsDocsLink" />
-        </Tipped>
+        <>
+          {numbers.started === 0 && (
+            <div className="nothing empty-boat">
+              <Pond />
+              <b>{t("analyticsEmpty", { days })}</b>
+              {t("analyticsEmptyHint")}
+            </div>
+          )}
+          {/* With no conversation and no visit, the pond alone says so. */}
+          {(numbers.started > 0 || !isSiteEmpty) && (
+            <Tipped className="analytics">
+              {numbers.started > 0 && <Support numbers={numbers} days={days} />}
+              <Site site={site} failure={failure} days={days} />
+              <DocLink path="operator-guide#see-how-support-is-going" text="analyticsDocsLink" />
+            </Tipped>
+          )}
+        </>
       )}
     </Page>
   );

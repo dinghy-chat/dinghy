@@ -94,6 +94,10 @@ export function replyAuthor(
 /** An address with no scheme, as in "acme.example/pricing". */
 export const bare = (page: string) => page.replace(/^https?:\/\//, "");
 
+/** Where people came from: a site's bare name, or "No referrer". */
+export const sourceName = (referrer: string | null) =>
+  referrer === null ? t("visitorsNoReferrer") : bare(referrer);
+
 /** An ID at the end of a path: one word of letters, digits, _ or -, with a digit in it. */
 const ID_SEGMENT = /^(?=.*\d)[\w-]{6,}$/;
 

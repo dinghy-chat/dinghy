@@ -4,7 +4,7 @@ import { conversation, siteHour, workspace } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { countedConversation } from "./messages.ts";
 import { periodBounds } from "./periods.ts";
-import { DAY_MS, HOUR_MINUTES, HOUR_MS, HOUR_SECONDS, MINUTE_MS } from "./time.ts";
+import { HOUR_MINUTES, HOUR_MS, HOUR_SECONDS, MINUTE_MS } from "./time.ts";
 
 // The site's traffic by the hour. The beats count each hour in a Valkey hash, which names itself in
 // HOURS_KEY, and the worker copies it to Postgres at most a minute later.
@@ -117,8 +117,6 @@ export async function minutePeaks(
 const KEPT_DAYS = 182;
 /** How many pages and referrers the stats list. */
 const TOP_COUNT = 8;
-const DAY_HOURS = 24;
-export const PERIOD_DAYS = [1, 7, 30, 90] as const;
 
 type HourRow = typeof siteHour.$inferInsert;
 
@@ -265,26 +263,13 @@ interface StatsPeriod {
   slotCount: number;
 }
 
-/**
- * One day is the last 24 whole hours: the current hour and the 23 before it, a slot each. Longer
- * periods start at the start of a day in `timeZone`, as on the Analytics page, with a slot per day.
- */
+/** A period starts at the start of a day in `timeZone`, as for analytics, with a slot per day. */
 async function statsPeriod(
   tx: Transaction,
   days: number,
   timeZone: string,
   now: Date,
 ): Promise<StatsPeriod> {
-  if (days === 1) {
-    const since = new Date((hourOf(now.getTime()) - DAY_HOURS + 1) * HOUR_MS);
-    return {
-      since,
-      previousSince: new Date(since.getTime() - DAY_MS),
-      previousUntil: since,
-      slot: sql`(extract(epoch FROM hour - ${at(since)}) / ${HOUR_SECONDS})::int`,
-      slotCount: DAY_HOURS,
-    };
-  }
   const result = await tx.execute<{
     since: string;
     previous_since: string;
@@ -382,7 +367,7 @@ async function readHours(
   return row;
 }
 
-/** The stored side of the Visitors page's numbers for the last `days`, ending now. */
+/** The stored side of the site's numbers on the Analytics page for the last `days`, ending now. */
 export async function readSiteStats(
   tx: Transaction,
   workspaceId: string,

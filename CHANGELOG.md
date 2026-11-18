@@ -4,6 +4,14 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- The site's numbers (visits, page views, chat rate, busiest moment, top pages and sources) moved from **Visitors** to **Analytics**, under the same 7, 30 or 90 days as the support numbers. **Visitors** shows only who is on the site now. `GET .../visitors/stats` no longer takes `days=1`, and its default is now 30 days.
+
+### Fixed
+
+- A long page title no longer runs out of its tile on **Visitors**.
+
 ## [0.43.0] - 2026-11-18
 
 ### Changed
