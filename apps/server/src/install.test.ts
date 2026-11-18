@@ -8,7 +8,7 @@ import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
-import { loadConfig } from "./config.ts";
+import { loadConfig, nativePushFromConfig } from "./config.ts";
 import { operator, workspace, workspaceMember } from "./db/schema.ts";
 import { runInit, widgetSnippet } from "./install.ts";
 
@@ -163,6 +163,43 @@ describe("the settings", () => {
       DATABASE_URL: "postgres://env@db/x",
     });
     expect(fromEnv.DATABASE_URL).toBe("postgres://env@db/x");
+  });
+
+  test("native push providers are optional, and each provider needs all of its settings", () => {
+    expect(nativePushFromConfig(loadConfig(base))).toEqual({
+      apns: undefined,
+      fcm: undefined,
+    });
+    expect(() => nativePushFromConfig(loadConfig({ ...base, APNS_TEAM_ID: "team" }))).toThrow(
+      /APNS_TEAM_ID/,
+    );
+    expect(() => nativePushFromConfig(loadConfig({ ...base, FCM_PROJECT_ID: "project" }))).toThrow(
+      /FCM_PROJECT_ID/,
+    );
+
+    const config = nativePushFromConfig(
+      loadConfig({
+        ...base,
+        APNS_TEAM_ID: "team",
+        APNS_KEY_ID: "key",
+        APNS_PRIVATE_KEY: "private",
+        APNS_BUNDLE_ID: "chat.dinghy.operator",
+        APNS_ENVIRONMENT: "sandbox",
+        FCM_PROJECT_ID: "project",
+        FCM_CLIENT_EMAIL: "push@example.com",
+        FCM_PRIVATE_KEY: "private",
+      }),
+    );
+    expect(config.apns).toMatchObject({
+      teamId: "team",
+      keyId: "key",
+      bundleId: "chat.dinghy.operator",
+      environment: "sandbox",
+    });
+    expect(config.fcm).toMatchObject({
+      projectId: "project",
+      clientEmail: "push@example.com",
+    });
   });
 });
 

@@ -702,6 +702,12 @@ export const askSignInLink = (email: string) =>
 /** Uses a sign-in link's token, from the button on the page the link opens. */
 export const redeemSignInLink = (token: string) =>
   post<{ ok: true }>("/v1/auth/magic-link/verify", { token });
+export const authorizeNativeSignIn = (request: {
+  codeChallenge: string;
+  codeChallengeMethod: string;
+  redirectUri: string;
+  state: string;
+}) => post<{ redirectTo: string }>("/v1/auth/native/authorize", request);
 /** Uses a join link's token: joins the workspace and signs in. */
 export const redeemJoinLink = (token: string) =>
   post<{ workspaceId: string }>("/v1/invites/open", { token });

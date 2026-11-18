@@ -274,6 +274,7 @@ describe("migrations", () => {
     expect(result.rows.map((row) => row.tablename)).toEqual([
       "account",
       "instance_setting",
+      "native_push_device",
       "operator",
       "operator_picture",
       "operator_two_factor",

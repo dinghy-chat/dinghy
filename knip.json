@@ -10,6 +10,9 @@
     "apps/server": {
       "entry": ["src/main.ts", "src/cli.ts", "scripts/*.ts", "load/*.ts"]
     },
+    "apps/mobile": {
+      "ignoreDependencies": ["expo-updates"]
+    },
     "apps/operator": {
       "entry": ["build.ts", "src/main.tsx"]
     },

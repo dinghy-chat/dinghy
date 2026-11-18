@@ -21,6 +21,20 @@ PUBLIC_URL=
 SMTP_URL=
 MAIL_FROM=
 
+# Optional. Direct alerts to the native iOS app. Set all four. APNS_ENVIRONMENT is production by
+# default. Use sandbox only for a development build. A private key can use literal \\n line breaks.
+APNS_TEAM_ID=
+APNS_KEY_ID=
+APNS_PRIVATE_KEY=
+APNS_BUNDLE_ID=
+APNS_ENVIRONMENT=
+
+# Optional. Direct alerts to the native Android app through Firebase Cloud Messaging. Set all
+# three. A private key can use literal \\n line breaks.
+FCM_PROJECT_ID=
+FCM_CLIENT_EMAIL=
+FCM_PRIVATE_KEY=
+
 # Optional. With the domain and a receiver, visitors answer reply emails and transcripts by email:
 # the domain of the reply addresses, such as reply.example.com, and a secret of at least 32
 # characters that signs each post of your forwarder. See "Replies by email" in docs/self-hosting.md.

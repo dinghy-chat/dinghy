@@ -4,7 +4,13 @@ import type { Logger } from "pino";
 import { sendToOperator, testPayload } from "./alerts.ts";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
-import { emailStop, pushSubscription, workspaceMember } from "./db/schema.ts";
+import {
+  emailStop,
+  NATIVE_PUSH_PROVIDERS,
+  nativePushDevice,
+  pushSubscription,
+  workspaceMember,
+} from "./db/schema.ts";
 import { type Database, lockLiveOperator, withWorkspace } from "./db/tenant.ts";
 import {
   errorAnswer,
@@ -17,6 +23,7 @@ import {
   okContent,
 } from "./errors.ts";
 import { conversationParams, workspaceParams } from "./member.ts";
+import type { NativePush } from "./native-push.ts";
 import { isPushEndpoint, isPushKeys, type Push } from "./push.ts";
 import { limitByIp, type RateLimit } from "./rate-limit.ts";
 import { queueTranscript } from "./transcripts.ts";
@@ -40,6 +47,7 @@ const Settings = z
   .object({
     email: z.boolean(),
     pushKey: z.string().nullable(),
+    nativePushProviders: z.array(z.enum(NATIVE_PUSH_PROVIDERS)),
     emailAvailable: z.boolean(),
   })
   .openapi("AlertSettings");
@@ -121,6 +129,33 @@ const deleteDevice = createRoute({
   responses: { 200: ok, ...OPERATOR_WRITE_ERRORS },
 });
 
+const NativeDevice = z.discriminatedUnion("provider", [
+  z.object({ provider: z.literal("apns"), token: z.string().regex(/^[A-Fa-f0-9]{64}$/) }),
+  z.object({ provider: z.literal("fcm"), token: z.string().min(20).max(4096) }),
+]);
+
+const saveNativeDevice = createRoute({
+  method: "put",
+  path: "/v1/operator/push-device",
+  security: SESSION,
+  summary: "Save this native app's push token",
+  request: { body: { content: { "application/json": { schema: NativeDevice } } } },
+  responses: {
+    200: ok,
+    ...OPERATOR_WRITE_ERRORS,
+    409: errorAnswer("push_unavailable: this server has no configured provider for this device"),
+  },
+});
+
+const deleteNativeDevice = createRoute({
+  method: "delete",
+  path: "/v1/operator/push-device",
+  security: SESSION,
+  summary: "Delete this native app's push token",
+  request: { body: { content: { "application/json": { schema: NativeDevice } } } },
+  responses: { 200: ok, ...OPERATOR_WRITE_ERRORS },
+});
+
 const NO_EMAIL_SERVER = failure("email_unavailable", "This server sends no email.");
 const NO_VISITOR_EMAIL = failure("no_email", "This visitor gave no email.");
 
@@ -162,12 +197,13 @@ interface AlertRouteOptions {
   db: Database;
   logger: Logger;
   push?: Push | undefined;
+  nativePush?: NativePush | undefined;
   emailAvailable: boolean;
 }
 
 export function registerAlertRoutes(
   app: App,
-  { db, push, emailAvailable }: AlertRouteOptions,
+  { db, push, nativePush, emailAvailable }: AlertRouteOptions,
 ): void {
   const read = async (workspaceId: string, operatorId: string) => {
     const [row] = await withWorkspace(db, workspaceId, (tx) =>
@@ -182,7 +218,12 @@ export function registerAlertRoutes(
         ),
     );
     if (row === undefined) return null;
-    return { ...row, pushKey: push?.publicKey ?? null, emailAvailable };
+    return {
+      ...row,
+      pushKey: push?.publicKey ?? null,
+      nativePushProviders: [...(nativePush?.providers ?? [])],
+      emailAvailable,
+    };
   };
 
   app.openapi(getSettings, async (c) => {
@@ -253,6 +294,48 @@ export function registerAlertRoutes(
     return c.json({ ok: true as const }, 200);
   });
 
+  app.openapi(saveNativeDevice, async (c) => {
+    const device = c.req.valid("json");
+    if (!nativePush?.providers.includes(device.provider)) return c.json(NO_PUSH, 409);
+    const operatorId = c.get("operatorId");
+    await db.transaction(async (tx) => {
+      await lockLiveOperator(tx, operatorId);
+      await tx
+        .insert(nativePushDevice)
+        .values({ operatorId, sessionId: c.get("sessionId"), ...device })
+        .onConflictDoUpdate({
+          target: [nativePushDevice.provider, nativePushDevice.token],
+          set: { operatorId, sessionId: c.get("sessionId") },
+        });
+      const rows = await tx
+        .select({ id: nativePushDevice.id })
+        .from(nativePushDevice)
+        .where(eq(nativePushDevice.operatorId, operatorId))
+        .orderBy(asc(nativePushDevice.createdAt));
+      const newest = rows.slice(-MAX_DEVICES).map((row) => row.id);
+      await tx
+        .delete(nativePushDevice)
+        .where(
+          and(eq(nativePushDevice.operatorId, operatorId), notInArray(nativePushDevice.id, newest)),
+        );
+    });
+    return c.json({ ok: true as const }, 200);
+  });
+
+  app.openapi(deleteNativeDevice, async (c) => {
+    const { provider, token } = c.req.valid("json");
+    await db
+      .delete(nativePushDevice)
+      .where(
+        and(
+          eq(nativePushDevice.provider, provider),
+          eq(nativePushDevice.token, token),
+          eq(nativePushDevice.operatorId, c.get("operatorId")),
+        ),
+      );
+    return c.json({ ok: true as const }, 200);
+  });
+
   app.openapi(sendTranscript, async (c) => {
     if (!emailAvailable) return c.json(NO_EMAIL_SERVER, 409);
     const { conversationId } = c.req.valid("param");
@@ -263,12 +346,14 @@ export function registerAlertRoutes(
   });
 
   app.openapi(testPush, async (c) => {
-    if (push === undefined) return c.json(NO_PUSH, 409);
+    if (push === undefined && nativePush === undefined) return c.json(NO_PUSH, 409);
     const result = await sendToOperator(
       db,
       push,
       c.get("operatorId"),
       testPayload(crypto.randomUUID()),
+      undefined,
+      nativePush,
     );
     return c.json(result, 200);
   });

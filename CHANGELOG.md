@@ -4,6 +4,10 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- Operators can sign in from the native mobile development app, open a conversation from an alert, and retry a saved reply after a network interruption. Servers can send mobile alerts directly through Apple and Google.
+
 ## [0.41.1] - 2026-11-17
 
 ### Fixed

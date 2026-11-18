@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -14,6 +14,7 @@ import {
   addOperator,
   captureMail,
   cookieOf,
+  deletedDuring,
   openLink,
   openSignInLink,
   pressLinkButton,
@@ -21,10 +22,11 @@ import {
 } from "../test/operators.ts";
 import { type App, createApp, openApiDocument } from "./app.ts";
 import { type Auth, createAuth, signInLink } from "./auth.ts";
-import { session } from "./db/schema.ts";
+import { session, workspaceMember } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
 import { sha256Hex } from "./identity.ts";
 import { createLinkLimit } from "./login-limit.ts";
+import { createWorkspace } from "./workspaces.ts";
 
 const CLI = fileURLToPath(new URL("./cli.ts", import.meta.url));
 const logger = pino({ level: "silent" });
@@ -253,6 +255,7 @@ describe("asking for a link", () => {
   test("the API description names the sign-in route that sets the session cookie", async () => {
     const document = (await openApiDocument()) as {
       components: { securitySchemes: Record<string, { description: string }> };
+      paths: Record<string, Record<string, unknown>>;
     };
     const named = /POST (\/v1\/auth\/\S+)/.exec(
       document.components.securitySchemes.sessionCookie?.description ?? "",
@@ -264,6 +267,8 @@ describe("asking for a link", () => {
       body: "{}",
     });
     expect(answer.status).not.toBe(404);
+    expect(document.paths["/v1/auth/native/authorize"]?.post).toBeDefined();
+    expect(document.paths["/v1/auth/native/exchange"]?.post).toBeDefined();
   });
 
   test("a request with no session is refused", async () => {
@@ -333,6 +338,226 @@ test("two uses of one printed link at once leave an unproven email unproven", as
     sql`select email_proven from operator where email = ${address}`,
   );
   expect(rows[0]?.email_proven).toBe(false);
+});
+
+describe("native app sign-in", () => {
+  const proof = () => {
+    const verifier = randomBytes(32).toString("base64url");
+    return {
+      verifier,
+      challenge: createHash("sha256").update(verifier).digest("base64url"),
+      state: randomBytes(32).toString("base64url"),
+    };
+  };
+
+  const authorize = (cookie: string, challenge: string, state: string, origin = ORIGIN) =>
+    app.request("/v1/auth/native/authorize", {
+      method: "POST",
+      headers: { cookie, origin, "content-type": "application/json" },
+      body: JSON.stringify({
+        codeChallenge: challenge,
+        codeChallengeMethod: "S256",
+        redirectUri: "dinghy://auth/callback",
+        state,
+      }),
+    });
+
+  const exchange = (code: string, codeVerifier: string) =>
+    app.request("/v1/auth/native/exchange", {
+      method: "POST",
+      headers: { origin: ORIGIN, "content-type": "application/json" },
+      body: JSON.stringify({ code, codeVerifier }),
+    });
+
+  const codeOf = async (response: Response) => {
+    const { redirectTo } = (await response.json()) as { redirectTo: string };
+    const redirect = new URL(redirectTo);
+    expect(redirect.origin).toBe("null");
+    expect(`${redirect.protocol}//${redirect.host}${redirect.pathname}`).toBe(
+      "dinghy://auth/callback",
+    );
+    return redirect.searchParams.get("code") ?? "";
+  };
+
+  test("the page loads without making a code, and the button needs a signed-in operator", async () => {
+    const values = proof();
+    const query = new URLSearchParams({
+      code_challenge: values.challenge,
+      code_challenge_method: "S256",
+      redirect_uri: "dinghy://auth/callback",
+      state: values.state,
+    });
+    const page = await app.request(`/operator/native-sign-in?${query}`);
+    expect(page.status).toBe(200);
+    expect(page.headers.get("content-type")).toContain("text/html");
+    expect((await authorize("", values.challenge, values.state)).status).toBe(401);
+  });
+
+  test("exchanges one proof-bound code for one normal operator session", async () => {
+    const waiting = await createWorkspace(db, "Waiting harbor", [], { active: false });
+    const space = await createWorkspace(db, "Native harbor", []);
+    const person = await addOperator({
+      auth,
+      owner,
+      email: email("native"),
+      name: "Native Anna",
+      workspaceId: waiting.id,
+    });
+    await owner
+      .insert(workspaceMember)
+      .values({ workspaceId: space.id, operatorId: person.id, role: "owner" });
+    const browserCookie = await signIn(app, auth, person.email);
+    await owner.execute(sql`update operator set two_factor_on = true where id = ${person.id}`);
+    await owner.execute(sql`
+      update session set two_factor_at = now() where user_id = ${person.id}
+    `);
+    const values = proof();
+    const authorized = await authorize(browserCookie, values.challenge, values.state);
+    expect(authorized.status).toBe(200);
+    const stateAnswer = authorized.clone();
+    const code = await codeOf(authorized);
+    const state = new URL(
+      ((await stateAnswer.json()) as { redirectTo: string }).redirectTo,
+    ).searchParams.get("state");
+    expect(state).toBe(values.state);
+    const pending = await owner.execute<{ identifier: string; value: string; minutes: number }>(sql`
+      select identifier, value, extract(epoch from expires_at - now()) / 60 as minutes
+      from verification where identifier like 'native-sign-in:%'
+      order by created_at desc limit 1
+    `);
+    expect(JSON.stringify(pending.rows)).not.toContain(code);
+    expect(JSON.stringify(pending.rows)).not.toContain(values.verifier);
+    expect(Number(pending.rows[0]?.minutes)).toBeGreaterThan(4);
+    expect(Number(pending.rows[0]?.minutes)).toBeLessThanOrEqual(5.1);
+
+    const exchanged = await Promise.all([
+      exchange(code, values.verifier),
+      exchange(code, values.verifier),
+    ]);
+    expect(exchanged.map((answer) => answer.status).sort()).toEqual([200, 400]);
+    const answer = exchanged.find((one) => one.status === 200);
+    if (answer === undefined) throw new Error("No native exchange succeeded");
+    const body = (await answer.json()) as {
+      origin: string;
+      session: string;
+      operator: { id: string; name: string };
+      workspace: { id: string; name: string };
+    };
+    expect(body).toMatchObject({
+      origin: ORIGIN,
+      operator: { id: person.id, name: "Native Anna" },
+      workspace: { id: space.id, name: "Native harbor" },
+    });
+    expect(body.session).toMatch(/^(?:__Secure-)?better-auth\.session_token=[^;]+$/);
+    const nativeMe = await me(body.session);
+    expect(nativeMe.status).toBe(200);
+    expect(await nativeMe.json()).toMatchObject({ twoFactor: "on" });
+    const signed = decodeURIComponent(body.session.split("=")[1] ?? "");
+    const token = signed.slice(0, signed.lastIndexOf("."));
+    const native = await owner.execute<{ days: number; two_factor_at: Date | null }>(sql`
+      select extract(epoch from expires_at - now()) / 86400 as days, two_factor_at
+      from session where token = ${token}
+    `);
+    expect(Number(native.rows[0]?.days)).toBeGreaterThan(6);
+    expect(Number(native.rows[0]?.days)).toBeLessThanOrEqual(7.01);
+    expect(native.rows[0]?.two_factor_at).not.toBeNull();
+    expect((await exchange(code, values.verifier)).status).toBe(400);
+  });
+
+  test("a wrong verifier spends the code, and a revoked browser session cannot make an app session", async () => {
+    const space = await createWorkspace(db, "Proof harbor", []);
+    const person = await addOperator({
+      auth,
+      owner,
+      email: email("native-proof"),
+      workspaceId: space.id,
+    });
+    const browserCookie = await signIn(app, auth, person.email);
+
+    const first = proof();
+    const firstCode = await codeOf(await authorize(browserCookie, first.challenge, first.state));
+    expect((await exchange(firstCode, proof().verifier)).status).toBe(400);
+    expect((await exchange(firstCode, first.verifier)).status).toBe(400);
+
+    const expired = proof();
+    const expiredCode = await codeOf(
+      await authorize(browserCookie, expired.challenge, expired.state),
+    );
+    await owner.execute(sql`
+      update verification set expires_at = now() - interval '1 second'
+      where identifier = ${`native-sign-in:${sha256Hex(expiredCode)}`}
+    `);
+    expect((await exchange(expiredCode, expired.verifier)).status).toBe(400);
+
+    const second = proof();
+    const secondCode = await codeOf(await authorize(browserCookie, second.challenge, second.state));
+    await owner.execute(sql`delete from session where user_id = ${person.id}`);
+    expect((await exchange(secondCode, second.verifier)).status).toBe(400);
+  });
+
+  test("keeps the fixed redirect, Origin check and completed two-step check", async () => {
+    const person = await newOperator(email("native-guard"));
+    const cookie = await signIn(app, auth, person.email);
+    const values = proof();
+    expect(
+      (await authorize(cookie, values.challenge, values.state, "https://evil.example.com")).status,
+    ).toBe(403);
+    const picked = await app.request("/v1/auth/native/authorize", {
+      method: "POST",
+      headers: { cookie, origin: ORIGIN, "content-type": "application/json" },
+      body: JSON.stringify({
+        codeChallenge: values.challenge,
+        codeChallengeMethod: "S256",
+        redirectUri: "https://evil.example.com/callback",
+        state: values.state,
+      }),
+    });
+    expect(picked.status).toBe(400);
+
+    await owner.execute(sql`update operator set two_factor_on = true where id = ${person.id}`);
+    const required = await authorize(cookie, values.challenge, values.state);
+    expect(required.status).toBe(401);
+    expect(await required.json()).toMatchObject({ error: { code: "two_factor_required" } });
+  });
+
+  test("explains when every workspace still waits for its first payment", async () => {
+    const waiting = await createWorkspace(db, "Unpaid harbor", [], { active: false });
+    const person = await addOperator({
+      auth,
+      owner,
+      email: email("native-unpaid"),
+      workspaceId: waiting.id,
+    });
+    const cookie = await signIn(app, auth, person.email);
+    const values = proof();
+    const code = await codeOf(await authorize(cookie, values.challenge, values.state));
+    const answer = await exchange(code, values.verifier);
+    expect(answer.status).toBe(402);
+    expect(await answer.json()).toMatchObject({ error: { code: "payment_required" } });
+  });
+
+  test("does not make a session after a concurrent account deletion wins the lock", async () => {
+    const space = await createWorkspace(db, "Deleting harbor", []);
+    const person = await addOperator({
+      auth,
+      owner,
+      email: email("native-delete"),
+      workspaceId: space.id,
+    });
+    const browserCookie = await signIn(app, auth, person.email);
+    const values = proof();
+    const code = await codeOf(await authorize(browserCookie, values.challenge, values.state));
+    const before = await owner.execute<{ count: number }>(sql`
+      select count(*)::int as count from session where user_id = ${person.id}
+    `);
+
+    const answer = await deletedDuring(owner, person.id, () => exchange(code, values.verifier));
+    expect(answer.status).toBe(400);
+    const after = await owner.execute<{ count: number }>(sql`
+      select count(*)::int as count from session where user_id = ${person.id}
+    `);
+    expect(after.rows[0]?.count).toBe(before.rows[0]?.count);
+  });
 });
 
 describe("with no mail server", () => {

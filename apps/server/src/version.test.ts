@@ -20,9 +20,11 @@ test("every place that names the release names the same version", () => {
     // bun install --frozen-lockfile fails when the lockfile keeps an old workspace version.
     lockfile: [
       ...new Set(
-        [...read("bun.lock").matchAll(/"name": "@?dinghy[^"]*",\s*"version": "([^"]+)"/g)].map(
-          (found) => found[1],
-        ),
+        [
+          ...read("bun.lock").matchAll(
+            /"name": "(?!@dinghy\/mobile")@?dinghy[^"]*",\s*"version": "([^"]+)"/g,
+          ),
+        ].map((found) => found[1]),
       ),
     ].join(),
   }).toEqual({

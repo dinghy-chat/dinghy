@@ -6,7 +6,7 @@ import { AUTH_SECRET, PUBLIC_URL } from "../test/env.ts";
 import { signedInOperator } from "../test/operators.ts";
 import { type App, createApp } from "./app.ts";
 import { type Auth, createAuth } from "./auth.ts";
-import { widgetSettings } from "./db/schema.ts";
+import { nativePushDevice, session, widgetSettings } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
 import { createWorkspace } from "./workspaces.ts";
 
@@ -105,6 +105,26 @@ test("each step turns done with what it asks, and a dismiss hides them for that 
   expect((await read()).dismissed).toBe(true);
   // Notifications are this operator's own, and the dismiss is this member's.
   expect(await read(other.cookie)).toMatchObject({ dismissed: false, notifications: false });
+  const [otherSession] = await owner
+    .insert(session)
+    .values({
+      userId: other.id,
+      token: `get-started-native-${other.id}`,
+      expiresAt: new Date(Date.now() + 60 * 60_000),
+    })
+    .returning({ id: session.id });
+  await owner.insert(nativePushDevice).values({
+    operatorId: other.id,
+    sessionId: otherSession?.id ?? "",
+    provider: "fcm",
+    token: "get-started-native-token",
+  });
+  expect((await read(other.cookie)).notifications).toBe(true);
+  await owner
+    .update(session)
+    .set({ expiresAt: new Date(0) })
+    .where(eq(session.id, otherSession?.id ?? ""));
+  expect((await read(other.cookie)).notifications).toBe(false);
 });
 
 test("a workspace with no widget settings yet reads its steps as not done", async () => {

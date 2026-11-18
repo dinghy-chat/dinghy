@@ -32,6 +32,7 @@ import {
   invite,
   label,
   message,
+  nativePushDevice,
   operator,
   operatorPicture,
   operatorTwoFactor,
@@ -1725,6 +1726,25 @@ const ATTACKS: Record<string, Attack> = {
       .where(eq(pushSubscription.endpoint, endpoint));
     expect(rows).toHaveLength(1);
   },
+  "PUT /v1/operator/push-device": async ({ operator: as, anna }) => {
+    const body = { provider: "fcm" as const, token: `native-${randomUUID()}` };
+    expect((await as(anna, "PUT", "/v1/operator/push-device", body)).status).toBe(200);
+    const [row] = await owner
+      .select()
+      .from(nativePushDevice)
+      .where(eq(nativePushDevice.token, body.token));
+    expect(row?.operatorId).toBe(anna.id);
+  },
+  "DELETE /v1/operator/push-device": async ({ operator: as, anna, bea }) => {
+    const body = { provider: "fcm" as const, token: `native-${randomUUID()}` };
+    expect((await as(bea, "PUT", "/v1/operator/push-device", body)).status).toBe(200);
+    expect((await as(anna, "DELETE", "/v1/operator/push-device", body)).status).toBe(200);
+    const rows = await owner
+      .select()
+      .from(nativePushDevice)
+      .where(eq(nativePushDevice.token, body.token));
+    expect(rows).toHaveLength(1);
+  },
   "POST /v1/operator/push-test": async ({ operator: as, anna }) => {
     const before = pushed.length;
     const mine = await owner
@@ -2558,6 +2578,12 @@ async function buildWorld(db: Database): Promise<World> {
         pushed.push(url);
         return new Response(null, { status: 201 });
       }) as typeof fetch),
+      nativePush: {
+        providers: ["apns", "fcm"],
+        async send() {
+          return "sent";
+        },
+      },
       emailAvailable: true,
       secret: AUTH_SECRET,
     },

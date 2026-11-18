@@ -848,6 +848,20 @@
       "when": 1794858715701,
       "tag": "0120_campaigns_paused_workspaces",
       "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1795015023567,
+      "tag": "0121_native_push_devices",
+      "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1795015030686,
+      "tag": "0122_native_push_grants",
+      "breakpoints": true
     }
   ]
 }

@@ -43,6 +43,7 @@ import type { Mailer } from "./mailer.ts";
 import { registerMcp } from "./mcp.ts";
 import { registerMemberCheck } from "./member.ts";
 import { registerModerationRoutes } from "./moderation.ts";
+import type { NativePush } from "./native-push.ts";
 import { oauthIssuer, registerOAuth, resourceMetadataUrl } from "./oauth.ts";
 import { type FetchClientDocument, fetchClientDocument } from "./oauth-client.ts";
 import { registerOperatorRoutes } from "./operator.ts";
@@ -100,7 +101,12 @@ export interface AppOptions {
   cloud?: CloudSettings | undefined;
   /** Sends sign-in links and the cloud's emails. Without it, the server's admin hands out links. */
   mailer?: Mailer | undefined;
-  alerts?: { push?: Push | undefined; emailAvailable: boolean; secret: string };
+  alerts?: {
+    push?: Push | undefined;
+    nativePush?: NativePush | undefined;
+    emailAvailable: boolean;
+    secret: string;
+  };
   checks: Checks;
   db: Database;
   live?: Live;
@@ -591,6 +597,7 @@ export function createApp({
         db,
         logger,
         push: alerts.push,
+        nativePush: alerts.nativePush,
         emailAvailable: alerts.emailAvailable,
       });
       registerEmailStop(app, db, alerts.secret, rateLimit);
@@ -621,7 +628,7 @@ export function createApp({
       title: "Dinghy API",
       version,
       description:
-        "The widget API (`/v1/widget/{key}`, with the visitor's bearer token) and the operator API (`/v1/operator`, with the session cookie, or a workspace API key on the routes whose security lists `apiKey`). MCP lives at `/v1/mcp`, with an API key. Every error answer is `{ error: { code, message } }`, and clients branch on `code`. Sign-in lives at `/v1/auth`, a BetterAuth pass-through that is not part of the versioned API.",
+        "The widget API (`/v1/widget/{key}`, with the visitor's bearer token) and the operator API (`/v1/operator`, with the session cookie, or a workspace API key on the routes whose security lists `apiKey`). MCP lives at `/v1/mcp`, with an API key. Every error answer is `{ error: { code, message } }`, and clients branch on `code`. Sign-in lives at `/v1/auth`; the native app routes appear below, while the browser's BetterAuth routes are not part of the versioned API.",
     },
   });
 

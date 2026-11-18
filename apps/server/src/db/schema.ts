@@ -90,6 +90,8 @@ export const alertChannel = pgEnum("alert_channel", [
   "mention_email",
 ]);
 export const alertOutcome = pgEnum("alert_outcome", ["sent", "skipped", "failed"]);
+export const NATIVE_PUSH_PROVIDERS = ["apns", "fcm"] as const;
+export type NativePushProvider = (typeof NATIVE_PUSH_PROVIDERS)[number];
 export const widgetPosition = pgEnum("widget_position", ["left", "right"]);
 export const widgetTheme = pgEnum("widget_theme", ["light", "dark", "auto"]);
 export const widgetLauncher = pgEnum("widget_launcher", [
@@ -897,6 +899,29 @@ export const pushSubscription = pgTable(
     createdAt: createdAt(),
   },
   (table) => [index("push_subscription_operator_idx").on(table.operatorId)],
+);
+
+/** One installed native operator app. It is global, like a session, and belongs to the operator. */
+export const nativePushDevice = pgTable(
+  "native_push_device",
+  {
+    id: id().primaryKey(),
+    operatorId: uuid("operator_id")
+      .notNull()
+      .references(() => operator.id, { onDelete: "cascade" }),
+    sessionId: uuid("session_id")
+      .notNull()
+      .references(() => session.id, { onDelete: "cascade" }),
+    provider: text("provider").$type<NativePushProvider>().notNull(),
+    token: text("token").notNull(),
+    createdAt: createdAt(),
+  },
+  (table) => [
+    enumCheck("native_push_device_provider", table.provider, NATIVE_PUSH_PROVIDERS),
+    unique("native_push_device_provider_token_key").on(table.provider, table.token),
+    index("native_push_device_operator_idx").on(table.operatorId),
+    index("native_push_device_session_idx").on(table.sessionId),
+  ],
 );
 
 /** One recipient and channel for one event. Delivery is at-least-once: a crash can repeat a send. */
