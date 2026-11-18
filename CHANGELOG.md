@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.42.0] - 2026-11-18
+
 ### Added
 
 - **Visitors** has an **Over time** section: visits, page views, the chat rate and the busiest minute for the last 24 hours, 7, 30 or 90 days, each against the period before, with the top pages and sources. Dinghy counts each hour with no cookie and no stored ID, and keeps the hours 182 days in a new `site_hour` table, which the worker fills from Valkey about once a minute.
@@ -695,7 +697,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.41.1...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.42.0...HEAD
+[0.42.0]: https://github.com/dinghy-chat/dinghy/compare/v0.41.1...v0.42.0
 [0.41.1]: https://github.com/dinghy-chat/dinghy/compare/v0.41.0...v0.41.1
 [0.41.0]: https://github.com/dinghy-chat/dinghy/compare/v0.40.0...v0.41.0
 [0.40.0]: https://github.com/dinghy-chat/dinghy/compare/v0.39.0...v0.40.0
