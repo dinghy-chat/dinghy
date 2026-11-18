@@ -1,6 +1,6 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "ignoreBinaries": ["pg_dump"],
+  "ignoreBinaries": ["pg_dump", "ffmpeg"],
   "ignoreDependencies": ["preact"],
   "workspaces": {
     ".": {

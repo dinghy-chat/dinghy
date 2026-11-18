@@ -44,7 +44,8 @@ local counted = ARGV[5] == '1' and redis.call('HSETNX', tabs, '+' .. tab, 1) or 
 return {redis.call('HGET', tabs, tab) or '', redis.call('ZCARD', order), counted}`;
 
 const orderKey = (workspaceId: string) => `dinghy:live:${workspaceId}`;
-const tabsKey = (workspaceId: string) => `dinghy:live:${workspaceId}:tabs`;
+/** Exported for the dev seed, which stores a tab before its first beat. */
+export const tabsKey = (workspaceId: string) => `dinghy:live:${workspaceId}:tabs`;
 
 /** One open tab of the host site, as its latest beat described it. */
 interface LiveTab {
