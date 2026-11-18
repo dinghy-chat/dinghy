@@ -1281,7 +1281,7 @@ Ask me before you change anything outside the install. Never ask for a secret or
   statsNoneYet: "None yet",
   statsTimeOnSite: "Time on site now",
   statsLongest: "Longest {time}",
-  statsDaytime: "In daytime there",
+  statsDaytime: "Local daytime",
   statsNight: "{count} at night",
   statsLastHour: "Last hour",
   statsLastHourChart: "People on your site each minute of the last hour, {count} now",

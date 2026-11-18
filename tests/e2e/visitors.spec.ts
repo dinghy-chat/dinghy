@@ -155,7 +155,7 @@ test("the operator filters who is on the site and picks a country on the map", a
   await expect(numbers).toContainText("Chat rate");
   await expect(numbers).toContainText("Time on site now0 min");
   // Daytime or night depends on the hour in Paris, so only the total is sure.
-  await expect(numbers).toContainText("In daytime there");
+  await expect(numbers).toContainText("Local daytime");
   await expect(
     numbers.getByRole("img", { name: /^People on your site each minute/ }),
   ).toBeVisible();
