@@ -9118,6 +9118,25 @@ export interface components {
         variant: string | null;
       }[];
     };
+    VisitorStats: {
+      lastHour: number[];
+      visits: number;
+      visitsBefore: number;
+      pageViews: number;
+      peak: {
+        count: number;
+        at: string;
+      } | null;
+      pages: {
+        page: string;
+        title: string | null;
+        count: number;
+      }[];
+      referrers: {
+        referrer: string | null;
+        count: number;
+      }[];
+    } | null;
     LiveVisitor: {
       tab: string;
       page: string;
@@ -9133,6 +9152,7 @@ export interface components {
         email: string | null;
         userId: string | null;
         conversationId: string | null;
+        waitingSince: string | null;
       } | null;
     };
     GetStarted: {

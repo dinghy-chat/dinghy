@@ -172,14 +172,24 @@ export function AnalyticsSkeleton() {
   );
 }
 
-/** Visitors: the map, and the people beside it. */
+/** Visitors: the numbers, then the map and the people beside it. */
 export function VisitorsSkeleton() {
   return (
-    <Skeleton className="live-layout">
-      <div className="bone-map" />
-      <div className="bone-lines">
-        <Bone width={80} height={13} />
-        <RowsBones count={4} />
+    <Skeleton>
+      <div className="live-stats">
+        {NAMES.slice(0, 5).map((name) => (
+          <div key={name} className="live-stat bone-lines">
+            <Bone width={name} height={12} />
+            <Bone width={56} height={24} />
+          </div>
+        ))}
+      </div>
+      <div className="live-layout">
+        <div className="bone-map" />
+        <div className="bone-lines">
+          <Bone width={80} height={13} />
+          <RowsBones count={4} />
+        </div>
       </div>
     </Skeleton>
   );

@@ -255,7 +255,10 @@ export async function startE2EServer(
     workspaceId: () => workspace.id,
     /** Opens tabs of the site as their beats would, each with a new contact when it has a name. */
     async openTabs(
-      tabs: (Omit<Parameters<LiveVisitors["beat"]>[1], "tab" | "visitorId" | "conversationId"> & {
+      tabs: (Omit<
+        Parameters<LiveVisitors["beat"]>[1],
+        "tab" | "visitorId" | "conversationId" | "entrance"
+      > & {
         name?: string;
       })[],
     ) {
@@ -271,6 +274,7 @@ export async function startE2EServer(
         await liveVisitors.beat(workspace.id, {
           ...details,
           tab: randomUUID(),
+          entrance: true,
           visitorId: contact?.id ?? null,
           conversationId: null,
         });

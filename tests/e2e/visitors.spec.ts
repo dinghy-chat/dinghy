@@ -148,8 +148,29 @@ test("the operator filters who is on the site and picks a country on the map", a
   await expect(claire).toBeVisible();
   await expect(american).toContainText("Pricing");
 
-  // Known keeps the people with a name, and Chatting only those in a conversation.
+  // The numbers above the map: the last 24 hours, and who is here now.
+  const numbers = operator.getByRole("region", { name: "Your site in numbers" });
+  await expect(numbers).toContainText("Visits in 24 hours");
+  await expect(numbers).toContainText("Peak in 24 hours");
+  await expect(numbers).toContainText("Chat rate");
+  await expect(numbers).toContainText("Time on site now0 min");
+  // Daytime or night depends on the hour in Paris, so only the total is sure.
+  await expect(numbers).toContainText("In daytime there");
+  await expect(
+    numbers.getByRole("img", { name: /^People on your site each minute/ }),
+  ).toBeVisible();
+  await expect(operator.getByRole("region", { name: "Countries" })).toContainText("France2");
+  await expect(operator.getByRole("region", { name: "Devices" })).toContainText("Firefox on Linux");
+
+  // Known keeps the people with a name, Chatting only those in a conversation, and Waiting and
+  // Here a while nobody yet: no chat waits, and everyone just came.
   const show = operator.getByRole("group", { name: "Show" });
+  await show.getByRole("radio", { name: /^Waiting/ }).check();
+  await expect(operator.getByRole("heading", { name: "Waiting for a reply" })).toBeVisible();
+  await expect(rows).toHaveCount(0);
+  await show.getByRole("radio", { name: /^Here a while/ }).check();
+  await expect(operator.getByRole("heading", { name: "Here a while" })).toBeVisible();
+  await expect(rows).toHaveCount(0);
   await show.getByRole("radio", { name: /^Known/ }).check();
   await expect(claire).toBeVisible();
   await expect(american).toHaveCount(0);
@@ -169,7 +190,15 @@ test("the operator filters who is on the site and picks a country on the map", a
   await expect(map).toHaveClass(/zoomed/);
   await expect(operator.getByRole("region", { name: "Came from" })).toContainText("google.com2");
   // Pages count by address, so two titles of one page make one row.
-  await expect(operator.getByRole("region", { name: "Pages now" }).locator("li")).toHaveCount(1);
+  const pages = operator.getByRole("region", { name: "Pages" });
+  await expect(pages.locator("li")).toHaveCount(1);
+  // Over 24 hours, the tiles count the visits that came to the site, wherever from.
+  const period = operator.getByRole("group", { name: "Period" });
+  await period.getByRole("radio", { name: "24 hours" }).check();
+  await expect(pages).toContainText("Pricing");
+  await picture(operator, "visitors-day");
+  await expect(operator.getByRole("region", { name: "Came from" })).toContainText("google.com");
+  await period.getByRole("radio", { name: "Now" }).check();
   await map.getByRole("button", { name: "All countries" }).click();
   await expect(american).toBeVisible();
   await expect(map).not.toHaveClass(/zoomed/);

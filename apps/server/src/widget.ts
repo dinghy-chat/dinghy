@@ -378,6 +378,15 @@ const leaveRoute = createRoute({
   },
 });
 
+/** Whether a tab arrived from outside the site: no referrer, one that does not parse, or another origin. */
+function isEntrance(referrer: string | undefined, page: string): boolean {
+  return (
+    referrer === undefined ||
+    !URL.canParse(referrer) ||
+    new URL(referrer).origin !== new URL(page).origin
+  );
+}
+
 /**
  * Only the origin of where the visitor came from, never its path. The site's own pages are no
  * source: each page load is a new tab, and a click from one page to the next sends the last one.
@@ -1770,6 +1779,7 @@ export function registerWidgetRoutes(
       page: path,
       title: pageTitle(title),
       referrer: referrerOrigin(referrer, path),
+      entrance: isEntrance(referrer, path),
       country,
       timeZone: zone,
       device: deviceLine(c.req.header("user-agent")),

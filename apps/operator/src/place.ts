@@ -50,6 +50,17 @@ export function localTime(timeZone: string, now = new Date()): string | null {
   return clock === null ? null : `${clock.time}, ${clock.utc}`;
 }
 
+/** The hour, 0 to 23, where the visitor is, or null for a time zone the browser does not know. */
+export function localHour(timeZone: string, now = new Date()): number | null {
+  try {
+    return Number(
+      new Intl.DateTimeFormat("en-US", { timeZone, hour: "numeric", hourCycle: "h23" }).format(now),
+    );
+  } catch {
+    return null;
+  }
+}
+
 /** The place an IANA zone is named after: "Sao Paulo" for America/Sao_Paulo. */
 export const zoneCity = (timeZone: string) =>
   (timeZone.split("/").at(-1) ?? timeZone).replaceAll("_", " ");

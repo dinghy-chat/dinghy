@@ -306,7 +306,25 @@ export interface LiveVisitor {
   device: string | null;
   startedAt: string;
   /** Only for a visitor who has used the chat. */
-  visitor: (VisitorIdentity & { conversationId: string | null }) | null;
+  visitor:
+    | (VisitorIdentity & {
+        conversationId: string | null;
+        /** When their open conversation's newest message is theirs, and not snoozed: its time. */
+        waitingSince: string | null;
+      })
+    | null;
+}
+
+/** The site's last 24 hours, kept by the hour. */
+export interface VisitorStats {
+  /** Tabs open at once in each of the last 60 minutes, oldest first. */
+  lastHour: number[];
+  visits: number;
+  visitsBefore: number;
+  pageViews: number;
+  peak: { count: number; at: string } | null;
+  pages: { page: string; title: string | null; count: number }[];
+  referrers: { referrer: string | null; count: number }[];
 }
 
 export type ContactSort = "lastSeen" | "firstSeen";
@@ -886,6 +904,8 @@ export function workspaceApi(workspaceId: string) {
         body,
       }),
     liveVisitors: () => call<{ visitors: LiveVisitor[] | null }>(`${base}/visitors/live`),
+    visitorStats: () =>
+      call<{ stats: VisitorStats | null; chats: number }>(`${base}/visitors/stats`),
     liveCount: () => call<{ count: number | null }>(`${base}/visitors/live/count`),
     contacts: (query: {
       q: string;

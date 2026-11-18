@@ -1110,7 +1110,7 @@ const botKey = sql<KeyName | null>`(
  * A visitor message, a close and a reopen clear the snooze, so only the time is read here. `row` names
  * the conversation in a statement written by hand, such as sql`c`.
  */
-const snoozedNow = (row: SQLWrapper = conversation) =>
+export const snoozedNow = (row: SQLWrapper = conversation) =>
   sql<boolean>`(${row}.snoozed_at is not null and (${row}.snoozed_until is null or ${row}.snoozed_until > now()))`;
 
 /**
