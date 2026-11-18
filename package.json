@@ -18,6 +18,7 @@
     "lint": "biome check . && knip",
     "test": "vitest run",
     "dev": "node apps/server/scripts/dev.ts",
+    "seed": "node apps/server/scripts/seed.ts",
     "dev:services": "docker compose -f compose.dev.yaml up -d --wait",
     "db:generate": "cd apps/server && bun x drizzle-kit generate",
     "db:check": "cd apps/server && bun x drizzle-kit generate && git diff --exit-code --quiet -- drizzle && test -z \"$(git status --porcelain -- drizzle)\"",
