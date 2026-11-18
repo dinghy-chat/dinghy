@@ -621,7 +621,7 @@ export function createApp({
       title: "Dinghy API",
       version,
       description:
-        "The widget API (`/v1/widget/{key}`, with the visitor's bearer token) and the operator API (`/v1/operator`, with the session cookie, or a workspace API key on the routes whose security lists `apiKey`). MCP lives at `/v1/mcp`, with an API key. Every error answer is `{ error: { code, message } }`, and clients branch on `code`. Sign-in lives at `/v1/auth`, a BetterAuth pass-through that is not part of the versioned API.",
+        "The widget API (`/v1/widget/{key}`, with the visitor's bearer token) and the operator API (`/v1/operator`, with the session cookie, or a workspace API key on the routes whose security lists `apiKey`). MCP lives at `/v1/mcp`, with an API key. Every error answer is `{ error: { code, message } }`, and clients branch on `code`. Sign-in lives at `/v1/auth`; the native app routes appear below, while the browser's BetterAuth routes are not part of the versioned API.",
     },
   });
 

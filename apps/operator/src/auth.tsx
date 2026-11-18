@@ -61,8 +61,9 @@ export function SignIn({
     setError(null);
     setBusy(true);
     try {
-      await askSignInLink(email.trim());
+      // The recipient can open the link before the request completes in this tab.
       if (returnTo !== undefined) rememberReturn(returnTo);
+      await askSignInLink(email.trim());
       setSentTo(email.trim());
     } catch (failure) {
       setError(failureText(failure, { 429: "tooManyAttempts" }));

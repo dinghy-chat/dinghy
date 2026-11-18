@@ -7,6 +7,7 @@ import { AccountDeleted, LinkPage, SignIn } from "./auth.tsx";
 import { ConsentPage, requestingApp } from "./consent.tsx";
 import { Inbox } from "./inbox.tsx";
 import { InvitePage } from "./invite.tsx";
+import { NativeSignIn } from "./native-sign-in.tsx";
 import { NAVIGATE_EVENT, navigate, replaceAddress } from "./nav.ts";
 import { followNotificationClicks } from "./notifications.tsx";
 import { DeleteAccount } from "./profile.tsx";
@@ -27,7 +28,13 @@ const rememberedWorkspace = () => readStored(WORKSPACE_KEY);
 const rememberWorkspace = (id: string) => store(WORKSPACE_KEY, id);
 
 /** The pages with a card over the sky and the sea, which never show the app's frame. */
-const ACCOUNT_PATHS = new Set(["/invite", "/oauth/authorize", "/billing/return", "/signup"]);
+const ACCOUNT_PATHS = new Set([
+  "/invite",
+  "/oauth/authorize",
+  "/operator/native-sign-in",
+  "/billing/return",
+  "/signup",
+]);
 const here = () => `${location.pathname}${location.search}`;
 
 function App() {
@@ -118,6 +125,17 @@ function App() {
         signup={meta.signup !== null}
         returnTo={`${path}${address.search}`}
         reason={t("consentSignIn", { app: requestingApp(query) })}
+      />
+    );
+  }
+  if (path === "/operator/native-sign-in") {
+    if (me !== null) return <NativeSignIn query={query} me={me} />;
+    return (
+      <SignIn
+        emailAvailable={meta.email}
+        signup={meta.signup !== null}
+        returnTo={`${path}${address.search}`}
+        reason={t("nativeSignInReason")}
       />
     );
   }

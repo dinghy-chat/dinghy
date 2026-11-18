@@ -55,6 +55,8 @@ export function registerOperatorApp(
     "/invite",
     // The consent page an OAuth client sends the operator to.
     "/oauth/authorize",
+    // The native app opens this page. The operator confirms before it gets a one-time code.
+    "/operator/native-sign-in",
     // Every emailed link opens this page, whose button uses the link.
     "/link",
     // Settings and each of its pages. The app shows its first page for a name it does not know.

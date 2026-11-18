@@ -611,6 +611,13 @@ const en = {
   consentSignedIn: "Signed in as",
   consentWorkspace: "Workspace",
   consentSignIn: "Sign in to connect {app}.",
+  nativeSignInReason: "Sign in to continue in the Dinghy mobile app.",
+  nativeSignInTitle: "Continue in Dinghy mobile?",
+  nativeSignInHelp:
+    "This signs the mobile app in as {name}. It will have your operator access on this server.",
+  nativeSignInApprove: "Allow mobile access",
+  nativeSignInInvalidTitle: "This app request is not valid",
+  nativeSignInInvalid: "Start sign-in again from the Dinghy mobile app.",
   consentAppHost: "an app at {host}",
   consentAppUnknown: "an app",
   recommended: "Recommended",
