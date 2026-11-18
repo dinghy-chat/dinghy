@@ -28,8 +28,8 @@ export const HOUR_FIELD_CAP = 200;
 
 /**
  * Drops the expired tabs, then adds this one unless the workspace is full, in one step, so beats at
- * once cannot pass the cap. Returns the tab's details from before ("" for none), the tabs live now,
- * and 1 when this beat added the tab, which only one of two beats at once can do; or nil when full.
+ * once cannot pass the cap. Returns the tab's details from before ("" for none) and the tabs live
+ * now, or nil when full.
  */
 const ADMIT_TAB = `
 local order, tabs, tab = KEYS[1], KEYS[2], ARGV[1]
@@ -38,12 +38,11 @@ if #expired > 0 then
   redis.call('ZREMRANGEBYSCORE', order, '-inf', ARGV[2])
   redis.call('HDEL', tabs, unpack(expired))
 end
-local added = redis.call('ZSCORE', order, tab) and 0 or 1
-if added == 1 and redis.call('ZCARD', order) >= tonumber(ARGV[4]) then
+if not redis.call('ZSCORE', order, tab) and redis.call('ZCARD', order) >= tonumber(ARGV[4]) then
   return nil
 end
 redis.call('ZADD', order, ARGV[3], tab)
-return {redis.call('HGET', tabs, tab) or '', redis.call('ZCARD', order), added}`;
+return {redis.call('HGET', tabs, tab) or '', redis.call('ZCARD', order)}`;
 
 /**
  * Adds a beat to its hour's history: the minute's most tabs at once, and for a visit or a page view
@@ -157,15 +156,15 @@ export function createLiveVisitors(valkey: Redis | null, logger: Logger): LiveVi
           now,
           now + LIVE_TTL_MS,
           LIVE_TAB_CAP,
-        )) as [string, number, number] | null;
+        )) as [string, number] | null;
         if (admitted === null) return false;
-        const [previous, liveCount, added] = admitted;
+        const [previous, liveCount] = admitted;
         const before = parse(previous === "" ? null : previous);
         const { first, entrance, ...details } = beat;
-        // A tab that comes back after its presence expired is added again, but only its first beat
-        // is a visit or a page view. A later page change in the same tab is a page view too.
-        const isNew = added === 1 && first;
-        const isPageView = isNew || (before !== null && before.page !== beat.page);
+        // Only a tab's first beat, the one that carries the referrer, is a visit and a page view,
+        // even when a later beat reaches the server first or the tab comes back after it expired.
+        // A later page change in the same tab is a page view too.
+        const isPageView = first || (before !== null && before.page !== beat.page);
         const entry: LiveTab = {
           ...details,
           // The referrer comes with the first beat only, so later beats keep it.
@@ -187,7 +186,7 @@ export function createLiveVisitors(valkey: Redis | null, logger: Logger): LiveVi
             HOUR_FIELD_CAP,
             Math.floor(now / MINUTE_MS) % 60,
             liveCount,
-            isNew && entrance ? 1 : 0,
+            first && entrance ? 1 : 0,
             isPageView ? 1 : 0,
             beat.page,
             beat.title ?? "",
@@ -258,7 +257,8 @@ const LiveVisitorSchema = z
         userId: z.string().nullable(),
         // Their newest conversation, open first.
         conversationId: z.string().nullable(),
-        // When that conversation is open, not snoozed, and its newest message is theirs: that message's time.
+        // When that conversation is open, not snoozed, and its newest message is theirs: the time of
+        // their first message since the team's latest one.
         waitingSince: z.string().nullable(),
       })
       .nullable(),

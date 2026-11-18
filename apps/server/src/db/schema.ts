@@ -840,7 +840,7 @@ export const pageView = pgTable(
 
 /**
  * One hour of the site's traffic, copied by the worker from the Valkey hour that the beats count in,
- * with no cookie and no stored ID. Kept 92 days for the Visitors page.
+ * with no cookie and no stored ID. Kept 182 days for the Visitors page.
  */
 export const siteHour = pgTable(
   "site_hour",

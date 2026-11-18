@@ -12,8 +12,7 @@ import { HOUR_MS, HOUR_SECONDS, MINUTE_MS } from "./time.ts";
 /** The Valkey set of the hour hashes that the worker still has to copy. */
 export const HOURS_KEY = "dinghy:live:hours";
 const HOUR_HASH = /^dinghy:live:([0-9a-f-]{36}):h:(\d+)$/;
-/** How long an hour stays: the longest period, 90 days, and a day either side for time zones. */
-// Twice the longest period, so 90 days compare with the 90 before them.
+/** How long an hour stays: twice the longest period, so 90 days compare with the 90 before them. */
 const KEPT_DAYS = 182;
 /** How many pages and referrers the stats list. */
 const TOP_COUNT = 8;
@@ -84,8 +83,10 @@ async function saveHours(db: Database, workspaceId: string, rows: HourRow[]): Pr
 }
 
 /**
- * Copies every hour hash named in HOURS_KEY into `site_hour`, and forgets the ones whose hour was
- * over before they were read, as nothing adds to them any more. A rerun writes the same rows.
+ * Copies every hour hash named in HOURS_KEY into `site_hour`, and forgets the ones whose hour ended
+ * over an hour ago, as no beat adds to them any more, even one that read its clock just before the
+ * hour turned. A rerun writes the same rows. A workspace whose rows fail keeps its hours for the next
+ * run, and the others are still saved; the first error is thrown after them.
  */
 export async function rollUpHours(db: Database, valkey: Redis, now = Date.now()): Promise<void> {
   const keys = await valkey.smembers(HOURS_KEY);
@@ -95,7 +96,7 @@ export async function rollUpHours(db: Database, valkey: Redis, now = Date.now())
   const results = (await batch.exec()) ?? [];
   const current = Math.floor(now / HOUR_MS);
   const byWorkspace = new Map<string, HourRow[]>();
-  const finished: string[] = [];
+  const finished = new Map<string, string[]>();
   keys.forEach((key, index) => {
     const [err, fields] = results[index] ?? [null, {}];
     if (err !== null) throw err;
@@ -106,10 +107,23 @@ export async function rollUpHours(db: Database, valkey: Redis, now = Date.now())
       rows.push(hourRow(match[1], hour, fields as Record<string, string>));
       byWorkspace.set(match[1], rows);
     }
-    if (match === null || hour < current) finished.push(key);
+    if (match === null || hour < current - 1) {
+      const owner = match?.[1] ?? "";
+      finished.set(owner, [...(finished.get(owner) ?? []), key]);
+    }
   });
-  for (const [workspaceId, rows] of byWorkspace) await saveHours(db, workspaceId, rows);
-  if (finished.length > 0) await valkey.srem(HOURS_KEY, ...finished);
+  let failure: unknown = null;
+  for (const [workspaceId, rows] of byWorkspace) {
+    try {
+      await saveHours(db, workspaceId, rows);
+    } catch (err) {
+      failure ??= err;
+      finished.delete(workspaceId);
+    }
+  }
+  const forget = [...finished.values()].flat();
+  if (forget.length > 0) await valkey.srem(HOURS_KEY, ...forget);
+  if (failure !== null) throw failure;
 }
 
 /** Deletes up to `limit` hours older than 182 days, across workspaces. For the worker. */
@@ -121,7 +135,10 @@ export async function pruneSiteHours(db: Database, limit: number): Promise<numbe
   return result.rowCount ?? 0;
 }
 
-/** A period and the one of the same length before it, which ends at `previousUntil`. */
+/**
+ * A period and the one of the same length before it, which ends at `previousUntil`, on a whole hour
+ * so its visits and its chats cover the same stored hours.
+ */
 interface Window {
   since: Date;
   previousSince: Date;
@@ -157,7 +174,7 @@ async function periodWindow(
   return {
     since: new Date(row.since),
     previousSince: new Date(row.previous_since),
-    previousUntil: new Date(row.previous_until),
+    previousUntil: new Date(Math.floor(Date.parse(row.previous_until) / HOUR_MS) * HOUR_MS),
   };
 }
 

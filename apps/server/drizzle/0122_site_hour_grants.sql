@@ -9,7 +9,7 @@ GRANT SELECT ON site_hour TO dinghy_app;
 -- The worker copies each hour from Valkey in its workspace's context, and deletes old hours.
 GRANT SELECT, INSERT, UPDATE, DELETE ON site_hour TO dinghy_worker;
 --> statement-breakpoint
--- The worker deletes hours older than 92 days across workspaces, which needs it to find them first.
+-- The worker deletes hours older than 182 days across workspaces, which needs it to find them first.
 CREATE POLICY worker_find_site_hours ON site_hour FOR SELECT TO dinghy_worker USING (true);
 --> statement-breakpoint
 CREATE POLICY worker_prune_site_hours ON site_hour FOR DELETE TO dinghy_worker USING (true);

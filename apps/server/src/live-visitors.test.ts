@@ -299,7 +299,7 @@ describe("the history", () => {
     });
   });
 
-  test("a tab that comes back after its presence expired is no new visit, and beats at once count once", async () => {
+  test("a tab that comes back after its presence expired is no new visit, and an overtaken first beat still is", async () => {
     const { id, publicKey } = await fresh();
     const back = tab();
     await beat({ tab: back, page: `${SITE}/`, referrer: "" }, undefined, publicKey);
@@ -307,11 +307,10 @@ describe("the history", () => {
     await valkey.zrem(`dinghy:live:${id}`, back);
     await valkey.hdel(`dinghy:live:${id}:tabs`, back);
     await beat({ tab: back, page: `${SITE}/` }, undefined, publicKey);
-    const twice = tab();
-    await Promise.all([
-      beat({ tab: twice, page: `${SITE}/`, referrer: "" }, undefined, publicKey),
-      beat({ tab: twice, page: `${SITE}/`, referrer: "" }, undefined, publicKey),
-    ]);
+    // A later beat of a new tab reaches the server before its first, which still counts once.
+    const overtaken = tab();
+    await beat({ tab: overtaken, page: `${SITE}/` }, undefined, publicKey);
+    await beat({ tab: overtaken, page: `${SITE}/`, referrer: "" }, undefined, publicKey);
     expect(await stats(id)).toMatchObject({ visits: 2, pageViews: 2 });
   });
 
@@ -369,6 +368,10 @@ describe("the roll-up", () => {
       "r:https://b.example": 1,
     });
     await valkey.sadd(HOURS_KEY, finished);
+    // The hour just over may still get a beat that read its clock before the hour turned.
+    const justOver = hourKey(id, hour - 1);
+    await valkey.hset(justOver, { v: 1, pv: 1 });
+    await valkey.sadd(HOURS_KEY, justOver);
     await beat({ tab: tab(), page: `${SITE}/now`, referrer: "" }, undefined, publicKey);
     expect(await valkey.sismember(HOURS_KEY, hourKey(id, hour))).toBe(1);
 
@@ -386,15 +389,44 @@ describe("the roll-up", () => {
         referrers: { "": 2, "https://b.example": 1 },
         titles: { [`${SITE}/a`]: "A" },
       },
+      expect.objectContaining({ hour: new Date((hour - 1) * HOUR_MS), visits: 1, pageViews: 1 }),
       expect.objectContaining({ hour: new Date(hour * HOUR_MS), visits: 1, pageViews: 1 }),
     ]);
     expect(await valkey.sismember(HOURS_KEY, finished)).toBe(0);
+    expect(await valkey.sismember(HOURS_KEY, justOver)).toBe(1);
     expect(await valkey.sismember(HOURS_KEY, hourKey(id, hour))).toBe(1);
 
     await valkey.sadd(HOURS_KEY, finished);
     await rollUpHours(workerDb, valkey);
     expect(await rows(id)).toEqual(expect.arrayContaining(copied));
-    expect(await rows(id)).toHaveLength(2);
+    expect(await rows(id)).toHaveLength(3);
+  });
+
+  test("a workspace whose hours fail to save keeps them, and the others are saved", async () => {
+    const bad = await createWorkspace(db, "Bad", [SITE]);
+    const good = await createWorkspace(db, "Good", [SITE]);
+    const hour = Math.floor(Date.now() / HOUR_MS) - 2;
+    // Postgres refuses a NUL in jsonb. The beat strips it, so only a hash written by hand has one.
+    await valkey.hset(hourKey(bad.id, hour), { v: 1, [`t:${SITE}/`]: "a\u0000b" });
+    await valkey.hset(hourKey(good.id, hour), { v: 2 });
+    await valkey.sadd(HOURS_KEY, hourKey(bad.id, hour), hourKey(good.id, hour));
+    await expect(rollUpHours(workerDb, valkey)).rejects.toThrow();
+    expect((await rows(good.id))[0]).toMatchObject({ visits: 2 });
+    expect(await valkey.sismember(HOURS_KEY, hourKey(bad.id, hour))).toBe(1);
+    expect(await valkey.sismember(HOURS_KEY, hourKey(good.id, hour))).toBe(0);
+    await valkey.srem(HOURS_KEY, hourKey(bad.id, hour));
+  });
+
+  test("a page title loses its control characters", async () => {
+    const { id, publicKey } = await createWorkspace(db, "Titles", [SITE]);
+    await beat(
+      { tab: tab(), page: `${SITE}/`, title: "a\u0000b\u0007c", referrer: "" },
+      undefined,
+      publicKey,
+    );
+    expect(await valkey.hget(hourKey(id, Math.floor(Date.now() / HOUR_MS)), `t:${SITE}/`)).toBe(
+      "a b c",
+    );
   });
 
   test("an older copy never lowers a row, and a gone workspace gets none", async () => {
@@ -413,7 +445,7 @@ describe("the roll-up", () => {
     await valkey.sadd(HOURS_KEY, gone);
     await rollUpHours(workerDb, valkey);
     expect(await valkey.sismember(HOURS_KEY, gone)).toBe(1);
-    await rollUpHours(workerDb, valkey, Date.now() + HOUR_MS);
+    await rollUpHours(workerDb, valkey, Date.now() + 2 * HOUR_MS);
     expect(await valkey.sismember(HOURS_KEY, gone)).toBe(0);
   });
 
@@ -483,12 +515,14 @@ describe("the periods", () => {
       at("2026-11-18T10:00:00Z", 4), // Today.
       at("2026-11-12T04:00:00Z", 100), // Before the period, after the previous one ended.
       at("2026-11-11T11:00:00Z", 100),
-      at("2026-11-11T10:00:00Z", 10), // The previous period ends 6 days 5.5 hours after it began.
+      // The previous period ends 6 days 5.5 hours after it began, cut to the whole hour, so the
+      // hour it ends in is left out, as its chats are.
+      at("2026-11-11T10:00:00Z", 10),
       at("2026-11-05T05:00:00Z", 20), // The previous period's first hour.
       at("2026-11-05T04:00:00Z", 100),
     ]);
     const found = await read(id, { days: 7, timeZone: "America/New_York", now });
-    expect(found).toMatchObject({ visits: 7, visitsBefore: 30 });
+    expect(found).toMatchObject({ visits: 7, visitsBefore: 20 });
     expect(found.series).toEqual([1, 0, 0, 0, 0, 2, 4]);
   });
 
