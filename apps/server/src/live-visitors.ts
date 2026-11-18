@@ -27,8 +27,8 @@ const TOP_COUNT = 5;
 
 /**
  * Drops the expired tabs, then adds this one unless the workspace is full, in one step, so beats at
- * once cannot pass the cap. Returns the tab's details from before ("" for a new tab) and the tabs live
- * now, or nil when full.
+ * once cannot pass the cap. Returns the tab's details from before ("" for none), the tabs live now,
+ * and 1 when this beat added the tab, which only one of two beats at once can do; or nil when full.
  */
 const ADMIT_TAB = `
 local order, tabs, tab = KEYS[1], KEYS[2], ARGV[1]
@@ -37,11 +37,12 @@ if #expired > 0 then
   redis.call('ZREMRANGEBYSCORE', order, '-inf', ARGV[2])
   redis.call('HDEL', tabs, unpack(expired))
 end
-if not redis.call('ZSCORE', order, tab) and redis.call('ZCARD', order) >= tonumber(ARGV[4]) then
+local added = redis.call('ZSCORE', order, tab) and 0 or 1
+if added == 1 and redis.call('ZCARD', order) >= tonumber(ARGV[4]) then
   return nil
 end
 redis.call('ZADD', order, ARGV[3], tab)
-return {redis.call('HGET', tabs, tab) or '', redis.call('ZCARD', order)}`;
+return {redis.call('HGET', tabs, tab) or '', redis.call('ZCARD', order), added}`;
 
 /**
  * Adds a beat to its hour's history: the minute's most tabs at once, and for a visit or a page view
@@ -98,8 +99,11 @@ interface LiveTab {
   seenAt: number;
 }
 
-/** A beat, and whether its tab arrived from another site or from nowhere, not from the site's own page. */
-type Beat = Omit<LiveTab, "startedAt" | "seenAt"> & { entrance: boolean };
+/**
+ * A beat, whether it is its tab's first (only that one carries the referrer), and whether the tab
+ * arrived from another site or from nowhere, not from the site's own page.
+ */
+type Beat = Omit<LiveTab, "startedAt" | "seenAt"> & { first: boolean; entrance: boolean };
 
 /** The site's last 24 hours, from the hourly history. */
 interface VisitorStats {
@@ -162,11 +166,15 @@ export function createLiveVisitors(valkey: Redis | null, logger: Logger): LiveVi
           now,
           now + LIVE_TTL_MS,
           LIVE_TAB_CAP,
-        )) as [string, number] | null;
+        )) as [string, number, number] | null;
         if (admitted === null) return false;
-        const [previous, liveCount] = admitted;
+        const [previous, liveCount, added] = admitted;
         const before = parse(previous === "" ? null : previous);
-        const { entrance, ...details } = beat;
+        const { first, entrance, ...details } = beat;
+        // A tab that comes back after its presence expired is added again, but only its first beat
+        // is a visit or a page view. A later page change in the same tab is a page view too.
+        const isNew = added === 1 && first;
+        const isPageView = isNew || (before !== null && before.page !== beat.page);
         const entry: LiveTab = {
           ...details,
           // The referrer comes with the first beat only, so later beats keep it.
@@ -187,8 +195,8 @@ export function createLiveVisitors(valkey: Redis | null, logger: Logger): LiveVi
             HOUR_FIELD_CAP,
             Math.floor(now / MINUTE_MS) % 60,
             liveCount,
-            before === null && entrance ? 1 : 0,
-            before?.page !== beat.page ? 1 : 0,
+            isNew && entrance ? 1 : 0,
+            isPageView ? 1 : 0,
             beat.page,
             beat.title ?? "",
             beat.referrer ?? "",
@@ -373,7 +381,7 @@ const statsRoute = createRoute({
   security: SESSION,
   summary: "Count the site's visits, page views and busiest minute of the last 24 hours",
   description:
-    "Kept in Valkey by the hour for 49 hours, with no cookie and no stored ID. The last 24 hours are whole hours: the current hour and the 23 before it, and `visitsBefore` counts the 24 hours before those. A visit is a tab that opened from another site or from nowhere; a page view is a tab that opened, or one whose page changed. `lastHour` holds the most tabs open at once in each of the last 60 minutes, oldest first, and `peak` the busiest minute of the 24 hours. `pages` and `referrers` list the top 5, with a null `referrer` for none; an hour keeps at most 200 distinct pages and 200 referrers. `chats` counts the conversations created in the same 24 hours, leaving out the welcome chat and test visitors. Null `stats` means the server cannot tell now.",
+    "Kept in Valkey by the hour for 49 hours, with no cookie and no stored ID. The last 24 hours are whole hours: the current hour and the 23 before it, and `visitsBefore` counts the 24 hours before those. A visit is a tab that opened from another site or from nowhere; a page view is a tab that opened, or one whose page changed. `lastHour` holds the most tabs open at once in each of the last 60 minutes, oldest first, and `peak` the busiest minute of the 24 hours. `pages` and `referrers` list the top 5, with a null `referrer` for none; an hour keeps at most 200 distinct pages and 200 referrers. `chats` counts the conversations created in the same 24 hours, that visitors started, leaving out the welcome chat and test visitors. Null `stats` means the server cannot tell now.",
   request: { params: workspaceParams },
   responses: {
     200: {
@@ -397,6 +405,7 @@ async function countChats(tx: Transaction, workspaceId: string): Promise<number>
       and(
         eq(conversation.workspaceId, workspaceId),
         gte(conversation.createdAt, new Date((Math.floor(Date.now() / HOUR_MS) - 23) * HOUR_MS)),
+        eq(conversation.startedBy, "visitor"),
         not(conversation.welcome),
         not(conversationHasTestVisitor(sql`${conversation}`)),
       ),
@@ -405,8 +414,9 @@ async function countChats(tx: Transaction, workspaceId: string): Promise<number>
 }
 
 /**
- * When each of these conversations started to wait for a reply, by the rule of `countWaiting`: open,
- * not snoozed, and its newest chat message is the visitor's. Leaves out the ones that do not wait.
+ * When each of these conversations started to wait for a reply: the visitor's first message since the
+ * team's latest one. Waiting follows `countWaiting`: open, not snoozed, and its newest chat message is
+ * the visitor's. Leaves out the ones that do not wait.
  */
 async function waitingSince(
   tx: Transaction,
@@ -414,13 +424,23 @@ async function waitingSince(
   ids: string[],
 ): Promise<Map<string, string>> {
   if (ids.length === 0) return new Map();
+  // A chat message of this conversation, as `alias`.
+  const chat = (alias: string) =>
+    sql`${sql.raw(alias)}.workspace_id = c.workspace_id and ${sql.raw(alias)}.conversation_id = c.id
+      and ${isChat(sql.raw(`${alias}.kind`))} and ${sql.raw(alias)}.deleted_at is null`;
+  // The wait starts at the visitor's first message after the team's latest reply.
   const result = await tx.execute<{ id: string; since: string }>(sql`
-    select c.id, newest.created_at as since
+    select c.id, (
+      select min(v.created_at) from ${message} as v
+      where ${chat("v")} and v.author_visitor_id is not null
+        and v.seq > coalesce(
+          (select max(r.seq) from ${message} as r where ${chat("r")} and r.author_visitor_id is null),
+          -1)
+    ) as since
     from ${conversation} as c
     cross join lateral (
-      select m.author_visitor_id, m.created_at from ${message} as m
-      where m.workspace_id = c.workspace_id and m.conversation_id = c.id
-        and ${isChat(sql`m.kind`)} and m.deleted_at is null
+      select m.author_visitor_id from ${message} as m
+      where ${chat("m")}
       order by m.seq desc
       limit 1
     ) as newest

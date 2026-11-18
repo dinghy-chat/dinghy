@@ -228,6 +228,7 @@ describe("the beat", () => {
           country: null,
           timeZone: null,
           device: null,
+          first: true,
           entrance: true,
           visitorId: null,
           conversationId: null,
@@ -267,7 +268,12 @@ describe("the history", () => {
     // A single-page app moves to another page in the same tab.
     await beat({ tab: outside, page: `${SITE}/pricing` }, undefined, publicKey);
     await beat({ tab: tab(), page: `${SITE}/docs`, referrer: `${SITE}/` }, undefined, publicKey);
-    await beat({ tab: tab(), page: `${SITE}/docs`, title: "Docs" }, undefined, publicKey);
+    // The widget sends "" on a tab's first beat when nothing referred it.
+    await beat(
+      { tab: tab(), page: `${SITE}/docs`, title: "Docs", referrer: "" },
+      undefined,
+      publicKey,
+    );
     expect(await stats(id)).toMatchObject({
       visits: 2,
       visitsBefore: 0,
@@ -282,6 +288,22 @@ describe("the history", () => {
         { referrer: null, count: 1 },
       ],
     });
+  });
+
+  test("a tab that comes back after its presence expired is no new visit, and beats at once count once", async () => {
+    const { id, publicKey } = await fresh();
+    const back = tab();
+    await beat({ tab: back, page: `${SITE}/`, referrer: "" }, undefined, publicKey);
+    // The tab was hidden for longer than the live view keeps it.
+    await valkey.zrem(`dinghy:live:${id}`, back);
+    await valkey.hdel(`dinghy:live:${id}:tabs`, back);
+    await beat({ tab: back, page: `${SITE}/` }, undefined, publicKey);
+    const twice = tab();
+    await Promise.all([
+      beat({ tab: twice, page: `${SITE}/`, referrer: "" }, undefined, publicKey),
+      beat({ tab: twice, page: `${SITE}/`, referrer: "" }, undefined, publicKey),
+    ]);
+    expect(await stats(id)).toMatchObject({ visits: 2, pageViews: 2 });
   });
 
   test("each minute keeps the most tabs open at once", async () => {
@@ -309,7 +331,7 @@ describe("the history", () => {
       undefined,
       publicKey,
     );
-    await beat({ tab: tab(), page: `${SITE}/kept` }, undefined, publicKey);
+    await beat({ tab: tab(), page: `${SITE}/kept`, referrer: "" }, undefined, publicKey);
     const found = await stats(id);
     expect(found?.pages).toEqual([{ page: `${SITE}/kept`, title: null, count: 2 }]);
     expect(found?.referrers).toEqual([{ referrer: null, count: 2 }]);
@@ -339,7 +361,7 @@ describe("the stats route", () => {
       headers: { cookie: as },
     });
 
-  test("counts the chats of the last 24 hours without the welcome chat, for this workspace only", async () => {
+  test("counts the chats visitors started in the last 24 hours without the welcome chat, for this workspace only", async () => {
     const before = ((await (await read()).json()) as { chats: number }).chats;
     const created = await app.request(`/v1/widget/${space.publicKey}/visitors`, {
       method: "POST",
@@ -350,6 +372,8 @@ describe("the stats route", () => {
       { workspaceId: space.id, visitorId },
       { workspaceId: space.id, visitorId, status: "closed" },
       { workspaceId: space.id, visitorId, status: "closed", welcome: true },
+      // The team wrote first, so the visitor did not start a chat.
+      { workspaceId: space.id, visitorId, status: "closed", startedBy: "team" },
       {
         workspaceId: space.id,
         visitorId,
@@ -394,6 +418,20 @@ describe("waiting", () => {
     const waiting = (await live()).visitors?.find((one) => one.tab === id)?.visitor;
     expect(waiting?.conversationId).toBe(conversationId);
     expect(Date.now() - Date.parse(waiting?.waitingSince ?? "")).toBeLessThan(60_000);
+
+    // A second message does not restart the wait.
+    await app.request(`/v1/widget/${space.publicKey}/messages`, {
+      method: "POST",
+      headers: {
+        origin: SITE,
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ clientId: "wait-2", body: "Hello?" }),
+    });
+    expect((await live()).visitors?.find((one) => one.tab === id)?.visitor?.waitingSince).toBe(
+      waiting?.waitingSince,
+    );
 
     const replied = await asOperator(
       app,

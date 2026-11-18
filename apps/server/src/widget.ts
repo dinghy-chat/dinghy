@@ -378,13 +378,9 @@ const leaveRoute = createRoute({
   },
 });
 
-/** Whether a tab arrived from outside the site: no referrer, one that does not parse, or another origin. */
-function isEntrance(referrer: string | undefined, page: string): boolean {
-  return (
-    referrer === undefined ||
-    !URL.canParse(referrer) ||
-    new URL(referrer).origin !== new URL(page).origin
-  );
+/** Whether a tab arrived from outside the site: no referrer (""), one that does not parse, or another origin. */
+function isEntrance(referrer: string, page: string): boolean {
+  return !URL.canParse(referrer) || new URL(referrer).origin !== new URL(page).origin;
 }
 
 /**
@@ -1779,7 +1775,9 @@ export function registerWidgetRoutes(
       page: path,
       title: pageTitle(title),
       referrer: referrerOrigin(referrer, path),
-      entrance: isEntrance(referrer, path),
+      // Only a tab's first beat sends the referrer, "" for none.
+      first: referrer !== undefined,
+      entrance: referrer !== undefined && isEntrance(referrer, path),
       country,
       timeZone: zone,
       device: deviceLine(c.req.header("user-agent")),
