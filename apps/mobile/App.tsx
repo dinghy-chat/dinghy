@@ -1,14 +1,7 @@
 import { useFonts } from "expo-font";
+import * as SplashScreen from "expo-splash-screen";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import {
-  ActivityIndicator,
-  Alert,
-  AppState,
-  Linking,
-  StatusBar,
-  useColorScheme,
-  View,
-} from "react-native";
+import { Alert, AppState, Linking, StatusBar, useColorScheme, View } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { t } from "../operator/src/text.ts";
 import { createOutbox, type PendingReply } from "./outbox";
@@ -30,13 +23,7 @@ import { day, night, type Palette, styles } from "./src/theme";
 import { ThreadScreen } from "./src/thread-screen";
 import type { Conversation, Me, Member, NotificationRoute, Session, Thread } from "./src/types";
 
-function LoadingScreen({ palette }: { palette: Palette }) {
-  return (
-    <View style={[styles.loading, { backgroundColor: palette.paper }]}>
-      <ActivityIndicator size="large" color={palette.blue} />
-    </View>
-  );
-}
+void SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
 function SignedInApp({
   session: initialSession,
@@ -594,8 +581,23 @@ function AppContent() {
   const [session, setSession] = useState<Session | null | undefined>(undefined);
   const [authError, setAuthError] = useState<string | null>(null);
   useEffect(() => {
-    void readSession().then(setSession);
+    let active = true;
+    void readSession().then(
+      (storedSession) => {
+        if (active) setSession(storedSession);
+      },
+      () => {
+        if (active) setSession(null);
+      },
+    );
+    return () => {
+      active = false;
+    };
   }, []);
+  const isReady = session !== undefined && (fontsLoaded || fontError !== null);
+  useEffect(() => {
+    if (isReady) SplashScreen.hide();
+  }, [isReady]);
   useEffect(() => {
     if (session !== null) return;
     let active = true;
@@ -619,8 +621,7 @@ function AppContent() {
       listener.remove();
     };
   }, [session]);
-  if (session === undefined || (!fontsLoaded && !fontError))
-    return <LoadingScreen palette={palette} />;
+  if (!isReady) return null;
   return (
     <>
       <StatusBar barStyle={isNight ? "light-content" : "dark-content"} />

@@ -5,12 +5,42 @@ module.exports = {
   scheme: "dinghy",
   version: "0.1.0",
   userInterfaceStyle: "automatic",
-  ios: { bundleIdentifier: "chat.dinghy.operator", supportsTablet: false },
+  ios: {
+    bundleIdentifier: "chat.dinghy.operator",
+    icon: {
+      light: "./assets/icon.png",
+      dark: "./assets/icon-dark.png",
+    },
+    supportsTablet: false,
+  },
   android: {
+    adaptiveIcon: {
+      backgroundColor: "#E3F2EE",
+      foregroundImage: "./assets/adaptive-foreground.png",
+      monochromeImage: "./assets/adaptive-monochrome.png",
+    },
     package: "chat.dinghy.operator",
     ...(process.env.GOOGLE_SERVICES_JSON && {
       googleServicesFile: process.env.GOOGLE_SERVICES_JSON,
     }),
   },
-  plugins: ["expo-notifications", "expo-secure-store", "expo-sqlite"],
+  plugins: [
+    [
+      "expo-splash-screen",
+      {
+        backgroundColor: "#E3F2EE",
+        image: "./assets/launch-mark.png",
+        resizeMode: "contain",
+        dark: {
+          backgroundColor: "#142B41",
+          image: "./assets/launch-mark-dark.png",
+        },
+        ios: { imageWidth: 250 },
+        android: { imageWidth: 180 },
+      },
+    ],
+    "expo-notifications",
+    "expo-secure-store",
+    "expo-sqlite",
+  ],
 };
