@@ -3154,36 +3154,32 @@ main {
 
 .sand-row .maker {
   display: inline-flex;
-  gap: 10px;
-  align-items: center;
+  gap: 8px;
+  align-items: flex-end;
   min-height: 44px;
-  padding: 0 14px 0 8px;
-  border-radius: 999px;
-  background: var(--navy);
-  color: rgb(255 255 255 / .72);
   text-decoration: none;
-  transition: background .15s;
-}
-
-.maker:hover {
-  background: var(--navy-light);
 }
 
 .maker img {
   border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--navy);
+}
+
+.maker span {
+  padding: 9px 14px;
+  border-radius: 16px 16px 16px 4px;
+  background: var(--navy);
+  color: #fff;
+  line-height: 1.2;
+  transition: background .15s;
+}
+
+.maker:hover span {
+  background: var(--navy-light);
 }
 
 .maker b {
-  color: #fff;
-  font-weight: 600;
-}
-
-.maker svg {
-  transition: transform .15s var(--spring);
-}
-
-.maker:hover svg {
-  transform: translate(2px, -2px);
+  font-weight: 700;
 }
 
 /* Not found page: the scene fills the page down to the footer. */
