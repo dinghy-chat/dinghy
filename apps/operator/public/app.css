@@ -6350,10 +6350,14 @@ button.quote:hover {
 }
 
 /* Toasts: one short message at the bottom center, over everything, which goes by itself. */
-/* The name of an icon, or a title, under the pointer or the focus. Its script places it. */
+/* The name of an icon, or a title, under the pointer or the focus. Its script places it. It is a
+   popover, so it shows over an open dialog too, and these lines undo the popover's default box. */
 .tooltip {
   position: fixed;
-  z-index: 1100;
+  inset: auto;
+  margin: 0;
+  border: 0;
+  overflow: visible;
   max-width: min(280px, calc(100vw - 16px));
   padding: 5px 9px;
   border-radius: 8px;
