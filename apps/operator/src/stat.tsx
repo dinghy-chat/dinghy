@@ -1,10 +1,8 @@
 /** @jsxImportSource react */
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { AnalyticsDays } from "./api.ts";
 import { plural, type TextId, t } from "./text.ts";
-import type { Option } from "./ui.tsx";
 
-// The key numbers of Analytics, Visitors and a campaign's results: a band of stats, each with its
+// The key numbers of Analytics and a campaign's results: a band of stats, each with its
 // change against the period before, and the card that a chart's part or an "i" shows.
 
 export const percent = (share: number) =>
@@ -15,13 +13,6 @@ export const shareOf = (count: number, total: number) => (total === 0 ? 0 : coun
 
 /** A count per unit of a total, such as chats per visit; null when the total is 0. */
 export const rateOf = (count: number, total: number) => (total === 0 ? null : count / total);
-
-/** The periods that Analytics offers, and the Visitors page after its 24 hours. */
-export const PERIOD_OPTIONS: readonly Option<`${AnalyticsDays}`>[] = [
-  { value: "7", label: "period7" },
-  { value: "30", label: "period30" },
-  { value: "90", label: "period90" },
-];
 
 /** A number with its label, or the words behind an "i" button. */
 type TipContent = { value: string; label: string } | { text: string };

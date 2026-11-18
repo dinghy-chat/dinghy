@@ -1,17 +1,12 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
 import { visitor } from "./chat.ts";
 import { signedIn } from "./links.ts";
+import { picture } from "./screenshots.ts";
 
 const SNIPPET = '<script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" async></script>';
 
 let server: Awaited<ReturnType<typeof startE2EServer>>;
-
-/** With SCREENSHOTS set to a folder, each step saves a picture there for a review. */
-async function picture(page: Page, name: string, fullPage = false) {
-  const folder = process.env.SCREENSHOTS;
-  if (folder !== undefined) await page.screenshot({ path: `${folder}/${name}.png`, fullPage });
-}
 
 test.beforeAll(async () => {
   server = await startE2EServer({
@@ -121,24 +116,11 @@ test("the operator sees the visitor's draft, the read receipt and the visitor's 
   for (const page of [operator, widget]) await page.context().close();
 });
 
-test("the operator filters who is on the site, picks a country on the map and reads a period", async ({
+test("the operator filters who is on the site and picks a country on the map", async ({
   browser,
 }) => {
   const page = `${server.hostOrigin}/pricing`;
   const details = { page, timeZone: "Europe/Paris", device: "Firefox on Linux" };
-  // Past hours: two in the last 24 hours, one in the 24 before, more over the week, and one in the
-  // week before.
-  await server.seedSiteHours([
-    { hoursAgo: 2, visits: 12, pages: { [`${server.hostOrigin}/docs`]: 9 } },
-    { hoursAgo: 5, visits: 6 },
-    { hoursAgo: 30, visits: 9 },
-    { hoursAgo: 60, visits: 21, pages: { [`${server.hostOrigin}/docs`]: 30 } },
-    { hoursAgo: 100, visits: 15 },
-    { hoursAgo: 140, visits: 24 },
-    { hoursAgo: 200, visits: 30 },
-    // Counted before the previous week began, so the week has a period to compare with.
-    { hoursAgo: 400, visits: 1 },
-  ]);
   await server.openTabs([
     {
       ...details,
@@ -148,7 +130,13 @@ test("the operator filters who is on the site, picks a country on the map and re
       referrer: "https://google.com",
     },
     { ...details, title: "Docs", country: "FR", referrer: "https://google.com" },
-    { ...details, title: "Pricing", country: "US", referrer: null },
+    {
+      ...details,
+      page: `${server.hostOrigin}/pricing/teams`,
+      title: "Pricing for teams of every size, with yearly plans and priority support",
+      country: "US",
+      referrer: null,
+    },
   ]);
   const operator = await signedIn(browser, server, "vera@example.com");
   await operator
@@ -178,30 +166,21 @@ test("the operator filters who is on the site, picks a country on the map and re
   await expect(operator.getByRole("region", { name: "Countries" })).toContainText("France2");
   await expect(operator.getByRole("region", { name: "Devices" })).toContainText("Firefox on Linux");
 
-  // Over time: the last 24 hours against the 24 before, then a week.
-  const overTime = operator.getByRole("region", { name: "Over time" });
-  const band = overTime.getByRole("region", { name: "Key numbers" });
-  const visits = band.locator(".stat-value").first();
-  // The seeded 18, the 3 tabs, and the first test's tab if it came in this hour.
-  await expect(visits).toHaveText(/^2[12]$/);
-  const day = Number(await visits.textContent());
-  await expect(band).toContainText("vs previous 24 hours");
-  await expect(band).toContainText("Chat rate");
-  await expect(band).toContainText("Busiest moment");
-  await expect(overTime.getByRole("region", { name: "Top pages" })).toContainText("Pricing");
-  await expect(overTime.getByRole("region", { name: "Top sources" })).toContainText("google.com");
+  // A long page title ends in an ellipsis inside its tile.
+  const pagesNow = operator.getByRole("region", { name: "Pages now" });
+  const long = pagesNow.locator("li", { hasText: "Pricing for teams" });
+  const fits = await long.evaluate((row) => {
+    const label = row.children[1] as HTMLElement;
+    const tile = row.closest(".live-tile")?.getBoundingClientRect();
+    return {
+      isCut: label.scrollWidth > label.clientWidth,
+      isInside: tile !== undefined && row.getBoundingClientRect().right <= tile.right,
+    };
+  });
+  expect(fits).toEqual({ isCut: true, isInside: true });
   await picture(operator, "visitors-live");
-  await overTime.scrollIntoViewIfNeeded();
-  await picture(operator, "visitors-day");
-  await overTime
-    .getByRole("group", { name: "Period" })
-    .getByRole("radio", { name: "7 days" })
-    .check();
-  await expect(band).toContainText("vs previous 7 days");
-  // The week adds the 69 of the hours between a day and six days ago.
-  await expect(visits).toHaveText(String(day + 69));
-  await expect(overTime.getByRole("region", { name: "Top pages" })).toContainText("docs");
-  await picture(operator, "visitors-week");
+  await pagesNow.scrollIntoViewIfNeeded();
+  await picture(operator, "visitors-tiles");
 
   // Known keeps the people with a name, Chatting only those in a conversation, and Waiting nobody
   // yet, as no chat waits.
@@ -251,7 +230,7 @@ test("the operator filters who is on the site, picks a country on the map and re
 
   // On a phone, everything fits the width: nothing scrolls sideways.
   await operator.setViewportSize({ width: 390, height: 844 });
-  await expect(band).toBeVisible();
+  await expect(claire).toBeVisible();
   const overflow = await operator.evaluate(() =>
     [document.documentElement, ...document.querySelectorAll<HTMLElement>(".page, .page-body")]
       .filter((element) => element.scrollWidth > element.clientWidth)
@@ -259,9 +238,8 @@ test("the operator filters who is on the site, picks a country on the map and re
   );
   expect(overflow).toEqual([]);
   await picture(operator, "visitors-phone");
-  await overTime.evaluate((element) => element.scrollIntoView({ block: "start" }));
-  await expect(overTime.getByRole("heading", { name: "Over time" })).toBeInViewport();
-  await picture(operator, "visitors-phone-over-time");
+  await pagesNow.evaluate((element) => element.scrollIntoView({ block: "start" }));
+  await picture(operator, "visitors-phone-tiles");
 
   await claire.getByRole("button", { name: "View contact" }).click();
   await expect(operator.getByRole("heading", { name: "Claire Martin" })).toBeVisible();

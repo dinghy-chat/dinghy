@@ -20,7 +20,7 @@ import {
   readSiteStats,
   rollUpHours,
 } from "./site-hours.ts";
-import { HOUR_MS } from "./time.ts";
+import { DAY_MS, HOUR_MS } from "./time.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
 const SITE = "https://app.example.com";
@@ -285,7 +285,7 @@ describe("the history", () => {
   /** Copies the hours to Postgres, as the worker does, and reads them back. */
   const stats = async (workspaceId: string) => {
     await rollUpHours(workerDb, valkey);
-    return read(workspaceId, { days: 1 });
+    return read(workspaceId, { days: 7 });
   };
 
   test("a tab from outside is a visit, a click inside the site is not, and every new page is a view", async () => {
@@ -307,7 +307,7 @@ describe("the history", () => {
     expect(await stats(id)).toMatchObject({
       visits: 2,
       pageViews: 4,
-      // The counting started this hour, so nothing reaches back to the day before.
+      // The counting started this hour, so nothing reaches back to the week before.
       previous: null,
       pages: [
         { page: `${SITE}/docs`, title: "Docs", count: 2 },
@@ -515,28 +515,6 @@ const read = (
   withWorkspace(db, workspaceId, (tx) => readSiteStats(tx, workspaceId, { days, timeZone, now }));
 
 describe("the periods", () => {
-  test("one day is the current hour and the 23 before, against the 24 before those", async () => {
-    const { id } = await createWorkspace(db, "Day", [SITE]);
-    const now = new Date("2026-11-18T10:30:00Z");
-    const back = (hours: number) => new Date(Date.parse("2026-11-18T10:00:00Z") - hours * HOUR_MS);
-    await owner
-      .insert(siteHour)
-      .values([
-        hourRow(id, back(0), 1),
-        hourRow(id, back(23), 2),
-        hourRow(id, back(24), 4),
-        hourRow(id, back(47), 8),
-        hourRow(id, back(48), 16),
-      ]);
-    const found = await read(id, { days: 1, now });
-    expect(found).toMatchObject({
-      visits: 3,
-      pageViews: 3,
-      previous: { visits: 12, pageViews: 12, chats: 0 },
-    });
-    expect(found.series).toEqual([2, ...Array.from({ length: 22 }, () => 0), 1]);
-  });
-
   test("seven days start at midnight in the time zone, and the previous ones last as long", async () => {
     const { id } = await createWorkspace(db, "Week", [SITE]);
     // 05:30 on Wednesday 18 November in New York, five hours behind.
@@ -601,7 +579,7 @@ describe("the periods", () => {
         referrers: { "https://a.example": 3 },
       }),
     ]);
-    const found = await read(id, { days: 1, now });
+    const found = await read(id, { days: 7, now });
     expect(found.pages.map((one) => one.count)).toEqual([21, 10, 9, 8, 7, 6, 5, 4]);
     expect(found.pages[1]).toEqual({ page: `${SITE}/9`, title: "New", count: 10 });
     expect(found.referrers).toEqual([
@@ -643,7 +621,8 @@ describe("the stats route", () => {
         { welcome: true },
         // The team wrote first, so the visitor did not start a chat.
         { startedBy: "team" },
-        { createdAt: new Date(Date.now() - 25 * HOUR_MS) },
+        // In the 30 days before the default period, not in it.
+        { createdAt: new Date(Date.now() - 40 * DAY_MS) },
       ]),
     );
     await beat({ tab: tab(), page: `${SITE}/`, referrer: "" }, { key: mine.publicKey });
@@ -651,16 +630,17 @@ describe("the stats route", () => {
     const response = await get("", mineCookie, mine);
     expect(response.status).toBe(200);
     const body = (await response.json()) as Body & { lastHour?: unknown };
-    // The counting started this hour, so the day before has no numbers yet.
+    // The counting started this hour, so the 30 days before have no numbers yet.
     expect(body).toMatchObject({ chats: 2, visits: 1, previous: null });
-    // Once the stored hours reach back to the start of the day before, it has them.
+    expect(body.series).toHaveLength(30);
+    // Once the stored hours reach back to the start of the 30 days before, they have them.
     await owner
       .insert(siteHour)
-      .values(hourRow(mine.id, new Date((hourOf(Date.now()) - 47) * HOUR_MS), 0));
+      .values(hourRow(mine.id, new Date((hourOf(Date.now()) - 60 * 24) * HOUR_MS), 0));
     expect(await read("", mineCookie, mine)).toMatchObject({ previous: { chats: 1 } });
     expect(body.lastHour).toBeUndefined();
     const week = await read("?days=7&tz=Europe/Paris", mineCookie, mine);
-    expect(week.chats).toBe(3);
+    expect(week.chats).toBe(2);
     expect(week.series).toHaveLength(7);
 
     expect((await get("", otherCookie, mine)).status).toBe(404);
@@ -669,6 +649,8 @@ describe("the stats route", () => {
 
   test("refuses another period or an unknown time zone", async () => {
     expect((await get("?days=2", cookie, space)).status).toBe(400);
+    // The Visitors page once offered 24 hours.
+    expect((await get("?days=1", cookie, space)).status).toBe(400);
     expect((await get("?days=7&tz=Mars/Base", cookie, space)).status).toBe(400);
   });
 });

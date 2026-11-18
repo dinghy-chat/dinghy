@@ -21339,8 +21339,8 @@
             "sessionCookie": []
           }
         ],
-        "summary": "Count the site's visits, page views, chats and busiest minute over 1, 7, 30 or 90 days",
-        "description": "Counted by the hour with no cookie and no stored ID, and kept 182 days; the stored hours are at most about a minute behind. One day is the last 24 whole hours: the current hour and the 23 before it. A longer period runs from the start of the day, `days - 1` days ago, in `tz`, to now, as for analytics. `previous` holds the numbers of a period of the same length just before, or null when the stored hours do not reach back to its start. A visit is a tab that opened from another site or from nowhere; a page view is a tab that opened, or one whose page changed. `series` holds the visits per hour for one day, and per day in `tz` otherwise, oldest first. `peak` is the busiest minute, by the most tabs open at once. `pages` and `referrers` list the top 8, with a null `referrer` for none; an hour keeps at most 200 distinct pages and 200 referrers. `chats` counts the conversations that visitors started in the period, leaving out the welcome chat and test visitors.",
+        "summary": "Count the site's visits, page views, chats and busiest minute over 7, 30 or 90 days",
+        "description": "Counted by the hour with no cookie and no stored ID, and kept 182 days; the stored hours are at most about a minute behind. A period runs from the start of the day, `days - 1` days ago, in `tz`, to now, as for analytics. `previous` holds the numbers of a period of the same length just before, or null when the stored hours do not reach back to its start. A visit is a tab that opened from another site or from nowhere; a page view is a tab that opened, or one whose page changed. `series` holds the visits per day in `tz`, oldest first. `peak` is the busiest minute, by the most tabs open at once. `pages` and `referrers` list the top 8, with a null `referrer` for none; an hour keeps at most 200 distinct pages and 200 referrers. `chats` counts the conversations that visitors started in the period, leaving out the welcome chat and test visitors.",
         "parameters": [
           {
             "schema": {
@@ -21354,7 +21354,7 @@
           {
             "schema": {
               "type": "integer",
-              "default": 1
+              "default": 30
             },
             "required": false,
             "name": "days",

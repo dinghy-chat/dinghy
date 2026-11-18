@@ -4,8 +4,9 @@ import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { failure } from "./errors.ts";
 import { TimeZone } from "./time.ts";
 
-// The periods that Analytics and the Visitors page show: which ones a query may ask for, where they
-// start and end, and a read of them in a time zone that Postgres may not know.
+// The periods of the Analytics page, for its conversations and its site's numbers: which ones a
+// query may ask for, where they start and end, and a read of them in a time zone that Postgres may
+// not know.
 
 /** Postgres's code for a time zone it does not know. */
 const PG_INVALID_PARAMETER = "22023";

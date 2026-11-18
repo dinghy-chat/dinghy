@@ -477,7 +477,7 @@ async function arrive(workspaceId: string, tabs: Tab[]): Promise<void> {
       JSON.stringify({ ...tab, startedAt, seenAt: startedAt }),
     );
   }
-  // The first beat is the visit, from outside the site, so Over time counts it.
+  // The first beat is the visit, from outside the site, so the site's numbers count it.
   await beatAll(workspaceId, tabs, "entrance");
 }
 

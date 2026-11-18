@@ -315,8 +315,6 @@ export interface LiveVisitor {
     | null;
 }
 
-export type VisitorDays = 1 | 7 | 30 | 90;
-
 /** The site's numbers for a period, kept by the hour. */
 export interface VisitorStats {
   visits: number;
@@ -325,7 +323,7 @@ export interface VisitorStats {
   /** The period just before, or null when Dinghy has not counted the site for that long. */
   previous: { visits: number; pageViews: number; chats: number } | null;
   peak: { count: number; at: string } | null;
-  /** Visits per hour for one day, per day otherwise, oldest first. */
+  /** Visits per day, oldest first. */
   series: number[];
   pages: { page: string; title: string | null; count: number }[];
   referrers: { referrer: string | null; count: number }[];
@@ -910,7 +908,7 @@ export function workspaceApi(workspaceId: string) {
     /** `lastHour`: the most tabs open at once in each of the last 60 minutes, oldest first. */
     liveVisitors: () =>
       call<{ visitors: LiveVisitor[] | null; lastHour: number[] | null }>(`${base}/visitors/live`),
-    visitorStats: (days: VisitorDays, timeZone: string) =>
+    visitorStats: (days: AnalyticsDays, timeZone: string) =>
       call<VisitorStats>(`${base}/visitors/stats?days=${days}&tz=${encodeURIComponent(timeZone)}`),
     liveCount: () => call<{ count: number | null }>(`${base}/visitors/live/count`),
     contacts: (query: {

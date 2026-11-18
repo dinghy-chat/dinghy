@@ -6,35 +6,23 @@ import {
   useRef,
   useState,
 } from "react";
-import type { LiveVisitor, VisitorDays, VisitorStats, WorkspaceApi } from "./api.ts";
+import type { LiveVisitor, WorkspaceApi } from "./api.ts";
 import { COUNTRY_POINTS } from "./countries.ts";
-import { browserTimeZone, dayAndTime, MINUTE_MS } from "./format.ts";
+import { MINUTE_MS } from "./format.ts";
 import { Icon } from "./icons.tsx";
 import { useTabVisible } from "./live.ts";
 import { useLatestLoad, usePolling } from "./load.ts";
 import { MessageButton } from "./outbound.tsx";
 import { countryName, flag, localHour, localTime } from "./place.ts";
 import { EmptyArt } from "./scene.tsx";
-import { OverTimeSkeleton, VisitorsSkeleton } from "./skeleton.tsx";
-import {
-  CountChange,
-  PERIOD_OPTIONS,
-  percent,
-  Ring,
-  rateOf,
-  ShareChange,
-  Sparkline,
-  Stat,
-  Tipped,
-} from "./stat.tsx";
+import { VisitorsSkeleton } from "./skeleton.tsx";
+import { Sparkline } from "./stat.tsx";
 import { plural, type TextId, t } from "./text.ts";
-import { Choices, FlagBadge, failureText, initials, Loading, type Option, Page } from "./ui.tsx";
-import { bare, pageName, visitorName, webLink } from "./visitor.ts";
+import { Choices, FlagBadge, initials, type Option, Page } from "./ui.tsx";
+import { bare, pageName, sourceName, visitorName, webLink } from "./visitor.ts";
 
 /** The live list loads again this often while the page shows. */
 const REFRESH_MS = 15_000;
-/** The stats change by the minute, so they load again this often. */
-const STATS_REFRESH_MS = 60_000;
 /** Daytime where the visitor is: from 07:00 to 20:59. */
 const DAY_STARTS_HOUR = 7;
 const NIGHT_STARTS_HOUR = 21;
@@ -55,12 +43,6 @@ const CARD_HALF_PX = 140;
 const WORLD_TOP = 0.04;
 
 type Show = "all" | "chatting" | "waiting" | "known";
-type Period = `${VisitorDays}`;
-
-const PERIODS: readonly Option<Period>[] = [{ value: "1", label: "period1" }, ...PERIOD_OPTIONS];
-
-/** The stats of a period, so an answer for the period before a switch never shows as the new one's. */
-type PeriodStats = { days: Period; numbers: VisitorStats };
 
 /** The live list: not loaded yet, unknown as Valkey cannot answer, or loaded. */
 type VisitorList =
@@ -164,10 +146,6 @@ function countryLine(country: string, count: number): string {
 function pageTitle(one: LiveVisitor): string {
   return pageName(one.title, one.page);
 }
-
-/** Where people came from: a site's bare name, or "No referrer". */
-const sourceName = (referrer: string | null) =>
-  referrer === null ? t("visitorsNoReferrer") : bare(referrer);
 
 /** People by country, for the map's dots. */
 function byCountry(visitors: LiveVisitor[]): Map<string, LiveVisitor[]> {
@@ -597,115 +575,6 @@ function LiveTiles({ listed }: { listed: LiveVisitor[] }) {
   );
 }
 
-/**
- * The period's key numbers, each against the period before, as the Analytics page shows its own. A
- * period before the counting started has no numbers, so no change shows.
- */
-function StatsBand({ numbers, compared }: { numbers: VisitorStats; compared: string }) {
-  const { visits, pageViews, chats, peak, previous } = numbers;
-  const rate = rateOf(chats, visits);
-  const rateBefore = previous === null ? null : rateOf(previous.chats, previous.visits);
-  return (
-    <section className="stats" aria-label={t("statsTitle")}>
-      <Stat title="statsVisits">
-        <p className="stat-value">{visits.toLocaleString()}</p>
-        <CountChange count={visits} before={previous?.visits ?? 0} compared={compared} />
-        <Sparkline values={numbers.series} />
-      </Stat>
-      <Stat title="statsPageViews">
-        <p className="stat-value">{pageViews.toLocaleString()}</p>
-        <CountChange count={pageViews} before={previous?.pageViews ?? 0} compared={compared} />
-      </Stat>
-      <Stat title="statsChatRate" help="statsChatRateHelp">
-        {rate === null ? (
-          <p className="stat-value none">{t("statsNoneYet")}</p>
-        ) : (
-          <div className="stat-ring">
-            <Ring share={Math.min(1, rate)} />
-            <p className="stat-value">{percent(rate)}</p>
-          </div>
-        )}
-        <ShareChange share={rate} before={rateBefore} compared={compared} />
-        {rate !== null && (
-          <p className="stat-note">
-            {t("statsChatsFrom", {
-              chats: plural(chats, "statsChatsOne", "statsChats"),
-              visits: plural(visits, "statsVisitsOne", "statsVisitsMany"),
-            })}
-          </p>
-        )}
-      </Stat>
-      <Stat title="statsPeak" help="statsPeakHelp">
-        {peak === null ? (
-          <p className="stat-value none">{t("statsNoneYet")}</p>
-        ) : (
-          <>
-            <p className="stat-value">{peak.count}</p>
-            <p className="stat-note">{dayAndTime(peak.at)}</p>
-          </>
-        )}
-      </Stat>
-    </section>
-  );
-}
-
-/** The site over 24 hours or some days: the key numbers, then the top pages and sources. */
-function OverTime({
-  stats,
-  failure,
-  days,
-  onDays,
-}: {
-  stats: PeriodStats | null;
-  failure: TextId | null;
-  days: Period;
-  onDays(days: Period): void;
-}) {
-  const numbers = stats?.days === days ? stats.numbers : null;
-  const compared = days === "1" ? t("vsPreviousDay") : t("vsPrevious", { days });
-  return (
-    <section className="over-time" aria-labelledby="over-time-title">
-      <div className="over-time-head">
-        <h3 id="over-time-title">{t("visitorsOverTime")}</h3>
-        <Choices<Period>
-          label={t("period")}
-          variant="outlined"
-          value={days}
-          options={PERIODS}
-          onChange={onDays}
-        />
-      </div>
-      {numbers === null ? (
-        <Loading failure={failure}>
-          <OverTimeSkeleton />
-        </Loading>
-      ) : (
-        <Tipped className="analytics">
-          <StatsBand numbers={numbers} compared={compared} />
-          <div className="live-tiles">
-            <Bars
-              title={t("visitorsTopPages")}
-              rows={numbers.pages.map(({ page, title, count }) => ({
-                key: page,
-                label: pageName(title, page),
-                count,
-              }))}
-            />
-            <Bars
-              title={t("visitorsTopSources")}
-              rows={numbers.referrers.map(({ referrer, count }) => ({
-                key: referrer ?? "",
-                label: sourceName(referrer),
-                count,
-              }))}
-            />
-          </div>
-        </Tipped>
-      )}
-    </section>
-  );
-}
-
 function listTitle(show: Show, country: string | null): string {
   const titles = FILTERS[show];
   return country === null
@@ -820,21 +689,7 @@ export function VisitorsPage({
   const [list, setList] = useState<VisitorList>({ state: "loading" });
   const [now, setNow] = useState(Date.now);
   const [show, setShow] = useState<Show>("all");
-  const [days, setDays] = useState<Period>("1");
-  const [stats, setStats] = useState<PeriodStats | null>(null);
-  const [statsFailure, setStatsFailure] = useState<TextId | null>(null);
   const visible = useTabVisible();
-  // The server checks the zone, and the days of a period start in it.
-  const zone = browserTimeZone();
-  const loadStats = useLatestLoad(async () => {
-    try {
-      setStats({ days, numbers: await api.visitorStats(Number(days) as VisitorDays, zone) });
-      setStatsFailure(null);
-    } catch (error) {
-      setStatsFailure(failureText(error, {}, "actionFailed"));
-    }
-  });
-  usePolling(loadStats, STATS_REFRESH_MS, visible, days);
   const load = useLatestLoad(async () => {
     const { visitors, lastHour } = await api.liveVisitors();
     setList(visitors === null ? { state: "unknown" } : { state: "ready", visitors, lastHour });
@@ -875,15 +730,6 @@ export function VisitorsPage({
           onOpenContact={onOpenContact}
         />
       )}
-      <OverTime
-        stats={stats}
-        failure={statsFailure}
-        days={days}
-        onDays={(next) => {
-          setStatsFailure(null);
-          setDays(next);
-        }}
-      />
     </Page>
   );
 }

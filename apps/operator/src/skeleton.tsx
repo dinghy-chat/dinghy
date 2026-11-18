@@ -192,21 +192,11 @@ export function VisitorsSkeleton() {
   );
 }
 
-/** Visitors over time: the key numbers, then the top pages and sources. */
-export function OverTimeSkeleton() {
+/** Analytics' part about the site: its four numbers. */
+export function SiteSkeleton() {
   return (
-    <Skeleton className="analytics">
+    <Skeleton>
       <StatBones />
-      <div className="live-tiles">
-        {NAMES.slice(0, 2).map((name) => (
-          <div key={name} className="live-tile bone-lines">
-            <Bone width={name} height={15} />
-            {[90, 64, 42].map((width) => (
-              <Bone key={width} width={`${width}%`} height={28} />
-            ))}
-          </div>
-        ))}
-      </div>
     </Skeleton>
   );
 }
