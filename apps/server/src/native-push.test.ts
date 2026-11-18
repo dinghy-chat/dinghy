@@ -20,10 +20,12 @@ describe("native push", () => {
         sound: "default",
         "thread-id": payload.tag,
       },
-      tag: payload.tag,
-      url: payload.url,
-      workspaceId: payload.workspaceId,
-      conversationId: payload.conversationId,
+      body: {
+        tag: payload.tag,
+        url: payload.url,
+        workspaceId: payload.workspaceId,
+        conversationId: payload.conversationId,
+      },
     });
     expect(JSON.parse(fcmBody("device", payload))).toEqual({
       message: {

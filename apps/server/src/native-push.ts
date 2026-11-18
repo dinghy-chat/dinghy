@@ -54,7 +54,8 @@ export function apnsBody(payload: PushPayload): string {
       sound: "default",
       "thread-id": payload.tag,
     },
-    ...routeData(payload),
+    // Expo maps this APNs field to notification.request.content.data on iOS.
+    body: routeData(payload),
   });
 }
 
