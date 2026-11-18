@@ -11,8 +11,15 @@ import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
 import { conversation, siteHour, visitor } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
-import { createLiveVisitors, HOUR_FIELD_CAP, LIVE_TAB_CAP } from "./live-visitors.ts";
-import { HOURS_KEY, hourKey, hourOf, readSiteStats, rollUpHours } from "./site-hours.ts";
+import { createLiveVisitors, LIVE_TAB_CAP } from "./live-visitors.ts";
+import {
+  HOUR_FIELD_CAP,
+  HOURS_KEY,
+  hourKey,
+  hourOf,
+  readSiteStats,
+  rollUpHours,
+} from "./site-hours.ts";
 import { HOUR_MS } from "./time.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
@@ -27,6 +34,7 @@ let valkey: Redis;
 let app: App;
 let space: NewWorkspace;
 let other: NewWorkspace;
+let auth: ReturnType<typeof createAuth>;
 let cookie: string;
 let otherCookie: string;
 const addresses: string[] = [];
@@ -48,9 +56,14 @@ type Live = {
         } | null;
       }[]
     | null;
+  lastHour: number[] | null;
 };
 
-const beat = (body: Record<string, unknown>, token?: string, key = space.publicKey) =>
+/** A tab's beat to a workspace's widget, by default this one's, as a visitor when given a token. */
+const beat = (
+  body: Record<string, unknown>,
+  { token, key = space.publicKey }: { token?: string; key?: string } = {},
+) =>
   app.request(`/v1/widget/${key}/beat`, {
     method: "POST",
     headers: {
@@ -77,6 +90,34 @@ const count = async () =>
     ).json()) as { count: number | null }
   ).count;
 const tab = () => Math.random().toString(36).slice(2, 14);
+/** One tab in this workspace's live list, or undefined when it is not there. */
+const liveTab = async (id: string) => (await live()).visitors?.find((one) => one.tab === id);
+// The Valkey keys of a workspace's live tabs: their order by expiry, and their details.
+const orderKey = (workspaceId: string) => `dinghy:live:${workspaceId}`;
+const tabsKey = (workspaceId: string) => `dinghy:live:${workspaceId}:tabs`;
+
+/** A new visitor of a workspace, by default this one, with the token their widget holds. */
+const newVisitor = async (key = space.publicKey) => {
+  const created = await app.request(`/v1/widget/${key}/visitors`, {
+    method: "POST",
+    headers: { origin: SITE },
+  });
+  return (await created.json()) as { token: string; visitorId: string };
+};
+/** Sends a message as a visitor, and answers the conversation it went to. */
+const sendAsVisitor = async (token: string, clientId: string, body: string) => {
+  const sent = await app.request(`/v1/widget/${space.publicKey}/messages`, {
+    method: "POST",
+    headers: { origin: SITE, authorization: `Bearer ${token}`, "content-type": "application/json" },
+    body: JSON.stringify({ clientId, body }),
+  });
+  return ((await sent.json()) as { conversationId: string }).conversationId;
+};
+/** A new visitor who has sent a first message. */
+const chattingVisitor = async (clientId: string, body: string) => {
+  const { token, visitorId } = await newVisitor();
+  return { token, visitorId, conversationId: await sendAsVisitor(token, clientId, body) };
+};
 
 beforeAll(async () => {
   database = await createTestDatabase();
@@ -85,7 +126,7 @@ beforeAll(async () => {
   owner = database.connect("migrator").db;
   workerDb = database.connect("worker", 2).db;
   valkey = new Redis(VALKEY_URL, { lazyConnect: true });
-  const auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
+  auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
   const ok = async () => {};
   app = createApp({
     db,
@@ -121,7 +162,7 @@ describe("the beat", () => {
       timeZone: "Europe/London",
     });
     expect(sent.status).toBe(200);
-    const shown = (await live()).visitors?.find((one) => one.tab === id);
+    const shown = await liveTab(id);
     expect(shown).toMatchObject({
       page: `${SITE}/pricing`,
       title: "Pricing",
@@ -132,8 +173,10 @@ describe("the beat", () => {
       visitor: null,
     });
     expect(addresses).toContain("81.2.69.160");
-    expect(JSON.stringify(await live())).not.toContain("81.2.69.160");
-    const stored = await valkey.hgetall(`dinghy:live:${space.id}:tabs`);
+    const listed = await live();
+    expect(JSON.stringify(listed)).not.toContain("81.2.69.160");
+    expect(listed.lastHour).toHaveLength(60);
+    const stored = await valkey.hgetall(tabsKey(space.id));
     expect(JSON.stringify(stored)).not.toContain("81.2.69.160");
     expect(await count()).toBeGreaterThanOrEqual(1);
   });
@@ -142,44 +185,30 @@ describe("the beat", () => {
     const id = tab();
     await beat({ tab: id, page: `${SITE}/a`, referrer: "https://first.example" });
     await beat({ tab: id, page: `${SITE}/b`, timeZone: "Not/AZone" });
-    expect((await live()).visitors?.find((one) => one.tab === id)).toMatchObject({
+    expect(await liveTab(id)).toMatchObject({
       page: `${SITE}/b`,
       referrer: "https://first.example",
       timeZone: null,
     });
     const inside = tab();
     await beat({ tab: inside, page: `${SITE}/c`, referrer: `${SITE}/a` });
-    expect((await live()).visitors?.find((one) => one.tab === inside)?.referrer).toBeNull();
+    expect((await liveTab(inside))?.referrer).toBeNull();
     const elsewhere = tab();
     expect((await beat({ tab: elsewhere, page: "https://evil.example/x" })).status).toBe(200);
     expect((await live()).visitors?.some((one) => one.tab === elsewhere)).toBe(false);
   });
 
   test("a visitor with a token gets their country and time zone saved, and a Chatting link", async () => {
-    const created = await app.request(`/v1/widget/${space.publicKey}/visitors`, {
-      method: "POST",
-      headers: { origin: SITE },
-    });
-    const { token, visitorId } = (await created.json()) as { token: string; visitorId: string };
-    const sent = await app.request(`/v1/widget/${space.publicKey}/messages`, {
-      method: "POST",
-      headers: {
-        origin: SITE,
-        authorization: `Bearer ${token}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ clientId: "live-1", body: "Hi" }),
-    });
-    const { conversationId } = (await sent.json()) as { conversationId: string };
+    const { token, visitorId, conversationId } = await chattingVisitor("live-1", "Hi");
     const id = tab();
     // A zone in another case is stored under the one spelling.
-    await beat({ tab: id, page: `${SITE}/app`, timeZone: "europe/lisbon" }, token);
+    await beat({ tab: id, page: `${SITE}/app`, timeZone: "europe/lisbon" }, { token });
     const [row] = await owner
       .select({ country: visitor.country, timeZone: visitor.timeZone })
       .from(visitor)
       .where(eq(visitor.id, visitorId));
     expect(row).toEqual({ country: "GB", timeZone: "Europe/Lisbon" });
-    expect((await live()).visitors?.find((one) => one.tab === id)?.visitor).toMatchObject({
+    expect((await liveTab(id))?.visitor).toMatchObject({
       id: visitorId,
       conversationId,
     });
@@ -198,25 +227,23 @@ describe("the beat", () => {
 
   test("a workspace that shows its cap of tabs drops a new one, and keeps beating the known ones", async () => {
     const full = await createWorkspace(db, "Full", [SITE]);
-    const order = `dinghy:live:${full.id}`;
+    const order = orderKey(full.id);
     const later = Date.now() + 60_000;
     const batch = valkey.multi();
     for (let index = 0; index < LIVE_TAB_CAP; index += 1)
       batch.zadd(order, later, `filled${index}`);
     await batch.exec();
     const id = tab();
-    expect((await beat({ tab: id, page: `${SITE}/x` }, undefined, full.publicKey)).status).toBe(
-      200,
-    );
+    expect((await beat({ tab: id, page: `${SITE}/x` }, { key: full.publicKey })).status).toBe(200);
     expect(await valkey.zscore(order, id)).toBeNull();
     expect(await valkey.zcard(order)).toBe(LIVE_TAB_CAP);
-    await beat({ tab: "filled0", page: `${SITE}/y` }, undefined, full.publicKey);
+    await beat({ tab: "filled0", page: `${SITE}/y` }, { key: full.publicKey });
     expect(Number(await valkey.zscore(order, "filled0"))).toBeGreaterThan(later);
   });
 
   test("beats at once never take a workspace past its cap", async () => {
     const full = await createWorkspace(db, "Nearly full", [SITE]);
-    const order = `dinghy:live:${full.id}`;
+    const order = orderKey(full.id);
     const batch = valkey.multi();
     for (let index = 1; index < LIVE_TAB_CAP; index += 1)
       batch.zadd(order, Date.now() + 60_000, `filled${index}`);
@@ -232,8 +259,7 @@ describe("the beat", () => {
           country: null,
           timeZone: null,
           device: null,
-          first: true,
-          entrance: true,
+          arrival: "entrance",
           visitorId: null,
           conversationId: null,
         }),
@@ -256,8 +282,6 @@ describe("the beat", () => {
 
 describe("the history", () => {
   const fresh = () => createWorkspace(db, "History", [SITE]);
-  const currentHour = () => hourOf(Date.now());
-  const thisHour = (workspaceId: string, back = 0) => hourKey(workspaceId, currentHour() - back);
   /** Copies the hours to Postgres, as the worker does, and reads them back. */
   const stats = async (workspaceId: string) => {
     await rollUpHours(workerDb, valkey);
@@ -269,18 +293,16 @@ describe("the history", () => {
     const outside = tab();
     await beat(
       { tab: outside, page: `${SITE}/`, referrer: "https://news.example.org/a" },
-      undefined,
-      publicKey,
+      { key: publicKey },
     );
-    await beat({ tab: outside, page: `${SITE}/` }, undefined, publicKey);
+    await beat({ tab: outside, page: `${SITE}/` }, { key: publicKey });
     // A single-page app moves to another page in the same tab.
-    await beat({ tab: outside, page: `${SITE}/pricing` }, undefined, publicKey);
-    await beat({ tab: tab(), page: `${SITE}/docs`, referrer: `${SITE}/` }, undefined, publicKey);
+    await beat({ tab: outside, page: `${SITE}/pricing` }, { key: publicKey });
+    await beat({ tab: tab(), page: `${SITE}/docs`, referrer: `${SITE}/` }, { key: publicKey });
     // The widget sends "" on a tab's first beat when nothing referred it.
     await beat(
       { tab: tab(), page: `${SITE}/docs`, title: "Docs", referrer: "" },
-      undefined,
-      publicKey,
+      { key: publicKey },
     );
     expect(await stats(id)).toMatchObject({
       visits: 2,
@@ -302,28 +324,29 @@ describe("the history", () => {
   test("a first beat counts once: not again when the tab comes back or when it is sent twice, and still when overtaken", async () => {
     const { id, publicKey } = await fresh();
     const back = tab();
-    await beat({ tab: back, page: `${SITE}/`, referrer: "" }, undefined, publicKey);
+    await beat({ tab: back, page: `${SITE}/`, referrer: "" }, { key: publicKey });
     // The tab was hidden for longer than the live view keeps it.
-    await valkey.zrem(`dinghy:live:${id}`, back);
-    await valkey.hdel(`dinghy:live:${id}:tabs`, back);
-    await beat({ tab: back, page: `${SITE}/` }, undefined, publicKey);
+    await valkey.zrem(orderKey(id), back);
+    await valkey.hdel(tabsKey(id), back);
+    await beat({ tab: back, page: `${SITE}/` }, { key: publicKey });
     // A later beat of a new tab reaches the server before its first, which still counts once.
     const overtaken = tab();
-    await beat({ tab: overtaken, page: `${SITE}/` }, undefined, publicKey);
-    await beat({ tab: overtaken, page: `${SITE}/`, referrer: "" }, undefined, publicKey);
+    await beat({ tab: overtaken, page: `${SITE}/` }, { key: publicKey });
+    await beat({ tab: overtaken, page: `${SITE}/`, referrer: "" }, { key: publicKey });
     // A first beat sent twice, at once or one after the other, counts once.
     const twice = tab();
     const first = { tab: twice, page: `${SITE}/`, referrer: "" };
-    await Promise.all([beat(first, undefined, publicKey), beat(first, undefined, publicKey)]);
-    await beat(first, undefined, publicKey);
+    const key = { key: publicKey };
+    await Promise.all([beat(first, key), beat(first, key)]);
+    await beat(first, key);
     expect(await stats(id)).toMatchObject({ visits: 3, pageViews: 3 });
   });
 
   test("each minute keeps the most tabs open at once, for the last hour and the peak", async () => {
     const { id, publicKey } = await fresh();
     const tabs = [tab(), tab(), tab()];
-    for (const one of tabs) await beat({ tab: one, page: `${SITE}/` }, undefined, publicKey);
-    await beat({ tab: tabs[0], page: `${SITE}/` }, undefined, publicKey);
+    for (const one of tabs) await beat({ tab: one, page: `${SITE}/` }, { key: publicKey });
+    await beat({ tab: tabs[0], page: `${SITE}/` }, { key: publicKey });
     const lastHour = await createLiveVisitors(valkey, logger).lastHour(id);
     expect(lastHour).toHaveLength(60);
     expect(Math.max(...(lastHour ?? []))).toBe(3);
@@ -335,7 +358,7 @@ describe("the history", () => {
 
   test("an hour keeps at most its cap of pages and referrers, and still counts the ones it has", async () => {
     const { id, publicKey } = await fresh();
-    await valkey.hset(thisHour(id), {
+    await valkey.hset(hourKey(id, hourOf(Date.now())), {
       np: HOUR_FIELD_CAP,
       nr: HOUR_FIELD_CAP,
       [`p:${SITE}/kept`]: 1,
@@ -343,14 +366,27 @@ describe("the history", () => {
     });
     await beat(
       { tab: tab(), page: `${SITE}/new`, referrer: "https://new.example" },
-      undefined,
-      publicKey,
+      { key: publicKey },
     );
-    await beat({ tab: tab(), page: `${SITE}/kept`, referrer: "" }, undefined, publicKey);
+    await beat({ tab: tab(), page: `${SITE}/kept`, referrer: "" }, { key: publicKey });
     const found = await stats(id);
     expect(found.pages).toEqual([{ page: `${SITE}/kept`, title: null, count: 2 }]);
     expect(found.referrers).toEqual([{ referrer: null, count: 2 }]);
     expect(found.visits).toBe(2);
+  });
+
+  test("a page title loses its control characters", async () => {
+    const { id, publicKey } = await fresh();
+    const hour = hourOf(Date.now());
+    await beat(
+      { tab: tab(), page: `${SITE}/`, title: "a\u0000b\u0007c", referrer: "" },
+      { key: publicKey },
+    );
+    // The hour may turn during the beat.
+    const titles = await Promise.all(
+      [hour, hour + 1].map((one) => valkey.hget(hourKey(id, one), `t:${SITE}/`)),
+    );
+    expect(titles).toContain("a b c");
   });
 });
 
@@ -377,7 +413,7 @@ describe("the roll-up", () => {
     const justOver = hourKey(id, hour - 1);
     await valkey.hset(justOver, { v: 1, pv: 1 });
     await valkey.sadd(HOURS_KEY, justOver);
-    await beat({ tab: tab(), page: `${SITE}/now`, referrer: "" }, undefined, publicKey);
+    await beat({ tab: tab(), page: `${SITE}/now`, referrer: "" }, { key: publicKey });
     expect(await valkey.sismember(HOURS_KEY, hourKey(id, hour))).toBe(1);
 
     await rollUpHours(workerDb, valkey, hour * HOUR_MS);
@@ -420,21 +456,6 @@ describe("the roll-up", () => {
     expect(await valkey.sismember(HOURS_KEY, hourKey(bad.id, hour))).toBe(1);
     expect(await valkey.sismember(HOURS_KEY, hourKey(good.id, hour))).toBe(0);
     await valkey.srem(HOURS_KEY, hourKey(bad.id, hour));
-  });
-
-  test("a page title loses its control characters", async () => {
-    const { id, publicKey } = await createWorkspace(db, "Titles", [SITE]);
-    const hour = hourOf(Date.now());
-    await beat(
-      { tab: tab(), page: `${SITE}/`, title: "a\u0000b\u0007c", referrer: "" },
-      undefined,
-      publicKey,
-    );
-    // The hour may turn during the beat.
-    const titles = await Promise.all(
-      [hour, hour + 1].map((one) => valkey.hget(hourKey(id, one), `t:${SITE}/`)),
-    );
-    expect(titles).toContain("a b c");
   });
 
   test("an older copy never lowers a row, and a gone workspace gets none", async () => {
@@ -586,93 +607,68 @@ describe("the periods", () => {
 });
 
 describe("the stats route", () => {
-  const get = async (query = "", as = cookie, workspace = space) =>
+  const get = async (query: string, as: string, workspace: { id: string }) =>
     app.request(`/v1/operator/workspaces/${workspace.id}/visitors/stats${query}`, {
       headers: { cookie: as },
     });
-  type Body = { chats: number; chatsBefore: number; visits: number; lastHour: number[] | null };
+  type Body = { chats: number; chatsBefore: number; visits: number; series: number[] };
+  const read = async (query: string, as: string, workspace: { id: string }) =>
+    (await (await get(query, as, workspace)).json()) as Body;
 
   test("counts the chats visitors started in the period without the welcome chat, for this workspace only", async () => {
-    const before = (await (await get()).json()) as Body;
-    const created = await app.request(`/v1/widget/${space.publicKey}/visitors`, {
-      method: "POST",
-      headers: { origin: SITE },
+    const mine = await createWorkspace(db, "Stats", [SITE]);
+    const { cookie: mineCookie } = await signedInOperator({
+      app,
+      auth,
+      owner,
+      workspaceId: mine.id,
     });
-    const { visitorId } = (await created.json()) as { visitorId: string };
-    await owner.insert(conversation).values([
-      { workspaceId: space.id, visitorId },
-      { workspaceId: space.id, visitorId, status: "closed" },
-      { workspaceId: space.id, visitorId, status: "closed", welcome: true },
-      // The team wrote first, so the visitor did not start a chat.
-      { workspaceId: space.id, visitorId, status: "closed", startedBy: "team" },
-      {
-        workspaceId: space.id,
-        visitorId,
-        status: "closed",
-        createdAt: new Date(Date.now() - 25 * HOUR_MS),
-      },
-    ]);
+    const { visitorId } = await newVisitor(mine.publicKey);
+    const conversations = (more: Partial<typeof conversation.$inferInsert>[]) =>
+      more.map((one) => ({ workspaceId: mine.id, visitorId, status: "closed" as const, ...one }));
+    await owner.insert(conversation).values(
+      conversations([
+        { status: "open" },
+        {},
+        { welcome: true },
+        // The team wrote first, so the visitor did not start a chat.
+        { startedBy: "team" },
+        { createdAt: new Date(Date.now() - 25 * HOUR_MS) },
+      ]),
+    );
+    await beat({ tab: tab(), page: `${SITE}/`, referrer: "" }, { key: mine.publicKey });
     await rollUpHours(workerDb, valkey);
-    const response = await get();
+    const response = await get("", mineCookie, mine);
     expect(response.status).toBe(200);
-    const body = (await response.json()) as Body;
-    expect(body.chats).toBe(before.chats + 2);
-    expect(body.chatsBefore).toBe(before.chatsBefore + 1);
-    expect(body.visits).toBeGreaterThan(0);
-    expect(body.lastHour).toHaveLength(60);
-    const week = (await (await get("?days=7&tz=Europe/Paris")).json()) as Body & {
-      series: number[];
-    };
-    expect(week.chats).toBe(body.chats + body.chatsBefore);
+    const body = (await response.json()) as Body & { lastHour?: unknown };
+    expect(body).toMatchObject({ chats: 2, chatsBefore: 1, visits: 1 });
+    expect(body.lastHour).toBeUndefined();
+    const week = await read("?days=7&tz=Europe/Paris", mineCookie, mine);
+    expect(week.chats).toBe(3);
     expect(week.series).toHaveLength(7);
 
-    expect((await get("", otherCookie)).status).toBe(404);
-    const theirs = (await (await get("", otherCookie, other)).json()) as Body;
-    expect(theirs).toMatchObject({ chats: 0, visits: 0 });
+    expect((await get("", otherCookie, mine)).status).toBe(404);
+    expect(await read("", otherCookie, other)).toMatchObject({ chats: 0, visits: 0 });
   });
 
   test("refuses another period or an unknown time zone", async () => {
-    expect((await get("?days=2")).status).toBe(400);
-    expect((await get("?days=7&tz=Mars/Base")).status).toBe(400);
+    expect((await get("?days=2", cookie, space)).status).toBe(400);
+    expect((await get("?days=7&tz=Mars/Base", cookie, space)).status).toBe(400);
   });
 });
 
 describe("waiting", () => {
   test("a chatting visitor waits from their message until an operator replies", async () => {
-    const created = await app.request(`/v1/widget/${space.publicKey}/visitors`, {
-      method: "POST",
-      headers: { origin: SITE },
-    });
-    const { token } = (await created.json()) as { token: string };
-    const sent = await app.request(`/v1/widget/${space.publicKey}/messages`, {
-      method: "POST",
-      headers: {
-        origin: SITE,
-        authorization: `Bearer ${token}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ clientId: "wait-1", body: "Anyone there?" }),
-    });
-    const { conversationId } = (await sent.json()) as { conversationId: string };
+    const { token, conversationId } = await chattingVisitor("wait-1", "Anyone there?");
     const id = tab();
-    await beat({ tab: id, page: `${SITE}/help` }, token);
-    const waiting = (await live()).visitors?.find((one) => one.tab === id)?.visitor;
+    await beat({ tab: id, page: `${SITE}/help` }, { token });
+    const waiting = (await liveTab(id))?.visitor;
     expect(waiting?.conversationId).toBe(conversationId);
     expect(Date.now() - Date.parse(waiting?.waitingSince ?? "")).toBeLessThan(60_000);
 
     // A second message does not restart the wait.
-    await app.request(`/v1/widget/${space.publicKey}/messages`, {
-      method: "POST",
-      headers: {
-        origin: SITE,
-        authorization: `Bearer ${token}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ clientId: "wait-2", body: "Hello?" }),
-    });
-    expect((await live()).visitors?.find((one) => one.tab === id)?.visitor?.waitingSince).toBe(
-      waiting?.waitingSince,
-    );
+    await sendAsVisitor(token, "wait-2", "Hello?");
+    expect((await liveTab(id))?.visitor?.waitingSince).toBe(waiting?.waitingSince);
 
     const replied = await asOperator(
       app,
@@ -682,8 +678,6 @@ describe("waiting", () => {
       { clientId: "wait-reply", body: "Yes, hello" },
     );
     expect(replied.status).toBe(201);
-    expect(
-      (await live()).visitors?.find((one) => one.tab === id)?.visitor?.waitingSince,
-    ).toBeNull();
+    expect((await liveTab(id))?.visitor?.waitingSince).toBeNull();
   });
 });

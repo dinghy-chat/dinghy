@@ -260,7 +260,7 @@ export async function startE2EServer(
     async openTabs(
       tabs: (Omit<
         Parameters<LiveVisitors["beat"]>[1],
-        "tab" | "visitorId" | "conversationId" | "first" | "entrance"
+        "tab" | "visitorId" | "conversationId" | "arrival"
       > & {
         name?: string;
       })[],
@@ -277,8 +277,7 @@ export async function startE2EServer(
         await liveVisitors.beat(workspace.id, {
           ...details,
           tab: randomUUID(),
-          first: true,
-          entrance: true,
+          arrival: "entrance",
           visitorId: contact?.id ?? null,
           conversationId: null,
         });

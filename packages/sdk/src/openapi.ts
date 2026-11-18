@@ -9119,7 +9119,6 @@ export interface components {
       }[];
     };
     VisitorStats: {
-      lastHour: number[] | null;
       visits: number;
       visitsBefore: number;
       pageViews: number;

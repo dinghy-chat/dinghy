@@ -3858,12 +3858,6 @@
       "VisitorStats": {
         "type": "object",
         "properties": {
-          "lastHour": {
-            "type": ["array", "null"],
-            "items": {
-              "type": "integer"
-            }
-          },
           "visits": {
             "type": "integer"
           },
@@ -3935,7 +3929,6 @@
           }
         },
         "required": [
-          "lastHour",
           "visits",
           "visitsBefore",
           "pageViews",
@@ -21343,7 +21336,7 @@
           }
         ],
         "summary": "Count the site's visits, page views, chats and busiest minute over 1, 7, 30 or 90 days",
-        "description": "Counted by the hour with no cookie and no stored ID, and kept 182 days; the stored hours are at most about a minute behind. One day is the last 24 whole hours: the current hour and the 23 before it. A longer period runs from the start of the day, `days - 1` days ago, in `tz`, to now, as for analytics. The `Before` numbers are for a period of the same length just before. A visit is a tab that opened from another site or from nowhere; a page view is a tab that opened, or one whose page changed. `series` holds the visits per hour for one day, and per day in `tz` otherwise, oldest first. `peak` is the busiest minute, by the most tabs open at once. `pages` and `referrers` list the top 8, with a null `referrer` for none; an hour keeps at most 200 distinct pages and 200 referrers. `chats` counts the conversations that visitors started in the period, leaving out the welcome chat and test visitors. `lastHour` holds the most tabs open at once in each of the last 60 minutes, oldest first, and is null when the server cannot tell now.",
+        "description": "Counted by the hour with no cookie and no stored ID, and kept 182 days; the stored hours are at most about a minute behind. One day is the last 24 whole hours: the current hour and the 23 before it. A longer period runs from the start of the day, `days - 1` days ago, in `tz`, to now, as for analytics. The `Before` numbers are for a period of the same length just before. A visit is a tab that opened from another site or from nowhere; a page view is a tab that opened, or one whose page changed. `series` holds the visits per hour for one day, and per day in `tz` otherwise, oldest first. `peak` is the busiest minute, by the most tabs open at once. `pages` and `referrers` list the top 8, with a null `referrer` for none; an hour keeps at most 200 distinct pages and 200 referrers. `chats` counts the conversations that visitors started in the period, leaving out the welcome chat and test visitors.",
         "parameters": [
           {
             "schema": {
@@ -21435,7 +21428,7 @@
           }
         ],
         "summary": "List the tabs of the site open now, newest first",
-        "description": "Each tab of a page with the widget beats once a minute while it is visible, and leaves the list 90 seconds after its last beat. It holds no cookie and no stored ID. Null `visitors` means the server cannot tell now.",
+        "description": "Each tab of a page with the widget beats once a minute while it is visible, and leaves the list 90 seconds after its last beat. It holds no cookie and no stored ID. `lastHour` holds the most tabs open at once in each of the last 60 minutes, oldest first. Null `visitors` or `lastHour` means the server cannot tell now.",
         "parameters": [
           {
             "schema": {
@@ -21460,9 +21453,15 @@
                       "items": {
                         "$ref": "#/components/schemas/LiveVisitor"
                       }
+                    },
+                    "lastHour": {
+                      "type": ["array", "null"],
+                      "items": {
+                        "type": "integer"
+                      }
                     }
                   },
-                  "required": ["visitors"]
+                  "required": ["visitors", "lastHour"]
                 }
               }
             }

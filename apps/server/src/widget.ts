@@ -1776,8 +1776,7 @@ export function registerWidgetRoutes(
       title: pageTitle(title),
       referrer: referrerOrigin(referrer, path),
       // Only a tab's first beat sends the referrer, "" for none.
-      first: referrer !== undefined,
-      entrance: referrer !== undefined && isEntrance(referrer, path),
+      arrival: referrer === undefined ? null : isEntrance(referrer, path) ? "entrance" : "inside",
       country,
       timeZone: zone,
       device: deviceLine(c.req.header("user-agent")),

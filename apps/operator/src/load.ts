@@ -12,10 +12,6 @@ import type { TextId } from "./text.ts";
 import { failureText } from "./ui.tsx";
 
 /**
- * Runs one load at a time, and once more if it was asked again meanwhile. Canceling a slow load for
- * each new event would mean a busy workspace never finishes one.
- */
-/**
  * Runs `load` now and every `everyMs` while `active`, and at once again when `restartOn` changes,
  * such as a new period to show.
  */
@@ -34,6 +30,10 @@ export function usePolling(
   }, [load, everyMs, active, restartOn]);
 }
 
+/**
+ * Runs one load at a time, and once more if it was asked again meanwhile. Canceling a slow load for
+ * each new event would mean a busy workspace never finishes one.
+ */
 export function useLatestLoad(load: () => Promise<void>): () => void {
   const latest = useRef(load);
   // After the render commits, because a render that React throws away must not change it.

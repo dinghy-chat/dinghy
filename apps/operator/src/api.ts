@@ -317,10 +317,8 @@ export interface LiveVisitor {
 
 export type VisitorDays = 1 | 7 | 30 | 90;
 
-/** The site's numbers for a period, kept by the hour, and its last hour from Valkey. */
+/** The site's numbers for a period, kept by the hour. */
 export interface VisitorStats {
-  /** Tabs open at once in each of the last 60 minutes, oldest first. Null when unknown now. */
-  lastHour: number[] | null;
   visits: number;
   visitsBefore: number;
   pageViews: number;
@@ -910,7 +908,9 @@ export function workspaceApi(workspaceId: string) {
       post<{ visitorId: string; conversationId: string }>(`${base}/test-visitors/messages`, {
         body,
       }),
-    liveVisitors: () => call<{ visitors: LiveVisitor[] | null }>(`${base}/visitors/live`),
+    /** `lastHour`: the most tabs open at once in each of the last 60 minutes, oldest first. */
+    liveVisitors: () =>
+      call<{ visitors: LiveVisitor[] | null; lastHour: number[] | null }>(`${base}/visitors/live`),
     visitorStats: (days: VisitorDays, timeZone: string) =>
       call<VisitorStats>(`${base}/visitors/stats?days=${days}&tz=${encodeURIComponent(timeZone)}`),
     liveCount: () => call<{ count: number | null }>(`${base}/visitors/live/count`),

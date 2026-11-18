@@ -1218,6 +1218,13 @@ export const conversationHasTestVisitor = (alias: SQL) => sql<boolean>`exists (
 )`;
 
 /**
+ * Whether a conversation, named by its alias in the query, counts in the numbers: neither the
+ * welcome chat nor a bot's test visitor's.
+ */
+export const countedConversation = (alias: SQL) =>
+  sql<boolean>`not ${alias}.welcome and not ${conversationHasTestVisitor(alias)}`;
+
+/**
  * Whether the conversation in the query has a visitor message, or a note that mentions this
  * operator, past their read position. An API key, null here, has no position, so nothing is unread
  * for it. A bot's test visitor is never unread, as it alerts nobody. Any other note is not a

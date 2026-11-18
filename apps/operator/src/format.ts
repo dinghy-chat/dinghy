@@ -1,8 +1,11 @@
+import { t } from "./text.ts";
+
 // The times and dates the app shows.
 
 export const MINUTE_MS = 60_000;
 
 const CLOCK: Intl.DateTimeFormatOptions = { hour: "numeric", minute: "2-digit" };
+const SHORT_DAY: Intl.DateTimeFormatOptions = { month: "short", day: "numeric" };
 const SHORT_DATE: Intl.DateTimeFormatOptions = { month: "short", day: "numeric", year: "numeric" };
 
 /** The browser's IANA time zone, or UTC when it names none. */
@@ -28,12 +31,18 @@ export const dayTime = (iso: string) =>
 /** Whether a moment falls on today, in this browser's time zone. */
 export const isToday = (at: Date) => at.toDateString() === new Date().toDateString();
 
+/** "Today at 3:02 PM", or "Nov 14 at 3:02 PM" on another day. */
+export function dayAndTime(iso: string): string {
+  const at = new Date(iso);
+  const time = clockTime(at);
+  if (isToday(at)) return t("statsPeakToday", { time });
+  return t("statsPeakOn", { day: at.toLocaleDateString([], SHORT_DAY), time });
+}
+
 /** The time today, and the date before today: "Nov 10". */
 export function shortTime(iso: string): string {
   const at = new Date(iso);
-  return isToday(at)
-    ? clockTime(at)
-    : at.toLocaleDateString([], { month: "short", day: "numeric" });
+  return isToday(at) ? clockTime(at) : at.toLocaleDateString([], SHORT_DAY);
 }
 
 /** The time today, and the date with the time before today: "Nov 10, 2026, 3:07 PM". */

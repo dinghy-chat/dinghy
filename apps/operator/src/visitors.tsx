@@ -6,10 +6,9 @@ import {
   useRef,
   useState,
 } from "react";
-import { PERIODS as ANALYTICS_PERIODS } from "./analytics.tsx";
 import type { LiveVisitor, VisitorDays, VisitorStats, WorkspaceApi } from "./api.ts";
 import { COUNTRY_POINTS } from "./countries.ts";
-import { browserTimeZone, clockTime, MINUTE_MS } from "./format.ts";
+import { browserTimeZone, dayAndTime, MINUTE_MS } from "./format.ts";
 import { Icon } from "./icons.tsx";
 import { useTabVisible } from "./live.ts";
 import { useLatestLoad, usePolling } from "./load.ts";
@@ -17,7 +16,17 @@ import { MessageButton } from "./outbound.tsx";
 import { countryName, flag, localHour, localTime } from "./place.ts";
 import { EmptyArt } from "./scene.tsx";
 import { OverTimeSkeleton, VisitorsSkeleton } from "./skeleton.tsx";
-import { CountChange, percent, Ring, ShareChange, Sparkline, Stat, Tipped } from "./stat.tsx";
+import {
+  CountChange,
+  PERIOD_OPTIONS,
+  percent,
+  Ring,
+  rateOf,
+  ShareChange,
+  Sparkline,
+  Stat,
+  Tipped,
+} from "./stat.tsx";
 import { plural, type TextId, t } from "./text.ts";
 import { Choices, FlagBadge, failureText, initials, Loading, type Option, Page } from "./ui.tsx";
 import { bare, pageName, visitorName, webLink } from "./visitor.ts";
@@ -48,7 +57,7 @@ const WORLD_TOP = 0.04;
 type Show = "all" | "chatting" | "waiting" | "known";
 type Period = `${VisitorDays}`;
 
-const PERIODS: readonly Option<Period>[] = [{ value: "1", label: "period1" }, ...ANALYTICS_PERIODS];
+const PERIODS: readonly Option<Period>[] = [{ value: "1", label: "period1" }, ...PERIOD_OPTIONS];
 
 /** The stats of a period, so an answer for the period before a switch never shows as the new one's. */
 type PeriodStats = { days: Period; numbers: VisitorStats };
@@ -57,7 +66,7 @@ type PeriodStats = { days: Period; numbers: VisitorStats };
 type VisitorList =
   | { state: "loading" }
   | { state: "unknown" }
-  | { state: "ready"; visitors: LiveVisitor[] };
+  | { state: "ready"; visitors: LiveVisitor[]; lastHour: number[] | null };
 
 /** Zoom, and the land's offset as a share of the map's size, so a resize keeps the same view. */
 type View = { scale: number; x: number; y: number };
@@ -588,22 +597,11 @@ function LiveTiles({ listed }: { listed: LiveVisitor[] }) {
   );
 }
 
-/** "Today at 3:02 PM", or "Nov 14 at 3:02 PM" on another day. */
-function momentText(at: string): string {
-  const time = clockTime(at);
-  const day = new Date(at);
-  if (day.toDateString() === new Date().toDateString()) return t("statsPeakToday", { time });
-  return t("statsPeakOn", {
-    day: day.toLocaleDateString([], { month: "short", day: "numeric" }),
-    time,
-  });
-}
-
 /** The period's key numbers, each against the period before, as the Analytics page shows its own. */
 function StatsBand({ numbers, compared }: { numbers: VisitorStats; compared: string }) {
   const { visits, pageViews, chats, peak } = numbers;
-  const rate = visits === 0 ? null : chats / visits;
-  const rateBefore = numbers.visitsBefore === 0 ? null : numbers.chatsBefore / numbers.visitsBefore;
+  const rate = rateOf(chats, visits);
+  const rateBefore = rateOf(numbers.chatsBefore, numbers.visitsBefore);
   return (
     <section className="stats" aria-label={t("statsTitle")}>
       <Stat title="statsVisits">
@@ -640,7 +638,7 @@ function StatsBand({ numbers, compared }: { numbers: VisitorStats; compared: str
         ) : (
           <>
             <p className="stat-value">{peak.count}</p>
-            <p className="stat-note">{momentText(peak.at)}</p>
+            <p className="stat-note">{dayAndTime(peak.at)}</p>
           </>
         )}
       </Stat>
@@ -796,7 +794,7 @@ function LiveCount({ count, lastHour }: { count: number; lastHour: number[] | nu
       <span className="live-pulse" aria-hidden="true" />
       {plural(count, "visitorsOne", "visitorsMany")}
       {lastHour !== null && (
-        // The stored minute can lag the list, so the line never drops to 0 while people are here.
+        // The current minute holds its most tabs so far, so the line ends at the count now instead.
         <Sparkline
           values={[...lastHour.slice(0, -1), count]}
           className="live-spark"
@@ -835,8 +833,8 @@ export function VisitorsPage({
   });
   usePolling(loadStats, STATS_REFRESH_MS, visible, days);
   const load = useLatestLoad(async () => {
-    const { visitors } = await api.liveVisitors();
-    setList(visitors === null ? { state: "unknown" } : { state: "ready", visitors });
+    const { visitors, lastHour } = await api.liveVisitors();
+    setList(visitors === null ? { state: "unknown" } : { state: "ready", visitors, lastHour });
     setNow(Date.now());
   });
   usePolling(load, REFRESH_MS, visible);
@@ -846,9 +844,7 @@ export function VisitorsPage({
     <Page
       title={t("visitors")}
       context={
-        list.state === "ready" ? (
-          <LiveCount count={count} lastHour={stats?.numbers.lastHour ?? null} />
-        ) : undefined
+        list.state === "ready" ? <LiveCount count={count} lastHour={list.lastHour} /> : undefined
       }
       actions={
         list.state === "ready" ? (

@@ -2,7 +2,6 @@ import { createRoute, z } from "@hono/zod-openapi";
 import { and, eq, inArray } from "drizzle-orm";
 import type { Redis } from "iovalkey";
 import type { Logger } from "pino";
-import { periodQuery, readInZone, UNKNOWN_ZONE } from "./analytics.ts";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { visitor } from "./db/schema.ts";
@@ -10,21 +9,14 @@ import { type Database, withWorkspace } from "./db/tenant.ts";
 import { INVALID, MEMBER_ERRORS } from "./errors.ts";
 import { WORKSPACE_PREFIX as PREFIX, workspaceParams } from "./member.ts";
 import { waitingSince } from "./messages.ts";
-import { HOURS_KEY, hourKey, hourOf, PERIOD_DAYS, readSiteStats } from "./site-hours.ts";
-import { HOUR_SECONDS, MINUTE_MS } from "./time.ts";
+import { periodQuery, readInZone, UNKNOWN_ZONE } from "./periods.ts";
+import { minutePeaks, PERIOD_DAYS, readSiteStats, recordBeat } from "./site-hours.ts";
+import { HOUR_MINUTES } from "./time.ts";
 
 /** A tab that stops beating, closed or asleep, leaves the live view after this long. */
 const LIVE_TTL_MS = 90_000;
 /** Tabs a workspace shows at once. A beat above it is dropped, so a flood stays bounded. */
 export const LIVE_TAB_CAP = 2000;
-
-/**
- * An hour's hash stays this long in Valkey. The worker copies it to Postgres within a minute, and
- * the live chart reads only the last two hours' minutes.
- */
-const HISTORY_HOURS = 3;
-/** Distinct pages and referrers an hour keeps, so a flood of addresses stays bounded. */
-export const HOUR_FIELD_CAP = 200;
 
 /**
  * Drops the expired tabs, then adds this one unless the workspace is full, in one step, so beats at
@@ -51,40 +43,6 @@ redis.call('ZADD', order, ARGV[3], tab)
 local counted = ARGV[5] == '1' and redis.call('HSETNX', tabs, '+' .. tab, 1) or 0
 return {redis.call('HGET', tabs, tab) or '', redis.call('ZCARD', order), counted}`;
 
-/**
- * Adds a beat to its hour's history: the minute's most tabs at once, and for a visit or a page view
- * its counts. Past the cap, a new page or referrer is not added, so `np` and `nr` count the distinct
- * ones. The hour goes in the set of hours for the worker to copy. KEYS: the hour, the set. ARGV:
- * expiry in seconds, cap, minute, live tabs, is a visit, is a page view, page, title, referrer (""
- * for none).
- */
-const RECORD_BEAT = `
-local hour, cap = KEYS[1], tonumber(ARGV[2])
-local function add(field, distinct)
-  if redis.call('HEXISTS', hour, field) == 1 then
-    redis.call('HINCRBY', hour, field, 1)
-    return true
-  end
-  if tonumber(redis.call('HGET', hour, distinct) or '0') >= cap then return false end
-  redis.call('HINCRBY', hour, distinct, 1)
-  redis.call('HSET', hour, field, 1)
-  return true
-end
-local minute = 'm:' .. ARGV[3]
-if tonumber(redis.call('HGET', hour, minute) or '0') < tonumber(ARGV[4]) then
-  redis.call('HSET', hour, minute, ARGV[4])
-end
-if ARGV[5] == '1' then
-  redis.call('HINCRBY', hour, 'v', 1)
-  add('r:' .. ARGV[9], 'nr')
-end
-if ARGV[6] == '1' then
-  redis.call('HINCRBY', hour, 'pv', 1)
-  if add('p:' .. ARGV[7], 'np') and ARGV[8] ~= '' then redis.call('HSET', hour, 't:' .. ARGV[7], ARGV[8]) end
-end
-redis.call('EXPIRE', hour, ARGV[1])
-redis.call('SADD', KEYS[2], hour)`;
-
 const orderKey = (workspaceId: string) => `dinghy:live:${workspaceId}`;
 const tabsKey = (workspaceId: string) => `dinghy:live:${workspaceId}:tabs`;
 
@@ -106,10 +64,11 @@ interface LiveTab {
 }
 
 /**
- * A beat, whether it is its tab's first (only that one carries the referrer), and whether the tab
- * arrived from another site or from nowhere, not from the site's own page.
+ * A beat, and for its tab's first beat, the only one that carries the referrer, how the tab arrived:
+ * from another site or from nowhere (`entrance`), or from the site's own page (`inside`). Null for a
+ * later beat.
  */
-type Beat = Omit<LiveTab, "startedAt" | "seenAt"> & { first: boolean; entrance: boolean };
+type Beat = Omit<LiveTab, "startedAt" | "seenAt"> & { arrival: "entrance" | "inside" | null };
 
 export interface LiveVisitors {
   /** False when the workspace already shows as many tabs as it may. */
@@ -118,7 +77,7 @@ export interface LiveVisitors {
   /** Null when Valkey cannot answer. */
   list(workspaceId: string): Promise<LiveTab[] | null>;
   count(workspaceId: string): Promise<number | null>;
-  /** Tabs live at once in each of the last 60 minutes, oldest first. Null when Valkey cannot answer. */
+  /** The most tabs live at once in each of the last 60 minutes, oldest first. Null as for `list`. */
   lastHour(workspaceId: string): Promise<number[] | null>;
 }
 
@@ -160,12 +119,12 @@ export function createLiveVisitors(valkey: Redis | null, logger: Logger): LiveVi
           now,
           now + LIVE_TTL_MS,
           LIVE_TAB_CAP,
-          beat.first ? 1 : 0,
+          beat.arrival === null ? 0 : 1,
         )) as [string, number, number] | null;
         if (admitted === null) return false;
         const [previous, liveCount, counted] = admitted;
         const before = parse(previous === "" ? null : previous);
-        const { first: _first, entrance, ...details } = beat;
+        const { arrival, ...details } = beat;
         // Only a tab's first beat, the one that carries the referrer, is a visit and a page view,
         // once, even when a later beat reaches the server first or the tab comes back after it
         // expired. A later page change in the same tab is a page view too.
@@ -178,27 +137,19 @@ export function createLiveVisitors(valkey: Redis | null, logger: Logger): LiveVi
           startedAt: before?.startedAt ?? now,
           seenAt: now,
         };
-        await client
+        const write = client
           .multi()
           .hset(tabs, beat.tab, JSON.stringify(entry))
           .pexpire(orderKey(workspaceId), LIVE_TTL_MS * 2)
-          .pexpire(tabs, LIVE_TTL_MS * 2)
-          .eval(
-            RECORD_BEAT,
-            2,
-            hourKey(workspaceId, hourOf(now)),
-            HOURS_KEY,
-            HISTORY_HOURS * HOUR_SECONDS,
-            HOUR_FIELD_CAP,
-            Math.floor(now / MINUTE_MS) % 60,
-            liveCount,
-            isNew && entrance ? 1 : 0,
-            isPageView ? 1 : 0,
-            beat.page,
-            beat.title ?? "",
-            beat.referrer ?? "",
-          )
-          .exec();
+          .pexpire(tabs, LIVE_TTL_MS * 2);
+        await recordBeat(write, workspaceId, now, {
+          liveCount,
+          isVisit: isNew && arrival === "entrance",
+          isPageView,
+          page: beat.page,
+          title: beat.title,
+          referrer: beat.referrer,
+        }).exec();
         return true;
       });
     },
@@ -223,22 +174,12 @@ export function createLiveVisitors(valkey: Redis | null, logger: Logger): LiveVi
       return attempt(null, (client) => client.zcount(orderKey(workspaceId), Date.now(), "+inf"));
     },
     lastHour(workspaceId) {
-      return attempt(null, async (client) => {
-        const nowMinute = Math.floor(Date.now() / MINUTE_MS);
-        const current = Math.floor(nowMinute / 60);
-        const [before, latest] = await Promise.all([
-          client.hgetall(hourKey(workspaceId, current - 1)),
-          client.hgetall(hourKey(workspaceId, current)),
-        ]);
-        return Array.from({ length: 60 }, (_, index) => {
-          const minute = nowMinute - 59 + index;
-          const fields = Math.floor(minute / 60) === current ? latest : before;
-          return Number(fields[`m:${minute % 60}`] ?? 0);
-        });
-      });
+      return attempt(null, (client) => minutePeaks(client, workspaceId, Date.now()));
     },
   };
 }
+
+const Count = z.number().int();
 
 const LiveVisitorSchema = z
   .object({
@@ -277,14 +218,17 @@ const listRoute = createRoute({
   security: SESSION,
   summary: "List the tabs of the site open now, newest first",
   description:
-    "Each tab of a page with the widget beats once a minute while it is visible, and leaves the list 90 seconds after its last beat. It holds no cookie and no stored ID. Null `visitors` means the server cannot tell now.",
+    "Each tab of a page with the widget beats once a minute while it is visible, and leaves the list 90 seconds after its last beat. It holds no cookie and no stored ID. `lastHour` holds the most tabs open at once in each of the last 60 minutes, oldest first. Null `visitors` or `lastHour` means the server cannot tell now.",
   request: { params: workspaceParams },
   responses: {
     200: {
       description: "The live tabs",
       content: {
         "application/json": {
-          schema: z.object({ visitors: z.array(LiveVisitorSchema).nullable() }),
+          schema: z.object({
+            visitors: z.array(LiveVisitorSchema).nullable(),
+            lastHour: z.array(Count).length(HOUR_MINUTES).nullable(),
+          }),
         },
       },
     },
@@ -307,24 +251,19 @@ const countRoute = createRoute({
   },
 });
 
-const counted = z.number().int();
-
 const VisitorStatsSchema = z
   .object({
-    // The most tabs open at once in each of the last 60 minutes, oldest first. Null when the server
-    // cannot tell now.
-    lastHour: z.array(counted).length(60).nullable(),
-    visits: counted,
-    visitsBefore: counted,
-    pageViews: counted,
-    pageViewsBefore: counted,
-    chats: counted,
-    chatsBefore: counted,
-    peak: z.object({ count: counted, at: z.string() }).nullable(),
+    visits: Count,
+    visitsBefore: Count,
+    pageViews: Count,
+    pageViewsBefore: Count,
+    chats: Count,
+    chatsBefore: Count,
+    peak: z.object({ count: Count, at: z.string() }).nullable(),
     // Visits per hour for one day, per day in `tz` otherwise, oldest first.
-    series: z.array(counted),
-    pages: z.array(z.object({ page: z.string(), title: z.string().nullable(), count: counted })),
-    referrers: z.array(z.object({ referrer: z.string().nullable(), count: counted })),
+    series: z.array(Count),
+    pages: z.array(z.object({ page: z.string(), title: z.string().nullable(), count: Count })),
+    referrers: z.array(z.object({ referrer: z.string().nullable(), count: Count })),
   })
   .openapi("VisitorStats");
 
@@ -336,7 +275,7 @@ const statsRoute = createRoute({
   security: SESSION,
   summary: "Count the site's visits, page views, chats and busiest minute over 1, 7, 30 or 90 days",
   description:
-    "Counted by the hour with no cookie and no stored ID, and kept 182 days; the stored hours are at most about a minute behind. One day is the last 24 whole hours: the current hour and the 23 before it. A longer period runs from the start of the day, `days - 1` days ago, in `tz`, to now, as for analytics. The `Before` numbers are for a period of the same length just before. A visit is a tab that opened from another site or from nowhere; a page view is a tab that opened, or one whose page changed. `series` holds the visits per hour for one day, and per day in `tz` otherwise, oldest first. `peak` is the busiest minute, by the most tabs open at once. `pages` and `referrers` list the top 8, with a null `referrer` for none; an hour keeps at most 200 distinct pages and 200 referrers. `chats` counts the conversations that visitors started in the period, leaving out the welcome chat and test visitors. `lastHour` holds the most tabs open at once in each of the last 60 minutes, oldest first, and is null when the server cannot tell now.",
+    "Counted by the hour with no cookie and no stored ID, and kept 182 days; the stored hours are at most about a minute behind. One day is the last 24 whole hours: the current hour and the 23 before it. A longer period runs from the start of the day, `days - 1` days ago, in `tz`, to now, as for analytics. The `Before` numbers are for a period of the same length just before. A visit is a tab that opened from another site or from nowhere; a page view is a tab that opened, or one whose page changed. `series` holds the visits per hour for one day, and per day in `tz` otherwise, oldest first. `peak` is the busiest minute, by the most tabs open at once. `pages` and `referrers` list the top 8, with a null `referrer` for none; an hour keeps at most 200 distinct pages and 200 referrers. `chats` counts the conversations that visitors started in the period, leaving out the welcome chat and test visitors.",
   request: { params: workspaceParams, query: StatsQuery },
   responses: {
     200: {
@@ -348,6 +287,10 @@ const statsRoute = createRoute({
   },
 });
 
+/** Each value once, without the nulls. */
+const distinct = (values: (string | null)[]) =>
+  [...new Set(values)].filter((value) => value !== null);
+
 /** The live tabs, newest first, with who the chatting visitors are. Null when Valkey cannot tell. */
 export async function liveVisitorList(
   db: Database,
@@ -357,10 +300,8 @@ export async function liveVisitorList(
   const tabs = await visitors.list(id);
   if (tabs === null) return null;
   // Who the chatting visitors are, in one query, from this workspace only.
-  const ids = [...new Set(tabs.flatMap((tab) => (tab.visitorId === null ? [] : [tab.visitorId])))];
-  const conversationIds = [
-    ...new Set(tabs.flatMap((tab) => (tab.conversationId === null ? [] : [tab.conversationId]))),
-  ];
+  const ids = distinct(tabs.map((tab) => tab.visitorId));
+  const conversationIds = distinct(tabs.map((tab) => tab.conversationId));
   const { people, waiting } =
     ids.length === 0
       ? { people: [], waiting: new Map<string, string>() }
@@ -405,15 +346,19 @@ export function registerLiveVisitorRoutes(app: App, db: Database, visitors: Live
   app.openapi(statsRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
     const { days, tz } = c.req.valid("query");
-    const [lastHour, stats] = await Promise.all([
-      visitors.lastHour(id),
-      readInZone(db, id, (tx) => readSiteStats(tx, id, { days, timeZone: tz, now: new Date() })),
-    ]);
+    const stats = await readInZone(db, id, (tx) =>
+      readSiteStats(tx, id, { days, timeZone: tz, now: new Date() }),
+    );
     if (stats === null) return c.json(UNKNOWN_ZONE, 400);
-    return c.json({ lastHour, ...stats }, 200);
+    return c.json(stats, 200);
   });
 
-  app.openapi(listRoute, async (c) =>
-    c.json({ visitors: await liveVisitorList(db, visitors, c.get("memberWorkspaceId")) }, 200),
-  );
+  app.openapi(listRoute, async (c) => {
+    const id = c.get("memberWorkspaceId");
+    const [list, lastHour] = await Promise.all([
+      liveVisitorList(db, visitors, id),
+      visitors.lastHour(id),
+    ]);
+    return c.json({ visitors: list, lastHour }, 200);
+  });
 }

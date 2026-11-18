@@ -8,8 +8,10 @@ import { AnalyticsSkeleton } from "./skeleton.tsx";
 import {
   Change,
   CountChange,
+  PERIOD_OPTIONS,
   percent,
   Ring,
+  rateOf,
   ShareChange,
   Sparkline,
   Stat,
@@ -17,15 +19,9 @@ import {
   Tipped,
 } from "./stat.tsx";
 import { plural, type TextId, t } from "./text.ts";
-import { Avatar, Choices, DocLink, failureText, Loading, type Option, Page } from "./ui.tsx";
+import { Avatar, Choices, DocLink, failureText, Loading, Page } from "./ui.tsx";
 
 type Period = `${AnalyticsDays}`;
-
-export const PERIODS: readonly Option<Period>[] = [
-  { value: "7", label: "period7" },
-  { value: "30", label: "period30" },
-  { value: "90", label: "period90" },
-];
 
 /** A date of the period, "2026-11-08", as "Nov 8". */
 export function dayName(
@@ -91,10 +87,8 @@ function Stats({ numbers, days }: { numbers: Analytics; days: Period }) {
           <p className="stat-value">{percent(fast)}</p>
         </div>
         <ShareChange
-          share={started === 0 ? null : fast}
-          before={
-            previous.started === 0 ? null : shareOf(previous.firstReply.fast, previous.started)
-          }
+          share={rateOf(firstReply.fast, started)}
+          before={rateOf(previous.firstReply.fast, previous.started)}
           compared={compared}
         />
       </Stat>
@@ -415,7 +409,7 @@ export function AnalyticsPage({ api }: { api: WorkspaceApi }) {
           label={t("period")}
           variant="outlined"
           value={days}
-          options={PERIODS}
+          options={PERIOD_OPTIONS}
           onChange={setDays}
         />
       }
