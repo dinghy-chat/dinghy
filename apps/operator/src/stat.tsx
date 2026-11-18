@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { type TextId, t } from "./text.ts";
+import { plural, type TextId, t } from "./text.ts";
 
 // The key numbers of Analytics, Visitors and a campaign's results: a band of stats, each with its
 // change against the period before, and the card that a chart's part or an "i" shows.
@@ -180,7 +180,11 @@ export function ShareChange({
     return <Change words={t("changeSame")} direction="neutral" compared={compared} />;
   return (
     <Change
-      words={t(points > 0 ? "pointsUp" : "pointsDown", { points: Math.abs(points) })}
+      words={
+        points > 0
+          ? plural(points, "pointUp", "pointsUp", { points })
+          : plural(-points, "pointDown", "pointsDown", { points: -points })
+      }
       direction={points > 0 ? "better" : "worse"}
       compared={compared}
     />

@@ -13,7 +13,8 @@ import { HOUR_MS, HOUR_SECONDS, MINUTE_MS } from "./time.ts";
 export const HOURS_KEY = "dinghy:live:hours";
 const HOUR_HASH = /^dinghy:live:([0-9a-f-]{36}):h:(\d+)$/;
 /** How long an hour stays: the longest period, 90 days, and a day either side for time zones. */
-const KEPT_DAYS = 92;
+// Twice the longest period, so 90 days compare with the 90 before them.
+const KEPT_DAYS = 182;
 /** How many pages and referrers the stats list. */
 const TOP_COUNT = 8;
 const DAY_HOURS = 24;
@@ -111,7 +112,7 @@ export async function rollUpHours(db: Database, valkey: Redis, now = Date.now())
   if (finished.length > 0) await valkey.srem(HOURS_KEY, ...finished);
 }
 
-/** Deletes up to `limit` hours older than 92 days, across workspaces. For the worker. */
+/** Deletes up to `limit` hours older than 182 days, across workspaces. For the worker. */
 export async function pruneSiteHours(db: Database, limit: number): Promise<number> {
   const result = await db.execute(sql`
     DELETE FROM site_hour WHERE (workspace_id, hour) IN (

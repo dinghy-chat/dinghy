@@ -417,13 +417,13 @@ describe("the roll-up", () => {
     expect(await valkey.sismember(HOURS_KEY, gone)).toBe(0);
   });
 
-  test("the prune deletes hours older than 92 days", async () => {
+  test("the prune deletes hours older than 182 days", async () => {
     const { id } = await createWorkspace(db, "Prune", [SITE]);
     const daysAgo = (days: number) =>
       new Date((Math.floor(Date.now() / HOUR_MS) - days * 24) * HOUR_MS);
-    await owner.insert(siteHour).values([hourRow(id, daysAgo(93)), hourRow(id, daysAgo(91))]);
+    await owner.insert(siteHour).values([hourRow(id, daysAgo(183)), hourRow(id, daysAgo(181))]);
     await pruneOnce(workerDb, new Date(0));
-    expect((await rows(id)).map((row) => row.hour)).toEqual([daysAgo(91)]);
+    expect((await rows(id)).map((row) => row.hour)).toEqual([daysAgo(181)]);
   });
 });
 
