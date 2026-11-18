@@ -4,6 +4,12 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- **Visitors** has an **Over time** section: visits, page views, the chat rate and the busiest minute for the last 24 hours, 7, 30 or 90 days, each against the period before, with the top pages and sources. Dinghy counts each hour with no cookie and no stored ID, and keeps the hours 182 days in a new `site_hour` table, which the worker fills from Valkey about once a minute.
+- **Visitors** has a **Waiting** filter, and a visitor whose message has no reply shows how long they have waited. A small chart of the last hour sits next to the count of people on the site, and the tiles under the map add **Countries** and **Devices**.
+- `GET /v1/operator/workspaces/{workspaceId}/visitors/stats` returns those numbers, and `/visitors/live` returns `lastHour` and each chatting visitor's `waitingSince`.
+
 ## [0.41.1] - 2026-11-17
 
 ### Fixed
