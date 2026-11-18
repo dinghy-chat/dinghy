@@ -32,7 +32,8 @@ redis.call('ZADD', order, ARGV[3], tab)
 return redis.call('HGET', tabs, tab) or ''`;
 
 const orderKey = (workspaceId: string) => `dinghy:live:${workspaceId}`;
-const tabsKey = (workspaceId: string) => `dinghy:live:${workspaceId}:tabs`;
+/** Exported for the dev seed, which stores a tab before its first beat. */
+export const tabsKey = (workspaceId: string) => `dinghy:live:${workspaceId}:tabs`;
 
 /** One open tab of the host site, as its latest beat described it. */
 interface LiveTab {
