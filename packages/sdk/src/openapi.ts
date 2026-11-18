@@ -9120,11 +9120,13 @@ export interface components {
     };
     VisitorStats: {
       visits: number;
-      visitsBefore: number;
       pageViews: number;
-      pageViewsBefore: number;
       chats: number;
-      chatsBefore: number;
+      previous: {
+        visits: number;
+        pageViews: number;
+        chats: number;
+      } | null;
       peak: {
         count: number;
         at: string;

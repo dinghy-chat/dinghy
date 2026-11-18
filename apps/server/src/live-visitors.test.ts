@@ -306,8 +306,9 @@ describe("the history", () => {
     );
     expect(await stats(id)).toMatchObject({
       visits: 2,
-      visitsBefore: 0,
       pageViews: 4,
+      // The counting started this hour, so nothing reaches back to the day before.
+      previous: null,
       pages: [
         { page: `${SITE}/docs`, title: "Docs", count: 2 },
         { page: `${SITE}/`, count: 1 },
@@ -528,7 +529,11 @@ describe("the periods", () => {
         hourRow(id, back(48), 16),
       ]);
     const found = await read(id, { days: 1, now });
-    expect(found).toMatchObject({ visits: 3, visitsBefore: 12, pageViews: 3, pageViewsBefore: 12 });
+    expect(found).toMatchObject({
+      visits: 3,
+      pageViews: 3,
+      previous: { visits: 12, pageViews: 12, chats: 0 },
+    });
     expect(found.series).toEqual([2, ...Array.from({ length: 22 }, () => 0), 1]);
   });
 
@@ -550,7 +555,7 @@ describe("the periods", () => {
       at("2026-11-05T04:00:00Z", 100),
     ]);
     const found = await read(id, { days: 7, timeZone: "America/New_York", now });
-    expect(found).toMatchObject({ visits: 7, visitsBefore: 20 });
+    expect(found).toMatchObject({ visits: 7, previous: { visits: 20 } });
     expect(found.series).toEqual([1, 0, 0, 0, 0, 2, 4]);
   });
 
@@ -611,7 +616,12 @@ describe("the stats route", () => {
     app.request(`/v1/operator/workspaces/${workspace.id}/visitors/stats${query}`, {
       headers: { cookie: as },
     });
-  type Body = { chats: number; chatsBefore: number; visits: number; series: number[] };
+  type Body = {
+    chats: number;
+    visits: number;
+    previous: { chats: number } | null;
+    series: number[];
+  };
   const read = async (query: string, as: string, workspace: { id: string }) =>
     (await (await get(query, as, workspace)).json()) as Body;
 
@@ -641,7 +651,13 @@ describe("the stats route", () => {
     const response = await get("", mineCookie, mine);
     expect(response.status).toBe(200);
     const body = (await response.json()) as Body & { lastHour?: unknown };
-    expect(body).toMatchObject({ chats: 2, chatsBefore: 1, visits: 1 });
+    // The counting started this hour, so the day before has no numbers yet.
+    expect(body).toMatchObject({ chats: 2, visits: 1, previous: null });
+    // Once the stored hours reach back to the start of the day before, it has them.
+    await owner
+      .insert(siteHour)
+      .values(hourRow(mine.id, new Date((hourOf(Date.now()) - 47) * HOUR_MS), 0));
+    expect(await read("", mineCookie, mine)).toMatchObject({ previous: { chats: 1 } });
     expect(body.lastHour).toBeUndefined();
     const week = await read("?days=7&tz=Europe/Paris", mineCookie, mine);
     expect(week.chats).toBe(3);

@@ -136,6 +136,8 @@ test("the operator filters who is on the site, picks a country on the map and re
     { hoursAgo: 100, visits: 15 },
     { hoursAgo: 140, visits: 24 },
     { hoursAgo: 200, visits: 30 },
+    // Counted before the previous week began, so the week has a period to compare with.
+    { hoursAgo: 400, visits: 1 },
   ]);
   await server.openTabs([
     {

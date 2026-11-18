@@ -597,21 +597,24 @@ function LiveTiles({ listed }: { listed: LiveVisitor[] }) {
   );
 }
 
-/** The period's key numbers, each against the period before, as the Analytics page shows its own. */
+/**
+ * The period's key numbers, each against the period before, as the Analytics page shows its own. A
+ * period before the counting started has no numbers, so no change shows.
+ */
 function StatsBand({ numbers, compared }: { numbers: VisitorStats; compared: string }) {
-  const { visits, pageViews, chats, peak } = numbers;
+  const { visits, pageViews, chats, peak, previous } = numbers;
   const rate = rateOf(chats, visits);
-  const rateBefore = rateOf(numbers.chatsBefore, numbers.visitsBefore);
+  const rateBefore = previous === null ? null : rateOf(previous.chats, previous.visits);
   return (
     <section className="stats" aria-label={t("statsTitle")}>
       <Stat title="statsVisits">
         <p className="stat-value">{visits.toLocaleString()}</p>
-        <CountChange count={visits} before={numbers.visitsBefore} compared={compared} />
+        <CountChange count={visits} before={previous?.visits ?? 0} compared={compared} />
         <Sparkline values={numbers.series} />
       </Stat>
       <Stat title="statsPageViews">
         <p className="stat-value">{pageViews.toLocaleString()}</p>
-        <CountChange count={pageViews} before={numbers.pageViewsBefore} compared={compared} />
+        <CountChange count={pageViews} before={previous?.pageViews ?? 0} compared={compared} />
       </Stat>
       <Stat title="statsChatRate" help="statsChatRateHelp">
         {rate === null ? (

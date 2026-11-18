@@ -4,6 +4,10 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- **Visitors** shows a change against the period before only once Dinghy has counted the site for that long, so a new site's first weeks no longer show large false rises. `GET .../visitors/stats` returns those numbers as one `previous` object, or null, in place of `visitsBefore`, `pageViewsBefore` and `chatsBefore`.
+
 ## [0.42.0] - 2026-11-18
 
 ### Added
