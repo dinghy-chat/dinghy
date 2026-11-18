@@ -30,6 +30,7 @@ import { createLinkLimit, tooManyAttempts } from "./login-limit.ts";
 import type { Mailer } from "./mailer.ts";
 import { WORKSPACE_PREFIX } from "./member.ts";
 import { countWaiting } from "./messages.ts";
+import { registerNativeAuthRoutes } from "./native-auth.ts";
 import type { ImageUrls } from "./public-images.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import { type TwoFactorState, twoFactorStateOf } from "./two-factor.ts";
@@ -211,6 +212,8 @@ const AUTH_ROUTES = new Set([
   // Dinghy's own, in front of BetterAuth's, so it controls who gets a link and how one is used.
   "POST /v1/auth/sign-in/magic-link",
   "POST /v1/auth/magic-link/verify",
+  "POST /v1/auth/native/authorize",
+  "POST /v1/auth/native/exchange",
 ]);
 
 export function registerOperatorRoutes(
@@ -403,6 +406,8 @@ export function registerOperatorRoutes(
     audit(logger, "sign_in.link_used", { operatorId: found?.user.id, ip });
     return c.json({ ok: true as const }, 200);
   });
+
+  registerNativeAuthRoutes(app, { auth, db, logger, rateLimit });
 
   app.on(["GET", "POST"], "/v1/auth/*", (c) => auth.handler(c.req.raw));
 

@@ -1,5 +1,5 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { z } from "@hono/zod-openapi";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
@@ -108,6 +108,14 @@ export function createAuth({ db, secret, baseURL }: AuthOptions) {
 }
 
 export type Auth = ReturnType<typeof createAuth>;
+
+/** Signs one BetterAuth session token and returns only its session Cookie pair. */
+export async function signedSessionCookie(auth: Auth, token: string): Promise<string> {
+  const context = await auth.$context;
+  const signature = createHmac("sha256", context.secret).update(token).digest("base64");
+  const value = encodeURIComponent(`${token}.${signature}`);
+  return `${context.authCookies.sessionToken.name}=${value}`;
+}
 
 /** Runs `work`, which makes links through BetterAuth's own route, with `deliver` receiving them. */
 export const deliverLinks = <T>(deliver: Delivery, work: () => T): T => delivery.run(deliver, work);
