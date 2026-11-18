@@ -19,15 +19,19 @@ const APP = `http://localhost:${PORT}`;
 const SITE = "https://acme.example";
 // The seed writes times of day in this zone, so the browser shows them in it too.
 const TIME_ZONE = "Europe/Stockholm";
-const VIEWPORT = { width: 1156, height: 686 };
+// Wide enough for the visitor panel, which opens from 1200 px.
+const VIEWPORT = { width: 1280, height: 760 };
 const SCALE = 2;
 const FPS = 25;
 const CRF = 22;
-const TYPE_DELAY_MS = 55;
+const TYPE_DELAY_MS = 16;
+// Scales every pause and cursor move, so the tour keeps a brisk pace.
+const PACE = 0.6;
 const STEP_MS = 16;
 const CURSOR_NAME = "Anna";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const pause = (ms: number) => sleep(ms * PACE);
 
 /** The cursor and its name pill, which follow the real mouse and shrink on a press. */
 function cursorScript(name: string) {
@@ -80,6 +84,7 @@ class Hand {
 
   async glide(target: Locator | { x: number; y: number }, ms = 700) {
     const to = "x" in target ? target : await centerOf(target);
+    ms *= PACE;
     const from = { x: this.x, y: this.y };
     const bend = Math.hypot(to.x - from.x, to.y - from.y) * 0.08;
     const started = Date.now();
@@ -96,7 +101,7 @@ class Hand {
 
   async click(target: Locator, ms?: number) {
     await this.glide(target, ms);
-    await sleep(120);
+    await sleep(90);
     await this.page.mouse.down();
     await sleep(90);
     await this.page.mouse.up();
@@ -201,68 +206,69 @@ async function workspaceKey(page: Page): Promise<string> {
   return (await settings.json()).publicKey;
 }
 
+/** The chat the tour opens on and comes back to, with its internal note and visitor panel. */
+const openingChat = (page: Page) => page.getByRole("button", { name: /Tom Becker .*finance team/ });
+
 /** Anna answers Maya, a new visitor writes in, and Anna hands that chat to Ben. */
 async function inboxScene(page: Page, hand: Hand, visitorMessage: Locator) {
-  await sleep(1400);
+  await pause(1400);
   await hand.click(page.getByRole("button", { name: /Maya Patel .*refund/ }), 900);
-  await sleep(900);
+  await pause(900);
   const reply = page.getByRole("textbox", { name: "Your reply" });
   await hand.click(reply, 700);
   await reply.pressSequentially(
     "Sorry about that, Maya! I've refunded the second $290 charge. It shows in 5 to 10 days.",
     { delay: TYPE_DELAY_MS },
   );
-  await sleep(300);
+  await pause(300);
   await hand.click(page.getByRole("button", { name: "Send", exact: true }), 500);
-  await sleep(900);
+  await pause(900);
   await visitorMessage.fill("Hi! Does the Team plan include SSO? We're about 40 people.");
   await visitorMessage.press("Enter");
   const incoming = page.getByRole("button", { name: /Does the Team plan include SSO/ });
   await incoming.waitFor();
-  await hand.glide({ x: 560, y: 300 }, 800);
-  await sleep(1400);
+  await pause(900);
   await hand.click(incoming, 800);
-  await sleep(1200);
+  await pause(1200);
   await hand.click(page.getByRole("button", { name: /^Who answers/ }), 800);
-  await sleep(700);
+  await pause(700);
   await hand.click(page.getByRole("option", { name: /Ben Okafor/ }), 700);
-  await sleep(1500);
+  await pause(1500);
 }
 
 /** The live map, a dot's card and a row, then the 30-day chart with a bar's tip. */
 async function visitorsAndAnalytics(page: Page, hand: Hand) {
   await hand.click(nav(page, "Visitors"), 900);
-  await sleep(1200);
+  await pause(1200);
   await hand.glide(page.locator('.live-dot[aria-label^="United States"]'), 900);
-  await sleep(2000);
+  await pause(2000);
   await hand.glide(page.locator('.live-dot[aria-label^="Germany"]'), 700);
-  await sleep(1600);
+  await pause(1600);
   await hand.click(nav(page, "Analytics"), 1000);
-  await sleep(1400);
+  await pause(1400);
   const bars = page.locator(".day-bar");
   const count = await bars.count();
-  for (const index of [count - 9, count - 5, count - 1]) {
+  for (const index of [count - 7, count - 1]) {
     await hand.glide(bars.nth(index), 650);
-    await sleep(800);
+    await pause(800);
   }
-  await sleep(600);
+  await pause(600);
 }
 
-/** The contacts, then back to the inbox as it began, so the video loops. */
+/** The contacts, then back to Tom's chat in the inbox, as the tour began, so the video loops. */
 async function contactsAndBack(page: Page, hand: Hand) {
   await hand.click(nav(page, "Contacts"), 900);
-  await sleep(1200);
+  await pause(1200);
   for (const name of ["Maya Patel", "Tom Becker", "Lucas Silva"]) {
     await hand.glide(page.getByRole("row", { name: new RegExp(name) }), 600);
-    await sleep(700);
+    await pause(700);
   }
-  await sleep(500);
+  await pause(500);
   await hand.click(nav(page, "Inbox"), 1000);
-  await sleep(400);
-  // The back button, hidden in the wide layout, clears the chat so the inbox looks as it began.
-  await page.locator(".thread-head .back").dispatchEvent("click");
-  await hand.glide(START, 1100);
-  await sleep(1400);
+  await pause(500);
+  await hand.click(openingChat(page), 900);
+  await hand.glide(START, 900);
+  await pause(1200);
 }
 
 let seed: ChildProcess | undefined;
@@ -299,6 +305,9 @@ test("record", async () => {
     await openLink(page, started.link);
     await expect(page.getByRole("button", { name: /Maya Patel .*refund/ })).toBeVisible();
     const visitorMessage = await visitorOnSite(browser, await workspaceKey(page));
+    // The tour opens on a conversation, never on the empty inbox.
+    await openingChat(page).click();
+    await expect(page.getByRole("button", { name: "Hide the visitor's details" })).toBeVisible();
     const hand = new Hand(page);
     await hand.rest();
     await sleep(800);
