@@ -4009,16 +4009,6 @@ button.quote:hover {
   gap: 16px;
   padding-top: 14px;
 }
-/* Your site, after the support charts: its own heading over the same band and cards. */
-.site-numbers {
-  display: grid;
-  gap: 16px;
-  margin-top: 12px;
-}
-.site-numbers > h3 {
-  color: var(--navy);
-  font: 700 20px / 1.2 var(--display);
-}
 .stats {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -4122,6 +4112,19 @@ button.quote:hover {
   stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
 }
+/* A point's column takes the pointer, and its guide drops from the line to the floor. */
+.spark-point rect {
+  fill: transparent;
+}
+.spark-point line {
+  stroke: var(--blue-deep);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+  opacity: 0;
+}
+.spark-point:hover line {
+  opacity: 1;
+}
 .stat-ring {
   display: flex;
   align-items: center;
@@ -4171,6 +4174,10 @@ button.quote:hover {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
   gap: 16px;
+}
+/* A card alone on the last row takes the whole width. */
+.charts > :last-child:nth-child(odd) {
+  grid-column: 1 / -1;
 }
 .chart-card {
   min-width: 0;

@@ -8,7 +8,7 @@ import {
 } from "react";
 import type { LiveVisitor, WorkspaceApi } from "./api.ts";
 import { COUNTRY_POINTS } from "./countries.ts";
-import { MINUTE_MS } from "./format.ts";
+import { clockTime, MINUTE_MS } from "./format.ts";
 import { Icon } from "./icons.tsx";
 import { useTabVisible } from "./live.ts";
 import { useLatestLoad, usePolling } from "./load.ts";
@@ -16,7 +16,7 @@ import { MessageButton } from "./outbound.tsx";
 import { countryName, flag, localHour, localTime } from "./place.ts";
 import { EmptyArt } from "./scene.tsx";
 import { VisitorsSkeleton } from "./skeleton.tsx";
-import { Sparkline } from "./stat.tsx";
+import { Sparkline, Tipped } from "./stat.tsx";
 import { plural, type TextId, t } from "./text.ts";
 import { Choices, FlagBadge, initials, type Option, Page } from "./ui.tsx";
 import { bare, pageName, sourceName, visitorName, webLink } from "./visitor.ts";
@@ -659,21 +659,30 @@ function showOptions(visitors: LiveVisitor[]): Option<Show>[] {
   }));
 }
 
-/** "7 people on your site now.", and the last hour as a small line that ends at the count now. */
+/**
+ * "7 people on your site now.", and the last hour as a small line that ends at the count now. The
+ * pointer on a minute shows its count and time.
+ */
 function LiveCount({ count, lastHour }: { count: number; lastHour: number[] | null }) {
+  // The current minute holds its most tabs so far, so the line ends at the count now instead.
+  const values = lastHour === null ? null : [...lastHour.slice(0, -1), count];
+  const now = Date.now();
   return (
-    <span className="live-count">
+    <Tipped className="live-count" inline>
       <span className="live-pulse" aria-hidden="true" />
       {plural(count, "visitorsOne", "visitorsMany")}
-      {lastHour !== null && (
-        // The current minute holds its most tabs so far, so the line ends at the count now instead.
+      {values !== null && (
         <Sparkline
-          values={[...lastHour.slice(0, -1), count]}
+          values={values}
           className="live-spark"
           label={t("visitorsLastHourChart", { count })}
+          tips={values.map((minute, index) => ({
+            value: plural(minute, "peopleOne", "peopleMany"),
+            label: clockTime(new Date(now - (values.length - 1 - index) * MINUTE_MS)),
+          }))}
         />
       )}
-    </span>
+    </Tipped>
   );
 }
 

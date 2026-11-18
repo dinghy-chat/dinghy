@@ -219,10 +219,16 @@ test("the Analytics page shows the workspace's numbers for the chosen period", a
   await expect(page.locator(".chart-tip")).toContainText("Half of answered conversations");
   await owner.keyboard.press("Escape");
   await expect(page.locator(".chart-tip")).toHaveCount(0);
+  // The pointer on a day of the small line shows its count and date.
+  await stats.locator(".spark-point").last().hover();
+  await expect(page.locator(".chart-tip")).toContainText(/\d+ conversations?/);
+  await picture(owner, "analytics");
 
-  // Your site, under the support charts: its numbers against the 30 days before, then the top
-  // pages and sources.
-  const site = page.getByRole("region", { name: "Your site" });
+  // Your site, in its own tab: its numbers against the 30 days before, then the top pages and
+  // sources.
+  await page.getByRole("radio", { name: "Your site" }).check();
+  const site = page;
+  await expect(page.locator(".day-bar")).toHaveCount(0);
   const visits = site.locator(".stat").first();
   await expect(visits.locator(".stat-value")).toHaveText(/^1[4-9]$/);
   await expect(visits.locator(".stat-change")).toContainText("vs previous 30 days");
@@ -235,12 +241,9 @@ test("the Analytics page shows the workspace's numbers for the chosen period", a
   await expect(site.locator(".chart-card", { hasText: "Top sources" })).toContainText(
     "news.example.org",
   );
-  await picture(owner, "analytics");
-  await site.scrollIntoViewIfNeeded();
   await picture(owner, "analytics-site");
 
   await page.getByRole("radio", { name: "7 days" }).check();
-  await expect(page.locator(".day-bar")).toHaveCount(7);
   await expect(page.getByRole("radio", { name: "7 days" })).toBeChecked();
   await expect(visits.locator(".stat-change")).toContainText("vs previous 7 days");
 

@@ -38,6 +38,21 @@ export function dayName(
   return new Date(year ?? 0, (month ?? 1) - 1, day ?? 1).toLocaleDateString([], options);
 }
 
+/** A day of the period in full, "Sunday, Nov 8", as a chart's card names it. */
+const FULL_DAY: Intl.DateTimeFormatOptions = { weekday: "long", month: "short", day: "numeric" };
+
+/** The last `count` days in the browser's zone, oldest first, as a chart's card names them. */
+function lastDays(count: number) {
+  const today = new Date();
+  return Array.from({ length: count }, (_, index) =>
+    new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate() - (count - 1 - index),
+    ).toLocaleDateString([], FULL_DAY),
+  );
+}
+
 const DAY_NAMES_SHORT = weekdayNames("short");
 const DAY_NAMES = weekdayNames("long");
 const hourName = (hour: number) =>
@@ -74,7 +89,13 @@ function Stats({ numbers, days }: { numbers: Analytics; days: Period }) {
         {numbers.startedByTeam > 0 && (
           <p className="stat-note">{t("statStartedByTeam", { count: numbers.startedByTeam })}</p>
         )}
-        <Sparkline values={numbers.perDay.map((day) => day.conversations)} />
+        <Sparkline
+          values={numbers.perDay.map((day) => day.conversations)}
+          tips={numbers.perDay.map((day) => ({
+            value: conversations(day.conversations),
+            label: dayName(day.date, FULL_DAY),
+          }))}
+        />
       </Stat>
       <Stat title="statMedian" help="statMedianHelp">
         {firstReply.medianSeconds === null ? (
@@ -165,7 +186,7 @@ function PerDay({ days }: { days: Analytics["perDay"] }) {
               key={day.date}
               className="day-bar"
               data-value={conversations(day.conversations)}
-              data-label={dayName(day.date, { weekday: "long", month: "short", day: "numeric" })}
+              data-label={dayName(day.date, FULL_DAY)}
             >
               {day.conversations > 0 && (
                 <i style={{ height: `${(day.conversations / top) * 100}%` }} />
@@ -410,7 +431,13 @@ function SiteStats({ site, compared }: { site: VisitorStats; compared: string })
       <Stat title="statsVisits">
         <p className="stat-value">{visits.toLocaleString()}</p>
         <CountChange count={visits} before={previous?.visits ?? 0} compared={compared} />
-        <Sparkline values={site.series} />
+        <Sparkline
+          values={site.series}
+          tips={lastDays(site.series.length).map((day, index) => ({
+            value: plural(site.series[index] ?? 0, "statsVisitsOne", "statsVisitsMany"),
+            label: day,
+          }))}
+        />
       </Stat>
       <Stat title="statsPageViews">
         <p className="stat-value">{pageViews.toLocaleString()}</p>
@@ -460,8 +487,7 @@ function Site({
   days: Period;
 }) {
   return (
-    <section className="site-numbers" aria-labelledby="site-title">
-      <h3 id="site-title">{t("siteTitle")}</h3>
+    <>
       {site === null ? (
         <Loading failure={failure}>
           <SiteSkeleton />
@@ -493,7 +519,7 @@ function Site({
           </div>
         </>
       )}
-    </section>
+    </>
   );
 }
 
@@ -525,12 +551,19 @@ function usePeriodNumbers(api: WorkspaceApi, days: Period, zone: string) {
   return { numbers, site, failure };
 }
 
+type Tab = "support" | "site";
+
+const TABS: readonly Option<Tab>[] = [
+  { value: "support", label: "analyticsSupportTab" },
+  { value: "site", label: "siteTitle" },
+];
+
 export function AnalyticsPage({ api }: { api: WorkspaceApi }) {
   const [days, setDays] = useState<Period>("30");
+  const [tab, setTab] = useState<Tab>("support");
   // The server checks the zone, and days and hours read in it.
   const zone = browserTimeZone();
   const { numbers, site, failure } = usePeriodNumbers(api, days, zone);
-  const isSiteEmpty = site?.visits === 0;
 
   return (
     <Page
@@ -546,28 +579,33 @@ export function AnalyticsPage({ api }: { api: WorkspaceApi }) {
         />
       }
     >
-      {numbers === null ? (
+      <Choices<Tab>
+        label={t("analytics")}
+        variant="tabs"
+        value={tab}
+        options={TABS}
+        onChange={setTab}
+      />
+      {tab === "site" ? (
+        <Tipped className="analytics">
+          <Site site={site} failure={failure} days={days} />
+          <DocLink path="operator-guide#see-how-support-is-going" text="analyticsDocsLink" />
+        </Tipped>
+      ) : numbers === null ? (
         <Loading failure={failure}>
           <AnalyticsSkeleton />
         </Loading>
+      ) : numbers.started === 0 ? (
+        <div className="nothing empty-boat">
+          <Pond />
+          <b>{t("analyticsEmpty", { days })}</b>
+          {t("analyticsEmptyHint")}
+        </div>
       ) : (
-        <>
-          {numbers.started === 0 && (
-            <div className="nothing empty-boat">
-              <Pond />
-              <b>{t("analyticsEmpty", { days })}</b>
-              {t("analyticsEmptyHint")}
-            </div>
-          )}
-          {/* With no conversation and no visit, the pond alone says so. */}
-          {(numbers.started > 0 || !isSiteEmpty) && (
-            <Tipped className="analytics">
-              {numbers.started > 0 && <Support numbers={numbers} days={days} />}
-              <Site site={site} failure={failure} days={days} />
-              <DocLink path="operator-guide#see-how-support-is-going" text="analyticsDocsLink" />
-            </Tipped>
-          )}
-        </>
+        <Tipped className="analytics">
+          <Support numbers={numbers} days={days} />
+          <DocLink path="operator-guide#see-how-support-is-going" text="analyticsDocsLink" />
+        </Tipped>
       )}
     </Page>
   );
