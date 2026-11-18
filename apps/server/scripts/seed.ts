@@ -1,13 +1,15 @@
 // Fills the development database with a demo workspace, Acme, for screenshots and manual testing,
 // with `bun run seed`. Start `bun run dev` first: this writes to its database and Valkey.
-// Each run deletes the workspace it made before, and nothing else, then makes it again.
+// Each run deletes the workspace it made before, and nothing else, then makes it again. It keeps that
+// workspace's ID in .dev/seed-workspace. It sends no email: Acme sends no transcripts, and every
+// address is on a reserved domain.
 // With `bun run seed -- --live`, it keeps the live visitors on the site, a teammate online and a
 // visitor typing, until Ctrl-C. Without it, the live visitors leave the Visitors screen after 90 s.
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { and, eq, sql } from "drizzle-orm";
+import { and, eq, inArray, isNull, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Redis } from "iovalkey";
 import pg from "pg";
@@ -33,13 +35,11 @@ import { createSignals, type Live, noLive, OPERATORS } from "../src/live.ts";
 import { createLiveVisitors, tabsKey } from "../src/live-visitors.ts";
 import {
   appendMessage,
-  assignConversation,
   markConversationRead,
   setConversationStatus,
   snoozeConversation,
 } from "../src/messages.ts";
 import { createPresence, createVisitorPresence } from "../src/presence.ts";
-import { purgeDeletedWorkspaces } from "../src/workspace-delete.ts";
 import { createWorkspace } from "../src/workspaces.ts";
 import {
   CONVERSATIONS,
@@ -62,6 +62,8 @@ const VALKEY_URL = "redis://127.0.0.1:56379";
 const PORT = Number(process.env.DINGHY_PORT ?? 3000);
 const postgres = (user: string) => `postgres://${user}@127.0.0.1:55432/${DATABASE}`;
 const SECRET_FILE = fileURLToPath(new URL("../../../.dev/auth-secret", import.meta.url));
+/** The ID of the workspace the last run made, so the next run deletes that one and no other. */
+const DEMO_FILE = fileURLToPath(new URL("../../../.dev/seed-workspace", import.meta.url));
 
 const MINUTE_MS = 60_000;
 /** A line with no gap of its own follows the one before by this many minutes. */
@@ -82,55 +84,87 @@ const logger = pino({ level: "warn" });
 const { values: flags } = parseArgs({ options: { live: { type: "boolean", default: false } } });
 
 const appPool = new pg.Pool({ connectionString: postgres(ROLES.app), max: 2 });
-const workerPool = new pg.Pool({ connectionString: postgres(ROLES.worker), max: 1 });
 const db: Database = drizzle(appPool, { schema });
 const valkey = new Redis(VALKEY_URL, { maxRetriesPerRequest: 1 });
 const live: Live = { ...noLive, ...createSignals(valkey, logger) };
 
 type TeamIds = Record<TeamKey, string>;
 
-/** Deletes the Acme workspace that an earlier run made: one Anna owns, with the demo's site. */
+/** Marks the workspace that an earlier run made as deleted. The worker in `bun run dev` purges it. */
 async function removeEarlierDemo(): Promise<void> {
+  const workspaceId = existsSync(DEMO_FILE)
+    ? readFileSync(DEMO_FILE, "utf8").trim()
+    : await matchEarlierDemo();
+  if (workspaceId === undefined) return;
+  await withWorkspace(db, workspaceId, (tx) =>
+    tx
+      .update(schema.workspace)
+      .set({ deletedAt: new Date() })
+      .where(and(eq(schema.workspace.id, workspaceId), isNull(schema.workspace.deletedAt))),
+  );
+}
+
+/** Without the ID file: the one workspace Anna owns with the demo's name and site, if exactly one. */
+async function matchEarlierDemo(): Promise<string | undefined> {
   const [anna] = await db
     .select({ id: schema.operator.id })
     .from(schema.operator)
     .where(eq(schema.operator.email, TEAM.anna.email));
-  if (anna === undefined) return;
+  if (anna === undefined) return undefined;
+  const matches: string[] = [];
   for (const { workspaceId, role } of await operatorWorkspaces(db, anna.id)) {
     if (role !== "owner") continue;
-    await withWorkspace(db, workspaceId, (tx) =>
+    const [match] = await withWorkspace(db, workspaceId, (tx) =>
       tx
-        .update(schema.workspace)
-        .set({ deletedAt: new Date() })
+        .select({ id: schema.workspace.id })
+        .from(schema.workspace)
         .where(
           and(
             eq(schema.workspace.id, workspaceId),
             eq(schema.workspace.name, WORKSPACE_NAME),
             sql`${SITE} = any(${schema.workspace.allowedOrigins})`,
+            isNull(schema.workspace.deletedAt),
           ),
         ),
     );
+    if (match !== undefined) matches.push(match.id);
   }
-  // The worker would remove it within minutes. This does it now, as the worker.
-  await purgeDeletedWorkspaces(drizzle(workerPool, { schema }));
+  const [only] = matches;
+  if (only === undefined || matches.length > 1) {
+    console.log(
+      `==> No ${DEMO_FILE}, and ${matches.length} workspaces look like the demo: none deleted`,
+    );
+    return undefined;
+  }
+  console.log(
+    `==> No ${DEMO_FILE}, so deleting the one workspace that looks like the demo, ${only}`,
+  );
+  return only;
 }
 
-/** The team's accounts, made once and kept, since an account is not workspace data. */
-async function upsertTeam(): Promise<TeamIds> {
-  const ids: Partial<TeamIds> = {};
-  for (const [key, member] of Object.entries(TEAM) as [TeamKey, (typeof TEAM)[TeamKey]][]) {
-    const [row] = await db
-      .insert(schema.operator)
-      .values({ name: member.name, email: member.email, away: member.away })
-      .onConflictDoUpdate({
-        target: schema.operator.email,
-        set: { name: member.name, away: member.away, deletedAt: null },
-      })
-      .returning({ id: schema.operator.id });
-    if (row === undefined) throw new Error(`The operator ${member.email} was not saved`);
-    ids[key] = row.id;
-  }
-  return ids as TeamIds;
+/** The team's accounts. A missing one is made; an existing one is left as it is. */
+async function ensureTeam(): Promise<TeamIds> {
+  const members = Object.values(TEAM);
+  await db
+    .insert(schema.operator)
+    .values(members.map(({ name, email, away }) => ({ name, email, away })))
+    .onConflictDoNothing({ target: schema.operator.email });
+  const rows = await db
+    .select({ id: schema.operator.id, email: schema.operator.email })
+    .from(schema.operator)
+    .where(
+      inArray(
+        schema.operator.email,
+        members.map(({ email }) => email),
+      ),
+    );
+  const idOf = (email: string) => {
+    const id = rows.find((row) => row.email === email)?.id;
+    if (id === undefined) throw new Error(`The operator ${email} was not saved`);
+    return id;
+  };
+  const keys = Object.keys(TEAM) as TeamKey[];
+  return Object.fromEntries(keys.map((key) => [key, idOf(TEAM[key].email)])) as TeamIds;
 }
 
 /** The members, with Get started hidden, and the labels and saved replies a team sets up first. */
@@ -145,11 +179,17 @@ async function setUpWorkspace(tx: Transaction, workspaceId: string, team: TeamId
       createdAt: joined,
     })),
   );
-  // The test site has loaded the widget, as a site that is set up has.
+  // The test site has loaded the widget, as a site that is set up has. The creation time stays now,
+  // so the dev test site, which picks the oldest workspace, keeps its own.
   await tx
     .update(schema.workspace)
-    .set({ widgetSeenAt: joined, createdAt: joined })
+    .set({ widgetSeenAt: joined })
     .where(eq(schema.workspace.id, workspaceId));
+  // Closing the seeded chats must email no visitor.
+  await tx
+    .update(schema.widgetSettings)
+    .set({ transcript: false })
+    .where(eq(schema.widgetSettings.workspaceId, workspaceId));
   const labels = await tx
     .insert(schema.label)
     .values(Object.entries(LABELS).map(([name, color]) => ({ workspaceId, name, color })))
@@ -160,12 +200,16 @@ async function setUpWorkspace(tx: Transaction, workspaceId: string, team: TeamId
   return new Map(labels.map((one) => [one.name, one.id]));
 }
 
-/** A visitor of the site: a contact of Acme's app, or an anonymous browser. */
+/**
+ * A visitor of the site: a contact of Acme's app, or an anonymous browser. Its pages lead up to
+ * `arrivedAt`, such as the start of its chat, and it was last seen at `seenAt`.
+ */
 async function addVisitor(
   tx: Transaction,
   workspaceId: string,
   seed: VisitorSeed,
   seenAt: Date,
+  arrivedAt = seenAt,
 ): Promise<string> {
   let visitorId: string;
   if (seed.contact === undefined) {
@@ -186,7 +230,7 @@ async function addVisitor(
     workspaceId,
     visitorId,
     path: `${SITE}${path}`,
-    viewedAt: new Date(seenAt.getTime() - (seed.pages.length - index) * 3 * MINUTE_MS),
+    viewedAt: new Date(arrivedAt.getTime() - (seed.pages.length - index) * 3 * MINUTE_MS),
   }));
   await tx.insert(schema.pageView).values(pages);
   const firstPage = pages[0]?.viewedAt ?? seenAt;
@@ -227,7 +271,13 @@ async function addConversation(
     (sum, [, , gap], index) => sum + (index === 0 ? 0 : (gap ?? LINE_GAP_MINUTES)) * MINUTE_MS,
     at,
   );
-  const visitorId = await addVisitor(tx, workspaceId, seed.visitor, new Date(lastLineAt));
+  const visitorId = await addVisitor(
+    tx,
+    workspaceId,
+    seed.visitor,
+    new Date(lastLineAt),
+    seed.startedAt,
+  );
   const page = `${SITE}${seed.visitor.pages.at(-1) ?? "/"}`;
   let conversationId = "";
   for (const [index, [author, body, gap]] of seed.lines.entries()) {
@@ -254,17 +304,13 @@ async function addConversation(
       isNote ? { ...input, note: true } : input,
     );
   }
-  if (seed.assignee !== undefined) {
-    const assignee = seed.assignee === null ? null : team[seed.assignee];
-    await assignConversation(tx, workspaceId, conversationId, assignee);
-  }
   for (const name of seed.labels ?? []) {
     const labelId = labels.get(name);
     if (labelId !== undefined)
       await setLabel(tx, workspaceId, { conversationId, labelId, added: true });
   }
   if (seed.status === "closed") {
-    const closer = team[seed.assignee ?? lastTeammate(seed) ?? "anna"];
+    const closer = team[lastTeammate(seed) ?? "anna"];
     await setConversationStatus(tx, workspaceId, conversationId, "closed", {
       kind: "operator",
       operatorId: closer,
@@ -488,7 +534,7 @@ function stayLive(
 }
 
 async function finish() {
-  await Promise.all([appPool.end(), workerPool.end()]);
+  await appPool.end();
   valkey.disconnect();
 }
 
@@ -496,9 +542,9 @@ async function seed() {
   console.log("==> Removing the earlier Acme demo, if any");
   await removeEarlierDemo();
   console.log("==> Creating the Acme workspace");
-  const team = await upsertTeam();
-  const created = await createWorkspace(db, WORKSPACE_NAME, [SITE]);
-  const workspaceId = created.id;
+  const team = await ensureTeam();
+  const workspaceId = (await createWorkspace(db, WORKSPACE_NAME, [SITE])).id;
+  writeFileSync(DEMO_FILE, `${workspaceId}\n`);
   const labels = await withWorkspace(db, workspaceId, (tx) =>
     setUpWorkspace(tx, workspaceId, team),
   );
@@ -537,7 +583,9 @@ async function seed() {
     secret: readFileSync(SECRET_FILE, "utf8").trim(),
     baseURL: process.env.PUBLIC_URL || `http://localhost:${PORT}`,
   });
-  console.log(`\n==> Acme is ready. Sign in as ${TEAM.anna.email} within ${LINK_MINUTES} minutes:`);
+  // The tour reads the workspace from this line, since Anna may belong to others.
+  console.log(`\n==> Acme is ready, workspace ${workspaceId}.`);
+  console.log(`==> Sign in as ${TEAM.anna.email} within ${LINK_MINUTES} minutes:`);
   console.log(await signInLink(auth, TEAM.anna.email));
   const typing = seeded[LIVE.typing.conversation];
   if (flags.live && typing !== undefined) stayLive(workspaceId, tabs, team, typing);

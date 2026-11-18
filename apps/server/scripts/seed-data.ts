@@ -81,8 +81,6 @@ export interface ConversationSeed {
   startedAt: Date;
   lines: Line[];
   status: "open" | "closed" | "snoozed";
-  /** The assignee, when it is not the first teammate who replied. Null leaves it unassigned. */
-  assignee?: TeamKey | null;
   labels?: LabelName[];
 }
 
@@ -112,7 +110,7 @@ const MILAN = ["IT", "Europe/Rome"] as const;
 const MAYA = visitor(...NY, "Chrome on macOS", ["/app/reports", "/account/billing"], {
   userId: "u_1042",
   name: "Maya Patel",
-  email: "maya@brightline.io",
+  email: "maya@brightline.example",
   company: "Brightline",
   plan: "Team",
 });
@@ -120,7 +118,7 @@ const TOM = visitor(
   ...LONDON,
   "Firefox on Windows",
   ["/app/reports", "/app/reports/exports", "/docs/exports"],
-  { userId: "u_0877", name: "Tom Becker", email: "tom@northwind.co.uk", company: "Northwind" },
+  { userId: "u_0877", name: "Tom Becker", email: "tom@northwind.example", company: "Northwind" },
 );
 const INVITE_VISITOR = visitor(...PARIS, "Safari on macOS", [
   "/",
@@ -130,7 +128,7 @@ const INVITE_VISITOR = visitor(...PARIS, "Safari on macOS", [
 const NOAH = visitor(...TORONTO, "Chrome on Windows", ["/app/reports", "/changelog"], {
   userId: "u_1311",
   name: "Noah Kim",
-  email: "noah@fernhill.ca",
+  email: "noah@fernhill.example",
   company: "Fernhill",
   plan: "Starter",
 });
@@ -192,21 +190,21 @@ export const QUIET_CONTACTS: VisitorSeed[] = [
   visitor(...STOCKHOLM, "Chrome on macOS", ["/app/reports"], {
     userId: "u_0412",
     name: "Elin Andersson",
-    email: "elin@nordvik.se",
+    email: "elin@nordvik.example",
     company: "Nordvik",
     plan: "Business",
   }),
   visitor(...SF, "Safari on iPad", ["/app/dashboards"], {
     userId: "u_1520",
     name: "Jordan Lee",
-    email: "jordan@lumen.dev",
+    email: "jordan@lumen.example",
     company: "Lumen",
     plan: "Team",
   }),
   visitor(...MILAN, "Edge on Windows", ["/app/reports"], {
     userId: "u_0990",
     name: "Giulia Bianchi",
-    email: "giulia@studiobianchi.it",
+    email: "giulia@studiobianchi.example",
     company: "Studio Bianchi",
     plan: "Starter",
   }),
@@ -265,13 +263,12 @@ export const CONVERSATIONS: ConversationSeed[] = [
     visitor: visitor(...SAO_PAULO, "Chrome on macOS", ["/app/reports", "/roadmap"], {
       userId: "u_1188",
       name: "Lucas Silva",
-      email: "lucas@pixelco.com.br",
+      email: "lucas@pixelco.example",
       company: "Pixel & Co",
       plan: "Team",
     }),
     startedAt: minutesAgo(95),
     status: "open",
-    assignee: "chloe",
     labels: ["Feature request"],
     lines: [
       [
@@ -291,13 +288,12 @@ export const CONVERSATIONS: ConversationSeed[] = [
     visitor: visitor(...BERLIN, "Safari on macOS", ["/account/billing", "/pricing"], {
       userId: "u_0021",
       name: "Hannah Schmidt",
-      email: "hannah.schmidt@kessler.de",
+      email: "hannah.schmidt@kessler.example",
       company: "Kessler GmbH",
       plan: "Business",
     }),
     startedAt: minutesAgo(140),
     status: "open",
-    assignee: "anna",
     labels: ["VIP", "Billing"],
     lines: [
       [
@@ -308,7 +304,7 @@ export const CONVERSATIONS: ConversationSeed[] = [
       ["anna", "Hi Hannah! Yes, absolutely. I'll prepare an annual quote for 50 seats today.", 7],
       [
         "visitor",
-        "Perfect. Please address it to our procurement team, procurement@kessler.de.",
+        "Perfect. Please address it to our procurement team, procurement@kessler.example.",
         40,
       ],
     ],
@@ -318,7 +314,7 @@ export const CONVERSATIONS: ConversationSeed[] = [
     visitor: visitor(...SF, "Safari on iPhone", ["/shop/orders"], {
       userId: "u_1402",
       name: "Oliver Grant",
-      email: "oliver.grant@gmail.com",
+      email: "oliver.grant@example.com",
     }),
     startedAt: minutesAgo(240),
     status: "open",
@@ -339,7 +335,7 @@ export const CONVERSATIONS: ConversationSeed[] = [
   },
   {
     visitor: visitor(...TOKYO, "Chrome on macOS", ["/docs/api", "/docs/api/limits"]),
-    startedAt: daysAgo(0, 9, 12),
+    startedAt: minutesAgo(300),
     status: "open",
     lines: [
       [
@@ -357,11 +353,11 @@ export const CONVERSATIONS: ConversationSeed[] = [
     visitor: visitor(...MILAN, "Chrome on Windows", ["/docs/getting-started", "/docs/import"], {
       userId: "u_1501",
       name: "Sofia Rossi",
-      email: "sofia@ventura.it",
+      email: "sofia@ventura.example",
       company: "Ventura",
       plan: "Starter",
     }),
-    startedAt: daysAgo(0, 8, 40),
+    startedAt: minutesAgo(330),
     status: "open",
     lines: [
       ["visitor", "Can I import our old reports from a spreadsheet?"],
@@ -382,13 +378,12 @@ export const CONVERSATIONS: ConversationSeed[] = [
     visitor: visitor(...NY, "Safari on macOS", ["/login", "/login"], {
       userId: "u_0655",
       name: "Ethan Brooks",
-      email: "ethan@harborlabs.com",
+      email: "ethan@harborlabs.example",
       company: "Harbor Labs",
       plan: "Team",
     }),
     startedAt: daysAgo(1, 16, 5),
     status: "open",
-    assignee: "diego",
     labels: ["Bug"],
     lines: [
       ["visitor", "I keep getting sent back to the login page after signing in. Only in Safari."],
@@ -414,12 +409,11 @@ export const CONVERSATIONS: ConversationSeed[] = [
     visitor: visitor(...AMSTERDAM, "Firefox on macOS", ["/pricing", "/contact-sales"], {
       userId: "u_1610",
       name: "Daan de Vries",
-      email: "daan@kanaal.nl",
+      email: "daan@kanaal.example",
       company: "Kanaal",
     }),
     startedAt: daysAgo(2, 11, 20),
     status: "snoozed",
-    assignee: "ben",
     lines: [
       ["visitor", "We're evaluating Acme for 20 people. Is there a trial of the Business plan?"],
       [
@@ -435,7 +429,7 @@ export const CONVERSATIONS: ConversationSeed[] = [
     visitor: visitor(...LONDON, "Chrome on macOS", ["/account/billing"], {
       userId: "u_0730",
       name: "Grace Howard",
-      email: "grace@thimble.co",
+      email: "grace@thimble.example",
       company: "Thimble",
       plan: "Team",
     }),
@@ -468,7 +462,7 @@ export const CONVERSATIONS: ConversationSeed[] = [
     visitor: visitor(...SYDNEY, "Chrome on Windows", ["/app/settings", "/docs/sso"], {
       userId: "u_0318",
       name: "Liam Walker",
-      email: "liam@coastline.com.au",
+      email: "liam@coastline.example",
       company: "Coastline",
       plan: "Business",
     }),
@@ -491,7 +485,7 @@ export const CONVERSATIONS: ConversationSeed[] = [
     visitor: visitor(...MADRID, "Safari on iPhone", ["/shop/orders"], {
       userId: "u_1250",
       name: "Carmen Ortiz",
-      email: "carmen.ortiz@outlook.es",
+      email: "carmen.ortiz@example.org",
     }),
     startedAt: daysAgo(4, 18, 10),
     status: "closed",
@@ -509,7 +503,7 @@ export const CONVERSATIONS: ConversationSeed[] = [
     visitor: visitor(...NY, "Chrome on macOS", ["/app/integrations"], {
       userId: "u_0982",
       name: "Priya Shah",
-      email: "priya@quill.app",
+      email: "priya@quill.example",
       company: "Quill",
       plan: "Team",
     }),
@@ -544,7 +538,7 @@ export const CONVERSATIONS: ConversationSeed[] = [
     visitor: visitor(...STOCKHOLM, "Chrome on macOS", ["/account/billing"], {
       userId: "u_0533",
       name: "Oskar Lund",
-      email: "oskar@ferry.se",
+      email: "oskar@ferry.example",
       company: "Ferry",
       plan: "Starter",
     }),
@@ -580,7 +574,7 @@ export const CONVERSATIONS: ConversationSeed[] = [
     visitor: visitor(...LONDON, "Safari on macOS", ["/account/privacy"], {
       userId: "u_0144",
       name: "James Carter",
-      email: "james@mosaic.studio",
+      email: "james@mosaic.example",
       company: "Mosaic",
       plan: "Team",
     }),
@@ -609,7 +603,7 @@ export const CONVERSATIONS: ConversationSeed[] = [
     visitor: visitor(...BERLIN, "Firefox on Linux", ["/app/reports/schedule"], {
       userId: "u_0711",
       name: "Felix Wagner",
-      email: "felix@brandt.dev",
+      email: "felix@brandt.example",
       company: "Brandt",
       plan: "Team",
     }),
@@ -641,7 +635,7 @@ export const CONVERSATIONS: ConversationSeed[] = [
     visitor: visitor(...AMSTERDAM, "Chrome on macOS", ["/account/billing"], {
       userId: "u_0866",
       name: "Sanne Bakker",
-      email: "sanne@tulpdesign.nl",
+      email: "sanne@tulpdesign.example",
       company: "Tulp Design",
       plan: "Team",
     }),
@@ -658,7 +652,7 @@ export const CONVERSATIONS: ConversationSeed[] = [
     visitor: visitor(...NY, "Chrome on Windows", ["/docs/custom-domain"], {
       userId: "u_0291",
       name: "Rachel Green",
-      email: "rachel@uptown.agency",
+      email: "rachel@uptown.example",
       company: "Uptown Agency",
       plan: "Business",
     }),
@@ -692,7 +686,7 @@ export const CONVERSATIONS: ConversationSeed[] = [
     visitor: visitor(...TORONTO, "Chrome on macOS", ["/account/billing"], {
       userId: "u_0470",
       name: "Ava Thompson",
-      email: "ava@maplegrove.ca",
+      email: "ava@maplegrove.example",
       company: "Maple Grove",
       plan: "Team",
     }),
@@ -804,7 +798,7 @@ function routineDay(days: number, start: number): ConversationSeed[] {
   });
 }
 
-/** The routine chats of the last 30 days, oldest first. */
+/** The routine chats of the last 30 days, oldest first: about 42, as the weekdays fall. */
 export const ROUTINE_CONVERSATIONS: ConversationSeed[] = Array.from(
   { length: HISTORY_DAYS },
   (_, day) => HISTORY_DAYS - day,

@@ -1,5 +1,6 @@
 import { type ChildProcess, spawn, spawnSync } from "node:child_process";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type Browser, chromium, expect, type Locator, type Page, test } from "@playwright/test";
 import { openLink } from "./links.ts";
@@ -13,8 +14,6 @@ const directory = process.env.RECORD_TOUR;
 test.skip(directory === undefined, "Set RECORD_TOUR to record");
 test.setTimeout(240_000);
 
-const PORT = Number(process.env.DINGHY_PORT ?? 3000);
-const APP = `http://localhost:${PORT}`;
 // The seed's site, which the demo workspace allows. The browser serves its page itself.
 const SITE = "https://acme.example";
 // The seed writes times of day in this zone, so the browser shows them in it too.
@@ -66,7 +65,6 @@ function cursorScript(name: string) {
   else draw();
 }
 
-/** Moves the mouse along a gentle arc, slow at both ends, as a hand does. */
 /** Where the cursor rests at the start and the end. */
 const START = { x: VIEWPORT.width * 0.62, y: VIEWPORT.height * 0.55 };
 
@@ -82,6 +80,7 @@ class Hand {
     await this.page.mouse.move(this.x, this.y);
   }
 
+  /** Moves the mouse along a gentle arc, slow at both ends, as a hand does. */
   async glide(target: Locator | { x: number; y: number }, ms = 700) {
     const to = "x" in target ? target : await centerOf(target);
     ms *= PACE;
@@ -119,19 +118,38 @@ async function centerOf(target: Locator) {
   return { x: box.x + box.width / 2, y: box.y + box.height / 2 };
 }
 
-/** `bun run seed -- --live`, until stopped. Resolves with Anna's sign-in link once all is live. */
-function startSeed(): Promise<{ link: string; seed: ChildProcess }> {
-  const seed = spawn("node", ["apps/server/scripts/seed.ts", "--live"], {
+let seed: ChildProcess | undefined;
+/** The recording's own temporary directory for the screencast's frames. */
+let frames: string | undefined;
+// After the test, even when it timed out, so neither the seed nor the frames outlive the recording.
+test.afterAll(async () => {
+  seed?.kill("SIGINT");
+  if (frames !== undefined) await rm(frames, { recursive: true, force: true });
+});
+
+interface Demo {
+  /** Anna's sign-in link, on the app's own origin, which may be a PUBLIC_URL tunnel. */
+  link: string;
+  workspaceId: string;
+}
+
+/** `bun run seed -- --live`, until stopped. Resolves with the demo once all is live. */
+function startSeed(): Promise<Demo> {
+  const child = spawn("node", ["apps/server/scripts/seed.ts", "--live"], {
     env: { ...process.env, TZ: TIME_ZONE },
     stdio: ["ignore", "pipe", "inherit"],
   });
+  seed = child;
   return new Promise((resolve, reject) => {
     let output = "";
-    seed.on("exit", (code) => reject(new Error(`The seed stopped with code ${code}`)));
-    seed.stdout?.on("data", (chunk: Buffer) => {
+    child.on("exit", (code) => reject(new Error(`The seed stopped with code ${code}`)));
+    child.stdout?.on("data", (chunk: Buffer) => {
       output += chunk.toString();
       const link = /^http\S+\/link\?\S+$/m.exec(output)?.[0];
-      if (link !== undefined && output.includes("==> Live")) resolve({ link, seed });
+      const workspaceId = /^==> Acme is ready, workspace (\S+)\.$/m.exec(output)?.[1];
+      if (link !== undefined && workspaceId !== undefined && output.includes("==> Live")) {
+        resolve({ link, workspaceId });
+      }
     });
   });
 }
@@ -185,10 +203,10 @@ function encode(frames: string, video: string, poster: string) {
 }
 
 /** A hidden visitor on the pricing page, with the chat open, ready to write. */
-async function visitorOnSite(browser: Browser, publicKey: string) {
+async function visitorOnSite(browser: Browser, app: string, publicKey: string) {
   const context = await browser.newContext({ timezoneId: TIME_ZONE });
   const html = `<!doctype html><title>Pricing · Acme</title><h1>Pricing</h1>
-<script src="${APP}/widget/loader.js" data-key="${publicKey}" async></script>`;
+<script src="${app}/widget/loader.js" data-key="${publicKey}" async></script>`;
   await context.route(`${SITE}/**`, (route) =>
     route.fulfill({ contentType: "text/html", body: html }),
   );
@@ -198,11 +216,9 @@ async function visitorOnSite(browser: Browser, publicKey: string) {
   return visitor.getByRole("textbox", { name: "Your message" });
 }
 
-/** Anna's workspace, from the operator API, for the key its widget loads with. */
-async function workspaceKey(page: Page): Promise<string> {
-  const waiting = await (await page.request.get(`${APP}/v1/operator/waiting`)).json();
-  const workspaceId: string = waiting.workspaces[0].workspaceId;
-  const settings = await page.request.get(`${APP}/v1/operator/workspaces/${workspaceId}/settings`);
+/** The key the demo's widget loads with, from the operator API. */
+async function workspaceKey(page: Page, app: string, workspaceId: string): Promise<string> {
+  const settings = await page.request.get(`${app}/v1/operator/workspaces/${workspaceId}/settings`);
   return (await settings.json()).publicKey;
 }
 
@@ -271,19 +287,11 @@ async function contactsAndBack(page: Page, hand: Hand) {
   await pause(1200);
 }
 
-let seed: ChildProcess | undefined;
-// After the test, even when it timed out, so the seed never outlives the recording.
-test.afterAll(() => {
-  seed?.kill("SIGINT");
-});
-
 test("record", async () => {
   if (directory === undefined) return;
-  const frames = join(directory, "frames");
-  await rm(frames, { recursive: true, force: true });
-  await mkdir(frames, { recursive: true });
-  const started = await startSeed();
-  seed = started.seed;
+  await mkdir(directory, { recursive: true });
+  const demo = await startSeed();
+  const app = new URL(demo.link).origin;
   // The site's page has a public address and the app is on localhost, which Chrome's private
   // network protection blocks. Only this recording turns it off; a real site never meets it.
   const browser = await chromium.launch({
@@ -291,6 +299,8 @@ test("record", async () => {
       "--disable-features=BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessSendPreflights,PrivateNetworkAccessRespectPreflightResults,LocalNetworkAccessChecks",
     ],
   });
+  const into = await mkdtemp(join(tmpdir(), "dinghy-tour-"));
+  frames = into;
   try {
     const context = await browser.newContext({
       viewport: VIEWPORT,
@@ -302,9 +312,13 @@ test("record", async () => {
     });
     await context.addInitScript(cursorScript, CURSOR_NAME);
     const page = await context.newPage();
-    await openLink(page, started.link);
+    await openLink(page, demo.link);
+    // Anna may belong to other workspaces, so the address names the demo's.
+    await expect(page.getByRole("button", { name: "Your account" })).toBeVisible();
+    await page.goto(`${app}/?workspace=${demo.workspaceId}`);
     await expect(page.getByRole("button", { name: /Maya Patel .*refund/ })).toBeVisible();
-    const visitorMessage = await visitorOnSite(browser, await workspaceKey(page));
+    const key = await workspaceKey(page, app, demo.workspaceId);
+    const visitorMessage = await visitorOnSite(browser, app, key);
     // The tour opens on a conversation, never on the empty inbox.
     await openingChat(page).click();
     await expect(page.getByRole("button", { name: "Hide the visitor's details" })).toBeVisible();
@@ -312,12 +326,12 @@ test("record", async () => {
     await hand.rest();
     await sleep(800);
 
-    const stop = await recordScreen(page, frames);
+    const stop = await recordScreen(page, into);
     await inboxScene(page, hand, visitorMessage);
     await visitorsAndAnalytics(page, hand);
     await contactsAndBack(page, hand);
     await stop();
-    encode(frames, join(directory, "dinghy-tour.mp4"), join(directory, "dinghy-tour.jpg"));
+    encode(into, join(directory, "dinghy-tour.mp4"), join(directory, "dinghy-tour.jpg"));
   } finally {
     await browser.close();
   }

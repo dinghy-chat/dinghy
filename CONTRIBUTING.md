@@ -31,9 +31,9 @@ bun run dev
 
 ### Demo data
 
-While `bun run dev` runs, `bun run seed` adds a demo workspace, Acme, so every screen has something to show, for screenshots and for testing by hand. It has a team of four, conversations from the last 30 days in every state, contacts, labels, saved replies, campaigns and visitors on the site now. It prints a sign-in link for its owner, `anna@acme.example`.
+While `bun run dev` runs, `bun run seed` adds a demo workspace, Acme, so every screen has something to show, for screenshots and for testing by hand. It has a team of four, conversations in every state with about 42 routine ones from the last 30 days (the count depends on the weekdays), contacts, labels, saved replies, campaigns and visitors on the site now. It prints a sign-in link for its owner, `anna@acme.example`, and sends no email.
 
-- Run it again to start the demo over. It deletes only the Acme workspace it made, so other workspaces in the database stay as they are.
+- Run it again to start the demo over. It deletes only the Acme workspace it made, whose ID it keeps in `.dev/seed-workspace`, so other workspaces in the database stay as they are.
 - The visitors on the site leave the Visitors screen after 90 seconds. `bun run seed -- --live` keeps them there, keeps two teammates online and shows a visitor typing, until Ctrl-C.
 - With `DINGHY_PORT`, give it the same value as `bun run dev`, so the link opens the right port.
 - `RECORD_TOUR=<directory> bun x playwright test tour --project=chromium` reseeds the demo and records the product tour video, `dinghy-tour.mp4` and its poster, into that directory. It needs ffmpeg.
