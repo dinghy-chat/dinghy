@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.44.0] - 2026-11-18
+
 ### Changed
 
 - The site's numbers (visits, page views, chat rate, busiest moment, top pages and sources) moved from **Visitors** to **Analytics**, under the same 7, 30 or 90 days as the support numbers. **Visitors** shows only who is on the site now. `GET .../visitors/stats` no longer takes `days=1`, and its default is now 30 days.
@@ -711,7 +713,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.43.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.44.0...HEAD
+[0.44.0]: https://github.com/dinghy-chat/dinghy/compare/v0.43.0...v0.44.0
 [0.43.0]: https://github.com/dinghy-chat/dinghy/compare/v0.42.0...v0.43.0
 [0.42.0]: https://github.com/dinghy-chat/dinghy/compare/v0.41.1...v0.42.0
 [0.41.1]: https://github.com/dinghy-chat/dinghy/compare/v0.41.0...v0.41.1
