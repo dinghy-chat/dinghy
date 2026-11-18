@@ -335,7 +335,7 @@ export const HEADER = `  <header class="site-header">
 const FOOTER = `  <footer>
     <div class="sand">
       <div class="wrap sand-row">
-        <span>&copy; 2026 Dinghy, made by <a href="https://x.com/JulienCoulaud" target="_blank" rel="noopener">@JulienCoulaud</a></span>
+        <span>Made by <a href="https://x.com/JulienCoulaud" target="_blank" rel="noopener">@JulienCoulaud</a></span>
         <a class="sand-mail" href="mailto:hello@dinghy.chat">hello@dinghy.chat</a>
       </div>
     </div>
