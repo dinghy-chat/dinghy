@@ -1,6 +1,8 @@
 # Dinghy for iOS and Android
 
-This development app signs operators in through their Dinghy server. It opens the inbox, receives conversation alerts and saves outgoing text replies on the phone until the server accepts them.
+This development app signs operators in through their Dinghy server. It opens the inbox, receives conversation alerts and keeps an unsent reply for each conversation on the phone. Sending moves the text into the local outbox until the server accepts it.
+
+Operators can insert a saved reply and edit it before sending. **Photo** opens the system picker and shows a preview before upload. **Private note** opens a separate composer for the team. Photos and private notes need a connection to send.
 
 ## Run a development build
 

@@ -10,6 +10,10 @@ export interface PendingReply {
   body: string;
 }
 
+interface StoredDraft {
+  body: string;
+}
+
 interface QueueDatabase {
   execSync(sql: string): void;
   runSync(sql: string, ...values: string[]): unknown;
@@ -18,6 +22,22 @@ interface QueueDatabase {
 
 const activeSends = new Map<string, Promise<void>>();
 
+function runTransaction<T>(db: QueueDatabase, operation: () => T): T {
+  db.execSync("BEGIN IMMEDIATE");
+  try {
+    const result = operation();
+    db.execSync("COMMIT");
+    return result;
+  } catch (failure) {
+    try {
+      db.execSync("ROLLBACK");
+    } catch {
+      // Keep the original database failure.
+    }
+    throw failure;
+  }
+}
+
 export function openReplyQueue(db: QueueDatabase, scope: ReplyScope, newId: () => string) {
   db.execSync(`CREATE TABLE IF NOT EXISTS pending_reply (
     sequence INTEGER PRIMARY KEY,
@@ -25,6 +45,12 @@ export function openReplyQueue(db: QueueDatabase, scope: ReplyScope, newId: () =
     conversationId TEXT NOT NULL,
     clientId TEXT NOT NULL UNIQUE,
     body TEXT NOT NULL
+  )`);
+  db.execSync(`CREATE TABLE IF NOT EXISTS public_reply_draft (
+    account TEXT NOT NULL,
+    conversationId TEXT NOT NULL,
+    body TEXT NOT NULL,
+    PRIMARY KEY (account, conversationId)
   )`);
   const account = JSON.stringify([scope.origin, scope.workspaceId, scope.operatorId]);
   const select = "SELECT conversationId, clientId, body FROM pending_reply WHERE account = ?";
@@ -38,15 +64,48 @@ export function openReplyQueue(db: QueueDatabase, scope: ReplyScope, newId: () =
             conversationId,
           );
     },
-    enqueue(conversationId: string, body: string) {
-      const clientId = newId();
+    getDraft(conversationId: string) {
+      return (
+        db.getAllSync<StoredDraft>(
+          "SELECT body FROM public_reply_draft WHERE account = ? AND conversationId = ?",
+          account,
+          conversationId,
+        )[0]?.body ?? ""
+      );
+    },
+    saveDraft(conversationId: string, body: string) {
+      if (!body) {
+        db.runSync(
+          "DELETE FROM public_reply_draft WHERE account = ? AND conversationId = ?",
+          account,
+          conversationId,
+        );
+        return;
+      }
       db.runSync(
-        "INSERT INTO pending_reply (account, conversationId, clientId, body) VALUES (?, ?, ?, ?)",
+        `INSERT INTO public_reply_draft (account, conversationId, body) VALUES (?, ?, ?)
+         ON CONFLICT (account, conversationId) DO UPDATE SET body = excluded.body`,
         account,
         conversationId,
-        clientId,
         body,
       );
+    },
+    enqueue(conversationId: string, body: string) {
+      const clientId = newId();
+      runTransaction(db, () => {
+        db.runSync(
+          "INSERT INTO pending_reply (account, conversationId, clientId, body) VALUES (?, ?, ?, ?)",
+          account,
+          conversationId,
+          clientId,
+          body,
+        );
+        db.runSync(
+          "DELETE FROM public_reply_draft WHERE account = ? AND conversationId = ?",
+          account,
+          conversationId,
+        );
+      });
       return { conversationId, clientId, body };
     },
     discard(reply: PendingReply) {

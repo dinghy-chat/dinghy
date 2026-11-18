@@ -64,8 +64,20 @@ export type Message = {
   authorName: string | null;
   clientId: string;
   body: string | null;
+  attachment: MessageAttachment;
   createdAt: string;
   deleted: boolean;
+};
+
+export type MessageAttachment =
+  | { type: "image"; url: string; width: number; height: number; removed?: never }
+  | { type: "file"; url: string; name: string; size: number; removed?: never }
+  | { type: "image" | "file"; removed: true }
+  | null;
+
+export type PhotoUpload = {
+  uri: string;
+  mimeType: string;
 };
 
 export type Thread = {
@@ -80,6 +92,13 @@ export type Member = {
   name: string;
   email: string;
   pictureUrl: string | null;
+};
+
+export type SavedReply = {
+  id: string;
+  shortcut: string;
+  body: string;
+  updatedAt: string;
 };
 
 export type PushProvider = "apns" | "fcm";

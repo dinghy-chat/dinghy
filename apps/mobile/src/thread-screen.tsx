@@ -17,7 +17,10 @@ import {
 import { t } from "../../operator/src/text.ts";
 import { Harbor } from "../Harbor";
 import type { PendingReply } from "../outbox";
+import type { DinghyApi } from "./api";
+import { MessageAttachmentView, PhotoComposerButton } from "./attachments";
 import { Avatar, SheetCloseButton, visitorName } from "./common";
+import { ConversationTools } from "./composer-tools";
 import { fonts } from "./fonts";
 import { Icon } from "./icon";
 import type { Palette } from "./theme";
@@ -312,7 +315,15 @@ function HandoffSheet({
   );
 }
 
-function MessageBubble({ message, palette }: { message: Message; palette: Palette }) {
+function MessageBubble({
+  message,
+  onAttachmentError,
+  palette,
+}: {
+  message: Message;
+  onAttachmentError(): void | Promise<void>;
+  palette: Palette;
+}) {
   if (message.kind === "closed" || message.kind === "reopened") {
     return (
       <Text style={[screenStyles.statusMessage, { color: palette.sub, fontFamily: fonts.body }]}>
@@ -340,6 +351,16 @@ function MessageBubble({ message, palette }: { message: Message; palette: Palett
     );
   }
   const outgoing = !message.fromVisitor;
+  if (!message.deleted && message.attachment) {
+    return (
+      <MessageAttachmentView
+        attachment={message.attachment}
+        fromVisitor={message.fromVisitor}
+        onReload={onAttachmentError}
+        palette={palette}
+      />
+    );
+  }
   return (
     <View
       style={[
@@ -420,36 +441,44 @@ function PendingBubble({
 }
 
 export function ThreadScreen({
+  api,
   conversation,
   thread,
   pending,
   pendingErrors,
   bottomInset,
+  initialDraft,
   loading,
   palette,
   meId,
   members,
   onBack,
   onDiscard,
+  onDraftChange,
   onHandoff,
+  onError,
   onReload,
   onSend,
   onRetry,
   onAssign,
   onStatus,
 }: {
+  api: DinghyApi;
   conversation: Conversation;
   thread: Thread | null;
   pending: PendingReply[];
   pendingErrors: Record<string, { message: string; discardable: boolean }>;
   bottomInset: number;
+  initialDraft: string;
   loading: boolean;
   palette: Palette;
   meId: string;
   members: Member[];
   onBack(): void;
   onDiscard(reply: PendingReply): void;
+  onDraftChange(body: string): void;
   onHandoff(operatorId: string): Promise<void>;
+  onError(failure: unknown): void;
   onReload(): void;
   onSend(body: string): Promise<void>;
   onRetry(reply: PendingReply): Promise<void>;
@@ -457,7 +486,7 @@ export function ThreadScreen({
   onStatus(): Promise<void>;
 }) {
   const isNight = useColorScheme() === "dark";
-  const [draft, setDraft] = useState("");
+  const [draft, setDraft] = useState(initialDraft);
   const [sending, setSending] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [handoffOpen, setHandoffOpen] = useState(false);
@@ -470,13 +499,18 @@ export function ThreadScreen({
   const assignee = members.find((member) => member.id === current.assigneeOperatorId);
   const rows: (Message | PendingReply)[] = [...(thread?.messages ?? []), ...pending];
   const isPending = (row: Message | PendingReply): row is PendingReply => !("kind" in row);
+  const changeDraft = (body: string) => {
+    setDraft(body);
+    onDraftChange(body);
+  };
   const send = async () => {
+    const submittedDraft = draft;
     const body = draft.trim();
     if (!body) return;
     setSending(true);
     try {
       await onSend(body);
-      setDraft("");
+      setDraft((current) => (current === submittedDraft ? "" : current));
     } catch {
       // The parent shows the storage error. Keep the draft so the operator can try again.
     } finally {
@@ -591,7 +625,7 @@ export function ThreadScreen({
                   { backgroundColor: palette.blue, opacity: pressed ? 0.72 : 1 },
                 ]}
               >
-                <Text style={{ color: "#ffffff", fontFamily: fonts.semibold, fontSize: 12 }}>
+                <Text style={{ color: palette.onBlue, fontFamily: fonts.semibold, fontSize: 12 }}>
                   {t("keysAssignMe")}
                 </Text>
               </Pressable>
@@ -642,7 +676,7 @@ export function ThreadScreen({
               reply={item}
             />
           ) : (
-            <MessageBubble message={item} palette={palette} />
+            <MessageBubble message={item} palette={palette} onAttachmentError={onReload} />
           )
         }
       />
@@ -677,6 +711,24 @@ export function ThreadScreen({
             },
           ]}
         >
+          <ConversationTools
+            api={api}
+            conversationId={current.id}
+            onInsert={(text) =>
+              changeDraft(draft && !/\s$/.test(draft) ? `${draft}\n${text}` : draft + text)
+            }
+            onNoteAdded={onReload}
+            palette={palette}
+          >
+            <PhotoComposerButton
+              api={api}
+              bottomInset={bottomInset}
+              conversationId={current.id}
+              onError={onError}
+              onSent={onReload}
+              palette={palette}
+            />
+          </ConversationTools>
           <View
             style={[
               screenStyles.composeBox,
@@ -686,7 +738,7 @@ export function ThreadScreen({
             <TextInput
               accessibilityLabel={t("mobileReplyTo", { name })}
               multiline
-              onChangeText={setDraft}
+              onChangeText={changeDraft}
               placeholder={t("mobileReplyPlaceholder", { name: name.split(" ")[0] ?? name })}
               placeholderTextColor={palette.sub}
               style={[screenStyles.input, { color: palette.ink, fontFamily: fonts.body }]}
@@ -707,7 +759,7 @@ export function ThreadScreen({
               ]}
             >
               <Icon
-                color={draft.trim() && !sending ? "#ffffff" : palette.sub}
+                color={draft.trim() && !sending ? palette.onBlue : palette.sub}
                 name="send"
                 size={18}
               />

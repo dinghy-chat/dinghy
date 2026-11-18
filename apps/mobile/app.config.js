@@ -40,6 +40,14 @@ module.exports = {
       },
     ],
     "expo-notifications",
+    [
+      "expo-image-picker",
+      {
+        photosPermission: "Allow Dinghy to choose a photo or screenshot for a conversation.",
+        cameraPermission: false,
+        microphonePermission: false,
+      },
+    ],
     "expo-secure-store",
     "expo-sqlite",
   ],

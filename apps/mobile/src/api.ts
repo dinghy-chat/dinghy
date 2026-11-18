@@ -6,12 +6,16 @@ import type {
   Me,
   Member,
   Message,
+  PhotoUpload,
   PushProvider,
+  SavedReply,
   Session,
   Thread,
 } from "./types";
 
 const REQUEST_TIMEOUT_MS = 30_000;
+const UPLOAD_TIMEOUT_MS = 5 * 60_000;
+export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 export class ApiError extends Error {
   constructor(
@@ -41,9 +45,13 @@ export { normalizeOrigin };
 export class DinghyApi {
   constructor(private readonly auth: Session) {}
 
-  private async call<T>(path: string, init: RequestInit = {}): Promise<T> {
+  private async call<T>(
+    path: string,
+    init: RequestInit = {},
+    timeoutMs = REQUEST_TIMEOUT_MS,
+  ): Promise<T> {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
     try {
       const response = await fetch(`${this.auth.origin}${path}`, {
         ...init,
@@ -151,6 +159,35 @@ export class DinghyApi {
       method: "POST",
       body: JSON.stringify({ clientId, body, note: false, mentions: [] }),
     });
+  }
+
+  async uploadPhoto(
+    conversationId: string,
+    clientId: string,
+    photo: PhotoUpload,
+  ): Promise<Message> {
+    const local = await fetch(photo.uri);
+    if (!local.ok) throw new Error(t("mobilePhotoReadFailed"));
+    const body = await local.arrayBuffer();
+    if (body.byteLength > MAX_IMAGE_BYTES) throw new Error(t("imageTooLarge"));
+    return this.call(
+      this.workspace(
+        `/conversations/${conversationId}/uploads?clientId=${encodeURIComponent(clientId)}`,
+      ),
+      { method: "POST", headers: { "Content-Type": photo.mimeType }, body },
+      UPLOAD_TIMEOUT_MS,
+    );
+  }
+
+  note(conversationId: string, clientId: string, body: string): Promise<Message> {
+    return this.call(this.workspace(`/conversations/${conversationId}/messages`), {
+      method: "POST",
+      body: JSON.stringify({ clientId, body, note: true, mentions: [] }),
+    });
+  }
+
+  savedReplies(): Promise<{ savedReplies: SavedReply[] }> {
+    return this.call(this.workspace("/saved-replies"));
   }
 
   markRead(conversationId: string, seq: string): Promise<{ ok: true }> {

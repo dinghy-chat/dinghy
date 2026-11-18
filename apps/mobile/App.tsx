@@ -73,6 +73,19 @@ function SignedInApp({
   const routeRequest = useRef(0);
   const pushRequest = useRef(0);
   const threadTarget = useRef<{ scope: string; conversationId: string } | null>(null);
+  const draftSnapshot = useMemo(() => {
+    if (!selected) return { body: "", failure: null };
+    try {
+      return { body: outbox.getDraft(selected.id), failure: null };
+    } catch (failure) {
+      return { body: "", failure };
+    }
+  }, [outbox, selected]);
+
+  useEffect(() => {
+    if (!draftSnapshot.failure) return;
+    setError(t("mobileReplySaveFailed", { error: readableError(draftSnapshot.failure) }));
+  }, [draftSnapshot]);
 
   const handleFailure = useCallback(
     async (failure: unknown) => {
@@ -376,18 +389,32 @@ function SignedInApp({
     }
   };
 
-  const send = async (body: string) => {
+  const send = async (conversationId: string, body: string) => {
     const target = threadTarget.current;
-    if (!target || target.scope !== scopeKey) return;
+    if (!target || target.scope !== scopeKey || target.conversationId !== conversationId) {
+      return;
+    }
     let reply: PendingReply;
     try {
-      reply = outbox.enqueue(target.conversationId, body);
+      reply = outbox.enqueue(conversationId, body);
     } catch (failure) {
       setError(t("mobileReplySaveFailed", { error: readableError(failure) }));
       throw failure;
     }
     setOutboxVersion((value) => value + 1);
-    await deliver(reply);
+    void deliver(reply);
+  };
+
+  const saveDraft = (conversationId: string, body: string) => {
+    const target = threadTarget.current;
+    if (!target || target.scope !== scopeKey || target.conversationId !== conversationId) {
+      return;
+    }
+    try {
+      outbox.saveDraft(conversationId, body);
+    } catch (failure) {
+      setError(t("mobileReplySaveFailed", { error: readableError(failure) }));
+    }
   };
 
   const discard = (reply: PendingReply) => {
@@ -494,9 +521,11 @@ function SignedInApp({
       {page === "thread" && selected ? (
         <ThreadScreen
           key={`${scopeKey}:${selected.id}`}
+          api={api}
           bottomInset={insets.bottom}
           conversation={selected}
           loading={threadLoading}
+          initialDraft={draftSnapshot.body}
           meId={session.operator.id}
           members={members}
           onHandoff={assign}
@@ -510,9 +539,13 @@ function SignedInApp({
             setThread(null);
           }}
           onDiscard={discard}
-          onReload={() => loadThread(selected.id)}
+          onError={handleFailure}
+          onReload={() => {
+            if (threadTarget.current?.conversationId === selected.id) void loadThread(selected.id);
+          }}
           onRetry={deliver}
-          onSend={send}
+          onDraftChange={(body) => saveDraft(selected.id, body)}
+          onSend={(body) => send(selected.id, body)}
           onStatus={changeStatus}
           palette={palette}
           pending={outbox.list(selected.id)}
