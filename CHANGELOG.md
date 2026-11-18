@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.43.0] - 2026-11-18
+
 ### Changed
 
 - **Visitors** shows a change against the period before only once Dinghy has counted the site for that long, so a new site's first weeks no longer show large false rises. `GET .../visitors/stats` returns those numbers as one `previous` object, or null, in place of `visitsBefore`, `pageViewsBefore` and `chatsBefore`.
@@ -701,7 +703,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.42.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.43.0...HEAD
+[0.43.0]: https://github.com/dinghy-chat/dinghy/compare/v0.42.0...v0.43.0
 [0.42.0]: https://github.com/dinghy-chat/dinghy/compare/v0.41.1...v0.42.0
 [0.41.1]: https://github.com/dinghy-chat/dinghy/compare/v0.41.0...v0.41.1
 [0.41.0]: https://github.com/dinghy-chat/dinghy/compare/v0.40.0...v0.41.0
