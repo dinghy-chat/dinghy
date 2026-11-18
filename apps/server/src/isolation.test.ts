@@ -1429,6 +1429,9 @@ const ATTACKS: Record<string, Attack> = {
   }) => {
     expect((await as(anna, "GET", inWorkspace(b.id, "/visitors/live/count"))).status).toBe(404);
   },
+  "GET /v1/operator/workspaces/:workspaceId/visitors/stats": async ({ operator: as, anna, b }) => {
+    expect((await as(anna, "GET", inWorkspace(b.id, "/visitors/stats"))).status).toBe(404);
+  },
   "POST /v1/widget/:key/typing": async ({ widget, a, b, one, other }) => {
     const draft = { draft: "half a message" };
     expect((await widget(b.publicKey, "POST", "typing", one.token, SITE_B, draft)).status).toBe(

@@ -3,18 +3,16 @@ import { type SQL, sql } from "drizzle-orm";
 import { SESSION_OR_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { LABEL_COLORS } from "./db/schema.ts";
-import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
-import { failure, INVALID, KEY_LIMITED, MEMBER_ERRORS } from "./errors.ts";
+import type { Database, Transaction } from "./db/tenant.ts";
+import { INVALID, KEY_LIMITED, MEMBER_ERRORS } from "./errors.ts";
 import { WORKSPACE_PREFIX as PREFIX, workspaceParams } from "./member.ts";
-import { conversationHasTestVisitor, isChat, messageAuthors } from "./messages.ts";
-import { TimeZone } from "./time.ts";
+import { countedConversation, isChat, messageAuthors } from "./messages.ts";
+import { periodBounds, periodQuery, readInZone, UNKNOWN_ZONE } from "./periods.ts";
 
 // Support numbers from the conversations and messages already stored. Nothing here tracks anyone.
 
 const PERIODS = [7, 30, 90] as const;
 const FAST_REPLY_SECONDS = 5 * 60;
-/** Postgres's code for a time zone it does not know. */
-const PG_INVALID_PARAMETER = "22023";
 
 // Seconds from the start of a conversation to its first operator reply. Null with no reply.
 const medianSeconds = z.number().nullable();
@@ -76,14 +74,7 @@ const Analytics = z
 export type AnalyticsResult = z.infer<typeof Analytics>;
 
 /** The period and the time zone: the route's query, and MCP's `get_analytics` arguments. */
-export const AnalyticsQuery = z.object({
-  days: z.coerce
-    .number()
-    .int()
-    .refine((days) => (PERIODS as readonly number[]).includes(days), "7, 30 or 90")
-    .default(30),
-  tz: TimeZone.default("UTC"),
-});
+export const AnalyticsQuery = periodQuery(PERIODS, 30);
 
 const analyticsRoute = createRoute({
   method: "get",
@@ -222,8 +213,8 @@ const firstReplies = (workspaceId: string, since: SQL) => sql`
       AND m.author_visitor_id IS NULL AND ${isChat(sql`m.kind`)}
     ORDER BY m.seq LIMIT 1
   ) AS reply ON true
-  WHERE c.workspace_id = ${workspaceId} AND c.created_at >= ${since} AND NOT c.welcome
-    AND NOT ${conversationHasTestVisitor(sql`c`)}`;
+  WHERE c.workspace_id = ${workspaceId} AND c.created_at >= ${since}
+    AND ${countedConversation(sql`c`)}`;
 
 /** The median first reply time over the last `days`, as Analytics shows it. Null with no reply. */
 export async function medianFirstReplySeconds(
@@ -244,23 +235,7 @@ export async function readAnalytics(
   { days, timeZone, now }: { days: number; timeZone: string; now: Date },
 ): Promise<AnalyticsResult> {
   const result = await tx.execute<Row>(sql`
-    WITH clock AS (
-      SELECT ${now.toISOString()}::timestamptz AS now
-    ), local_today AS (
-      SELECT (clock.now AT TIME ZONE ${timeZone})::date AS day FROM clock
-    ), local_bounds AS (
-      SELECT day - ${days - 1}::int AS first_day,
-             ((day - ${days - 1}::int)::timestamp AT TIME ZONE ${timeZone}) AS since,
-             ((day - ${2 * days - 1}::int)::timestamp AT TIME ZONE ${timeZone}) AS previous_since
-      FROM local_today
-    ), bounds AS (
-      -- The previous period lasts as many real seconds as the current one, which ends now, so a
-      -- change of clocks in either period does not make one longer. LEAST keeps them apart.
-      SELECT b.*,
-             LEAST(b.since, b.previous_since + make_interval(
-               secs => extract(epoch FROM clock.now - b.since)::double precision)) AS previous_until
-      FROM local_bounds AS b, clock
-    ), replies AS MATERIALIZED (
+    WITH ${periodBounds(days, timeZone, now)}, replies AS MATERIALIZED (
       SELECT f.*, (f.created_at AT TIME ZONE ${timeZone}) AS local_at,
              f.created_at >= bounds.since AS is_current
       FROM (${firstReplies(workspaceId, sql`(SELECT previous_since FROM bounds)`)}) AS f, bounds
@@ -332,33 +307,15 @@ export async function readAnalytics(
   };
 }
 
-/** A time zone Postgres does not know, as its own tz database can lag Node's. */
-function isUnknownZone(error: unknown): boolean {
-  for (let current = error; current instanceof Error; current = current.cause) {
-    if ((current as { code?: unknown }).code === PG_INVALID_PARAMETER) return true;
-  }
-  return false;
-}
-
-export const UNKNOWN_ZONE = failure("invalid_request", "This server does not know that time zone.");
-
 /** The numbers as the Analytics page shows them, or null when Postgres does not know the zone. */
-export async function analyticsFor(
+export function analyticsFor(
   db: Database,
   workspaceId: string,
   { days, tz }: z.output<typeof AnalyticsQuery>,
 ): Promise<AnalyticsResult | null> {
-  try {
-    return await withWorkspace(
-      db,
-      workspaceId,
-      (tx) => readAnalytics(tx, workspaceId, { days, timeZone: tz, now: new Date() }),
-      { isolationLevel: "repeatable read", accessMode: "read only" },
-    );
-  } catch (error) {
-    if (!isUnknownZone(error)) throw error;
-    return null;
-  }
+  return readInZone(db, workspaceId, (tx) =>
+    readAnalytics(tx, workspaceId, { days, timeZone: tz, now: new Date() }),
+  );
 }
 
 export function registerAnalyticsRoute(app: App, db: Database): void {

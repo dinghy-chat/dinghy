@@ -3855,6 +3855,92 @@
         },
         "required": ["days", "variants"]
       },
+      "VisitorStats": {
+        "type": "object",
+        "properties": {
+          "visits": {
+            "type": "integer"
+          },
+          "visitsBefore": {
+            "type": "integer"
+          },
+          "pageViews": {
+            "type": "integer"
+          },
+          "pageViewsBefore": {
+            "type": "integer"
+          },
+          "chats": {
+            "type": "integer"
+          },
+          "chatsBefore": {
+            "type": "integer"
+          },
+          "peak": {
+            "type": ["object", "null"],
+            "properties": {
+              "count": {
+                "type": "integer"
+              },
+              "at": {
+                "type": "string"
+              }
+            },
+            "required": ["count", "at"]
+          },
+          "series": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "pages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": ["string", "null"]
+                },
+                "count": {
+                  "type": "integer"
+                }
+              },
+              "required": ["page", "title", "count"]
+            }
+          },
+          "referrers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "referrer": {
+                  "type": ["string", "null"]
+                },
+                "count": {
+                  "type": "integer"
+                }
+              },
+              "required": ["referrer", "count"]
+            }
+          }
+        },
+        "required": [
+          "visits",
+          "visitsBefore",
+          "pageViews",
+          "pageViewsBefore",
+          "chats",
+          "chatsBefore",
+          "peak",
+          "series",
+          "pages",
+          "referrers"
+        ]
+      },
       "LiveVisitor": {
         "type": "object",
         "properties": {
@@ -3899,9 +3985,12 @@
               },
               "conversationId": {
                 "type": ["string", "null"]
+              },
+              "waitingSince": {
+                "type": ["string", "null"]
               }
             },
-            "required": ["id", "name", "email", "userId", "conversationId"]
+            "required": ["id", "name", "email", "userId", "conversationId", "waitingSince"]
           }
         },
         "required": [
@@ -21239,6 +21328,98 @@
         }
       }
     },
+    "/v1/operator/workspaces/{workspaceId}/visitors/stats": {
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Count the site's visits, page views, chats and busiest minute over 1, 7, 30 or 90 days",
+        "description": "Counted by the hour with no cookie and no stored ID, and kept 182 days; the stored hours are at most about a minute behind. One day is the last 24 whole hours: the current hour and the 23 before it. A longer period runs from the start of the day, `days - 1` days ago, in `tz`, to now, as for analytics. The `Before` numbers are for a period of the same length just before. A visit is a tab that opened from another site or from nowhere; a page view is a tab that opened, or one whose page changed. `series` holds the visits per hour for one day, and per day in `tz` otherwise, oldest first. `peak` is the busiest minute, by the most tabs open at once. `pages` and `referrers` list the top 8, with a null `referrer` for none; an hour keeps at most 200 distinct pages and 200 referrers. `chats` counts the conversations that visitors started in the period, leaving out the welcome chat and test visitors.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "default": 1
+            },
+            "required": false,
+            "name": "days",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "default": "UTC"
+            },
+            "required": false,
+            "name": "tz",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The stats",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisitorStats"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/operator/workspaces/{workspaceId}/visitors/live": {
       "get": {
         "security": [
@@ -21247,7 +21428,7 @@
           }
         ],
         "summary": "List the tabs of the site open now, newest first",
-        "description": "Each tab of a page with the widget beats once a minute while it is visible, and leaves the list 90 seconds after its last beat. It holds no cookie and no stored ID. Null `visitors` means the server cannot tell now.",
+        "description": "Each tab of a page with the widget beats once a minute while it is visible, and leaves the list 90 seconds after its last beat. It holds no cookie and no stored ID. `lastHour` holds the most tabs open at once in each of the last 60 minutes, oldest first. Null `visitors` or `lastHour` means the server cannot tell now.",
         "parameters": [
           {
             "schema": {
@@ -21272,9 +21453,15 @@
                       "items": {
                         "$ref": "#/components/schemas/LiveVisitor"
                       }
+                    },
+                    "lastHour": {
+                      "type": ["array", "null"],
+                      "items": {
+                        "type": "integer"
+                      }
                     }
                   },
-                  "required": ["visitors"]
+                  "required": ["visitors", "lastHour"]
                 }
               }
             }

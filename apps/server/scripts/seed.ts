@@ -417,7 +417,9 @@ async function addCampaigns(workspaceId: string, operatorId: string) {
   if (typeof resumed === "string") throw new Error(`The campaign did not start: ${resumed}`);
 }
 
-type Tab = Parameters<ReturnType<typeof createLiveVisitors>["beat"]>[1];
+type Beat = Parameters<ReturnType<typeof createLiveVisitors>["beat"]>[1];
+/** A tab as the seed describes it; each beat says whether it is the tab's first. */
+type Tab = Omit<Beat, "arrival">;
 
 /** The tabs open on the site now, as the widget's beats describe them. */
 function liveTabs(
@@ -475,13 +477,16 @@ async function arrive(workspaceId: string, tabs: Tab[]): Promise<void> {
       JSON.stringify({ ...tab, startedAt, seenAt: startedAt }),
     );
   }
-  await beatAll(workspaceId, tabs);
+  // The first beat is the visit, from outside the site, so Over time counts it.
+  await beatAll(workspaceId, tabs, "entrance");
 }
 
-async function beatAll(workspaceId: string, tabs: Tab[]): Promise<void> {
+async function beatAll(workspaceId: string, tabs: Tab[], arrival: Beat["arrival"] = null) {
   const visitors = createLiveVisitors(valkey, logger);
   for (const tab of tabs) {
-    if (!(await visitors.beat(workspaceId, tab))) throw new Error("Valkey refused a live tab");
+    if (!(await visitors.beat(workspaceId, { ...tab, arrival }))) {
+      throw new Error("Valkey refused a live tab");
+    }
   }
 }
 

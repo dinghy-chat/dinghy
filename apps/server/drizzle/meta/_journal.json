@@ -848,6 +848,20 @@
       "when": 1794858715701,
       "tag": "0120_campaigns_paused_workspaces",
       "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "7",
+      "when": 1795014888966,
+      "tag": "0121_site_hour",
+      "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "7",
+      "when": 1795014889947,
+      "tag": "0122_site_hour_grants",
+      "breakpoints": true
     }
   ]
 }

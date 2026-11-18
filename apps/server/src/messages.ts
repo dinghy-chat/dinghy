@@ -1218,6 +1218,13 @@ export const conversationHasTestVisitor = (alias: SQL) => sql<boolean>`exists (
 )`;
 
 /**
+ * Whether a conversation, named by its alias in the query, counts in the numbers: neither the
+ * welcome chat nor a bot's test visitor's.
+ */
+export const countedConversation = (alias: SQL) =>
+  sql<boolean>`not ${alias}.welcome and not ${conversationHasTestVisitor(alias)}`;
+
+/**
  * Whether the conversation in the query has a visitor message, or a note that mentions this
  * operator, past their read position. An API key, null here, has no position, so nothing is unread
  * for it. A bot's test visitor is never unread, as it alerts nobody. Any other note is not a
@@ -1468,11 +1475,25 @@ export async function countOpenByAssignee(
   return { all: row?.every ?? 0, mine: row?.mine ?? 0, unassigned: row?.unassigned ?? 0 };
 }
 
+/** A chat message, as `alias`, of the conversation `c` in a statement written by hand. */
+function chatMessageOf(alias: string): SQL {
+  const m = sql.identifier(alias);
+  return sql`${m}.workspace_id = c.workspace_id and ${m}.conversation_id = c.id
+    and ${isChat(sql`${m}.kind`)} and ${m}.deleted_at is null`;
+}
+
 /**
- * How many open conversations wait for a reply: their newest message is from the visitor, and they
- * are not snoozed. For an operator, only the ones assigned to them or to no one, as a teammate's are
- * not theirs to answer. An API key, with no assignments, counts them all. It is not a per-operator
- * read state.
+ * Whether the conversation `c` waits for a reply: it is open, not snoozed, and its newest chat
+ * message is from the visitor.
+ */
+const waitsForReply = sql`c.status = 'open' and not ${snoozedNow(sql`c`)} and (
+  select m.author_visitor_id is not null from ${message} as m
+  where ${chatMessageOf("m")} order by m.seq desc limit 1)`;
+
+/**
+ * How many open conversations wait for a reply. For an operator, only the ones assigned to them or
+ * to no one, as a teammate's are not theirs to answer. An API key, with no assignments, counts them
+ * all. It is not a per-operator read state.
  */
 export async function countWaiting(
   tx: Transaction,
@@ -1482,17 +1503,32 @@ export async function countWaiting(
   const result = await tx.execute<{ count: number }>(sql`
     select count(*)::int as count
     from ${conversation} as c
-    cross join lateral (
-      select m.author_visitor_id from ${message} as m
-      where m.workspace_id = c.workspace_id and m.conversation_id = c.id
-        and ${isChat(sql`m.kind`)} and m.deleted_at is null
-      order by m.seq desc
-      limit 1
-    ) as newest
-    where c.workspace_id = ${workspaceId} and c.status = 'open'
-      and newest.author_visitor_id is not null and not ${snoozedNow(sql`c`)}
+    where c.workspace_id = ${workspaceId} and ${waitsForReply}
       ${operatorId === null ? sql`` : sql`and (c.assignee_operator_id is null or c.assignee_operator_id = ${operatorId})`}`);
   return result.rows[0]?.count ?? 0;
+}
+
+/**
+ * When each of these conversations that waits for a reply started to wait: the visitor's first
+ * message since the team's latest one. The ones that do not wait are left out.
+ */
+export async function waitingSince(
+  tx: Transaction,
+  workspaceId: string,
+  ids: string[],
+): Promise<Map<string, string>> {
+  if (ids.length === 0) return new Map();
+  const result = await tx.execute<{ id: string; since: string }>(sql`
+    select c.id, (
+      select min(v.created_at) from ${message} as v
+      where ${chatMessageOf("v")} and v.author_visitor_id is not null
+        and v.seq > coalesce((
+          select max(r.seq) from ${message} as r
+          where ${chatMessageOf("r")} and r.author_visitor_id is null), -1)
+    ) as since
+    from ${conversation} as c
+    where c.workspace_id = ${workspaceId} and ${inArray(sql`c.id`, ids)} and ${waitsForReply}`);
+  return new Map(result.rows.map(({ id, since }) => [id, new Date(since).toISOString()]));
 }
 
 /**

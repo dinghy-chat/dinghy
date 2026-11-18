@@ -150,7 +150,8 @@ if (role === "worker" || role === "all") {
   const pool = new pg.Pool({ connectionString: config.WORKER_DATABASE_URL, max: 5 });
   pool.on("error", (err) => logger.error({ err }, "postgres pool error"));
   const workerDb = drizzle(pool, { schema });
-  // Only publishes, to wake open inboxes after a billing change. A lost signal loses no data.
+  // Publishes, to wake open inboxes after a billing change, and reads the site's hours to copy them
+  // to Postgres. A lost signal loses no data.
   const publisher = new Redis(config.VALKEY_URL, {
     enableOfflineQueue: false,
     maxRetriesPerRequest: 1,
@@ -167,6 +168,7 @@ if (role === "worker" || role === "all") {
     appDb: drizzle(appPool, { schema }),
     cloud,
     signals,
+    valkey: publisher,
     logger,
     push,
     // Its own connections, so the web side's emails never queue in front of an alert, whose time
