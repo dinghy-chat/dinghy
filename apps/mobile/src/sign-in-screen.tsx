@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -16,7 +17,7 @@ import { beginSignIn, CLOUD_ORIGIN, cancelPendingSignIn, hasPendingSignIn } from
 import { readableError } from "./common";
 import { fonts } from "./fonts";
 import { Icon } from "./icon";
-import type { Palette } from "./theme";
+import { controlShape, type Palette } from "./theme";
 
 export function SignInScreen({
   palette,
@@ -33,9 +34,9 @@ export function SignInScreen({
   completionError: string | null;
   onStart(): void;
 }) {
-  const [choosingWorkspace, setChoosingWorkspace] = useState(false);
   const [selfHosted, setSelfHosted] = useState(false);
   const [server, setServer] = useState("");
+  const [serverFocused, setServerFocused] = useState(false);
   const [animated, setAnimated] = useState(true);
   const [busy, setBusy] = useState(false);
   const [pending, setPending] = useState(false);
@@ -77,6 +78,7 @@ export function SignInScreen({
   const disabled = busy || pending || (selfHosted && !server.trim());
   const water = isNight ? "#17384b" : "#639eaf";
   const controlInk = isNight ? "#eef5f6" : palette.authInk;
+  const selectedHost = isNight ? "#315064" : "#ffffff";
 
   return (
     <KeyboardAvoidingView
@@ -85,8 +87,10 @@ export function SignInScreen({
     >
       <ScrollView
         bounces={false}
-        contentContainerStyle={[screenStyles.content, { paddingBottom: Math.max(bottomInset, 3) }]}
+        contentContainerStyle={screenStyles.content}
+        keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
         keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
       >
         <View style={screenStyles.scene}>
           <Harbor animated night={isNight} paused={!animated} />
@@ -118,29 +122,63 @@ export function SignInScreen({
           </Pressable>
         </View>
 
-        <View style={[screenStyles.card, { backgroundColor: palette.authPanel }]}>
+        <View
+          style={[
+            screenStyles.panel,
+            {
+              backgroundColor: palette.authPanel,
+              borderColor: palette.authLine,
+              paddingBottom: Math.max(bottomInset, 14) + 10,
+            },
+          ]}
+        >
           {pending ? (
             <>
               <Text
-                style={[screenStyles.title, { color: palette.authInk, fontFamily: fonts.display }]}
+                style={[
+                  screenStyles.title,
+                  { color: palette.authInk, fontFamily: fonts.displayBold },
+                ]}
               >
                 {t("nativeMobileSignInBrowserTitle")}
               </Text>
               <Text style={[screenStyles.copy, { color: palette.sub, fontFamily: fonts.body }]}>
                 {t("nativeMobileSignInBrowserCopy")}
               </Text>
+              <View
+                style={[
+                  screenStyles.waiting,
+                  { backgroundColor: palette.wash, borderColor: palette.authLine },
+                ]}
+              >
+                <ActivityIndicator color={palette.blue} size="small" />
+                <Text
+                  style={[
+                    screenStyles.waitingText,
+                    { color: palette.ink, fontFamily: fonts.medium },
+                  ]}
+                >
+                  {t("mobileWaitingForSignIn")}
+                </Text>
+              </View>
             </>
-          ) : choosingWorkspace ? (
+          ) : (
             <>
               <Text
-                style={[screenStyles.title, { color: palette.authInk, fontFamily: fonts.display }]}
+                style={[
+                  screenStyles.title,
+                  { color: palette.authInk, fontFamily: fonts.displayBold },
+                ]}
               >
-                {t("signInTitle")}
+                {t("nativeMobileSignInTitle")}
               </Text>
-              <Text style={[screenStyles.copy, { color: palette.sub, fontFamily: fonts.body }]}>
-                {selfHosted ? t("nativeMobileSignInServerCopy") : t("nativeMobileSignInCloudCopy")}
+              <Text
+                style={[screenStyles.hostLabel, { color: palette.sub, fontFamily: fonts.semibold }]}
+              >
+                {t("nativeMobileSignInHostLabel")}
               </Text>
               <View
+                accessibilityLabel={t("nativeMobileSignInHostLabel")}
                 accessibilityRole="tablist"
                 style={[
                   screenStyles.tabs,
@@ -151,7 +189,7 @@ export function SignInScreen({
                   accessibilityRole="tab"
                   accessibilityState={{ selected: !selfHosted }}
                   onPress={() => setSelfHosted(false)}
-                  style={[screenStyles.tab, !selfHosted && { backgroundColor: palette.authPanel }]}
+                  style={[screenStyles.tab, !selfHosted && { backgroundColor: selectedHost }]}
                 >
                   <Text
                     style={[
@@ -169,7 +207,7 @@ export function SignInScreen({
                   accessibilityRole="tab"
                   accessibilityState={{ selected: selfHosted }}
                   onPress={() => setSelfHosted(true)}
-                  style={[screenStyles.tab, selfHosted && { backgroundColor: palette.authPanel }]}
+                  style={[screenStyles.tab, selfHosted && { backgroundColor: selectedHost }]}
                 >
                   <Text
                     style={[
@@ -197,7 +235,10 @@ export function SignInScreen({
                   <View
                     style={[
                       screenStyles.field,
-                      { backgroundColor: palette.paper, borderColor: palette.authLine },
+                      {
+                        backgroundColor: palette.paper,
+                        borderColor: serverFocused ? palette.blue : palette.authLine,
+                      },
                     ]}
                   >
                     <Icon color={palette.sub} name="server" size={16} />
@@ -205,29 +246,24 @@ export function SignInScreen({
                       accessibilityLabel={t("mobileServerAddress")}
                       autoCapitalize="none"
                       autoCorrect={false}
+                      blurOnSubmit
+                      editable={!busy}
                       keyboardType="url"
                       onChangeText={setServer}
+                      onBlur={() => setServerFocused(false)}
+                      onFocus={() => setServerFocused(true)}
+                      onSubmitEditing={() => {
+                        if (!disabled) void begin();
+                      }}
                       placeholder={t("mobileServerPlaceholder")}
                       placeholderTextColor={palette.sub}
+                      returnKeyType="go"
                       style={[screenStyles.input, { color: palette.ink, fontFamily: fonts.body }]}
                       value={server}
                     />
                   </View>
                 </View>
               )}
-            </>
-          ) : (
-            <>
-              <Text
-                style={[screenStyles.title, { color: palette.authInk, fontFamily: fonts.display }]}
-              >
-                {t("nativeMobileSignInTeamTitle")}
-              </Text>
-              <Text
-                style={[screenStyles.address, { color: palette.ink, fontFamily: fonts.semibold }]}
-              >
-                {t("mobileDinghyCloud")}
-              </Text>
             </>
           )}
 
@@ -246,12 +282,13 @@ export function SignInScreen({
           {!pending && (
             <Pressable
               accessibilityRole="button"
+              accessibilityState={{ busy, disabled }}
               disabled={disabled}
               onPress={() => void begin()}
               style={({ pressed }) => [
                 screenStyles.primary,
                 {
-                  backgroundColor: isNight ? "#2265d2" : "#155ac9",
+                  backgroundColor: isNight ? "#2d75c0" : "#0b5794",
                   opacity: disabled ? 0.45 : pressed ? 0.74 : 1,
                 },
               ]}
@@ -259,7 +296,6 @@ export function SignInScreen({
               <Text style={[screenStyles.primaryText, { fontFamily: fonts.semibold }]}>
                 {busy ? t("mobileOpeningSignIn") : t("mobileContinueSignIn")}
               </Text>
-              <Icon color="#ffffff" name="arrow" size={16} />
             </Pressable>
           )}
 
@@ -267,42 +303,21 @@ export function SignInScreen({
             <Pressable
               accessibilityRole="button"
               onPress={() => void cancel()}
-              style={({ pressed }) => [screenStyles.backButton, { opacity: pressed ? 0.64 : 1 }]}
+              style={({ pressed }) => [
+                screenStyles.cancelButton,
+                { borderColor: palette.authLine, opacity: pressed ? 0.64 : 1 },
+              ]}
             >
               <Text
-                style={[screenStyles.backText, { color: palette.blue, fontFamily: fonts.semibold }]}
+                style={[
+                  screenStyles.cancelText,
+                  { color: palette.blue, fontFamily: fonts.semibold },
+                ]}
               >
                 {t("mobileCancelSignIn")}
               </Text>
             </Pressable>
-          ) : choosingWorkspace ? (
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => {
-                setSelfHosted(false);
-                setChoosingWorkspace(false);
-              }}
-              style={({ pressed }) => [screenStyles.backButton, { opacity: pressed ? 0.64 : 1 }]}
-            >
-              <Text
-                style={[screenStyles.backText, { color: palette.blue, fontFamily: fonts.semibold }]}
-              >
-                {t("nativeMobileSignInUseCloud")}
-              </Text>
-            </Pressable>
-          ) : (
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => setChoosingWorkspace(true)}
-              style={({ pressed }) => [screenStyles.backButton, { opacity: pressed ? 0.64 : 1 }]}
-            >
-              <Text
-                style={[screenStyles.backText, { color: palette.blue, fontFamily: fonts.semibold }]}
-              >
-                {t("nativeMobileSignInChangeWorkspace")}
-              </Text>
-            </Pressable>
-          )}
+          ) : null}
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -312,7 +327,7 @@ export function SignInScreen({
 const screenStyles = StyleSheet.create({
   page: { flex: 1 },
   content: { flexGrow: 1 },
-  scene: { flex: 1, minHeight: 190, position: "relative", overflow: "hidden" },
+  scene: { flex: 1, minHeight: 285, position: "relative", overflow: "hidden" },
   wordmark: {
     position: "absolute",
     left: 20,
@@ -346,69 +361,81 @@ const screenStyles = StyleSheet.create({
     justifyContent: "center",
     opacity: 0.9,
   },
-  card: {
-    marginTop: -12,
-    marginHorizontal: 10,
-    marginBottom: 3,
-    borderRadius: 26,
-    paddingHorizontal: 18,
-    paddingTop: 22,
-    paddingBottom: 19,
+  panel: {
+    minHeight: 330,
+    marginTop: -30,
+    borderTopWidth: 1,
+    borderTopLeftRadius: 32,
+    borderTopRightRadius: 32,
+    paddingHorizontal: 24,
+    paddingTop: 30,
     shadowColor: "#0b2239",
-    shadowOpacity: 0.1,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 4,
+    shadowOpacity: 0.18,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: -6 },
+    elevation: 10,
   },
-  title: { fontSize: 32, lineHeight: 34, letterSpacing: -1.2, marginBottom: 7 },
-  copy: { fontSize: 14, lineHeight: 20, marginBottom: 15 },
-  address: { fontSize: 14, lineHeight: 20, marginBottom: 15 },
+  title: { fontSize: 40, lineHeight: 42, letterSpacing: -1.6, marginBottom: 12 },
+  copy: { maxWidth: 330, fontSize: 15, lineHeight: 22, marginBottom: 20 },
+  hostLabel: { fontSize: 13, lineHeight: 18, marginBottom: 8 },
   tabs: {
     flexDirection: "row",
     gap: 2,
     padding: 3,
     borderWidth: 1,
-    borderRadius: 999,
-    marginBottom: 13,
+    borderRadius: controlShape.pill,
+    marginBottom: 16,
   },
   tab: {
     flex: 1,
-    minHeight: 36,
-    borderRadius: 999,
+    minHeight: 44,
+    borderRadius: controlShape.pill,
     alignItems: "center",
     justifyContent: "center",
   },
-  tabText: { fontSize: 13 },
-  fieldLabel: { fontSize: 13, marginBottom: 6 },
+  tabText: { fontSize: 14 },
+  fieldLabel: { fontSize: 13, marginBottom: 7 },
   field: {
-    minHeight: 47,
+    minHeight: 52,
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
     borderWidth: 1,
-    borderRadius: 17,
-    paddingHorizontal: 13,
+    borderRadius: controlShape.pill,
+    paddingHorizontal: 16,
   },
-  input: { flex: 1, minWidth: 0, minHeight: 45, fontSize: 15, paddingVertical: 0 },
-  error: { fontSize: 13, lineHeight: 18, marginTop: 10 },
+  input: { flex: 1, minWidth: 0, minHeight: 50, fontSize: 15, paddingVertical: 0 },
+  waiting: {
+    minHeight: 52,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderWidth: 1,
+    borderRadius: controlShape.pill,
+    paddingHorizontal: 16,
+    marginBottom: 4,
+  },
+  waitingText: { fontSize: 14 },
+  error: { fontSize: 13, lineHeight: 18, marginTop: 12 },
   primary: {
     width: "100%",
-    minHeight: 46,
-    marginTop: 8,
-    borderRadius: 999,
+    minHeight: 52,
+    marginTop: 16,
+    borderRadius: controlShape.pill,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
     paddingHorizontal: 17,
   },
-  primaryText: { color: "#ffffff", fontSize: 15 },
-  backButton: {
+  primaryText: { color: "#ffffff", fontSize: 16 },
+  cancelButton: {
     width: "100%",
-    minHeight: 42,
-    borderRadius: 999,
+    minHeight: 48,
+    borderWidth: 1,
+    borderRadius: controlShape.pill,
+    marginTop: 14,
     alignItems: "center",
     justifyContent: "center",
   },
-  backText: { fontSize: 13 },
+  cancelText: { fontSize: 14 },
 });

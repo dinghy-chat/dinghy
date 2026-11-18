@@ -66,6 +66,34 @@ export function Avatar({
   );
 }
 
+export function SheetCloseButton({
+  onPress,
+  palette,
+  label = t("close"),
+}: {
+  onPress(): void;
+  palette: Palette;
+  label?: string;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      onPress={onPress}
+      style={({ pressed }) => [closeButton.hit, pressed && { opacity: 0.65 }]}
+    >
+      <View style={[closeButton.disc, { backgroundColor: palette.wash }]}>
+        <Icon name="x" size={17} color={palette.ink} />
+      </View>
+    </Pressable>
+  );
+}
+
+const closeButton = StyleSheet.create({
+  hit: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
+  disc: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" },
+});
+
 export function ErrorBanner({
   message,
   palette,

@@ -14,7 +14,7 @@ import {
 import { t } from "../../operator/src/text.ts";
 import { Harbor } from "../Harbor";
 import type { PendingReply } from "../outbox";
-import { Avatar, initials, visitorName } from "./common";
+import { Avatar, initials, SheetCloseButton, visitorName } from "./common";
 import { fonts } from "./fonts";
 import { Icon } from "./icon";
 import { inboxStyles as screen } from "./inbox-styles";
@@ -365,9 +365,7 @@ function FilterSheet({
             <Text style={[screen.sheetTitle, { color: palette.ink }]}>
               {t("mobileHarborFilterQueue")}
             </Text>
-            <Pressable accessibilityLabel={t("done")} hitSlop={12} onPress={onClose}>
-              <Icon name="x" size={21} color={palette.ink} />
-            </Pressable>
+            <SheetCloseButton onPress={onClose} palette={palette} />
           </View>
           {(["all", "mine", "unassigned"] as const).map((value) => (
             <Pressable
@@ -665,6 +663,7 @@ export function SearchScreen({
   onOpen(conversation: Conversation): void;
 }) {
   const [query, setQuery] = useState("");
+  const [focused, setFocused] = useState(false);
   const workspaceName =
     me?.workspaces.find((workspace) => workspace.workspaceId === session.workspace.id)?.name ??
     session.workspace.name;
@@ -688,12 +687,18 @@ export function SearchScreen({
         topInset={topInset}
       />
       <View
-        style={[screen.searchField, { backgroundColor: palette.paper, borderColor: palette.line }]}
+        style={[
+          screen.searchField,
+          { backgroundColor: palette.wash, borderColor: focused ? palette.blue : palette.line },
+        ]}
       >
         <Icon name="search" size={22} color={palette.sub} />
         <TextInput
           autoCapitalize="none"
           autoCorrect={false}
+          accessibilityLabel={t("searchLabel")}
+          onBlur={() => setFocused(false)}
+          onFocus={() => setFocused(true)}
           onChangeText={setQuery}
           placeholder={t("mobileHarborSearchInput")}
           placeholderTextColor={palette.sub}
@@ -701,6 +706,16 @@ export function SearchScreen({
           style={[screen.searchInput, { color: palette.ink }]}
           value={query}
         />
+        {query.length > 0 && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={t("clearSearch")}
+            onPress={() => setQuery("")}
+            style={screen.searchClear}
+          >
+            <Icon name="x" size={17} color={palette.sub} />
+          </Pressable>
+        )}
       </View>
       {query.trim() === "" ? (
         <Text style={[screen.searchHint, { color: palette.sub }]}>
@@ -730,40 +745,92 @@ export function SearchScreen({
   );
 }
 
-function SettingsRow({
-  detail,
-  disabled = false,
-  icon,
+function PresenceChoice({
+  active,
+  activeBackground,
+  activeTextColor,
+  indicatorColor,
+  label,
   palette,
-  title,
-  destructive = false,
   onPress,
 }: {
-  detail?: string;
-  disabled?: boolean;
-  icon: "bell" | "arrow";
+  active: boolean;
+  activeBackground: string;
+  activeTextColor: string;
+  indicatorColor: string;
+  label: string;
   palette: Palette;
-  title: string;
-  destructive?: boolean;
   onPress(): void;
 }) {
-  const color = destructive ? "#b73a36" : palette.ink;
   return (
     <Pressable
       accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      onPress={onPress}
+      style={({ pressed }) => [
+        screen.presenceChoice,
+        {
+          backgroundColor: active ? activeBackground : "transparent",
+          opacity: pressed ? 0.72 : 1,
+        },
+      ]}
+    >
+      <View
+        style={[
+          screen.presenceChoiceDot,
+          { backgroundColor: active ? indicatorColor : palette.sub },
+        ]}
+      />
+      <Text style={[screen.presenceChoiceText, { color: active ? activeTextColor : palette.sub }]}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
+function NotificationPreference({
+  detail,
+  disabled,
+  palette,
+  status,
+  onPress,
+}: {
+  detail: string;
+  disabled: boolean;
+  palette: Palette;
+  status: PushStatus;
+  onPress(): void;
+}) {
+  const healthy = status === "enabled";
+  return (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityState={{ disabled }}
       disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => [
-        screen.settingsRow,
-        { borderBottomColor: palette.line, opacity: disabled ? 0.5 : pressed ? 0.72 : 1 },
+        screen.preferenceRow,
+        { borderColor: palette.line, opacity: pressed ? 0.72 : 1 },
       ]}
     >
-      <Icon name={icon} size={20} color={color} />
-      <View style={screen.settingsRowCopy}>
-        <Text style={[screen.settingsRowTitle, { color }]}>{title}</Text>
-        {detail && <Text style={[screen.settingsRowDetail, { color: palette.sub }]}>{detail}</Text>}
+      <View style={screen.preferenceIcon}>
+        <Icon name="bell" size={21} color={palette.ink} />
       </View>
-      {!destructive && <Icon name="next" size={17} color={palette.sub} />}
+      <View style={screen.preferenceCopy}>
+        <Text style={[screen.preferenceTitle, { color: palette.ink }]}>
+          {t("pageNotifications")}
+        </Text>
+        <View style={screen.preferenceStatusLine}>
+          <View
+            style={[
+              screen.preferenceStatusDot,
+              { backgroundColor: healthy ? palette.green : palette.amber },
+            ]}
+          />
+          <Text style={[screen.preferenceDetail, { color: palette.sub }]}>{detail}</Text>
+        </View>
+      </View>
+      {!disabled && <Icon name="next" size={18} color={palette.ink} />}
     </Pressable>
   );
 }
@@ -796,6 +863,7 @@ export function SettingsScreen({
     unavailable: t("mobilePushUnavailable"),
     error: t("mobilePushError"),
   }[pushStatus];
+  const away = me?.away ?? false;
   const name = me?.name ?? session.operator.name;
   const workspaceName =
     me?.workspaces.find((workspace) => workspace.workspaceId === session.workspace.id)?.name ??
@@ -806,68 +874,88 @@ export function SettingsScreen({
       contentContainerStyle={screen.secondaryContent}
     >
       <SecondaryHeader
-        detail={t("mobileHarborWorkspace", { workspace: workspaceName })}
+        detail=""
         palette={palette}
         title={t("mobileShiftSettings")}
         topInset={topInset}
       />
+      <View style={screen.profilePanel}>
+        <View style={screen.profileIdentity}>
+          <View style={[screen.profilePortraitFrame, { backgroundColor: palette.paper }]}>
+            <View style={screen.profileAvatar}>
+              <Avatar name={name} picture={me?.pictureUrl ?? null} size={58} palette={palette} />
+              <View
+                style={[
+                  screen.profileStatusDot,
+                  {
+                    backgroundColor: away ? palette.amber : palette.green,
+                    borderColor: palette.paper,
+                  },
+                ]}
+              />
+            </View>
+          </View>
+          <View style={screen.profileCopy}>
+            <Text style={[screen.profileName, { color: palette.ink }]}>{name}</Text>
+            <Text style={[screen.profileWorkspace, { color: palette.sub }]}>{workspaceName}</Text>
+          </View>
+        </View>
+      </View>
+      <View style={screen.availabilitySection}>
+        <Text style={[screen.presenceTitle, { color: palette.ink }]}>
+          {t("mobileHarborAvailability")}
+        </Text>
+        <Text style={[screen.presenceDetail, { color: palette.sub }]}>
+          {away ? t("mobileAwayDetail") : t("mobileAvailableDetail")}
+        </Text>
+        <View
+          accessibilityLabel={t("mobileHarborAvailability")}
+          accessibilityRole="radiogroup"
+          style={[screen.presenceControl, { backgroundColor: palette.wash }]}
+        >
+          <PresenceChoice
+            active={!away}
+            activeBackground="#bcebd2"
+            activeTextColor="#12382c"
+            indicatorColor="#167052"
+            label={t("statusAvailable")}
+            onPress={() => away && onAway()}
+            palette={palette}
+          />
+          <PresenceChoice
+            active={away}
+            activeBackground={palette.line}
+            activeTextColor={palette.ink}
+            indicatorColor={palette.amber}
+            label={t("statusAway")}
+            onPress={() => !away && onAway()}
+            palette={palette}
+          />
+        </View>
+      </View>
+      <View style={screen.preferencesSection}>
+        <NotificationPreference
+          detail={pushCopy}
+          disabled={pushStatus === "checking" || pushStatus === "unavailable"}
+          onPress={onEnablePush}
+          palette={palette}
+          status={pushStatus}
+        />
+      </View>
       <Pressable
         accessibilityRole="button"
-        onPress={onAway}
-        style={[screen.shiftCard, { backgroundColor: palette.paper, borderColor: palette.line }]}
+        accessibilityState={{ disabled: signingOut }}
+        disabled={signingOut}
+        onPress={onSignOut}
+        style={({ pressed }) => [screen.signOutAction, { opacity: pressed ? 0.65 : 1 }]}
       >
-        <View style={screen.avatarWrap}>
-          <Avatar name={name} picture={me?.pictureUrl ?? null} size={42} palette={palette} />
-          <View
-            style={[
-              screen.unreadDot,
-              {
-                backgroundColor: me?.away ? palette.sub : palette.green,
-                borderColor: palette.paper,
-              },
-            ]}
-          />
-        </View>
-        <View style={screen.shiftCardCopy}>
-          <Text style={[screen.shiftCardName, { color: palette.ink }]}>{name}</Text>
-          <Text style={[screen.shiftCardDetail, { color: palette.sub }]}>
-            {me?.away ? t("mobileAwayDetail") : t("mobileAvailableDetail")}
+        <Icon name="arrow" size={18} color={palette.sub} />
+        <View style={screen.signOutCopy}>
+          <Text style={[screen.signOutTitle, { color: palette.ink }]}>
+            {signingOut ? t("mobileSigningOut") : t("signOut")}
           </Text>
         </View>
-        <Text style={[screen.availability, { color: palette.navy, backgroundColor: palette.wash }]}>
-          {me?.away ? t("statusAway") : t("statusAvailable")}
-        </Text>
       </Pressable>
-      <View style={screen.settingBlock}>
-        <Text style={[screen.settingBlockTitle, { color: palette.ink }]}>
-          {t("mobileHarborYourShift")}
-        </Text>
-        <View style={[screen.settingBlockBody, { borderColor: palette.line }]}>
-          <SettingsRow
-            detail={pushCopy}
-            disabled={pushStatus === "checking" || pushStatus === "unavailable"}
-            icon="bell"
-            onPress={onEnablePush}
-            palette={palette}
-            title={t("pageNotifications")}
-          />
-        </View>
-      </View>
-      <View style={screen.settingBlock}>
-        <Text style={[screen.settingBlockTitle, { color: palette.ink }]}>
-          {t("mobileHarborAccount")}
-        </Text>
-        <View style={[screen.settingBlockBody, { borderColor: palette.line }]}>
-          <SettingsRow
-            destructive
-            disabled={signingOut}
-            icon="arrow"
-            onPress={onSignOut}
-            palette={palette}
-            title={signingOut ? t("mobileSigningOut") : t("signOut")}
-          />
-        </View>
-      </View>
     </ScrollView>
   );
 }

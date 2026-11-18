@@ -17,7 +17,7 @@ import {
 import { t } from "../../operator/src/text.ts";
 import { Harbor } from "../Harbor";
 import type { PendingReply } from "../outbox";
-import { Avatar, initials, visitorName } from "./common";
+import { Avatar, SheetCloseButton, visitorName } from "./common";
 import { fonts } from "./fonts";
 import { Icon } from "./icon";
 import type { Palette } from "./theme";
@@ -68,22 +68,7 @@ function SheetTools({ onClose, palette }: { onClose(): void; palette: Palette })
   return (
     <View style={screenStyles.sheetTools}>
       <View style={[screenStyles.sheetGrabber, { backgroundColor: palette.sub }]} />
-      <Pressable
-        accessibilityLabel={t("mobileDismiss")}
-        accessibilityRole="button"
-        hitSlop={6}
-        onPress={onClose}
-        style={({ pressed }) => [
-          screenStyles.sheetClose,
-          {
-            backgroundColor: palette.paper,
-            borderColor: palette.line,
-            opacity: pressed ? 0.68 : 1,
-          },
-        ]}
-      >
-        <Icon color={palette.ink} name="x" size={18} />
-      </Pressable>
+      <SheetCloseButton label={t("mobileDismiss")} onPress={onClose} palette={palette} />
     </View>
   );
 }
@@ -217,11 +202,18 @@ function HandoffSheet({
   const selectedMember = members.find((member) => member.id === selectedId);
   return (
     <SheetFrame bottomInset={bottomInset} onClose={onClose} palette={palette} visible={visible}>
-      <SheetTools onClose={onClose} palette={palette} />
+      <View style={screenStyles.sheetGrabberOnly}>
+        <View style={[screenStyles.sheetGrabber, { backgroundColor: palette.sub }]} />
+      </View>
       <View style={screenStyles.assignHead}>
-        <Text style={[screenStyles.assignTitle, { color: palette.ink, fontFamily: fonts.display }]}>
-          {t("mobileHandoff")}
-        </Text>
+        <View style={screenStyles.assignTitleRow}>
+          <Text
+            style={[screenStyles.assignTitle, { color: palette.ink, fontFamily: fonts.display }]}
+          >
+            {t("mobileHandoff")}
+          </Text>
+          <SheetCloseButton label={t("mobileDismiss")} onPress={onClose} palette={palette} />
+        </View>
         <Text style={[screenStyles.assignContext, { color: palette.sub, fontFamily: fonts.body }]}>
           {subject
             ? t("mobileHandoffContext", { name: conversationName, subject })
@@ -232,9 +224,9 @@ function HandoffSheet({
         {t("mobileAssignTo")}
       </Text>
       <ScrollView
-        contentContainerStyle={screenStyles.crewGrid}
-        horizontal
-        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={screenStyles.crewList}
+        showsVerticalScrollIndicator={false}
+        style={screenStyles.crewScroll}
       >
         {members.length ? (
           members.map((member) => {
@@ -246,49 +238,45 @@ function HandoffSheet({
                 key={member.id}
                 onPress={() => onSelect(member.id)}
                 style={({ pressed }) => [
-                  screenStyles.crewTile,
+                  screenStyles.crewRow,
                   {
                     backgroundColor: selected ? palette.tint : palette.wash,
                     borderColor: selected ? palette.blue : palette.line,
-                    borderWidth: selected ? 2 : 1,
                     opacity: pressed ? 0.72 : 1,
                   },
                 ]}
               >
-                <View style={screenStyles.crewStamp}>
-                  <View style={screenStyles.crewAvatarWrap}>
-                    <View style={[screenStyles.crewAvatar, { backgroundColor: palette.tint }]}>
-                      <Text
-                        style={[
-                          screenStyles.crewInitials,
-                          { color: palette.navy, fontFamily: fonts.display },
-                        ]}
-                      >
-                        {initials(member.name)}
-                      </Text>
-                    </View>
-                    {selected && (
-                      <View style={[screenStyles.crewCheck, { backgroundColor: palette.blue }]}>
-                        <Icon color="#ffffff" name="check" size={11} />
-                      </View>
-                    )}
-                  </View>
+                <Avatar
+                  name={member.name}
+                  picture={member.pictureUrl}
+                  size={40}
+                  palette={palette}
+                />
+                <View style={screenStyles.crewCopy}>
+                  <Text
+                    style={[
+                      screenStyles.crewName,
+                      { color: palette.ink, fontFamily: fonts.semibold },
+                    ]}
+                  >
+                    {member.id === meId ? t("mobileMemberYou", { name: member.name }) : member.name}
+                  </Text>
+                  <Text
+                    style={[screenStyles.crewMeta, { color: palette.sub, fontFamily: fonts.body }]}
+                  >
+                    {member.email}
+                  </Text>
                 </View>
-                <Text
-                  numberOfLines={1}
+                <View
                   style={[
-                    screenStyles.crewName,
-                    { color: palette.ink, fontFamily: fonts.semibold },
+                    screenStyles.crewRadio,
+                    { borderColor: selected ? palette.blue : palette.sub },
                   ]}
                 >
-                  {member.id === meId ? t("mobileMemberYou", { name: member.name }) : member.name}
-                </Text>
-                <Text
-                  numberOfLines={1}
-                  style={[screenStyles.crewMeta, { color: palette.sub, fontFamily: fonts.body }]}
-                >
-                  {member.email}
-                </Text>
+                  {selected && (
+                    <View style={[screenStyles.crewRadioDot, { backgroundColor: palette.blue }]} />
+                  )}
+                </View>
               </Pressable>
             );
           })
@@ -520,7 +508,7 @@ export function ThreadScreen({
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : undefined}
-      style={[screenStyles.page, { backgroundColor: palette.paper, paddingBottom: bottomInset }]}
+      style={[screenStyles.page, { backgroundColor: palette.paper }]}
     >
       <View style={[screenStyles.header, { borderBottomColor: palette.line }]}>
         <Pressable
@@ -576,6 +564,59 @@ export function ThreadScreen({
         </Pressable>
       </View>
 
+      {!isClosed && (
+        <View style={[screenStyles.ownership, { borderBottomColor: palette.line }]}>
+          <View style={screenStyles.ownershipLabel}>
+            <Icon color={palette.sub} name="person" size={14} />
+            <Text
+              numberOfLines={1}
+              style={[screenStyles.ownershipText, { color: palette.sub, fontFamily: fonts.body }]}
+            >
+              {current.assigneeOperatorId === meId
+                ? t("mobileAssigned")
+                : assignee
+                  ? t("mobileAssignedTo", { name: assignee.name })
+                  : current.assigneeOperatorId
+                    ? t("mobileAssignedOther")
+                    : t("unassigned")}
+            </Text>
+          </View>
+          <View style={screenStyles.ownershipActions}>
+            {!current.assigneeOperatorId && (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => void onAssign()}
+                style={({ pressed }) => [
+                  screenStyles.assignButton,
+                  { backgroundColor: palette.blue, opacity: pressed ? 0.72 : 1 },
+                ]}
+              >
+                <Text style={{ color: "#ffffff", fontFamily: fonts.semibold, fontSize: 12 }}>
+                  {t("keysAssignMe")}
+                </Text>
+              </Pressable>
+            )}
+            <Pressable
+              accessibilityRole="button"
+              onPress={openHandoff}
+              style={({ pressed }) => [
+                screenStyles.handoffLink,
+                {
+                  backgroundColor: palette.wash,
+                  borderColor: palette.line,
+                  opacity: pressed ? 0.68 : 1,
+                },
+              ]}
+            >
+              <Text style={{ color: palette.ink, fontFamily: fonts.semibold, fontSize: 12 }}>
+                {t("mobileHandoff")}
+              </Text>
+              <Icon color={palette.sub} name="next" size={13} />
+            </Pressable>
+          </View>
+        </View>
+      )}
+
       <FlatList
         ref={list}
         data={rows}
@@ -606,55 +647,18 @@ export function ThreadScreen({
         }
       />
 
-      {!isClosed && (
-        <View style={[screenStyles.ownership, { borderTopColor: palette.line }]}>
-          <View style={screenStyles.ownershipMain}>
-            {current.assigneeOperatorId ? (
-              <View style={screenStyles.ownershipLabel}>
-                <Icon color={palette.sub} name="person" size={13} />
-                <Text style={{ color: palette.sub, fontFamily: fonts.body, fontSize: 13 }}>
-                  {current.assigneeOperatorId === meId
-                    ? t("mobileAssigned")
-                    : assignee
-                      ? t("mobileAssignedTo", { name: assignee.name })
-                      : t("mobileAssignedOther")}
-                </Text>
-              </View>
-            ) : (
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => void onAssign()}
-                style={({ pressed }) => [
-                  screenStyles.assignButton,
-                  { opacity: pressed ? 0.65 : 1 },
-                ]}
-              >
-                <Text style={{ color: palette.blue, fontFamily: fonts.semibold, fontSize: 13 }}>
-                  {t("keysAssignMe")}
-                </Text>
-              </Pressable>
-            )}
-          </View>
-          <Pressable
-            accessibilityRole="button"
-            onPress={openHandoff}
-            style={({ pressed }) => [screenStyles.handoffLink, { opacity: pressed ? 0.65 : 1 }]}
-          >
-            <Text style={{ color: palette.blue, fontFamily: fonts.semibold, fontSize: 13 }}>
-              {t("mobileHandoff")}
-            </Text>
-            <Icon color={palette.blue} name="next" size={13} />
-          </Pressable>
-        </View>
-      )}
-
       {isClosed ? (
         <Pressable
           accessibilityRole="button"
           onPress={() => void onStatus()}
           style={({ pressed }) => [
             screenStyles.reopen,
-            { borderTopColor: palette.line, opacity: pressed ? 0.68 : 1 },
+            {
+              borderTopColor: palette.line,
+              minHeight: 50 + bottomInset,
+              opacity: pressed ? 0.68 : 1,
+              paddingBottom: bottomInset,
+            },
           ]}
         >
           <Icon color={palette.blue} name="chat" size={18} />
@@ -663,15 +667,16 @@ export function ThreadScreen({
           </Text>
         </Pressable>
       ) : (
-        <View style={screenStyles.composer}>
-          <View style={screenStyles.modeBar}>
-            <View style={[screenStyles.modeLabel, { backgroundColor: palette.wash }]}>
-              <Icon color={palette.ink} name="chat" size={13} />
-              <Text style={{ color: palette.ink, fontFamily: fonts.medium, fontSize: 12 }}>
-                {t("mobileReplyMode")}
-              </Text>
-            </View>
-          </View>
+        <View
+          style={[
+            screenStyles.composer,
+            {
+              backgroundColor: palette.wash,
+              borderTopColor: palette.line,
+              paddingBottom: Math.max(bottomInset, 10),
+            },
+          ]}
+        >
           <View
             style={[
               screenStyles.composeBox,
@@ -685,29 +690,28 @@ export function ThreadScreen({
               placeholder={t("mobileReplyPlaceholder", { name: name.split(" ")[0] ?? name })}
               placeholderTextColor={palette.sub}
               style={[screenStyles.input, { color: palette.ink, fontFamily: fonts.body }]}
+              textAlignVertical="top"
               value={draft}
             />
-            <View style={screenStyles.composerActions}>
-              <Pressable
-                accessibilityLabel={t("mobileSendReply")}
-                accessibilityRole="button"
-                disabled={!draft.trim() || sending}
-                onPress={() => void send()}
-                style={({ pressed }) => [
-                  screenStyles.send,
-                  {
-                    backgroundColor: draft.trim() && !sending ? palette.blue : palette.wash,
-                    opacity: pressed ? 0.72 : 1,
-                  },
-                ]}
-              >
-                <Icon
-                  color={draft.trim() && !sending ? "#ffffff" : palette.sub}
-                  name="send"
-                  size={17}
-                />
-              </Pressable>
-            </View>
+            <Pressable
+              accessibilityLabel={t("mobileSendReply")}
+              accessibilityRole="button"
+              disabled={!draft.trim() || sending}
+              onPress={() => void send()}
+              style={({ pressed }) => [
+                screenStyles.send,
+                {
+                  backgroundColor: draft.trim() && !sending ? palette.blue : palette.wash,
+                  opacity: pressed ? 0.72 : 1,
+                },
+              ]}
+            >
+              <Icon
+                color={draft.trim() && !sending ? "#ffffff" : palette.sub}
+                name="send"
+                size={18}
+              />
+            </Pressable>
           </View>
         </View>
       )}
@@ -760,13 +764,15 @@ const screenStyles = StyleSheet.create({
     overflow: "hidden",
   },
   sheetTools: {
-    minHeight: 39,
+    height: 64,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "flex-end",
-    paddingHorizontal: 9,
-    paddingVertical: 3,
+    paddingLeft: 16,
+    paddingRight: 11,
+    paddingTop: 2,
     position: "relative",
+    zIndex: 2,
   },
   sheetGrabber: {
     position: "absolute",
@@ -778,16 +784,9 @@ const screenStyles = StyleSheet.create({
     marginLeft: -18,
     opacity: 0.54,
   },
-  sheetClose: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  sheetGrabberOnly: { height: 24, position: "relative" },
   sheetScroll: { flexShrink: 1 },
-  visitorSky: { height: 104, position: "relative", overflow: "hidden" },
+  visitorSky: { height: 116, position: "relative", overflow: "hidden" },
   visitorTop: { paddingHorizontal: 19, paddingBottom: 12, marginTop: -25, position: "relative" },
   visitorPortrait: {
     width: 59,
@@ -810,48 +809,43 @@ const screenStyles = StyleSheet.create({
   factLabel: { flex: 1, fontSize: 13 },
   factValue: { flex: 1.4, fontSize: 13, lineHeight: 18, textAlign: "right" },
   detailsBottomSpace: { height: 12 },
-  assignHead: { paddingHorizontal: 18, paddingBottom: 7 },
-  assignTitle: { fontSize: 28, lineHeight: 31, letterSpacing: -0.9 },
-  assignContext: { fontSize: 13, lineHeight: 18, marginTop: 4 },
+  assignHead: { paddingLeft: 20, paddingRight: 11, paddingBottom: 5 },
+  assignTitleRow: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 8 },
+  assignTitle: { flex: 1, fontSize: 28, lineHeight: 31, letterSpacing: -0.9 },
+  assignContext: { fontSize: 13, lineHeight: 18, marginTop: 3, paddingRight: 9 },
   assignLabel: {
     fontSize: 16,
     lineHeight: 20,
-    marginTop: 13,
-    marginBottom: 5,
-    marginHorizontal: 18,
+    marginTop: 12,
+    marginBottom: 8,
+    marginHorizontal: 20,
   },
-  crewGrid: { gap: 8, paddingHorizontal: 18, paddingBottom: 10 },
-  crewTile: {
-    width: 126,
-    minHeight: 113,
-    borderRadius: Platform.OS === "android" ? 9 : 12,
-    paddingHorizontal: 9,
-    paddingVertical: 12,
+  crewScroll: { flexShrink: 1 },
+  crewList: { gap: 8, alignItems: "stretch", paddingHorizontal: 20, paddingBottom: 12 },
+  crewRow: {
+    minHeight: 68,
+    borderRadius: Platform.OS === "android" ? 10 : 14,
+    borderWidth: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 11,
   },
-  crewStamp: { minHeight: 34, flexDirection: "row", alignItems: "center" },
-  crewAvatarWrap: { width: 36, height: 36, position: "relative" },
-  crewAvatar: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
+  crewCopy: { flex: 1, minWidth: 0 },
+  crewName: { fontSize: 15, lineHeight: 19 },
+  crewMeta: { fontSize: 12, lineHeight: 17, marginTop: 2 },
+  crewRadio: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    borderWidth: 1.5,
     alignItems: "center",
     justifyContent: "center",
   },
-  crewInitials: { fontSize: 13 },
-  crewCheck: {
-    position: "absolute",
-    right: 0,
-    bottom: 0,
-    width: 17,
-    height: 17,
-    borderRadius: 9,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  crewName: { fontSize: 15, lineHeight: 19, marginTop: 8 },
-  crewMeta: { fontSize: 12, lineHeight: 16, marginTop: 1 },
-  noMembers: { width: 280, textAlign: "center", fontSize: 13, paddingVertical: 24 },
-  sheetAction: { paddingHorizontal: 18, paddingTop: 2 },
+  crewRadioDot: { width: 12, height: 12, borderRadius: 6 },
+  noMembers: { textAlign: "center", fontSize: 13, paddingVertical: 24 },
+  sheetAction: { paddingHorizontal: 20, paddingTop: 2 },
   handoffButton: {
     minHeight: 46,
     borderRadius: 23,
@@ -932,21 +926,30 @@ const screenStyles = StyleSheet.create({
     justifyContent: "center",
   },
   ownership: {
-    minHeight: 42,
+    minHeight: 54,
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 12,
-    borderTopWidth: StyleSheet.hairlineWidth,
+    gap: 8,
+    paddingHorizontal: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  ownershipMain: { flex: 1, minWidth: 0 },
-  ownershipLabel: { flexDirection: "row", alignItems: "center", gap: 6 },
-  assignButton: { minHeight: 42, justifyContent: "center", paddingHorizontal: 6 },
+  ownershipLabel: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 6 },
+  ownershipText: { flex: 1, fontSize: 12 },
+  ownershipActions: { flexDirection: "row", alignItems: "center", gap: 6 },
+  assignButton: {
+    minHeight: 44,
+    justifyContent: "center",
+    paddingHorizontal: 13,
+    borderRadius: 22,
+  },
   handoffLink: {
-    minHeight: 42,
+    minHeight: 44,
     flexDirection: "row",
     alignItems: "center",
     gap: 3,
-    paddingHorizontal: 6,
+    paddingHorizontal: 12,
+    borderRadius: 22,
+    borderWidth: 1,
   },
   reopen: {
     minHeight: 50,
@@ -957,23 +960,22 @@ const screenStyles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   reopenText: { flex: 1, fontSize: 14 },
-  composer: { paddingHorizontal: 10, paddingBottom: 5 },
-  modeBar: { minHeight: 38, flexDirection: "row", alignItems: "center" },
-  modeLabel: {
-    minHeight: 31,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    paddingHorizontal: 9,
-    borderRadius: 10,
+  composer: {
+    paddingHorizontal: 10,
+    paddingTop: 8,
+    paddingBottom: 10,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
   composeBox: {
-    minHeight: 86,
-    borderRadius: 18,
+    minHeight: 54,
+    borderRadius: 27,
     borderWidth: 1,
-    paddingHorizontal: 8,
-    paddingTop: 5,
-    paddingBottom: 3,
+    paddingLeft: 14,
+    paddingRight: 5,
+    paddingVertical: 4,
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 6,
     shadowColor: "#22384d",
     shadowOpacity: 0.04,
     shadowRadius: 12,
@@ -981,19 +983,19 @@ const screenStyles = StyleSheet.create({
     elevation: 1,
   },
   input: {
-    minHeight: 38,
+    flex: 1,
+    minHeight: 44,
     maxHeight: 120,
-    paddingHorizontal: 2,
-    paddingTop: 7,
-    paddingBottom: 4,
+    paddingHorizontal: 0,
+    paddingTop: 11,
+    paddingBottom: 9,
     fontSize: 15,
     lineHeight: 20,
   },
-  composerActions: { minHeight: 39, flexDirection: "row", justifyContent: "flex-end" },
   send: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
   },

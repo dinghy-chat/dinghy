@@ -1,5 +1,7 @@
 import { StyleSheet } from "react-native";
 
+export const controlShape = { pill: 999 } as const;
+
 export const day = {
   ink: "#122a36",
   sub: "#586a73",
