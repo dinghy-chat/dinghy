@@ -1695,6 +1695,11 @@ button.workspace[aria-expanded="true"],
   color: var(--warn-ink);
 }
 
+.chip.open {
+  background: color-mix(in srgb, var(--green) 14%, transparent);
+  color: var(--green);
+}
+
 /* The header of a page and of the inbox list. */
 .page-head {
   display: flex;

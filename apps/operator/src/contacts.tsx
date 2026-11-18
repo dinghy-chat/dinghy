@@ -422,7 +422,7 @@ function ConversationCards({
             onClick={() => onOpen(one.id, one.status)}
           >
             <span className="conversation-top">
-              <span className={one.status === "open" ? "chip warn" : "chip"}>{t(one.status)}</span>
+              <span className={one.status === "open" ? "chip open" : "chip"}>{t(one.status)}</span>
               <b>{conversationPreview(one)}</b>
               <time dateTime={one.updatedAt} title={new Date(one.updatedAt).toLocaleString()}>
                 {ago(one.updatedAt, Date.now(), "narrow")}
