@@ -1,10 +1,21 @@
 /** @jsxImportSource react */
-import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import type { Analytics, AnalyticsDays, WorkspaceApi } from "./api.ts";
 import { browserTimeZone, duration, weekdayNames } from "./format.ts";
 import { LabelDot } from "./labels.tsx";
 import { Pond } from "./scene.tsx";
 import { AnalyticsSkeleton } from "./skeleton.tsx";
+import {
+  Change,
+  CountChange,
+  percent,
+  Ring,
+  ShareChange,
+  Sparkline,
+  Stat,
+  shareOf,
+  Tipped,
+} from "./stat.tsx";
 import { plural, type TextId, t } from "./text.ts";
 import { Avatar, Choices, DocLink, failureText, Loading, type Option, Page } from "./ui.tsx";
 
@@ -15,12 +26,6 @@ const PERIODS: readonly Option<Period>[] = [
   { value: "30", label: "period30" },
   { value: "90", label: "period90" },
 ];
-
-export const percent = (share: number) =>
-  new Intl.NumberFormat([], { style: "percent", maximumFractionDigits: 0 }).format(share);
-
-/** A part of a total, from 0 to 1; 0 when the total is 0. */
-export const shareOf = (count: number, total: number) => (total === 0 ? 0 : count / total);
 
 /** A date of the period, "2026-11-08", as "Nov 8". */
 export function dayName(
@@ -39,236 +44,35 @@ const HOURS = Array.from({ length: 24 }, (_, hour) => hourName(hour));
 
 const conversations = (count: number) => plural(count, "chartOne", "chartMany");
 
-/** A number with its label, or the words behind an "i" button. */
-type TipContent = { value: string; label: string } | { text: string };
-
-type Tip = TipContent & { x: number; y: number };
-
-/** The card for the part of `area` at `target`, placed above it, or null off every part. */
-function tipAt(area: HTMLElement | null, target: EventTarget | null): Tip | null {
-  const part =
-    target instanceof Element ? target.closest<HTMLElement>("[data-value], [data-tip]") : null;
-  if (part === null || area === null) return null;
-  const outer = area.getBoundingClientRect();
-  const inner = part.getBoundingClientRect();
-  const { tip, value, label } = part.dataset;
-  return {
-    ...(tip === undefined ? { value: value ?? "", label: label ?? "" } : { text: tip }),
-    x: inner.left + inner.width / 2 - outer.left,
-    y: inner.top - outer.top,
-  };
-}
-
-/**
- * An area whose parts carry data-value and data-label, or data-tip. The pointer over a part, or
- * the focus on it, shows them in a card above it, kept inside the area. Escape hides the card.
- * The words for screen readers are in each figure's caption, or in each button's label.
- */
-export function Tipped({ className, children }: { className: string; children: ReactNode }) {
-  const [tip, setTip] = useState<Tip | null>(null);
-  const card = useRef<HTMLDivElement>(null);
-  const box = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const element = card.current;
-    const width = box.current?.clientWidth ?? 0;
-    if (tip === null || element === null) return;
-    const half = element.offsetWidth / 2;
-    element.style.left = `${Math.min(Math.max(tip.x, half), width - half)}px`;
-  }, [tip]);
-  // Focus and Escape, for the keys. Listened to here, as the area itself takes no focus.
-  useEffect(() => {
-    const area = box.current;
-    if (area === null) return;
-    const focus = (event: FocusEvent) => setTip(tipAt(area, event.target));
-    const hide = () => setTip(null);
-    const hideOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") hide();
-    };
-    area.addEventListener("focusin", focus);
-    area.addEventListener("focusout", hide);
-    document.addEventListener("keydown", hideOnEscape);
-    return () => {
-      area.removeEventListener("focusin", focus);
-      area.removeEventListener("focusout", hide);
-      document.removeEventListener("keydown", hideOnEscape);
-    };
-  }, []);
-  return (
-    <div
-      ref={box}
-      className={`tipped ${className}`}
-      onPointerOver={(event) => setTip(tipAt(box.current, event.target))}
-      onPointerLeave={() => setTip(null)}
-    >
-      {children}
-      {tip !== null && (
-        <div
-          ref={card}
-          className={"text" in tip ? "chart-tip words" : "chart-tip"}
-          style={{ top: tip.y }}
-          aria-hidden="true"
-        >
-          {"text" in tip ? (
-            tip.text
-          ) : (
-            <>
-              <b>{tip.value}</b>
-              <span>{tip.label}</span>
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** A small "i" whose words show in the Tipped card. Screen readers read them as its label. */
-function Info({ text }: { text: TextId }) {
-  return (
-    <button type="button" className="info-tip" aria-label={t(text)} data-tip={t(text)}>
-      i
-    </button>
-  );
-}
-
-/** Better, worse, or neither, as the change's color says. */
-type Direction = "better" | "worse" | "neutral";
-
-/** A change against the previous period, and which period that is. */
-function Change({ words, direction, days }: { words: string; direction: Direction; days: Period }) {
-  return (
-    <p className={`stat-change ${direction}`}>
-      {words} <span>{t("vsPrevious", { days })}</span>
-    </p>
-  );
-}
-
-function StartedChange({ numbers, days }: { numbers: Analytics; days: Period }) {
-  const before = numbers.previous.started;
-  if (before === 0) return null;
-  const change = numbers.started / before - 1;
-  // A change that rounds to 0% reads as none, not as "↑ 0%".
-  const words =
-    percent(Math.abs(change)) === percent(0)
-      ? t("changeSame")
-      : t(change > 0 ? "changeUp" : "changeDown", { change: percent(Math.abs(change)) });
-  return <Change words={words} direction="neutral" days={days} />;
-}
-
-function MedianChange({ numbers, days }: { numbers: Analytics; days: Period }) {
+function MedianChange({ numbers, compared }: { numbers: Analytics; compared: string }) {
   const now = numbers.firstReply.medianSeconds;
   const before = numbers.previous.firstReply.medianSeconds;
   if (now === null || before === null) return null;
   const words = duration(Math.abs(before - now));
   if (Math.round(now) === Math.round(before)) {
-    return <Change words={t("changeSame")} direction="neutral" days={days} />;
+    return <Change words={t("changeSame")} direction="neutral" compared={compared} />;
   }
   return now < before ? (
-    <Change words={t("replyFaster", { time: words })} direction="better" days={days} />
+    <Change words={t("replyFaster", { time: words })} direction="better" compared={compared} />
   ) : (
-    <Change words={t("replySlower", { time: words })} direction="worse" days={days} />
-  );
-}
-
-function FastChange({ numbers, days }: { numbers: Analytics; days: Period }) {
-  const { started, previous } = numbers;
-  if (started === 0 || previous.started === 0) return null;
-  const now = shareOf(numbers.firstReply.fast, started);
-  const before = shareOf(previous.firstReply.fast, previous.started);
-  const points = Math.round((now - before) * 100);
-  if (points === 0) return <Change words={t("changeSame")} direction="neutral" days={days} />;
-  return (
-    <Change
-      words={t(points > 0 ? "pointsUp" : "pointsDown", { points: Math.abs(points) })}
-      direction={points > 0 ? "better" : "worse"}
-      days={days}
-    />
-  );
-}
-
-const SPARK_WIDTH = 120;
-const SPARK_HEIGHT = 32;
-
-/** The days of the period as a small line, under its own area. */
-function Sparkline({ days }: { days: Analytics["perDay"] }) {
-  const most = Math.max(1, ...days.map((day) => day.conversations));
-  const last = Math.max(1, days.length - 1);
-  const line = `M${days
-    .map((day, index) => {
-      const x = (index / last) * SPARK_WIDTH;
-      const y = SPARK_HEIGHT - (day.conversations / most) * (SPARK_HEIGHT - 2);
-      return `${x},${y}`;
-    })
-    .join("L")}`;
-  return (
-    <svg
-      className="spark"
-      viewBox={`0 0 ${SPARK_WIDTH} ${SPARK_HEIGHT}`}
-      preserveAspectRatio="none"
-      aria-hidden="true"
-    >
-      <path
-        className="spark-area"
-        d={`${line}L${SPARK_WIDTH},${SPARK_HEIGHT}L0,${SPARK_HEIGHT}Z`}
-      />
-      <path className="spark-line" d={line} />
-    </svg>
-  );
-}
-
-const RING_RADIUS = 18;
-const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
-
-function Ring({ share }: { share: number }) {
-  return (
-    <svg className="ring" viewBox="0 0 44 44" aria-hidden="true">
-      <circle cx="22" cy="22" r={RING_RADIUS} className="ring-back" />
-      {share > 0 && (
-        <circle
-          cx="22"
-          cy="22"
-          r={RING_RADIUS}
-          className="ring-front"
-          strokeDasharray={`${share * RING_LENGTH} ${RING_LENGTH}`}
-        />
-      )}
-    </svg>
-  );
-}
-
-export function Stat({
-  title,
-  help,
-  children,
-}: {
-  title: TextId;
-  help?: TextId;
-  children: ReactNode;
-}) {
-  return (
-    <article className="stat">
-      <h3>
-        {t(title)}
-        {help !== undefined && <Info text={help} />}
-      </h3>
-      {children}
-    </article>
+    <Change words={t("replySlower", { time: words })} direction="worse" compared={compared} />
   );
 }
 
 function Stats({ numbers, days }: { numbers: Analytics; days: Period }) {
-  const { started, answered, firstReply } = numbers;
+  const { started, answered, firstReply, previous } = numbers;
+  const compared = t("vsPrevious", { days });
   const fast = shareOf(firstReply.fast, started);
   const answeredShare = shareOf(answered, started);
   return (
     <section className="stats" aria-label={t("statsTitle")}>
       <Stat title="statStarted">
         <p className="stat-value">{started}</p>
-        <StartedChange numbers={numbers} days={days} />
+        <CountChange count={started} before={previous.started} compared={compared} />
         {numbers.startedByTeam > 0 && (
           <p className="stat-note">{t("statStartedByTeam", { count: numbers.startedByTeam })}</p>
         )}
-        <Sparkline days={numbers.perDay} />
+        <Sparkline values={numbers.perDay.map((day) => day.conversations)} />
       </Stat>
       <Stat title="statMedian" help="statMedianHelp">
         {firstReply.medianSeconds === null ? (
@@ -276,7 +80,7 @@ function Stats({ numbers, days }: { numbers: Analytics; days: Period }) {
         ) : (
           <p className="stat-value">{duration(firstReply.medianSeconds)}</p>
         )}
-        <MedianChange numbers={numbers} days={days} />
+        <MedianChange numbers={numbers} compared={compared} />
         {firstReply.p90Seconds !== null && (
           <p className="stat-note">{t("statP90", { time: duration(firstReply.p90Seconds) })}</p>
         )}
@@ -286,7 +90,13 @@ function Stats({ numbers, days }: { numbers: Analytics; days: Period }) {
           <Ring share={fast} />
           <p className="stat-value">{percent(fast)}</p>
         </div>
-        <FastChange numbers={numbers} days={days} />
+        <ShareChange
+          share={started === 0 ? null : fast}
+          before={
+            previous.started === 0 ? null : shareOf(previous.firstReply.fast, previous.started)
+          }
+          compared={compared}
+        />
       </Stat>
       <Stat title="statAnswered">
         <p className="stat-value">{percent(answeredShare)}</p>

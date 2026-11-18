@@ -1,4 +1,5 @@
 import { setTimeout as delay } from "node:timers/promises";
+import type { Redis } from "iovalkey";
 import type { Logger } from "pino";
 import { type CloudSettings, cloudWorkerStep } from "../../../ee/server/index.ts";
 import {
@@ -24,6 +25,7 @@ import { MAIL_CONNECTIONS, type Mailer } from "./mailer.ts";
 import { pruneOAuth } from "./oauth-grants.ts";
 import { expireOutbound, runDueOutbound } from "./outbound.ts";
 import type { Push } from "./push.ts";
+import { rollUpHours } from "./site-hours.ts";
 import {
   type ClaimedDeletion,
   claimDeletions,
@@ -84,6 +86,8 @@ interface WorkerOptions {
   cloud?: CloudSettings | undefined;
   /** Wakes open inboxes after a billing change. */
   signals?: Signals | undefined;
+  /** Holds the site's hours, which the worker copies to Postgres. Without it, none are copied. */
+  valkey?: Redis | undefined;
   publicUrl: string;
   secret: string;
   /** The domain of reply addresses. Without it, emails to visitors take no replies. */
@@ -107,6 +111,8 @@ const CLAIM_MS = MINUTE_MS;
 const FAN_OUT_BATCH = 50;
 const PRUNE_EVERY_MS = 60 * MINUTE_MS;
 const LIFECYCLE_EVERY_MS = MINUTE_MS;
+/** How often the site's hours go from Valkey to Postgres, which is how far behind Postgres can be. */
+const ROLL_UP_EVERY_MS = MINUTE_MS;
 const MAIL_TIMEOUT_MS = 20_000;
 /** How long an idle worker waits before its next pass, unless a finished send wakes it. */
 const POLL_MS = 2000;
@@ -172,6 +178,7 @@ export function startWorker({
   webhooks = PUBLIC_ONLY,
   cloud,
   signals = noLive,
+  valkey,
   publicUrl,
   secret,
   inboundDomain,
@@ -389,6 +396,7 @@ export function startWorker({
   const running = (async () => {
     let pruneAt = 0;
     let lifecycleAt = 0;
+    let rollUpAt = 0;
     while (!stopping.signal.aborted) {
       let busy = await stage("fan-out", fanOut);
       busy = (await stage("webhook fan-out", fanOutWebhooks)) || busy;
@@ -408,6 +416,10 @@ export function startWorker({
           await pruneOnce(db, new Date(Date.now() - RETENTION_MS));
           await pruneOAuth(db);
         });
+      }
+      if (valkey !== undefined && Date.now() >= rollUpAt) {
+        rollUpAt = Date.now() + ROLL_UP_EVERY_MS;
+        await stage("site hours", () => rollUpHours(db, valkey));
       }
       if (Date.now() >= lifecycleAt) {
         lifecycleAt = Date.now() + lifecycleMs;

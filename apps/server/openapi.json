@@ -3856,10 +3856,10 @@
         "required": ["days", "variants"]
       },
       "VisitorStats": {
-        "type": ["object", "null"],
+        "type": "object",
         "properties": {
           "lastHour": {
-            "type": "array",
+            "type": ["array", "null"],
             "items": {
               "type": "integer"
             }
@@ -3873,6 +3873,15 @@
           "pageViews": {
             "type": "integer"
           },
+          "pageViewsBefore": {
+            "type": "integer"
+          },
+          "chats": {
+            "type": "integer"
+          },
+          "chatsBefore": {
+            "type": "integer"
+          },
           "peak": {
             "type": ["object", "null"],
             "properties": {
@@ -3884,6 +3893,12 @@
               }
             },
             "required": ["count", "at"]
+          },
+          "series": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
           },
           "pages": {
             "type": "array",
@@ -3924,7 +3939,11 @@
           "visits",
           "visitsBefore",
           "pageViews",
+          "pageViewsBefore",
+          "chats",
+          "chatsBefore",
           "peak",
+          "series",
           "pages",
           "referrers"
         ]
@@ -21323,8 +21342,8 @@
             "sessionCookie": []
           }
         ],
-        "summary": "Count the site's visits, page views and busiest minute of the last 24 hours",
-        "description": "Kept in Valkey by the hour for 49 hours, with no cookie and no stored ID. The last 24 hours are whole hours: the current hour and the 23 before it, and `visitsBefore` counts the 24 hours before those. A visit is a tab that opened from another site or from nowhere; a page view is a tab that opened, or one whose page changed. `lastHour` holds the most tabs open at once in each of the last 60 minutes, oldest first, and `peak` the busiest minute of the 24 hours. `pages` and `referrers` list the top 5, with a null `referrer` for none; an hour keeps at most 200 distinct pages and 200 referrers. `chats` counts the conversations created in the same 24 hours, that visitors started, leaving out the welcome chat and test visitors. Null `stats` means the server cannot tell now.",
+        "summary": "Count the site's visits, page views, chats and busiest minute over 1, 7, 30 or 90 days",
+        "description": "Counted by the hour with no cookie and no stored ID, and kept 92 days; the stored hours are at most about a minute behind. One day is the last 24 whole hours: the current hour and the 23 before it. A longer period runs from the start of the day, `days - 1` days ago, in `tz`, to now, as for analytics. The `Before` numbers are for a period of the same length just before. A visit is a tab that opened from another site or from nowhere; a page view is a tab that opened, or one whose page changed. `series` holds the visits per hour for one day, and per day in `tz` otherwise, oldest first. `peak` is the busiest minute, by the most tabs open at once. `pages` and `referrers` list the top 8, with a null `referrer` for none; an hour keeps at most 200 distinct pages and 200 referrers. `chats` counts the conversations that visitors started in the period, leaving out the welcome chat and test visitors. `lastHour` holds the most tabs open at once in each of the last 60 minutes, oldest first, and is null when the server cannot tell now.",
         "parameters": [
           {
             "schema": {
@@ -21334,6 +21353,24 @@
             "required": true,
             "name": "workspaceId",
             "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "default": 1
+            },
+            "required": false,
+            "name": "days",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "default": "UTC"
+            },
+            "required": false,
+            "name": "tz",
+            "in": "query"
           }
         ],
         "responses": {
@@ -21342,16 +21379,17 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "stats": {
-                      "$ref": "#/components/schemas/VisitorStats"
-                    },
-                    "chats": {
-                      "type": "integer"
-                    }
-                  },
-                  "required": ["stats", "chats"]
+                  "$ref": "#/components/schemas/VisitorStats"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
                 }
               }
             }

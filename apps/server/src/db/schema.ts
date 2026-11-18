@@ -838,6 +838,31 @@ export const pageView = pgTable(
   ],
 );
 
+/**
+ * One hour of the site's traffic, copied by the worker from the Valkey hour that the beats count in,
+ * with no cookie and no stored ID. Kept 92 days for the Visitors page.
+ */
+export const siteHour = pgTable(
+  "site_hour",
+  {
+    workspaceId: ownedByWorkspace(),
+    hour: timestamp("hour", { withTimezone: true }).notNull(),
+    visits: integer("visits").notNull(),
+    pageViews: integer("page_views").notNull(),
+    // The most tabs open at once in one minute of the hour, and that minute.
+    peak: integer("peak").notNull(),
+    peakAt: timestamp("peak_at", { withTimezone: true }),
+    // Page to views, referrer origin ("" for none) to visits, and page to its latest title.
+    pages: jsonb("pages").$type<Record<string, number>>().notNull(),
+    referrers: jsonb("referrers").$type<Record<string, number>>().notNull(),
+    titles: jsonb("titles").$type<Record<string, string>>().notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.workspaceId, table.hour] }),
+    index("site_hour_hour_idx").on(table.hour),
+  ],
+);
+
 /** An invite to one email address. Only the token's hash is stored, and it works once. */
 export const invite = pgTable(
   "invite",

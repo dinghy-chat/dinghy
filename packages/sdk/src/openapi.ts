@@ -9119,14 +9119,18 @@ export interface components {
       }[];
     };
     VisitorStats: {
-      lastHour: number[];
+      lastHour: number[] | null;
       visits: number;
       visitsBefore: number;
       pageViews: number;
+      pageViewsBefore: number;
+      chats: number;
+      chatsBefore: number;
       peak: {
         count: number;
         at: string;
       } | null;
+      series: number[];
       pages: {
         page: string;
         title: string | null;
@@ -9136,7 +9140,7 @@ export interface components {
         referrer: string | null;
         count: number;
       }[];
-    } | null;
+    };
     LiveVisitor: {
       tab: string;
       page: string;

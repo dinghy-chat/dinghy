@@ -6449,6 +6449,7 @@ button.quote:hover {
    view. On a narrow screen the people come between the map and the tiles. */
 .live-count {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
@@ -6663,67 +6664,29 @@ button.quote:hover {
   white-space: nowrap;
 }
 
-/* The numbers above the map, as tiles; the last hour's chart takes two. */
-.live-stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-  gap: 12px;
-  padding: 10px 0 14px;
+/* The last hour beside the count in the page's head, as the Analytics spark draws it. */
+.live-spark {
+  flex: none;
+  width: 120px;
+  height: 24px;
+  margin-left: 4px;
+  overflow: visible;
 }
-.live-stat {
-  display: grid;
-  align-content: start;
-  gap: 4px;
-  min-width: 0;
-  padding: 14px 18px;
-  border-radius: 18px;
-  box-shadow: inset 0 0 0 1px var(--line);
-}
-.live-stat.wide {
-  grid-column: span 2;
-}
-.live-stat span {
+.live-summary {
+  margin: -4px 0 12px;
   color: var(--mute);
   font-size: 13px;
-  font-weight: 600;
-}
-.live-stat b {
-  color: var(--navy);
-  font: 700 22px / 1.2 var(--display);
-  font-variant-numeric: tabular-nums;
-}
-.live-stat small {
-  color: var(--mute);
-  font-size: 12.5px;
-}
-.live-chart-row {
-  display: flex;
-  align-items: flex-end;
-  gap: 10px;
-}
-.live-chart {
-  flex: 1;
-  min-width: 0;
-  /* A baseline, so a quiet hour still reads as a chart. */
-  background: linear-gradient(var(--line), var(--line)) bottom / 100% 1px no-repeat;
-  height: 32px;
-  fill: var(--blue);
 }
 .chip.live-waiting {
   padding: 2px 8px;
   font-size: 12px;
 }
 
-/* Pages, Came from, Countries and Devices, as bars behind the counts, now or over 24 hours. */
-.live-tiles-block {
-  display: grid;
-  justify-items: start;
-  gap: 12px;
-}
+/* Pages, Came from, Countries and Devices now, and the top pages and sources of a period, as bars
+   behind the counts, two to a row. */
 .live-tiles {
   display: grid;
-  justify-self: stretch;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 16px;
 }
 .live-tile {
@@ -6895,6 +6858,23 @@ button.quote:hover {
   color: var(--mute);
 }
 
+/* Over time, under the live part: a heading with the period on its right, then the Analytics
+   band and two tiles. */
+.over-time {
+  margin-top: 36px;
+}
+.over-time-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px 16px;
+}
+.over-time-head h3 {
+  color: var(--navy);
+  font: 700 20px / 1.2 var(--display);
+}
+
 @media (max-width: 1100px) {
   .live-layout {
     grid-template-columns: minmax(0, 1fr);
@@ -6902,7 +6882,7 @@ button.quote:hover {
   .live-side {
     display: contents;
   }
-  .live-tiles-block {
+  .live-side > .live-tiles {
     order: 3;
   }
   .live-people {
@@ -6914,14 +6894,23 @@ button.quote:hover {
   .live-tiles {
     grid-template-columns: minmax(0, 1fr);
   }
-  .live-stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
   .live-map {
     aspect-ratio: 360 / 190;
   }
   .live-hint {
     display: none;
+  }
+  /* The four periods share the row, and scroll sideways rather than wrap. */
+  .over-time-head > .choices.outlined {
+    flex: 1 1 100%;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .over-time-head > .choices.outlined label {
+    flex: 1 0 auto;
+    justify-content: center;
+    white-space: nowrap;
   }
 }
 @media (prefers-reduced-motion: reduce) {

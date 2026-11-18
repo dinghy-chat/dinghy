@@ -315,14 +315,21 @@ export interface LiveVisitor {
     | null;
 }
 
-/** The site's last 24 hours, kept by the hour. */
+export type VisitorDays = 1 | 7 | 30 | 90;
+
+/** The site's numbers for a period, kept by the hour, and its last hour from Valkey. */
 export interface VisitorStats {
-  /** Tabs open at once in each of the last 60 minutes, oldest first. */
-  lastHour: number[];
+  /** Tabs open at once in each of the last 60 minutes, oldest first. Null when unknown now. */
+  lastHour: number[] | null;
   visits: number;
   visitsBefore: number;
   pageViews: number;
+  pageViewsBefore: number;
+  chats: number;
+  chatsBefore: number;
   peak: { count: number; at: string } | null;
+  /** Visits per hour for one day, per day otherwise, oldest first. */
+  series: number[];
   pages: { page: string; title: string | null; count: number }[];
   referrers: { referrer: string | null; count: number }[];
 }
@@ -904,8 +911,8 @@ export function workspaceApi(workspaceId: string) {
         body,
       }),
     liveVisitors: () => call<{ visitors: LiveVisitor[] | null }>(`${base}/visitors/live`),
-    visitorStats: () =>
-      call<{ stats: VisitorStats | null; chats: number }>(`${base}/visitors/stats`),
+    visitorStats: (days: VisitorDays, timeZone: string) =>
+      call<VisitorStats>(`${base}/visitors/stats?days=${days}&tz=${encodeURIComponent(timeZone)}`),
     liveCount: () => call<{ count: number | null }>(`${base}/visitors/live/count`),
     contacts: (query: {
       q: string;

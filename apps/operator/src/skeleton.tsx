@@ -135,19 +135,26 @@ export function TableSkeleton({ rows = 6 }: { rows?: number }) {
   );
 }
 
+/** The four cells of a `.stats` band. */
+function StatBones() {
+  return (
+    <div className="stats">
+      {NAMES.slice(0, 4).map((name) => (
+        <div key={name} className="stat bone-lines">
+          <Bone width={name} height={12} />
+          <Bone width={72} height={30} />
+          <Bone width="60%" height={11} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** Analytics: the four numbers, then the charts. */
 export function AnalyticsSkeleton() {
   return (
     <Skeleton className="analytics">
-      <div className="stats">
-        {NAMES.slice(0, 4).map((name) => (
-          <div key={name} className="stat bone-lines">
-            <Bone width={name} height={12} />
-            <Bone width={72} height={30} />
-            <Bone width="60%" height={11} />
-          </div>
-        ))}
-      </div>
+      <StatBones />
       <div className="charts">
         <div className="chart-card bone-lines">
           <Bone width={170} height={15} />
@@ -172,24 +179,33 @@ export function AnalyticsSkeleton() {
   );
 }
 
-/** Visitors: the numbers, then the map and the people beside it. */
+/** Visitors: the map, and the people beside it. */
 export function VisitorsSkeleton() {
   return (
-    <Skeleton>
-      <div className="live-stats">
-        {NAMES.slice(0, 5).map((name) => (
-          <div key={name} className="live-stat bone-lines">
-            <Bone width={name} height={12} />
-            <Bone width={56} height={24} />
+    <Skeleton className="live-layout">
+      <div className="bone-map" />
+      <div className="bone-lines">
+        <Bone width={80} height={13} />
+        <RowsBones count={4} />
+      </div>
+    </Skeleton>
+  );
+}
+
+/** Visitors over time: the key numbers, then the top pages and sources. */
+export function OverTimeSkeleton() {
+  return (
+    <Skeleton className="analytics">
+      <StatBones />
+      <div className="live-tiles">
+        {NAMES.slice(0, 2).map((name) => (
+          <div key={name} className="live-tile bone-lines">
+            <Bone width={name} height={15} />
+            {[90, 64, 42].map((width) => (
+              <Bone key={width} width={`${width}%`} height={28} />
+            ))}
           </div>
         ))}
-      </div>
-      <div className="live-layout">
-        <div className="bone-map" />
-        <div className="bone-lines">
-          <Bone width={80} height={13} />
-          <RowsBones count={4} />
-        </div>
       </div>
     </Skeleton>
   );

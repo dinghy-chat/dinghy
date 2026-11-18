@@ -237,14 +237,13 @@ export async function medianFirstReplySeconds(
   return result.rows[0]?.median ?? null;
 }
 
-/** One statement, so every number reads the same rows. The periods end at `now`. */
-export async function readAnalytics(
-  tx: Transaction,
-  workspaceId: string,
-  { days, timeZone, now }: { days: number; timeZone: string; now: Date },
-): Promise<AnalyticsResult> {
-  const result = await tx.execute<Row>(sql`
-    WITH clock AS (
+/**
+ * The CTEs `clock`, `local_today` and `bounds` of a period of `days` that ends at `now`: it starts at
+ * the start of the day `days - 1` days ago in `timeZone`. `bounds` has `first_day`, `since`, and the
+ * previous period's `previous_since` and `previous_until`.
+ */
+export const periodBounds = (days: number, timeZone: string, now: Date) => sql`
+    clock AS (
       SELECT ${now.toISOString()}::timestamptz AS now
     ), local_today AS (
       SELECT (clock.now AT TIME ZONE ${timeZone})::date AS day FROM clock
@@ -260,7 +259,16 @@ export async function readAnalytics(
              LEAST(b.since, b.previous_since + make_interval(
                secs => extract(epoch FROM clock.now - b.since)::double precision)) AS previous_until
       FROM local_bounds AS b, clock
-    ), replies AS MATERIALIZED (
+    )`;
+
+/** One statement, so every number reads the same rows. The periods end at `now`. */
+export async function readAnalytics(
+  tx: Transaction,
+  workspaceId: string,
+  { days, timeZone, now }: { days: number; timeZone: string; now: Date },
+): Promise<AnalyticsResult> {
+  const result = await tx.execute<Row>(sql`
+    WITH ${periodBounds(days, timeZone, now)}, replies AS MATERIALIZED (
       SELECT f.*, (f.created_at AT TIME ZONE ${timeZone}) AS local_at,
              f.created_at >= bounds.since AS is_current
       FROM (${firstReplies(workspaceId, sql`(SELECT previous_since FROM bounds)`)}) AS f, bounds
@@ -333,7 +341,7 @@ export async function readAnalytics(
 }
 
 /** A time zone Postgres does not know, as its own tz database can lag Node's. */
-function isUnknownZone(error: unknown): boolean {
+export function isUnknownZone(error: unknown): boolean {
   for (let current = error; current instanceof Error; current = current.cause) {
     if ((current as { code?: unknown }).code === PG_INVALID_PARAMETER) return true;
   }

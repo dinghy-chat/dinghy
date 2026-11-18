@@ -8,9 +8,9 @@ const SNIPPET = '<script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}
 let server: Awaited<ReturnType<typeof startE2EServer>>;
 
 /** With SCREENSHOTS set to a folder, each step saves a picture there for a review. */
-async function picture(page: Page, name: string) {
+async function picture(page: Page, name: string, fullPage = false) {
   const folder = process.env.SCREENSHOTS;
-  if (folder !== undefined) await page.screenshot({ path: `${folder}/${name}.png` });
+  if (folder !== undefined) await page.screenshot({ path: `${folder}/${name}.png`, fullPage });
 }
 
 test.beforeAll(async () => {
@@ -121,11 +121,22 @@ test("the operator sees the visitor's draft, the read receipt and the visitor's 
   for (const page of [operator, widget]) await page.context().close();
 });
 
-test("the operator filters who is on the site and picks a country on the map", async ({
+test("the operator filters who is on the site, picks a country on the map and reads a period", async ({
   browser,
 }) => {
   const page = `${server.hostOrigin}/pricing`;
   const details = { page, timeZone: "Europe/Paris", device: "Firefox on Linux" };
+  // Past hours: two in the last 24 hours, one in the 24 before, more over the week, and one in the
+  // week before.
+  await server.seedSiteHours([
+    { hoursAgo: 2, visits: 12, pages: { [`${server.hostOrigin}/docs`]: 9 } },
+    { hoursAgo: 5, visits: 6 },
+    { hoursAgo: 30, visits: 9 },
+    { hoursAgo: 60, visits: 21, pages: { [`${server.hostOrigin}/docs`]: 30 } },
+    { hoursAgo: 100, visits: 15 },
+    { hoursAgo: 140, visits: 24 },
+    { hoursAgo: 200, visits: 30 },
+  ]);
   await server.openTabs([
     {
       ...details,
@@ -148,28 +159,54 @@ test("the operator filters who is on the site and picks a country on the map", a
   await expect(claire).toBeVisible();
   await expect(american).toContainText("Pricing");
 
-  // The numbers above the map: the last 24 hours, and who is here now.
-  const numbers = operator.getByRole("region", { name: "Your site in numbers" });
-  await expect(numbers).toContainText("Visits in 24 hours");
-  await expect(numbers).toContainText("Peak in 24 hours");
-  await expect(numbers).toContainText("Chat rate");
-  await expect(numbers).toContainText("Time on site now0 min");
-  // Daytime or night depends on the hour in Paris, so only the total is sure.
-  await expect(numbers).toContainText("Local daytime");
+  // The head counts the people here, with the last hour beside it, ending at the count now. The
+  // first test's tab may still be here.
+  const count = await rows.count();
   await expect(
-    numbers.getByRole("img", { name: /^People on your site each minute/ }),
+    operator.getByRole("img", {
+      name: `People on your site each minute of the last hour, ${count} now`,
+    }),
   ).toBeVisible();
+  // Under the list, their time on site; daytime or night depends on the hour in Paris.
+  const people = operator.getByRole("region", { name: "Everyone" });
+  await expect(people.locator(".live-summary")).toContainText(
+    "Median 0 min on site, longest 0 min.",
+  );
+  await expect(people.locator(".live-summary")).toContainText("in daytime");
   await expect(operator.getByRole("region", { name: "Countries" })).toContainText("France2");
   await expect(operator.getByRole("region", { name: "Devices" })).toContainText("Firefox on Linux");
 
-  // Known keeps the people with a name, Chatting only those in a conversation, and Waiting and
-  // Here a while nobody yet: no chat waits, and everyone just came.
+  // Over time: the last 24 hours against the 24 before, then a week.
+  const overTime = operator.getByRole("region", { name: "Over time" });
+  const band = overTime.getByRole("region", { name: "Key numbers" });
+  const visits = band.locator(".stat-value").first();
+  // The seeded 18, the 3 tabs, and the first test's tab if it came in this hour.
+  await expect(visits).toHaveText(/^2[12]$/);
+  const day = Number(await visits.textContent());
+  await expect(band).toContainText("vs previous 24 hours");
+  await expect(band).toContainText("Chat rate");
+  await expect(band).toContainText("Busiest moment");
+  await expect(overTime.getByRole("region", { name: "Top pages" })).toContainText("Pricing");
+  await expect(overTime.getByRole("region", { name: "Top sources" })).toContainText("google.com");
+  await picture(operator, "visitors-live");
+  await overTime.scrollIntoViewIfNeeded();
+  await picture(operator, "visitors-day");
+  await overTime
+    .getByRole("group", { name: "Period" })
+    .getByRole("radio", { name: "7 days" })
+    .check();
+  await expect(band).toContainText("vs previous 7 days");
+  // The week adds the 69 of the hours between a day and six days ago.
+  await expect(visits).toHaveText(String(day + 69));
+  await expect(overTime.getByRole("region", { name: "Top pages" })).toContainText("docs");
+  await picture(operator, "visitors-week");
+
+  // Known keeps the people with a name, Chatting only those in a conversation, and Waiting nobody
+  // yet, as no chat waits.
   const show = operator.getByRole("group", { name: "Show" });
+  await expect(show.getByRole("radio")).toHaveCount(4);
   await show.getByRole("radio", { name: /^Waiting/ }).check();
   await expect(operator.getByRole("heading", { name: "Waiting for a reply" })).toBeVisible();
-  await expect(rows).toHaveCount(0);
-  await show.getByRole("radio", { name: /^Here a while/ }).check();
-  await expect(operator.getByRole("heading", { name: "Here a while" })).toBeVisible();
   await expect(rows).toHaveCount(0);
   await show.getByRole("radio", { name: /^Known/ }).check();
   await expect(claire).toBeVisible();
@@ -188,17 +225,12 @@ test("the operator filters who is on the site and picks a country on the map", a
   await expect(operator.getByRole("heading", { name: "In France" })).toBeVisible();
   await expect(rows).toHaveCount(2);
   await expect(map).toHaveClass(/zoomed/);
-  await expect(operator.getByRole("region", { name: "Came from" })).toContainText("google.com2");
+  await expect(operator.getByRole("region", { name: "Came from now" })).toContainText(
+    "google.com2",
+  );
   // Pages count by address, so two titles of one page make one row.
-  const pages = operator.getByRole("region", { name: "Pages" });
+  const pages = operator.getByRole("region", { name: "Pages now" });
   await expect(pages.locator("li")).toHaveCount(1);
-  // Over 24 hours, the tiles count the visits that came to the site, wherever from.
-  const period = operator.getByRole("group", { name: "Period" });
-  await period.getByRole("radio", { name: "24 hours" }).check();
-  await expect(pages).toContainText("Pricing");
-  await picture(operator, "visitors-day");
-  await expect(operator.getByRole("region", { name: "Came from" })).toContainText("google.com");
-  await period.getByRole("radio", { name: "Now" }).check();
   await map.getByRole("button", { name: "All countries" }).click();
   await expect(american).toBeVisible();
   await expect(map).not.toHaveClass(/zoomed/);
@@ -214,6 +246,20 @@ test("the operator filters who is on the site and picks a country on the map", a
   await expect(map).toHaveClass(/zoomed/);
   await map.getByRole("button", { name: "Zoom out" }).click();
   await expect(map).not.toHaveClass(/zoomed/);
+
+  // On a phone, everything fits the width: nothing scrolls sideways.
+  await operator.setViewportSize({ width: 390, height: 844 });
+  await expect(band).toBeVisible();
+  const overflow = await operator.evaluate(() =>
+    [document.documentElement, ...document.querySelectorAll<HTMLElement>(".page, .page-body")]
+      .filter((element) => element.scrollWidth > element.clientWidth)
+      .map((element) => element.className || element.tagName),
+  );
+  expect(overflow).toEqual([]);
+  await picture(operator, "visitors-phone");
+  await overTime.evaluate((element) => element.scrollIntoView({ block: "start" }));
+  await expect(overTime.getByRole("heading", { name: "Over time" })).toBeInViewport();
+  await picture(operator, "visitors-phone-over-time");
 
   await claire.getByRole("button", { name: "View contact" }).click();
   await expect(operator.getByRole("heading", { name: "Claire Martin" })).toBeVisible();

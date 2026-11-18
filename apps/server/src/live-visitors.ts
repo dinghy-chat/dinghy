@@ -1,29 +1,30 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { and, eq, gte, inArray, not, sql } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import type { Redis } from "iovalkey";
 import type { Logger } from "pino";
+import { isUnknownZone, UNKNOWN_ZONE } from "./analytics.ts";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { conversation, message, visitor } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
-import { MEMBER_ERRORS } from "./errors.ts";
+import { INVALID, MEMBER_ERRORS } from "./errors.ts";
 import { WORKSPACE_PREFIX as PREFIX, workspaceParams } from "./member.ts";
-import { conversationHasTestVisitor, isChat, snoozedNow } from "./messages.ts";
-import { HOUR_MS, HOUR_SECONDS, MINUTE_MS } from "./time.ts";
+import { isChat, snoozedNow } from "./messages.ts";
+import { HOURS_KEY, PERIOD_DAYS, readSiteStats } from "./site-hours.ts";
+import { HOUR_MS, HOUR_SECONDS, MINUTE_MS, TimeZone } from "./time.ts";
 
 /** A tab that stops beating, closed or asleep, leaves the live view after this long. */
 const LIVE_TTL_MS = 90_000;
 /** Tabs a workspace shows at once. A beat above it is dropped, so a flood stays bounded. */
 export const LIVE_TAB_CAP = 2000;
 
-/** An hour's history stays this long, so the 24 hours before the last 24 can still be read. */
-const HISTORY_HOURS = 49;
-/** The hours that `stats` reads: the current one and the 47 before it. */
-const STATS_HOURS = 48;
+/**
+ * An hour's hash stays this long in Valkey. The worker copies it to Postgres within a minute, and
+ * the live chart reads only the last two hours' minutes.
+ */
+const HISTORY_HOURS = 3;
 /** Distinct pages and referrers an hour keeps, so a flood of addresses stays bounded. */
 export const HOUR_FIELD_CAP = 200;
-/** How many pages and referrers the stats list. */
-const TOP_COUNT = 5;
 
 /**
  * Drops the expired tabs, then adds this one unless the workspace is full, in one step, so beats at
@@ -47,8 +48,9 @@ return {redis.call('HGET', tabs, tab) or '', redis.call('ZCARD', order), added}`
 /**
  * Adds a beat to its hour's history: the minute's most tabs at once, and for a visit or a page view
  * its counts. Past the cap, a new page or referrer is not added, so `np` and `nr` count the distinct
- * ones. ARGV: expiry in seconds, cap, minute, live tabs, is a visit, is a page view, page, title,
- * referrer ("" for none).
+ * ones. The hour goes in the set of hours for the worker to copy. KEYS: the hour, the set. ARGV:
+ * expiry in seconds, cap, minute, live tabs, is a visit, is a page view, page, title, referrer (""
+ * for none).
  */
 const RECORD_BEAT = `
 local hour, cap = KEYS[1], tonumber(ARGV[2])
@@ -74,7 +76,8 @@ if ARGV[6] == '1' then
   redis.call('HINCRBY', hour, 'pv', 1)
   if add('p:' .. ARGV[7], 'np') and ARGV[8] ~= '' then redis.call('HSET', hour, 't:' .. ARGV[7], ARGV[8]) end
 end
-redis.call('EXPIRE', hour, ARGV[1])`;
+redis.call('EXPIRE', hour, ARGV[1])
+redis.call('SADD', KEYS[2], hour)`;
 
 const orderKey = (workspaceId: string) => `dinghy:live:${workspaceId}`;
 const tabsKey = (workspaceId: string) => `dinghy:live:${workspaceId}:tabs`;
@@ -105,18 +108,6 @@ interface LiveTab {
  */
 type Beat = Omit<LiveTab, "startedAt" | "seenAt"> & { first: boolean; entrance: boolean };
 
-/** The site's last 24 hours, from the hourly history. */
-interface VisitorStats {
-  /** Tabs live at once in each of the last 60 minutes, oldest first. */
-  lastHour: number[];
-  visits: number;
-  visitsBefore: number;
-  pageViews: number;
-  peak: { count: number; at: string } | null;
-  pages: { page: string; title: string | null; count: number }[];
-  referrers: { referrer: string | null; count: number }[];
-}
-
 export interface LiveVisitors {
   /** False when the workspace already shows as many tabs as it may. */
   beat(workspaceId: string, beat: Beat): Promise<boolean>;
@@ -124,8 +115,8 @@ export interface LiveVisitors {
   /** Null when Valkey cannot answer. */
   list(workspaceId: string): Promise<LiveTab[] | null>;
   count(workspaceId: string): Promise<number | null>;
-  /** Null when Valkey cannot answer. */
-  stats(workspaceId: string): Promise<VisitorStats | null>;
+  /** Tabs live at once in each of the last 60 minutes, oldest first. Null when Valkey cannot answer. */
+  lastHour(workspaceId: string): Promise<number[] | null>;
 }
 
 const parse = (text: string | null): LiveTab | null => {
@@ -189,8 +180,9 @@ export function createLiveVisitors(valkey: Redis | null, logger: Logger): LiveVi
           .pexpire(tabs, LIVE_TTL_MS * 2)
           .eval(
             RECORD_BEAT,
-            1,
+            2,
             hourKey(workspaceId, Math.floor(now / HOUR_MS)),
+            HOURS_KEY,
             HISTORY_HOURS * HOUR_SECONDS,
             HOUR_FIELD_CAP,
             Math.floor(now / MINUTE_MS) % 60,
@@ -225,73 +217,21 @@ export function createLiveVisitors(valkey: Redis | null, logger: Logger): LiveVi
     count(workspaceId) {
       return attempt(null, (client) => client.zcount(orderKey(workspaceId), Date.now(), "+inf"));
     },
-    stats(workspaceId) {
+    lastHour(workspaceId) {
       return attempt(null, async (client) => {
-        const now = Date.now();
-        const current = Math.floor(now / HOUR_MS);
-        const batch = client.pipeline();
-        for (let back = STATS_HOURS - 1; back >= 0; back -= 1) {
-          batch.hgetall(hourKey(workspaceId, current - back));
-        }
-        const results = (await batch.exec()) ?? [];
-        const hours = results.map(([err, fields], index) => {
-          if (err !== null) throw err;
-          return {
-            hour: current - STATS_HOURS + 1 + index,
-            fields: fields as Record<string, string>,
-          };
+        const nowMinute = Math.floor(Date.now() / MINUTE_MS);
+        const current = Math.floor(nowMinute / 60);
+        const [before, latest] = await Promise.all([
+          client.hgetall(hourKey(workspaceId, current - 1)),
+          client.hgetall(hourKey(workspaceId, current)),
+        ]);
+        return Array.from({ length: 60 }, (_, index) => {
+          const minute = nowMinute - 59 + index;
+          const fields = Math.floor(minute / 60) === current ? latest : before;
+          return Number(fields[`m:${minute % 60}`] ?? 0);
         });
-        return summarize(hours, Math.floor(now / MINUTE_MS));
       });
     },
-  };
-}
-
-type Hour = { hour: number; fields: Record<string, string> };
-
-/** Sums the fields that start with `prefix` over the hours, most first, as the top few. */
-function top(hours: Hour[], prefix: string): [key: string, count: number][] {
-  const counts = new Map<string, number>();
-  for (const { fields } of hours) {
-    for (const [field, value] of Object.entries(fields)) {
-      if (!field.startsWith(prefix)) continue;
-      const key = field.slice(prefix.length);
-      counts.set(key, (counts.get(key) ?? 0) + Number(value));
-    }
-  }
-  return [...counts].sort((one, other) => other[1] - one[1]).slice(0, TOP_COUNT);
-}
-
-const total = (hours: Hour[], field: string) =>
-  hours.reduce((sum, { fields }) => sum + Number(fields[field] ?? 0), 0);
-
-/** The stats from the hours, oldest first, the last 24 of which are the last 24 hours. */
-function summarize(hours: Hour[], nowMinute: number): VisitorStats {
-  const day = hours.slice(-24);
-  const byHour = new Map(hours.map(({ hour, fields }) => [hour, fields]));
-  const lastHour = Array.from({ length: 60 }, (_, index) => {
-    const minute = nowMinute - 59 + index;
-    return Number(byHour.get(Math.floor(minute / 60))?.[`m:${minute % 60}`] ?? 0);
-  });
-  let peak: VisitorStats["peak"] = null;
-  for (const { hour, fields } of day) {
-    for (const [field, value] of Object.entries(fields)) {
-      if (!field.startsWith("m:") || Number(value) < (peak?.count ?? 1)) continue;
-      const at = new Date((hour * 60 + Number(field.slice(2))) * MINUTE_MS);
-      peak = { count: Number(value), at: at.toISOString() };
-    }
-  }
-  // The newest hour that saw a page has its latest title.
-  const title = (page: string) =>
-    day.findLast(({ fields }) => fields[`t:${page}`] !== undefined)?.fields[`t:${page}`] ?? null;
-  return {
-    lastHour,
-    visits: total(day, "v"),
-    visitsBefore: total(hours.slice(0, -24), "v"),
-    pageViews: total(day, "pv"),
-    peak,
-    pages: top(day, "p:").map(([page, count]) => ({ page, title: title(page), count })),
-    referrers: top(day, "r:").map(([referrer, count]) => ({ referrer: referrer || null, count })),
   };
 }
 
@@ -361,57 +301,53 @@ const countRoute = createRoute({
   },
 });
 
+const counted = z.number().int();
+
 const VisitorStatsSchema = z
   .object({
-    lastHour: z.array(z.number().int()).length(60),
-    visits: z.number().int(),
-    visitsBefore: z.number().int(),
-    pageViews: z.number().int(),
-    peak: z.object({ count: z.number().int(), at: z.string() }).nullable(),
-    pages: z.array(
-      z.object({ page: z.string(), title: z.string().nullable(), count: z.number().int() }),
-    ),
-    referrers: z.array(z.object({ referrer: z.string().nullable(), count: z.number().int() })),
+    // The most tabs open at once in each of the last 60 minutes, oldest first. Null when the server
+    // cannot tell now.
+    lastHour: z.array(counted).length(60).nullable(),
+    visits: counted,
+    visitsBefore: counted,
+    pageViews: counted,
+    pageViewsBefore: counted,
+    chats: counted,
+    chatsBefore: counted,
+    peak: z.object({ count: counted, at: z.string() }).nullable(),
+    // Visits per hour for one day, per day in `tz` otherwise, oldest first.
+    series: z.array(counted),
+    pages: z.array(z.object({ page: z.string(), title: z.string().nullable(), count: counted })),
+    referrers: z.array(z.object({ referrer: z.string().nullable(), count: counted })),
   })
   .openapi("VisitorStats");
+
+const StatsQuery = z.object({
+  days: z.coerce
+    .number()
+    .int()
+    .refine((days) => (PERIOD_DAYS as readonly number[]).includes(days), "1, 7, 30 or 90")
+    .default(1),
+  tz: TimeZone.default("UTC"),
+});
 
 const statsRoute = createRoute({
   method: "get",
   path: `${PREFIX}/{workspaceId}/visitors/stats`,
   security: SESSION,
-  summary: "Count the site's visits, page views and busiest minute of the last 24 hours",
+  summary: "Count the site's visits, page views, chats and busiest minute over 1, 7, 30 or 90 days",
   description:
-    "Kept in Valkey by the hour for 49 hours, with no cookie and no stored ID. The last 24 hours are whole hours: the current hour and the 23 before it, and `visitsBefore` counts the 24 hours before those. A visit is a tab that opened from another site or from nowhere; a page view is a tab that opened, or one whose page changed. `lastHour` holds the most tabs open at once in each of the last 60 minutes, oldest first, and `peak` the busiest minute of the 24 hours. `pages` and `referrers` list the top 5, with a null `referrer` for none; an hour keeps at most 200 distinct pages and 200 referrers. `chats` counts the conversations created in the same 24 hours, that visitors started, leaving out the welcome chat and test visitors. Null `stats` means the server cannot tell now.",
-  request: { params: workspaceParams },
+    "Counted by the hour with no cookie and no stored ID, and kept 92 days; the stored hours are at most about a minute behind. One day is the last 24 whole hours: the current hour and the 23 before it. A longer period runs from the start of the day, `days - 1` days ago, in `tz`, to now, as for analytics. The `Before` numbers are for a period of the same length just before. A visit is a tab that opened from another site or from nowhere; a page view is a tab that opened, or one whose page changed. `series` holds the visits per hour for one day, and per day in `tz` otherwise, oldest first. `peak` is the busiest minute, by the most tabs open at once. `pages` and `referrers` list the top 8, with a null `referrer` for none; an hour keeps at most 200 distinct pages and 200 referrers. `chats` counts the conversations that visitors started in the period, leaving out the welcome chat and test visitors. `lastHour` holds the most tabs open at once in each of the last 60 minutes, oldest first, and is null when the server cannot tell now.",
+  request: { params: workspaceParams, query: StatsQuery },
   responses: {
     200: {
       description: "The stats",
-      content: {
-        "application/json": {
-          schema: z.object({ stats: VisitorStatsSchema.nullable(), chats: z.number().int() }),
-        },
-      },
+      content: { "application/json": { schema: VisitorStatsSchema } },
     },
     ...MEMBER_ERRORS,
+    ...INVALID,
   },
 });
-
-/** Conversations created in the same whole hours as the stats' visits, as Analytics counts them. */
-async function countChats(tx: Transaction, workspaceId: string): Promise<number> {
-  const [row] = await tx
-    .select({ count: sql<number>`count(*)::int` })
-    .from(conversation)
-    .where(
-      and(
-        eq(conversation.workspaceId, workspaceId),
-        gte(conversation.createdAt, new Date((Math.floor(Date.now() / HOUR_MS) - 23) * HOUR_MS)),
-        eq(conversation.startedBy, "visitor"),
-        not(conversation.welcome),
-        not(conversationHasTestVisitor(sql`${conversation}`)),
-      ),
-    );
-  return row?.count ?? 0;
-}
 
 /**
  * When each of these conversations started to wait for a reply: the visitor's first message since the
@@ -505,11 +441,19 @@ export function registerLiveVisitorRoutes(app: App, db: Database, visitors: Live
 
   app.openapi(statsRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
-    const [stats, chats] = await Promise.all([
-      visitors.stats(id),
-      withWorkspace(db, id, (tx) => countChats(tx, id)),
-    ]);
-    return c.json({ stats, chats }, 200);
+    const { days, tz } = c.req.valid("query");
+    const read = withWorkspace(
+      db,
+      id,
+      (tx) => readSiteStats(tx, id, { days, timeZone: tz, now: new Date() }),
+      { isolationLevel: "repeatable read", accessMode: "read only" },
+    ).catch((error: unknown) => {
+      if (isUnknownZone(error)) return null;
+      throw error;
+    });
+    const [lastHour, stats] = await Promise.all([visitors.lastHour(id), read]);
+    if (stats === null) return c.json(UNKNOWN_ZONE, 400);
+    return c.json({ lastHour, ...stats }, 200);
   });
 
   app.openapi(listRoute, async (c) =>
