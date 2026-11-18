@@ -99,6 +99,8 @@ export function Tooltips() {
   useLayoutEffect(() => {
     const element = box.current;
     if (tip === null || element === null) return;
+    // In the top layer, so a modal dialog such as the image viewer does not cover it.
+    if (!element.matches(":popover-open")) element.showPopover();
     const at = tip.element.getBoundingClientRect();
     const { offsetWidth: width, offsetHeight: height } = element;
     const below = at.bottom + GAP_PX + height + EDGE_PX <= innerHeight;
@@ -112,7 +114,7 @@ export function Tooltips() {
   if (tip === null) return null;
   // Screen readers already have the label, so the tooltip is only for the eye.
   return (
-    <div ref={box} className="tooltip" aria-hidden="true">
+    <div ref={box} className="tooltip" popover="manual" aria-hidden="true">
       {tip.text}
     </div>
   );
