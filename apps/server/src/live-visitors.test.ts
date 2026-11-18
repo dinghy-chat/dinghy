@@ -11,8 +11,8 @@ import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
 import { conversation, siteHour, visitor } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
-import { createLiveVisitors, HOUR_FIELD_CAP, hourKey, LIVE_TAB_CAP } from "./live-visitors.ts";
-import { HOURS_KEY, readSiteStats, rollUpHours } from "./site-hours.ts";
+import { createLiveVisitors, HOUR_FIELD_CAP, LIVE_TAB_CAP } from "./live-visitors.ts";
+import { HOURS_KEY, hourKey, hourOf, readSiteStats, rollUpHours } from "./site-hours.ts";
 import { HOUR_MS } from "./time.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
@@ -256,7 +256,7 @@ describe("the beat", () => {
 
 describe("the history", () => {
   const fresh = () => createWorkspace(db, "History", [SITE]);
-  const currentHour = () => Math.floor(Date.now() / HOUR_MS);
+  const currentHour = () => hourOf(Date.now());
   const thisHour = (workspaceId: string, back = 0) => hourKey(workspaceId, currentHour() - back);
   /** Copies the hours to Postgres, as the worker does, and reads them back. */
   const stats = async (workspaceId: string) => {
@@ -299,7 +299,7 @@ describe("the history", () => {
     });
   });
 
-  test("a tab that comes back after its presence expired is no new visit, and an overtaken first beat still is", async () => {
+  test("a first beat counts once: not again when the tab comes back or when it is sent twice, and still when overtaken", async () => {
     const { id, publicKey } = await fresh();
     const back = tab();
     await beat({ tab: back, page: `${SITE}/`, referrer: "" }, undefined, publicKey);
@@ -311,7 +311,12 @@ describe("the history", () => {
     const overtaken = tab();
     await beat({ tab: overtaken, page: `${SITE}/` }, undefined, publicKey);
     await beat({ tab: overtaken, page: `${SITE}/`, referrer: "" }, undefined, publicKey);
-    expect(await stats(id)).toMatchObject({ visits: 2, pageViews: 2 });
+    // A first beat sent twice, at once or one after the other, counts once.
+    const twice = tab();
+    const first = { tab: twice, page: `${SITE}/`, referrer: "" };
+    await Promise.all([beat(first, undefined, publicKey), beat(first, undefined, publicKey)]);
+    await beat(first, undefined, publicKey);
+    expect(await stats(id)).toMatchObject({ visits: 3, pageViews: 3 });
   });
 
   test("each minute keeps the most tabs open at once, for the last hour and the peak", async () => {
@@ -355,7 +360,7 @@ describe("the roll-up", () => {
 
   test("copies each hour, a rerun changes nothing, and a finished hour leaves the set", async () => {
     const { id, publicKey } = await createWorkspace(db, "Roll-up", [SITE]);
-    const hour = Math.floor(Date.now() / HOUR_MS);
+    const hour = hourOf(Date.now());
     const finished = hourKey(id, hour - 2);
     await valkey.hset(finished, {
       v: 3,
@@ -375,7 +380,7 @@ describe("the roll-up", () => {
     await beat({ tab: tab(), page: `${SITE}/now`, referrer: "" }, undefined, publicKey);
     expect(await valkey.sismember(HOURS_KEY, hourKey(id, hour))).toBe(1);
 
-    await rollUpHours(workerDb, valkey);
+    await rollUpHours(workerDb, valkey, hour * HOUR_MS);
     const copied = await rows(id);
     expect(copied.sort((one, other) => one.hour.getTime() - other.hour.getTime())).toEqual([
       {
@@ -397,7 +402,7 @@ describe("the roll-up", () => {
     expect(await valkey.sismember(HOURS_KEY, hourKey(id, hour))).toBe(1);
 
     await valkey.sadd(HOURS_KEY, finished);
-    await rollUpHours(workerDb, valkey);
+    await rollUpHours(workerDb, valkey, hour * HOUR_MS);
     expect(await rows(id)).toEqual(expect.arrayContaining(copied));
     expect(await rows(id)).toHaveLength(3);
   });
@@ -405,7 +410,7 @@ describe("the roll-up", () => {
   test("a workspace whose hours fail to save keeps them, and the others are saved", async () => {
     const bad = await createWorkspace(db, "Bad", [SITE]);
     const good = await createWorkspace(db, "Good", [SITE]);
-    const hour = Math.floor(Date.now() / HOUR_MS) - 2;
+    const hour = hourOf(Date.now()) - 2;
     // Postgres refuses a NUL in jsonb. The beat strips it, so only a hash written by hand has one.
     await valkey.hset(hourKey(bad.id, hour), { v: 1, [`t:${SITE}/`]: "a\u0000b" });
     await valkey.hset(hourKey(good.id, hour), { v: 2 });
@@ -419,19 +424,22 @@ describe("the roll-up", () => {
 
   test("a page title loses its control characters", async () => {
     const { id, publicKey } = await createWorkspace(db, "Titles", [SITE]);
+    const hour = hourOf(Date.now());
     await beat(
       { tab: tab(), page: `${SITE}/`, title: "a\u0000b\u0007c", referrer: "" },
       undefined,
       publicKey,
     );
-    expect(await valkey.hget(hourKey(id, Math.floor(Date.now() / HOUR_MS)), `t:${SITE}/`)).toBe(
-      "a b c",
+    // The hour may turn during the beat.
+    const titles = await Promise.all(
+      [hour, hour + 1].map((one) => valkey.hget(hourKey(id, one), `t:${SITE}/`)),
     );
+    expect(titles).toContain("a b c");
   });
 
   test("an older copy never lowers a row, and a gone workspace gets none", async () => {
     const { id } = await createWorkspace(db, "Older", [SITE]);
-    const key = hourKey(id, Math.floor(Date.now() / HOUR_MS) - 1);
+    const key = hourKey(id, hourOf(Date.now()) - 1);
     await valkey.hset(key, { v: 5, pv: 5 });
     await valkey.sadd(HOURS_KEY, key);
     await rollUpHours(workerDb, valkey);
@@ -440,7 +448,7 @@ describe("the roll-up", () => {
     await rollUpHours(workerDb, valkey);
     expect((await rows(id))[0]).toMatchObject({ visits: 5, pageViews: 5 });
 
-    const gone = hourKey("00000000-0000-4000-8000-000000000000", Math.floor(Date.now() / HOUR_MS));
+    const gone = hourKey("00000000-0000-4000-8000-000000000000", hourOf(Date.now()));
     await valkey.hset(gone, { v: 1 });
     await valkey.sadd(HOURS_KEY, gone);
     await rollUpHours(workerDb, valkey);
@@ -451,8 +459,7 @@ describe("the roll-up", () => {
 
   test("the prune deletes hours older than 182 days", async () => {
     const { id } = await createWorkspace(db, "Prune", [SITE]);
-    const daysAgo = (days: number) =>
-      new Date((Math.floor(Date.now() / HOUR_MS) - days * 24) * HOUR_MS);
+    const daysAgo = (days: number) => new Date((hourOf(Date.now()) - days * 24) * HOUR_MS);
     await owner.insert(siteHour).values([hourRow(id, daysAgo(183)), hourRow(id, daysAgo(181))]);
     await pruneOnce(workerDb, new Date(0));
     expect((await rows(id)).map((row) => row.hour)).toEqual([daysAgo(181)]);

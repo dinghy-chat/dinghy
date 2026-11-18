@@ -6,12 +6,13 @@ import {
   useRef,
   useState,
 } from "react";
+import { PERIODS as ANALYTICS_PERIODS } from "./analytics.tsx";
 import type { LiveVisitor, VisitorDays, VisitorStats, WorkspaceApi } from "./api.ts";
 import { COUNTRY_POINTS } from "./countries.ts";
 import { browserTimeZone, clockTime, MINUTE_MS } from "./format.ts";
 import { Icon } from "./icons.tsx";
 import { useTabVisible } from "./live.ts";
-import { useLatestLoad } from "./load.ts";
+import { useLatestLoad, usePolling } from "./load.ts";
 import { MessageButton } from "./outbound.tsx";
 import { countryName, flag, localHour, localTime } from "./place.ts";
 import { EmptyArt } from "./scene.tsx";
@@ -47,12 +48,7 @@ const WORLD_TOP = 0.04;
 type Show = "all" | "chatting" | "waiting" | "known";
 type Period = `${VisitorDays}`;
 
-const PERIODS: readonly Option<Period>[] = [
-  { value: "1", label: "period1" },
-  { value: "7", label: "period7" },
-  { value: "30", label: "period30" },
-  { value: "90", label: "period90" },
-];
+const PERIODS: readonly Option<Period>[] = [{ value: "1", label: "period1" }, ...ANALYTICS_PERIODS];
 
 /** The stats of a period, so an answer for the period before a switch never shows as the new one's. */
 type PeriodStats = { days: Period; numbers: VisitorStats };
@@ -159,6 +155,10 @@ function countryLine(country: string, count: number): string {
 function pageTitle(one: LiveVisitor): string {
   return pageName(one.title, one.page);
 }
+
+/** Where people came from: a site's bare name, or "No referrer". */
+const sourceName = (referrer: string | null) =>
+  referrer === null ? t("visitorsNoReferrer") : bare(referrer);
 
 /** People by country, for the map's dots. */
 function byCountry(visitors: LiveVisitor[]): Map<string, LiveVisitor[]> {
@@ -568,12 +568,7 @@ function LiveTiles({ listed }: { listed: LiveVisitor[] }) {
   return (
     <div className="live-tiles">
       <Bars title={t("visitorsPages")} rows={tally(listed, (one) => one.page, pageTitle)} />
-      <Bars
-        title={t("visitorsSources")}
-        rows={tally(listed, (one) =>
-          one.referrer === null ? t("visitorsNoReferrer") : bare(one.referrer),
-        )}
-      />
+      <Bars title={t("visitorsSources")} rows={tally(listed, (one) => sourceName(one.referrer))} />
       <Bars
         title={t("visitorsCountries")}
         rows={tally(
@@ -699,7 +694,7 @@ function OverTime({
               title={t("visitorsTopSources")}
               rows={numbers.referrers.map(({ referrer, count }) => ({
                 key: referrer ?? "",
-                label: referrer === null ? t("visitorsNoReferrer") : bare(referrer),
+                label: sourceName(referrer),
                 count,
               }))}
             />
@@ -838,24 +833,13 @@ export function VisitorsPage({
       setStatsFailure(failureText(error, {}, "actionFailed"));
     }
   });
-  // biome-ignore lint/correctness/useExhaustiveDependencies: a new period loads at once.
-  useEffect(() => {
-    if (!visible) return;
-    loadStats();
-    const timer = setInterval(loadStats, STATS_REFRESH_MS);
-    return () => clearInterval(timer);
-  }, [loadStats, visible, days]);
+  usePolling(loadStats, STATS_REFRESH_MS, visible, days);
   const load = useLatestLoad(async () => {
     const { visitors } = await api.liveVisitors();
     setList(visitors === null ? { state: "unknown" } : { state: "ready", visitors });
     setNow(Date.now());
   });
-  useEffect(() => {
-    if (!visible) return;
-    load();
-    const timer = setInterval(load, REFRESH_MS);
-    return () => clearInterval(timer);
-  }, [load, visible]);
+  usePolling(load, REFRESH_MS, visible);
 
   const count = list.state === "ready" ? list.visitors.length : 0;
   return (

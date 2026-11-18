@@ -216,29 +216,20 @@ export function Sparkline({
       return `${x},${y}`;
     })
     .join("L")}`;
-  const paths = (
-    <>
+  return (
+    <svg
+      className={className}
+      viewBox={`0 0 ${SPARK_WIDTH} ${SPARK_HEIGHT}`}
+      preserveAspectRatio="none"
+      role="img"
+      aria-label={label}
+      aria-hidden={label === undefined}
+    >
       <path
         className="spark-area"
         d={`${line}L${SPARK_WIDTH},${SPARK_HEIGHT}L0,${SPARK_HEIGHT}Z`}
       />
       <path className="spark-line" d={line} />
-    </>
-  );
-  const box = `0 0 ${SPARK_WIDTH} ${SPARK_HEIGHT}`;
-  return label === undefined ? (
-    <svg className={className} viewBox={box} preserveAspectRatio="none" aria-hidden="true">
-      {paths}
-    </svg>
-  ) : (
-    <svg
-      className={className}
-      viewBox={box}
-      preserveAspectRatio="none"
-      role="img"
-      aria-label={label}
-    >
-      {paths}
     </svg>
   );
 }

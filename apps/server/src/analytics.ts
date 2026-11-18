@@ -75,15 +75,22 @@ const Analytics = z
 
 export type AnalyticsResult = z.infer<typeof Analytics>;
 
+/** A period of one of `periods` days, `fallback` by default, and the time zone its days start in. */
+export const periodQuery = (periods: readonly number[], fallback: number) =>
+  z.object({
+    days: z.coerce
+      .number()
+      .int()
+      .refine(
+        (days) => periods.includes(days),
+        `${periods.slice(0, -1).join(", ")} or ${periods.at(-1)}`,
+      )
+      .default(fallback),
+    tz: TimeZone.default("UTC"),
+  });
+
 /** The period and the time zone: the route's query, and MCP's `get_analytics` arguments. */
-export const AnalyticsQuery = z.object({
-  days: z.coerce
-    .number()
-    .int()
-    .refine((days) => (PERIODS as readonly number[]).includes(days), "7, 30 or 90")
-    .default(30),
-  tz: TimeZone.default("UTC"),
-});
+export const AnalyticsQuery = periodQuery(PERIODS, 30);
 
 const analyticsRoute = createRoute({
   method: "get",
@@ -341,7 +348,7 @@ export async function readAnalytics(
 }
 
 /** A time zone Postgres does not know, as its own tz database can lag Node's. */
-export function isUnknownZone(error: unknown): boolean {
+function isUnknownZone(error: unknown): boolean {
   for (let current = error; current instanceof Error; current = current.cause) {
     if ((current as { code?: unknown }).code === PG_INVALID_PARAMETER) return true;
   }
@@ -350,23 +357,35 @@ export function isUnknownZone(error: unknown): boolean {
 
 export const UNKNOWN_ZONE = failure("invalid_request", "This server does not know that time zone.");
 
-/** The numbers as the Analytics page shows them, or null when Postgres does not know the zone. */
-export async function analyticsFor(
+/**
+ * One read of a period's numbers in a time zone, in one snapshot, or null when Postgres does not
+ * know the zone.
+ */
+export async function readInZone<T>(
   db: Database,
   workspaceId: string,
-  { days, tz }: z.output<typeof AnalyticsQuery>,
-): Promise<AnalyticsResult | null> {
+  read: (tx: Transaction) => Promise<T>,
+): Promise<T | null> {
   try {
-    return await withWorkspace(
-      db,
-      workspaceId,
-      (tx) => readAnalytics(tx, workspaceId, { days, timeZone: tz, now: new Date() }),
-      { isolationLevel: "repeatable read", accessMode: "read only" },
-    );
+    return await withWorkspace(db, workspaceId, read, {
+      isolationLevel: "repeatable read",
+      accessMode: "read only",
+    });
   } catch (error) {
     if (!isUnknownZone(error)) throw error;
     return null;
   }
+}
+
+/** The numbers as the Analytics page shows them, or null when Postgres does not know the zone. */
+export function analyticsFor(
+  db: Database,
+  workspaceId: string,
+  { days, tz }: z.output<typeof AnalyticsQuery>,
+): Promise<AnalyticsResult | null> {
+  return readInZone(db, workspaceId, (tx) =>
+    readAnalytics(tx, workspaceId, { days, timeZone: tz, now: new Date() }),
+  );
 }
 
 export function registerAnalyticsRoute(app: App, db: Database): void {

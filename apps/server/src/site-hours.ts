@@ -11,6 +11,11 @@ import { HOUR_MS, HOUR_SECONDS, MINUTE_MS } from "./time.ts";
 
 /** The Valkey set of the hour hashes that the worker still has to copy. */
 export const HOURS_KEY = "dinghy:live:hours";
+/** The hour of a time, as hours since the epoch. */
+export const hourOf = (ms: number) => Math.floor(ms / HOUR_MS);
+/** The Valkey hash of a workspace's hour, which HOUR_HASH reads back. */
+export const hourKey = (workspaceId: string, hour: number) =>
+  `dinghy:live:${workspaceId}:h:${hour}`;
 const HOUR_HASH = /^dinghy:live:([0-9a-f-]{36}):h:(\d+)$/;
 /** How long an hour stays: twice the longest period, so 90 days compare with the 90 before them. */
 const KEPT_DAYS = 182;
@@ -94,7 +99,7 @@ export async function rollUpHours(db: Database, valkey: Redis, now = Date.now())
   const batch = valkey.pipeline();
   for (const key of keys) batch.hgetall(key);
   const results = (await batch.exec()) ?? [];
-  const current = Math.floor(now / HOUR_MS);
+  const current = hourOf(now);
   const byWorkspace = new Map<string, HourRow[]>();
   const finished = new Map<string, string[]>();
   keys.forEach((key, index) => {
@@ -156,7 +161,7 @@ async function periodWindow(
   now: Date,
 ): Promise<Window> {
   if (days === 1) {
-    const since = (Math.floor(now.getTime() / HOUR_MS) - DAY_HOURS + 1) * HOUR_MS;
+    const since = (hourOf(now.getTime()) - DAY_HOURS + 1) * HOUR_MS;
     return {
       since: new Date(since),
       previousSince: new Date(since - DAY_HOURS * HOUR_MS),
@@ -174,7 +179,7 @@ async function periodWindow(
   return {
     since: new Date(row.since),
     previousSince: new Date(row.previous_since),
-    previousUntil: new Date(Math.floor(Date.parse(row.previous_until) / HOUR_MS) * HOUR_MS),
+    previousUntil: new Date(hourOf(Date.parse(row.previous_until)) * HOUR_MS),
   };
 }
 

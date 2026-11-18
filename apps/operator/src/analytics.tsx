@@ -21,7 +21,7 @@ import { Avatar, Choices, DocLink, failureText, Loading, type Option, Page } fro
 
 type Period = `${AnalyticsDays}`;
 
-const PERIODS: readonly Option<Period>[] = [
+export const PERIODS: readonly Option<Period>[] = [
   { value: "7", label: "period7" },
   { value: "30", label: "period30" },
   { value: "90", label: "period90" },

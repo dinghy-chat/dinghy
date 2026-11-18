@@ -1,17 +1,17 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import type { Redis } from "iovalkey";
 import type { Logger } from "pino";
-import { isUnknownZone, UNKNOWN_ZONE } from "./analytics.ts";
+import { periodQuery, readInZone, UNKNOWN_ZONE } from "./analytics.ts";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
-import { conversation, message, visitor } from "./db/schema.ts";
-import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
+import { visitor } from "./db/schema.ts";
+import { type Database, withWorkspace } from "./db/tenant.ts";
 import { INVALID, MEMBER_ERRORS } from "./errors.ts";
 import { WORKSPACE_PREFIX as PREFIX, workspaceParams } from "./member.ts";
-import { isChat, snoozedNow } from "./messages.ts";
-import { HOURS_KEY, PERIOD_DAYS, readSiteStats } from "./site-hours.ts";
-import { HOUR_MS, HOUR_SECONDS, MINUTE_MS, TimeZone } from "./time.ts";
+import { waitingSince } from "./messages.ts";
+import { HOURS_KEY, hourKey, hourOf, PERIOD_DAYS, readSiteStats } from "./site-hours.ts";
+import { HOUR_SECONDS, MINUTE_MS } from "./time.ts";
 
 /** A tab that stops beating, closed or asleep, leaves the live view after this long. */
 const LIVE_TTL_MS = 90_000;
@@ -28,21 +28,28 @@ export const HOUR_FIELD_CAP = 200;
 
 /**
  * Drops the expired tabs, then adds this one unless the workspace is full, in one step, so beats at
- * once cannot pass the cap. Returns the tab's details from before ("" for none) and the tabs live
- * now, or nil when full.
+ * once cannot pass the cap. Returns the tab's details from before ("" for none), the tabs live now,
+ * and 1 when this is the tab's first beat and the first to arrive with it, so a sent-again first beat
+ * counts once; or nil when full. The `+tab` field marks a tab whose first beat was counted.
  */
 const ADMIT_TAB = `
 local order, tabs, tab = KEYS[1], KEYS[2], ARGV[1]
 local expired = redis.call('ZRANGEBYSCORE', order, '-inf', ARGV[2])
 if #expired > 0 then
   redis.call('ZREMRANGEBYSCORE', order, '-inf', ARGV[2])
-  redis.call('HDEL', tabs, unpack(expired))
+  local fields = {}
+  for _, id in ipairs(expired) do
+    fields[#fields + 1] = id
+    fields[#fields + 1] = '+' .. id
+  end
+  redis.call('HDEL', tabs, unpack(fields))
 end
 if not redis.call('ZSCORE', order, tab) and redis.call('ZCARD', order) >= tonumber(ARGV[4]) then
   return nil
 end
 redis.call('ZADD', order, ARGV[3], tab)
-return {redis.call('HGET', tabs, tab) or '', redis.call('ZCARD', order)}`;
+local counted = ARGV[5] == '1' and redis.call('HSETNX', tabs, '+' .. tab, 1) or 0
+return {redis.call('HGET', tabs, tab) or '', redis.call('ZCARD', order), counted}`;
 
 /**
  * Adds a beat to its hour's history: the minute's most tabs at once, and for a visit or a page view
@@ -80,9 +87,6 @@ redis.call('SADD', KEYS[2], hour)`;
 
 const orderKey = (workspaceId: string) => `dinghy:live:${workspaceId}`;
 const tabsKey = (workspaceId: string) => `dinghy:live:${workspaceId}:tabs`;
-/** One hour's history, by the hours since the epoch. */
-export const hourKey = (workspaceId: string, hour: number) =>
-  `dinghy:live:${workspaceId}:h:${hour}`;
 
 /** One open tab of the host site, as its latest beat described it. */
 interface LiveTab {
@@ -156,15 +160,17 @@ export function createLiveVisitors(valkey: Redis | null, logger: Logger): LiveVi
           now,
           now + LIVE_TTL_MS,
           LIVE_TAB_CAP,
-        )) as [string, number] | null;
+          beat.first ? 1 : 0,
+        )) as [string, number, number] | null;
         if (admitted === null) return false;
-        const [previous, liveCount] = admitted;
+        const [previous, liveCount, counted] = admitted;
         const before = parse(previous === "" ? null : previous);
-        const { first, entrance, ...details } = beat;
+        const { first: _first, entrance, ...details } = beat;
         // Only a tab's first beat, the one that carries the referrer, is a visit and a page view,
-        // even when a later beat reaches the server first or the tab comes back after it expired.
-        // A later page change in the same tab is a page view too.
-        const isPageView = first || (before !== null && before.page !== beat.page);
+        // once, even when a later beat reaches the server first or the tab comes back after it
+        // expired. A later page change in the same tab is a page view too.
+        const isNew = counted === 1;
+        const isPageView = isNew || (before !== null && before.page !== beat.page);
         const entry: LiveTab = {
           ...details,
           // The referrer comes with the first beat only, so later beats keep it.
@@ -180,13 +186,13 @@ export function createLiveVisitors(valkey: Redis | null, logger: Logger): LiveVi
           .eval(
             RECORD_BEAT,
             2,
-            hourKey(workspaceId, Math.floor(now / HOUR_MS)),
+            hourKey(workspaceId, hourOf(now)),
             HOURS_KEY,
             HISTORY_HOURS * HOUR_SECONDS,
             HOUR_FIELD_CAP,
             Math.floor(now / MINUTE_MS) % 60,
             liveCount,
-            first && entrance ? 1 : 0,
+            isNew && entrance ? 1 : 0,
             isPageView ? 1 : 0,
             beat.page,
             beat.title ?? "",
@@ -201,7 +207,7 @@ export function createLiveVisitors(valkey: Redis | null, logger: Logger): LiveVi
         await client
           .multi()
           .zrem(orderKey(workspaceId), tab)
-          .hdel(tabsKey(workspaceId), tab)
+          .hdel(tabsKey(workspaceId), tab, `+${tab}`)
           .exec();
       });
     },
@@ -322,14 +328,7 @@ const VisitorStatsSchema = z
   })
   .openapi("VisitorStats");
 
-const StatsQuery = z.object({
-  days: z.coerce
-    .number()
-    .int()
-    .refine((days) => (PERIOD_DAYS as readonly number[]).includes(days), "1, 7, 30 or 90")
-    .default(1),
-  tz: TimeZone.default("UTC"),
-});
+const StatsQuery = periodQuery(PERIOD_DAYS, 1);
 
 const statsRoute = createRoute({
   method: "get",
@@ -348,42 +347,6 @@ const statsRoute = createRoute({
     ...INVALID,
   },
 });
-
-/**
- * When each of these conversations started to wait for a reply: the visitor's first message since the
- * team's latest one. Waiting follows `countWaiting`: open, not snoozed, and its newest chat message is
- * the visitor's. Leaves out the ones that do not wait.
- */
-async function waitingSince(
-  tx: Transaction,
-  workspaceId: string,
-  ids: string[],
-): Promise<Map<string, string>> {
-  if (ids.length === 0) return new Map();
-  // A chat message of this conversation, as `alias`.
-  const chat = (alias: string) =>
-    sql`${sql.raw(alias)}.workspace_id = c.workspace_id and ${sql.raw(alias)}.conversation_id = c.id
-      and ${isChat(sql.raw(`${alias}.kind`))} and ${sql.raw(alias)}.deleted_at is null`;
-  // The wait starts at the visitor's first message after the team's latest reply.
-  const result = await tx.execute<{ id: string; since: string }>(sql`
-    select c.id, (
-      select min(v.created_at) from ${message} as v
-      where ${chat("v")} and v.author_visitor_id is not null
-        and v.seq > coalesce(
-          (select max(r.seq) from ${message} as r where ${chat("r")} and r.author_visitor_id is null),
-          -1)
-    ) as since
-    from ${conversation} as c
-    cross join lateral (
-      select m.author_visitor_id from ${message} as m
-      where ${chat("m")}
-      order by m.seq desc
-      limit 1
-    ) as newest
-    where c.workspace_id = ${workspaceId} and ${inArray(sql`c.id`, ids)} and c.status = 'open'
-      and newest.author_visitor_id is not null and not ${snoozedNow(sql`c`)}`);
-  return new Map(result.rows.map(({ id, since }) => [id, new Date(since).toISOString()]));
-}
 
 /** The live tabs, newest first, with who the chatting visitors are. Null when Valkey cannot tell. */
 export async function liveVisitorList(
@@ -442,16 +405,10 @@ export function registerLiveVisitorRoutes(app: App, db: Database, visitors: Live
   app.openapi(statsRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
     const { days, tz } = c.req.valid("query");
-    const read = withWorkspace(
-      db,
-      id,
-      (tx) => readSiteStats(tx, id, { days, timeZone: tz, now: new Date() }),
-      { isolationLevel: "repeatable read", accessMode: "read only" },
-    ).catch((error: unknown) => {
-      if (isUnknownZone(error)) return null;
-      throw error;
-    });
-    const [lastHour, stats] = await Promise.all([visitors.lastHour(id), read]);
+    const [lastHour, stats] = await Promise.all([
+      visitors.lastHour(id),
+      readInZone(db, id, (tx) => readSiteStats(tx, id, { days, timeZone: tz, now: new Date() })),
+    ]);
     if (stats === null) return c.json(UNKNOWN_ZONE, 400);
     return c.json({ lastHour, ...stats }, 200);
   });
