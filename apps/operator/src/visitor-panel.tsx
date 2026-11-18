@@ -586,7 +586,7 @@ export function VisitorPanel({
           onGiveBack={onGiveBack}
         />
         <span
-          className={conversation.status === "open" ? "chip warn" : "chip"}
+          className={conversation.status === "open" ? "chip open" : "chip"}
           title={t("statusLabel")}
         >
           {t(conversation.status)}
