@@ -10,7 +10,7 @@ COPY packages/widget/package.json packages/widget/
 COPY ee/package.json ee/
 RUN bun install --frozen-lockfile --ignore-scripts
 
-FROM node:24-alpine@sha256:a34ab6d7f6f4813f4d0c5469d74685604b962fbdbf5793a7bc7b4998ecb867c8 AS bundles
+FROM node:24-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5 AS bundles
 WORKDIR /repo
 COPY --from=install /repo ./
 # Only what the two bundles import, so a server-only change does not build them again.
@@ -27,7 +27,7 @@ RUN node --input-type=module -e " \
 # DB-IP's IP to Country Lite (CC BY 4.0, no account), for the live view's countries. This month's file
 # comes out during the month, so the previous month's is the fallback. Without either, the image
 # still builds, and countries are unknown.
-FROM node:24-alpine@sha256:a34ab6d7f6f4813f4d0c5469d74685604b962fbdbf5793a7bc7b4998ecb867c8 AS geo
+FROM node:24-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5 AS geo
 RUN mkdir /geo \
   && for month in "$(date -u +%Y-%m)" "$(date -u -d "@$(( $(date -u +%s) - 32 * 86400 ))" +%Y-%m)"; do \
        wget -q -O /geo/country.mmdb.gz "https://download.db-ip.com/free/dbip-country-lite-$month.mmdb.gz" \
@@ -49,7 +49,7 @@ COPY ee/package.json ee/
 RUN bun install --frozen-lockfile --production --ignore-scripts --linker=hoisted --omit=peer \
   && mkdir -p apps/server/node_modules ee/node_modules
 
-FROM node:24-alpine@sha256:a34ab6d7f6f4813f4d0c5469d74685604b962fbdbf5793a7bc7b4998ecb867c8
+FROM node:24-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5
 # The major version in compose.yaml. pg_restore refuses a newer server, and the install check compares them.
 # The server never uses npm or corepack, and the image scan finds their bundled packages.
 # The upgrade takes Alpine's security fixes that the pinned base image does not have yet.
