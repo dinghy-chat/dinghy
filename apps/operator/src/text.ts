@@ -144,6 +144,7 @@ const en = {
   linkJoinTitle: "Join your team",
   linkHelp: "Continue to sign in with this browser.",
   linkSignIn: "Sign in",
+  mobileWelcomeHeadline: "Live chat for solo\u00a0founders and small\u00a0teams",
   linkSignup: "Get started",
   linkJoin: "Join the team",
   linkAskAgain: "Get a new link",

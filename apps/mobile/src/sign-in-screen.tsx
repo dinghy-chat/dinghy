@@ -173,17 +173,27 @@ export function SignInScreen({
           { paddingTop: topInset + 12, paddingBottom: Math.max(bottomInset, 16) + 8 },
         ]}
       >
-        <View style={screenStyles.wordmark}>
-          <View style={screenStyles.boatMark}>
-            <Image
-              accessible={false}
-              source={require("../assets/boat.png")}
-              style={screenStyles.boat}
-              resizeMode="contain"
-            />
+        <View>
+          <View style={screenStyles.wordmark}>
+            <View style={screenStyles.boatMark}>
+              <Image
+                accessible={false}
+                source={require("../assets/boat.png")}
+                style={screenStyles.boat}
+                resizeMode="contain"
+              />
+            </View>
+            <Text
+              style={[screenStyles.brand, { color: palette.authInk, fontFamily: fonts.display }]}
+            >
+              {t("appName")}
+            </Text>
           </View>
-          <Text style={[screenStyles.brand, { color: palette.authInk, fontFamily: fonts.display }]}>
-            {t("appName")}
+          <Text
+            accessibilityRole="header"
+            style={[screenStyles.headline, height < 500 && screenStyles.compactHeadline]}
+          >
+            {t("mobileWelcomeHeadline")}
           </Text>
         </View>
         <Pressable
@@ -524,6 +534,16 @@ const screenStyles = StyleSheet.create({
     borderRadius: controlShape.pill,
   },
   entryLabel: { color: "#0b2239", fontFamily: fonts.semibold, fontSize: 18 },
+  headline: {
+    maxWidth: 330,
+    marginTop: 24,
+    color: "#0b2239",
+    fontFamily: fonts.displayBold,
+    fontSize: 36,
+    lineHeight: 39,
+    letterSpacing: -1,
+  },
+  compactHeadline: { maxWidth: 440, fontSize: 26, lineHeight: 30, marginTop: 8 },
   wordmark: {
     flexDirection: "row",
     alignItems: "center",
