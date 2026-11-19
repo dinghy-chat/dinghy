@@ -21,6 +21,7 @@ import {
 import { SignInScreen } from "./src/sign-in-screen";
 import {
   day,
+  displayTheme,
   night,
   type Palette,
   readThemePreference,
@@ -715,9 +716,9 @@ function AppContent() {
   const insets = useSafeAreaInsets();
   const systemTheme = useColorScheme();
   const [theme, setTheme] = useState<ThemePreference | undefined>(undefined);
-  const isNight = theme === "dark" || (theme !== "light" && systemTheme === "dark");
-  const palette = isNight ? night : day;
   const [session, setSession] = useState<Session | null | undefined>(undefined);
+  const isNight = displayTheme(session != null, theme ?? "system", systemTheme) === "dark";
+  const palette = isNight ? night : day;
   useEffect(() => {
     let active = true;
     void readThemePreference().then(
@@ -759,7 +760,6 @@ function AppContent() {
         <SignInScreen
           topInset={insets.top}
           bottomInset={insets.bottom}
-          isNight={isNight}
           onSignedIn={setSession}
           palette={palette}
         />

@@ -12,7 +12,6 @@ import {
   View,
 } from "react-native";
 import { t } from "../../operator/src/text.ts";
-import { Harbor } from "../Harbor";
 import {
   CLOUD_ORIGIN,
   type EmailCodeRequest,
@@ -30,13 +29,11 @@ type SignInStep = "email" | "email_code" | "totp";
 
 export function SignInScreen({
   palette,
-  isNight,
   topInset,
   bottomInset,
   onSignedIn,
 }: {
   palette: Palette;
-  isNight: boolean;
   topInset: number;
   bottomInset: number;
   onSignedIn(session: Session): void;
@@ -163,10 +160,6 @@ export function SignInScreen({
       : busy
         ? t("mobileCheckingSignInCode")
         : t("mobileContinueSignIn");
-  const water = isNight ? "#28586c" : "#84bec6";
-  const controlInk = isNight ? "#eef5f6" : palette.authInk;
-  const selectedHost = isNight ? "#315064" : "#ffffff";
-
   const submit = () => {
     if (disabled) return;
     Keyboard.dismiss();
@@ -178,7 +171,7 @@ export function SignInScreen({
   return (
     <KeyboardAvoidingView
       behavior={Platform.OS === "ios" ? "padding" : undefined}
-      style={[screenStyles.page, { backgroundColor: water }]}
+      style={[screenStyles.page, { backgroundColor: palette.authPanel }]}
     >
       <ScrollView
         bounces={false}
@@ -187,19 +180,8 @@ export function SignInScreen({
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <View
-          style={[
-            screenStyles.scene,
-            keyboardVisible && screenStyles.sceneWithKeyboard,
-            keyboardVisible && {
-              height: Math.max(topInset + 108, 168),
-              minHeight: Math.max(topInset + 108, 168),
-              maxHeight: Math.max(topInset + 108, 168),
-            },
-          ]}
-        >
-          <Harbor night={isNight} variant="sign-in" />
-          <View style={[screenStyles.wordmark, { top: topInset + 9 }]}>
+        <View style={[screenStyles.scene, { paddingTop: topInset + 12 }]}>
+          <View style={screenStyles.wordmark}>
             <View style={screenStyles.boatMark}>
               <Image
                 accessible={false}
@@ -208,10 +190,22 @@ export function SignInScreen({
                 resizeMode="contain"
               />
             </View>
-            <Text style={[screenStyles.brand, { color: controlInk, fontFamily: fonts.display }]}>
+            <Text
+              style={[screenStyles.brand, { color: palette.authInk, fontFamily: fonts.display }]}
+            >
               {t("appName")}
             </Text>
           </View>
+          {keyboardVisible ? (
+            <View style={screenStyles.compactGap} />
+          ) : (
+            <Image
+              accessible={false}
+              source={require("../assets/sign-in-morning.png")}
+              resizeMode="contain"
+              style={screenStyles.morning}
+            />
+          )}
         </View>
 
         <View
@@ -255,7 +249,7 @@ export function SignInScreen({
                     accessibilityState={{ selected: !selfHosted }}
                     disabled={busy}
                     onPress={() => setSelfHosted(false)}
-                    style={[screenStyles.tab, !selfHosted && { backgroundColor: selectedHost }]}
+                    style={[screenStyles.tab, !selfHosted && { backgroundColor: palette.sheet }]}
                   >
                     <Text
                       style={[
@@ -274,7 +268,7 @@ export function SignInScreen({
                     accessibilityState={{ selected: selfHosted }}
                     disabled={busy}
                     onPress={() => setSelfHosted(true)}
-                    style={[screenStyles.tab, selfHosted && { backgroundColor: selectedHost }]}
+                    style={[screenStyles.tab, selfHosted && { backgroundColor: palette.sheet }]}
                   >
                     <Text
                       style={[
@@ -380,10 +374,7 @@ export function SignInScreen({
             {error && (
               <Text
                 accessibilityRole="alert"
-                style={[
-                  screenStyles.error,
-                  { color: isNight ? "#ffb3aa" : "#9f2d29", fontFamily: fonts.body },
-                ]}
+                style={[screenStyles.error, { color: "#9f2d29", fontFamily: fonts.body }]}
               >
                 {error}
               </Text>
@@ -398,8 +389,8 @@ export function SignInScreen({
               style={({ pressed }) => [
                 screenStyles.primary,
                 {
-                  backgroundColor: isNight ? "#2d75c0" : "#0b5794",
-                  opacity: disabled ? 0.45 : pressed ? 0.74 : 1,
+                  backgroundColor: "#0b2239",
+                  opacity: disabled ? 0.54 : pressed ? 0.74 : 1,
                 },
               ]}
             >
@@ -524,6 +515,7 @@ function SignInField({
           autoComplete={autoComplete}
           autoCorrect={false}
           editable={editable}
+          keyboardAppearance="light"
           keyboardType={keyboardType}
           maxLength={maxLength}
           onBlur={() => onFocus(false)}
@@ -546,20 +538,12 @@ function SignInField({
 
 const screenStyles = StyleSheet.create({
   page: { flex: 1 },
-  content: { flexGrow: 1 },
-  scene: {
-    flexGrow: 1,
-    flexShrink: 1,
-    height: 312,
-    minHeight: 260,
-    maxHeight: 390,
-    position: "relative",
-    overflow: "hidden",
-  },
-  sceneWithKeyboard: { flexGrow: 0, flexShrink: 0 },
+  content: { flexGrow: 1, width: "100%", maxWidth: 600, alignSelf: "center" },
+  scene: { backgroundColor: "#fff3c4" },
+  morning: { width: "100%", height: undefined, aspectRatio: 208 / 110 },
+  compactGap: { height: 35 },
   wordmark: {
-    position: "absolute",
-    left: 20,
+    marginHorizontal: 24,
     flexDirection: "row",
     alignItems: "center",
     gap: 7,
@@ -581,11 +565,6 @@ const screenStyles = StyleSheet.create({
     borderTopRightRadius: 28,
     paddingHorizontal: 24,
     paddingTop: 28,
-    shadowColor: "#0b2239",
-    shadowOpacity: 0.18,
-    shadowRadius: 20,
-    shadowOffset: { width: 0, height: -6 },
-    elevation: 10,
   },
   panelContent: { width: "100%", maxWidth: 520, alignSelf: "center" },
   title: { fontSize: 34, lineHeight: 38, letterSpacing: -1.2, marginBottom: 10 },

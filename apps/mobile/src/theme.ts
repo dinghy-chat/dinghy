@@ -1,7 +1,16 @@
 import * as SecureStore from "expo-secure-store";
-import { StyleSheet } from "react-native";
+import { type ColorSchemeName, StyleSheet } from "react-native";
 
 export type ThemePreference = "system" | "light" | "dark";
+
+export function displayTheme(
+  signedIn: boolean,
+  preference: ThemePreference,
+  system: ColorSchemeName | null,
+): "light" | "dark" {
+  if (!signedIn) return "light";
+  return preference === "system" ? (system === "dark" ? "dark" : "light") : preference;
+}
 
 const THEME_KEY = "dinghy.native.theme.v1";
 

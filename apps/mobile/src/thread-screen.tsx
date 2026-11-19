@@ -119,7 +119,7 @@ function VisitorDetailsSheet({
   return (
     <Sheet bottomInset={bottomInset} onClose={onClose} palette={palette} visible={visible}>
       <View style={screenStyles.visitorSky}>
-        <Harbor night={isNight} variant="banner" />
+        <Harbor night={isNight} />
         <SheetTools onClose={onClose} palette={palette} />
       </View>
       <View style={screenStyles.visitorTop}>

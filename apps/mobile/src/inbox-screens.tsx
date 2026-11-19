@@ -223,7 +223,7 @@ function WorkspaceHeader({
   return (
     <View style={[screen.inboxCover, { paddingTop: topInset, backgroundColor: palette.cover }]}>
       <View pointerEvents="none" style={[screen.harborArt, { top: topInset }]}>
-        <Harbor night={palette.paper !== "#fdfefd"} variant="banner" />
+        <Harbor night={palette.paper !== "#fdfefd"} />
       </View>
       <View style={screen.workspaceLine}>
         <View style={screen.workspaceButton}>
@@ -777,7 +777,7 @@ function SecondaryHeader({
       ]}
     >
       <View pointerEvents="none" style={[screen.harborArt, { top: topInset }]}>
-        <Harbor night={palette.paper !== "#fdfefd"} variant="banner" />
+        <Harbor night={palette.paper !== "#fdfefd"} />
       </View>
       <Text style={[screen.secondaryTitle, { color: palette.coverInk }]}>{title}</Text>
       <Text style={[screen.secondaryDetail, { color: palette.coverSub }]}>{detail}</Text>

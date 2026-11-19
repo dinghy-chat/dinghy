@@ -21,7 +21,7 @@ vi.mock("react-native", () => ({
   StyleSheet: { create: <T>(styles: T) => styles },
 }));
 
-import { readThemePreference, saveThemePreference } from "./src/theme.ts";
+import { displayTheme, readThemePreference, saveThemePreference } from "./src/theme.ts";
 
 beforeEach(() => {
   secureStore.value = null;
@@ -40,4 +40,12 @@ test("the native theme follows the device until a fixed choice is saved", async 
 test("an unknown saved theme falls back to the device", async () => {
   secureStore.value = "sepia";
   expect(await readThemePreference()).toBe("system");
+});
+
+test("sign-in opens in daylight and the inbox restores the chosen appearance", () => {
+  expect(displayTheme(false, "system", "dark")).toBe("light");
+  expect(displayTheme(false, "dark", "dark")).toBe("light");
+  expect(displayTheme(true, "system", "dark")).toBe("dark");
+  expect(displayTheme(true, "dark", "light")).toBe("dark");
+  expect(displayTheme(true, "light", "dark")).toBe("light");
 });
