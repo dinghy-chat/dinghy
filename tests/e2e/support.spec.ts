@@ -260,9 +260,10 @@ test("the Analytics page shows the workspace's numbers for the chosen period", a
       .map((element) => element.className || element.tagName),
   );
   expect(overflow).toEqual([]);
-  await picture(owner, "analytics-phone");
-  await site.evaluate((element) => element.scrollIntoView({ block: "start" }));
   await picture(owner, "analytics-phone-site");
+  await page.getByRole("radio", { name: "Conversations" }).check();
+  await expect(page.locator(".day-bar")).toHaveCount(7);
+  await picture(owner, "analytics-phone");
 });
 
 test("Analytics compares the period with the one just before", async ({ browser }) => {

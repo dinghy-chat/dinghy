@@ -41,18 +41,6 @@ export function dayName(
 /** A day of the period in full, "Sunday, Nov 8", as a chart's card names it. */
 const FULL_DAY: Intl.DateTimeFormatOptions = { weekday: "long", month: "short", day: "numeric" };
 
-/** The last `count` days in the browser's zone, oldest first, as a chart's card names them. */
-function lastDays(count: number) {
-  const today = new Date();
-  return Array.from({ length: count }, (_, index) =>
-    new Date(
-      today.getFullYear(),
-      today.getMonth(),
-      today.getDate() - (count - 1 - index),
-    ).toLocaleDateString([], FULL_DAY),
-  );
-}
-
 const DAY_NAMES_SHORT = weekdayNames("short");
 const DAY_NAMES = weekdayNames("long");
 const hourName = (hour: number) =>
@@ -422,7 +410,16 @@ function Support({ numbers, days }: { numbers: Analytics; days: Period }) {
  * The site's key numbers, each against the period before. A period before Dinghy started counting
  * the site has no numbers, so no change shows.
  */
-function SiteStats({ site, compared }: { site: VisitorStats; compared: string }) {
+function SiteStats({
+  site,
+  dates,
+  compared,
+}: {
+  site: VisitorStats;
+  /** The period's days, which the support numbers name; the line has no card until they load. */
+  dates: string[] | null;
+  compared: string;
+}) {
   const { visits, pageViews, chats, peak, previous } = site;
   const rate = rateOf(chats, visits);
   const rateBefore = previous === null ? null : rateOf(previous.chats, previous.visits);
@@ -433,9 +430,9 @@ function SiteStats({ site, compared }: { site: VisitorStats; compared: string })
         <CountChange count={visits} before={previous?.visits ?? 0} compared={compared} />
         <Sparkline
           values={site.series}
-          tips={lastDays(site.series.length).map((day, index) => ({
+          tips={dates?.map((date, index) => ({
             value: plural(site.series[index] ?? 0, "statsVisitsOne", "statsVisitsMany"),
-            label: day,
+            label: dayName(date, FULL_DAY),
           }))}
         />
       </Stat>
@@ -479,10 +476,12 @@ function SiteStats({ site, compared }: { site: VisitorStats; compared: string })
 /** The site's key numbers, then the pages people saw and where they came from. */
 function Site({
   site,
+  dates,
   failure,
   days,
 }: {
   site: VisitorStats | null;
+  dates: string[] | null;
   failure: TextId | null;
   days: Period;
 }) {
@@ -494,7 +493,7 @@ function Site({
         </Loading>
       ) : (
         <>
-          <SiteStats site={site} compared={t("vsPrevious", { days })} />
+          <SiteStats site={site} dates={dates} compared={t("vsPrevious", { days })} />
           <div className="charts">
             <ShareList
               title="siteTopPages"
@@ -523,32 +522,34 @@ function Site({
   );
 }
 
-/** The period's support numbers and site numbers, loaded together. */
+/** The period's support numbers and site numbers, loaded together, each with its own failure. */
 function usePeriodNumbers(api: WorkspaceApi, days: Period, zone: string) {
   const [numbers, setNumbers] = useState<Analytics | null>(null);
   const [site, setSite] = useState<VisitorStats | null>(null);
-  const [failure, setFailure] = useState<TextId | null>(null);
+  const [numbersFailure, setNumbersFailure] = useState<TextId | null>(null);
+  const [siteFailure, setSiteFailure] = useState<TextId | null>(null);
   useEffect(() => {
     // An answer for another period or workspace must not land here.
     let current = true;
     setNumbers(null);
     setSite(null);
-    setFailure(null);
-    const fail = (error: unknown) => {
-      if (current) setFailure(failureText(error, {}, "actionFailed"));
+    setNumbersFailure(null);
+    setSiteFailure(null);
+    const fail = (set: (failure: TextId) => void) => (error: unknown) => {
+      if (current) set(failureText(error, {}, "actionFailed"));
     };
     const period = Number(days) as AnalyticsDays;
     api.analytics(period, zone).then((next) => {
       if (current) setNumbers(next);
-    }, fail);
+    }, fail(setNumbersFailure));
     api.visitorStats(period, zone).then((next) => {
       if (current) setSite(next);
-    }, fail);
+    }, fail(setSiteFailure));
     return () => {
       current = false;
     };
   }, [api, days, zone]);
-  return { numbers, site, failure };
+  return { numbers, site, numbersFailure, siteFailure };
 }
 
 type Tab = "support" | "site";
@@ -563,7 +564,7 @@ export function AnalyticsPage({ api }: { api: WorkspaceApi }) {
   const [tab, setTab] = useState<Tab>("support");
   // The server checks the zone, and days and hours read in it.
   const zone = browserTimeZone();
-  const { numbers, site, failure } = usePeriodNumbers(api, days, zone);
+  const { numbers, site, numbersFailure, siteFailure } = usePeriodNumbers(api, days, zone);
 
   return (
     <Page
@@ -588,11 +589,16 @@ export function AnalyticsPage({ api }: { api: WorkspaceApi }) {
       />
       {tab === "site" ? (
         <Tipped className="analytics">
-          <Site site={site} failure={failure} days={days} />
+          <Site
+            site={site}
+            dates={numbers?.perDay.map((day) => day.date) ?? null}
+            failure={siteFailure}
+            days={days}
+          />
           <DocLink path="operator-guide#see-how-support-is-going" text="analyticsDocsLink" />
         </Tipped>
       ) : numbers === null ? (
-        <Loading failure={failure}>
+        <Loading failure={numbersFailure}>
           <AnalyticsSkeleton />
         </Loading>
       ) : numbers.started === 0 ? (

@@ -2272,6 +2272,10 @@ img.ws-tile {
   flex: 1;
   align-content: stretch;
 }
+/* Tabs over an empty state keep their height, and the state takes the rest. */
+.page-body:has(> .choices.tabs + .empty-boat) {
+  grid-template-rows: auto 1fr;
+}
 /* An empty Inbox list: the pixel buoy, a title, one line and at most one action, in the column's
    middle. list-empty.tsx draws the buoy. */
 .list-empty {
@@ -4117,6 +4121,7 @@ button.quote:hover {
   fill: transparent;
 }
 .spark-point line {
+  pointer-events: none;
   stroke: var(--blue-deep);
   stroke-width: 1.5;
   vector-effect: non-scaling-stroke;

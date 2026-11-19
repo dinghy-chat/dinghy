@@ -251,7 +251,9 @@ export function Sparkline({
         const x = xOf(index);
         const left = Math.max(0, x - step / 2);
         return (
-          <g key={tip.label} className="spark-point" data-value={tip.value} data-label={tip.label}>
+          // By position, as two minutes can read the same when the clocks go back.
+          // biome-ignore lint/suspicious/noArrayIndexKey: the points are positions on the line.
+          <g key={index} className="spark-point" data-value={tip.value} data-label={tip.label}>
             <rect
               x={left}
               y={0}

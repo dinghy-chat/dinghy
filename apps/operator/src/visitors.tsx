@@ -663,10 +663,18 @@ function showOptions(visitors: LiveVisitor[]): Option<Show>[] {
  * "7 people on your site now.", and the last hour as a small line that ends at the count now. The
  * pointer on a minute shows its count and time.
  */
-function LiveCount({ count, lastHour }: { count: number; lastHour: number[] | null }) {
+function LiveCount({
+  count,
+  lastHour,
+  now,
+}: {
+  count: number;
+  lastHour: number[] | null;
+  /** When the server sent the counts, the last minute's time. */
+  now: number;
+}) {
   // The current minute holds its most tabs so far, so the line ends at the count now instead.
   const values = lastHour === null ? null : [...lastHour.slice(0, -1), count];
-  const now = Date.now();
   return (
     <Tipped className="live-count" inline>
       <span className="live-pulse" aria-hidden="true" />
@@ -711,7 +719,9 @@ export function VisitorsPage({
     <Page
       title={t("visitors")}
       context={
-        list.state === "ready" ? <LiveCount count={count} lastHour={list.lastHour} /> : undefined
+        list.state === "ready" ? (
+          <LiveCount count={count} lastHour={list.lastHour} now={now} />
+        ) : undefined
       }
       actions={
         list.state === "ready" ? (
