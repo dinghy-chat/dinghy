@@ -43,6 +43,7 @@ import type { Mailer } from "./mailer.ts";
 import { registerMcp } from "./mcp.ts";
 import { registerMemberCheck } from "./member.ts";
 import { registerModerationRoutes } from "./moderation.ts";
+import type { NativePush } from "./native-push.ts";
 import { oauthIssuer, registerOAuth, resourceMetadataUrl } from "./oauth.ts";
 import { type FetchClientDocument, fetchClientDocument } from "./oauth-client.ts";
 import { registerOperatorRoutes } from "./operator.ts";
@@ -100,7 +101,12 @@ export interface AppOptions {
   cloud?: CloudSettings | undefined;
   /** Sends sign-in links and the cloud's emails. Without it, the server's admin hands out links. */
   mailer?: Mailer | undefined;
-  alerts?: { push?: Push | undefined; emailAvailable: boolean; secret: string };
+  alerts?: {
+    push?: Push | undefined;
+    nativePush?: NativePush | undefined;
+    emailAvailable: boolean;
+    secret: string;
+  };
   checks: Checks;
   db: Database;
   live?: Live;
@@ -591,6 +597,7 @@ export function createApp({
         db,
         logger,
         push: alerts.push,
+        nativePush: alerts.nativePush,
         emailAvailable: alerts.emailAvailable,
       });
       registerEmailStop(app, db, alerts.secret, rateLimit);

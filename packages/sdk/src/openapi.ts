@@ -9388,6 +9388,7 @@ export interface components {
     AlertSettings: {
       email: boolean;
       pushKey: string | null;
+      nativePushProviders: ("apns" | "fcm")[];
       emailAvailable: boolean;
     };
   };

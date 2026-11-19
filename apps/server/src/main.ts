@@ -8,7 +8,12 @@ import { cloudFromConfig, cloudLimits, cloudProblem } from "../../../ee/server/i
 import serverPackage from "../package.json" with { type: "json" };
 import { createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
-import { inboundEmailFromConfig, loadConfig, pushKeysFromConfig } from "./config.ts";
+import {
+  inboundEmailFromConfig,
+  loadConfig,
+  nativePushFromConfig,
+  pushKeysFromConfig,
+} from "./config.ts";
 import * as schema from "./db/schema.ts";
 import { startErrorReports } from "./error-reports.ts";
 import { loadCountries } from "./geo.ts";
@@ -16,6 +21,7 @@ import { createEmailIntake } from "./inbound-email.ts";
 import { NO_LIMITS } from "./limits.ts";
 import { createLive, createSignals, type Signals } from "./live.ts";
 import { createMailer } from "./mailer.ts";
+import { createNativePush } from "./native-push.ts";
 import { createPush } from "./push.ts";
 import { createRateLimit } from "./rate-limit.ts";
 import { mailboxSweep } from "./shipmail-inbound.ts";
@@ -58,6 +64,7 @@ const pushKeys = pushKeysFromConfig(config);
 // Unset on a self-hosted install, which then never turns on the code in ee/.
 const cloud = cloudFromConfig(config);
 const push = pushKeys === undefined ? undefined : createPush(pushKeys);
+const nativePush = createNativePush(nativePushFromConfig(config));
 const webhooks = { allowPrivate: config.WEBHOOK_ALLOW_PRIVATE };
 const inboundEmail = inboundEmailFromConfig(config);
 const uploadsFor = () =>
@@ -101,7 +108,12 @@ if (role === "web" || role === "all") {
     trustedProxyHops: config.TRUSTED_PROXY_HOPS,
     limitScale: config.RATE_LIMIT_SCALE,
     ipSecret: config.AUTH_SECRET,
-    alerts: { push, emailAvailable: mailer !== undefined, secret: config.AUTH_SECRET },
+    alerts: {
+      push,
+      nativePush,
+      emailAvailable: mailer !== undefined,
+      secret: config.AUTH_SECRET,
+    },
     cloud,
     mailer,
     auth: createAuth({ db, secret: config.AUTH_SECRET, baseURL: config.PUBLIC_URL }),
@@ -171,6 +183,7 @@ if (role === "worker" || role === "all") {
     valkey: publisher,
     logger,
     push,
+    nativePush,
     // Its own connections, so the web side's emails never queue in front of an alert, whose time
     // starts when it gets a connection.
     mailer: smtp === undefined ? undefined : createMailer(smtp.url, smtp.from),

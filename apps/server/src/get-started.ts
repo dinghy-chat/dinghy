@@ -17,7 +17,7 @@ const GetStartedSchema = z
     widget: z.boolean(),
     // A second member, or an invite that can still be used.
     team: z.boolean(),
-    // Browser notifications on a device of this operator's, or email alerts here.
+    // Browser or native notifications on a device of this operator's, or email alerts here.
     notifications: z.boolean(),
     // A conversation, other than the cloud's welcome chat and a bot's test visitor's.
     chat: z.boolean(),
@@ -71,6 +71,9 @@ export function registerGetStartedRoutes(app: App, db: Database): void {
              where workspace_id = ${id} and used_at is null and revoked_at is null
                and expires_at > now())) as team,
           (exists (select 1 from push_subscription where operator_id = ${operatorId})
+           or exists (select 1 from native_push_device d join session s
+             on s.id = d.session_id and s.user_id = d.operator_id
+             where d.operator_id = ${operatorId} and s.expires_at > now())
            or coalesce((select alert_email from workspace_member
              where workspace_id = ${id} and operator_id = ${operatorId}), false)) as notifications,
           exists (select 1 from conversation c
