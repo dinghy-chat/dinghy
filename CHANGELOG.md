@@ -7,6 +7,7 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 ### Added
 
 - Operators can receive conversation alerts on their phones when their server has Apple or Firebase push credentials.
+- The native mobile app can sign in with a short email code, followed by an authenticator or recovery code when two-step sign-in is on.
 
 ## [0.45.0] - 2026-11-19
 

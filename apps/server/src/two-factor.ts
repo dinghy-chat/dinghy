@@ -405,8 +405,115 @@ const disableRoute = createRoute({
   },
 });
 
-/** How a code fared under the limit. */
-type CodeCheck = "passed" | "wrong" | "locked" | "unreadable" | "unavailable";
+/** How a code fared under the shared account limit. */
+export type TwoFactorCodeCheck =
+  | "passed"
+  | "wrong"
+  | "invalid"
+  | "locked"
+  | "unreadable"
+  | "unavailable";
+
+interface TwoFactorCodeInput {
+  operatorId: string;
+  operatorEmail: string;
+  ip: string;
+  code: string;
+  /** Runs under the account lock before the code is spent. False leaves the code untouched. */
+  beforeSpend?: ((tx: Transaction) => Promise<boolean>) | undefined;
+  /** Commits with the spent code, so the code cannot pass without its effect. */
+  effect: (tx: Transaction) => Promise<unknown>;
+  /** Ends the session or pending sign-in when the account reaches its limit. */
+  onLocked: () => Promise<unknown>;
+}
+
+export interface TwoFactorCodeChecker {
+  windowSeconds: number;
+  check(input: TwoFactorCodeInput): Promise<TwoFactorCodeCheck>;
+}
+
+interface TwoFactorCodeOptions {
+  db: Database;
+  live: Live;
+  logger: Logger;
+  /** AUTH_SECRET, which the TOTP and recovery keys derive from. */
+  authSecret: string;
+  valkey: Redis | null;
+  mailer: Mailer | undefined;
+}
+
+/**
+ * Checks authenticator and recovery codes for browser and native sign-in. The account-wide limit,
+ * replay protection, recovery-code spend and the caller's effect all apply to both paths.
+ */
+export function createTwoFactorCodeChecker({
+  db,
+  live,
+  logger,
+  authSecret,
+  valkey,
+  mailer,
+}: TwoFactorCodeOptions): TwoFactorCodeChecker {
+  const keys = deriveKeys(authSecret);
+  const limit = createTwoFactorLimit(valkey, logger);
+  const notices = { db, signals: live, logger, mailer };
+
+  return {
+    windowSeconds: limit.windowSeconds,
+    async check({ operatorId, operatorEmail, ip, code, beforeSpend, effect, onLocked }) {
+      const tries = await limit.attempt(operatorId);
+      if (tries === null) return "unavailable";
+      if (tries > TWO_FACTOR_MAX_FAILURES) {
+        await onLocked();
+        return "locked";
+      }
+      const { used, cancelled } = await db.transaction(async (tx) => {
+        // Account changes and deletion take this lock first. A native guard can then lock its
+        // challenge and provisional session without reversing that order.
+        await lockAccount(tx, operatorId);
+        if (beforeSpend !== undefined && !(await beforeSpend(tx))) {
+          return { used: "invalid" as const, cancelled: false };
+        }
+        const spent = await spendCode(tx, keys, operatorId, code);
+        if (spent !== "totp" && spent !== "recovery") {
+          return { used: spent, cancelled: false };
+        }
+        await effect(tx);
+        // A correct code while a removal request waits means the account recovered its second step.
+        return { used: spent, cancelled: await cancelRemoval(tx, operatorId) };
+      });
+      if (used === "invalid") return "invalid";
+      if (used === "unreadable") {
+        logger.error(
+          { operatorId },
+          "a two-step sign-in secret does not open: AUTH_SECRET changed",
+        );
+        return "unreadable";
+      }
+      if (used !== "wrong") {
+        await limit.clear(operatorId);
+        if (cancelled) {
+          afterRemovalCancel(notices, { id: operatorId, email: operatorEmail }, "code", ip);
+        }
+        if (used === "recovery") {
+          audit(logger, "two_factor.recovery_used", { operatorId, ip });
+          sendQuietly(mailer, logger, operatorEmail, recoveryUsedMail());
+        }
+        return "passed";
+      }
+      audit(logger, "two_factor.failed", { operatorId, ip }, "warn");
+      if (tries < TWO_FACTOR_MAX_FAILURES) return "wrong";
+      await onLocked();
+      sendQuietly(
+        mailer,
+        logger,
+        operatorEmail,
+        lockoutMail(TWO_FACTOR_MAX_FAILURES, WINDOW_MINUTES),
+      );
+      return "locked";
+    },
+  };
+}
 
 interface TwoFactorOptions {
   db: Database;
@@ -414,7 +521,7 @@ interface TwoFactorOptions {
   logger: Logger;
   /** AUTH_SECRET, which the keys derive from. */
   authSecret: string;
-  valkey: Redis | null;
+  codeChecker: TwoFactorCodeChecker;
   /** Tells the account about each change. Without one, nothing is sent. */
   mailer: Mailer | undefined;
 }
@@ -422,11 +529,9 @@ interface TwoFactorOptions {
 /** The two-step sign-in routes. Register them after the operator routes' session check. */
 export function registerTwoFactorRoutes(
   app: App,
-  { db, live, logger, authSecret, valkey, mailer }: TwoFactorOptions,
+  { db, live, logger, authSecret, codeChecker, mailer }: TwoFactorOptions,
 ) {
   const keys = deriveKeys(authSecret);
-  const limit = createTwoFactorLimit(valkey, logger);
-  const notices = { db, signals: live, logger, mailer };
 
   /** Emails the account, after the answer: a mail server that fails changes nothing here. */
   const tell = (c: Context<AppEnv>, mail: Mail) =>
@@ -441,51 +546,20 @@ export function registerTwoFactorRoutes(
     c: Context<AppEnv>,
     code: string,
     effect: (tx: Transaction) => Promise<unknown>,
-  ): Promise<CodeCheck> => {
-    const operatorId = c.get("operatorId");
-    const ip = c.get("clientIp");
-    const endSession = () => db.delete(session).where(eq(session.id, c.get("sessionId")));
-    const tries = await limit.attempt(operatorId);
-    if (tries === null) return "unavailable";
-    if (tries > TWO_FACTOR_MAX_FAILURES) {
-      await endSession();
-      return "locked";
-    }
-    const { used, cancelled } = await db.transaction(async (tx) => {
-      const spent = await spendCode(tx, keys, operatorId, code);
-      if (spent !== "totp" && spent !== "recovery") return { used: spent, cancelled: false };
-      await effect(tx);
-      // A correct code while a removal request waits: the owner found their app or their codes.
-      // After the effect, so a check's own session has passed and stays.
-      return { used: spent, cancelled: await cancelRemoval(tx, operatorId) };
+  ): Promise<TwoFactorCodeCheck> =>
+    codeChecker.check({
+      operatorId: c.get("operatorId"),
+      operatorEmail: c.get("operatorEmail"),
+      ip: c.get("clientIp"),
+      code,
+      effect,
+      onLocked: () => db.delete(session).where(eq(session.id, c.get("sessionId"))),
     });
-    if (used === "unreadable") {
-      logger.error({ operatorId }, "a two-step sign-in secret does not open: AUTH_SECRET changed");
-      return "unreadable";
-    }
-    if (used !== "wrong") {
-      await limit.clear(operatorId);
-      if (cancelled) {
-        afterRemovalCancel(notices, { id: operatorId, email: c.get("operatorEmail") }, "code", ip);
-      }
-      if (used === "recovery") {
-        audit(logger, "two_factor.recovery_used", { operatorId, ip });
-        tell(c, recoveryUsedMail());
-      }
-      return "passed";
-    }
-    audit(logger, "two_factor.failed", { operatorId, ip }, "warn");
-    if (tries < TWO_FACTOR_MAX_FAILURES) return "wrong";
-    await endSession();
-    // Once, as the limit is reached. The refused codes after it send nothing.
-    tell(c, lockoutMail(TWO_FACTOR_MAX_FAILURES, WINDOW_MINUTES));
-    return "locked";
-  };
 
   /** The answer for a code that did not pass, or null when it passed. */
-  const refuseCode = (c: Context<AppEnv>, checked: CodeCheck) => {
-    if (checked === "wrong") return c.json(WRONG_CODE, 400);
-    if (checked === "locked") return tooManyAttempts(c, limit);
+  const refuseCode = (c: Context<AppEnv>, checked: TwoFactorCodeCheck) => {
+    if (checked === "wrong" || checked === "invalid") return c.json(WRONG_CODE, 400);
+    if (checked === "locked") return tooManyAttempts(c, codeChecker);
     if (checked === "unreadable") return c.json(TWO_FACTOR_UNREADABLE, 500);
     if (checked === "unavailable") return c.json(CHECK_UNAVAILABLE, 503);
     return null;

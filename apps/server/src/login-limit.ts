@@ -92,6 +92,54 @@ export const createLinkLimit = (valkey: Redis | null, logger: Logger) =>
 export const TWO_FACTOR_MAX_FAILURES = 5;
 export const TWO_FACTOR_WINDOW_SECONDS = 15 * 60;
 
+/** Wrong native email codes an address may send, even after asking for a new code. */
+export const NATIVE_EMAIL_CODE_MAX_FAILURES = 5;
+const NATIVE_EMAIL_CODE_WINDOW_SECONDS = 15 * 60;
+
+export interface NativeEmailCodeLimit {
+  windowSeconds: number;
+  /** Counts a check before it runs, or returns null when the counter cannot be enforced. */
+  attempt(email: string): Promise<number | null>;
+  /** A correct code clears earlier failures. */
+  clear(email: string): Promise<void>;
+}
+
+/**
+ * Counts native email-code checks by normalized email across instances and replacement codes.
+ * This fails closed because the email code is the whole first factor for accounts without TOTP.
+ * Tests and API-document builds have no Valkey and therefore count nothing.
+ */
+export function createNativeEmailCodeLimit(
+  valkey: Redis | null,
+  logger: Logger,
+): NativeEmailCodeLimit {
+  const keyFor = (email: string) => `dinghy:native-email-code:${emailAddressHash(email)}`;
+  return {
+    windowSeconds: NATIVE_EMAIL_CODE_WINDOW_SECONDS,
+    async attempt(email) {
+      if (valkey === null) return 0;
+      const key = keyFor(email);
+      try {
+        const results = await valkey
+          .multi()
+          .incr(key)
+          .expire(key, NATIVE_EMAIL_CODE_WINDOW_SECONDS, "NX")
+          .exec();
+        const count = results?.[0]?.[1];
+        if (typeof count === "number") return count;
+      } catch (err) {
+        logger.warn({ err }, "native email-code limit unavailable");
+      }
+      return null;
+    },
+    async clear(email) {
+      await valkey?.del(keyFor(email)).catch((err: unknown) => {
+        logger.warn({ err }, "native email-code limit unavailable");
+      });
+    },
+  };
+}
+
 /**
  * Counts second-step checks per account, across instances. Each check counts before it runs, so
  * parallel guesses cannot pass the limit, and one that passes clears the count, so only failures

@@ -86,6 +86,7 @@ export const ERROR_CODES = [
   "grant_limit",
   "internal_error",
   "invalid_client",
+  "invalid_code",
   "invalid_name",
   "invalid_redirect_uri",
   "invalid_reply_to",
