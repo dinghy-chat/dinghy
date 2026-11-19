@@ -159,7 +159,7 @@ With `data-launcher="hidden"` and your own button, `badge` raises the unread cou
 
 When the visitor answers a message sent as a member, the conversation is assigned to that member, and a person handles it from then on, so a bot's next reply cannot change the name in the middle of the chat. `assignOnReply: false` turns this off.
 
-In the operator app, the message shows "Julien, via Welcome bot" and an **Automatic** tag. The visitor sees only Julien.
+In the conversation, the operator app shows "Sent as Julien by Welcome bot" with the time under the message. The contact's list of messages shows "Julien, via Welcome bot" and an **Automatic** tag. The visitor sees only Julien.
 
 ## Its life
 

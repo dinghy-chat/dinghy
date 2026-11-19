@@ -3299,6 +3299,13 @@ img.ws-tile {
   color: var(--mute);
   font-size: 12px;
 }
+/* An author line and its receipt read as one footer, spaced from the next message. */
+.meta:has(+ .receipt) {
+  margin-bottom: 2px;
+}
+.meta + .receipt {
+  margin-bottom: 8px;
+}
 .receipt.read {
   color: var(--blue-deep);
 }
