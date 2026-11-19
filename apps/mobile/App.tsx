@@ -600,12 +600,7 @@ function SignedInApp({
   };
 
   return (
-    <View
-      style={[
-        styles.app,
-        { paddingTop: page === "thread" || error ? insets.top : 0, backgroundColor: palette.paper },
-      ]}
-    >
+    <View style={[styles.app, { paddingTop: insets.top, backgroundColor: palette.paper }]}>
       {error && <ErrorBanner message={error} onDismiss={() => setError(null)} palette={palette} />}
       {page === "thread" && selected ? (
         <ThreadScreen
@@ -664,7 +659,7 @@ function SignedInApp({
                 bottomInset={insets.bottom}
                 searchOpen={inboxSearchOpen}
                 onCloseSearch={() => setInboxSearchOpen(false)}
-                topInset={error ? 0 : insets.top}
+                topInset={0}
                 waiting={waiting}
               />
             )}
@@ -672,8 +667,7 @@ function SignedInApp({
               <ContactsScreen
                 api={api}
                 palette={palette}
-                topInset={error ? 0 : insets.top}
-                bottomInset={insets.bottom}
+                topInset={0}
                 initialContactId={returnContactId}
                 readOnly={
                   me?.workspaces.find((w) => w.workspaceId === session.workspace.id)?.readOnly ??
@@ -689,26 +683,18 @@ function SignedInApp({
               <VisitorsScreen
                 api={api}
                 palette={palette}
-                topInset={error ? 0 : insets.top}
-                bottomInset={insets.bottom}
+                topInset={0}
                 onOpenConversation={(id) => openById(id, "visitors")}
                 onCount={setLiveCount}
               />
             )}
-            {page === "analytics" && (
-              <AnalyticsScreen
-                api={api}
-                palette={palette}
-                topInset={error ? 0 : insets.top}
-                bottomInset={insets.bottom}
-              />
-            )}
+            {page === "analytics" && <AnalyticsScreen api={api} palette={palette} topInset={0} />}
             {page === "settings" && (
               <SettingsScreen
                 api={api}
                 bottomInset={insets.bottom}
                 session={session}
-                topInset={error ? 0 : insets.top}
+                topInset={0}
                 me={me}
                 members={members}
                 onAway={changeAway}

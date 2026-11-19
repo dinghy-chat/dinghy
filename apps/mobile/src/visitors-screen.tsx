@@ -322,14 +322,12 @@ export function VisitorsScreen({
   api,
   palette,
   topInset,
-  bottomInset,
   onOpenConversation,
   onCount,
 }: {
   api: DinghyApi;
   palette: Palette;
   topInset: number;
-  bottomInset: number;
   onOpenConversation(id: string): void;
   onCount?(count: number | null): void;
 }) {
@@ -418,7 +416,7 @@ export function VisitorsScreen({
         <RefreshControl refreshing={refreshing} onRefresh={retry} tintColor={palette.blue} />
       }
       style={{ backgroundColor: palette.paper }}
-      contentContainerStyle={[screen.content, { paddingBottom: bottomInset + 88 }]}
+      contentContainerStyle={[screen.content, { paddingBottom: 16 }]}
     >
       <View style={[screen.header, { paddingTop: topInset + 18, backgroundColor: palette.cover }]}>
         <Text style={[screen.title, { color: palette.coverInk }]}>{t("visitors")}</Text>

@@ -200,14 +200,12 @@ function ContactRow({
 
 function ContactsList({
   api,
-  bottomInset,
   onOpen,
   palette,
   revision,
   topInset,
 }: {
   api: ContactsApi;
-  bottomInset: number;
   onOpen(id: string): void;
   palette: Palette;
   revision: number;
@@ -286,7 +284,7 @@ function ContactsList({
         />
       }
       style={{ backgroundColor: palette.paper }}
-      contentContainerStyle={{ paddingBottom: bottomInset + 84 }}
+      contentContainerStyle={{ paddingBottom: 16 }}
     >
       <View style={[s.listHeader, { paddingTop: topInset + 16, backgroundColor: palette.cover }]}>
         <Text style={[s.title, { color: palette.coverInk }]}>{t("contacts")}</Text>
@@ -671,7 +669,6 @@ function DetailValues({ contact, palette }: { contact: ContactDetail; palette: P
 
 function ContactView({
   api,
-  bottomInset,
   contactId,
   onBack,
   onChanged,
@@ -681,7 +678,6 @@ function ContactView({
   topInset,
 }: {
   api: ContactsApi;
-  bottomInset: number;
   contactId: string;
   onBack(): void;
   onChanged(): void;
@@ -760,7 +756,7 @@ function ContactView({
         />
       }
       style={{ backgroundColor: palette.paper }}
-      contentContainerStyle={{ paddingBottom: bottomInset + 44 }}
+      contentContainerStyle={{ paddingBottom: 16 }}
     >
       <View style={[s.detailHeader, { paddingTop: topInset + 6, backgroundColor: palette.cover }]}>
         <Pressable
@@ -916,7 +912,6 @@ export function ContactsScreen({
   api,
   palette,
   topInset,
-  bottomInset,
   initialContactId,
   onOpenConversation,
   readOnly,
@@ -924,7 +919,6 @@ export function ContactsScreen({
   api: ContactsApi;
   palette: Palette;
   topInset: number;
-  bottomInset: number;
   initialContactId?: string | null;
   onOpenConversation(id: string, contactId: string): void;
   readOnly: boolean;
@@ -939,7 +933,6 @@ export function ContactsScreen({
     return (
       <ContactView
         api={api}
-        bottomInset={bottomInset}
         contactId={contactId}
         onBack={() => setContactId(null)}
         onChanged={() => setRevision((value) => value + 1)}
@@ -953,7 +946,6 @@ export function ContactsScreen({
   return (
     <ContactsList
       api={api}
-      bottomInset={bottomInset}
       onOpen={setContactId}
       palette={palette}
       revision={revision}

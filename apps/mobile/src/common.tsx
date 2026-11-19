@@ -222,7 +222,7 @@ export function BottomNav({
     />
   );
   return (
-    <View pointerEvents="box-none" style={[dock.anchor, { bottom: bottom + 6 }]}>
+    <View pointerEvents="box-none" style={[dock.anchor, { paddingBottom: bottom + 6 }]}>
       <View {...swipe.panHandlers} accessibilityRole="tablist" style={[dock.bar, base]}>
         {material}
         <Animated.View
@@ -292,9 +292,7 @@ export function BottomNav({
 
 const dock = StyleSheet.create({
   anchor: {
-    position: "absolute",
-    left: 0,
-    right: 0,
+    paddingTop: 6,
     flexDirection: "row",
     gap: 8,
     justifyContent: "center",

@@ -31,6 +31,7 @@ const en = {
   mobileAttachment: "Attachment",
   mobileQueueClear: " · Queue clear",
   mobileSavedReplyConversation: "Conversation with a saved reply",
+  mobilePushNotifications: "Push notifications",
   mobilePushChecking: "Checking this device…",
   mobilePushEnabled: "Enabled for this device.",
   mobilePushDenied: "Permission is off. Open settings.",

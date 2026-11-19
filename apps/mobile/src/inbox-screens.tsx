@@ -600,7 +600,10 @@ export function InboxScreen({
           <RefreshControl refreshing={loading} onRefresh={onRefresh} tintColor={palette.blue} />
         }
         style={{ backgroundColor: palette.paper }}
-        contentContainerStyle={[screen.inboxContent, { paddingBottom: bottomInset + 82 }]}
+        contentContainerStyle={[
+          screen.inboxContent,
+          { paddingBottom: searchOpen ? bottomInset + 82 : 16 },
+        ]}
       >
         <WorkspaceHeader
           longest={longest}
@@ -846,7 +849,9 @@ function NotificationPreference({
         <Icon name="bell" size={21} color={palette.ink} />
       </View>
       <View style={screen.preferenceCopy}>
-        <Text style={[screen.preferenceTitle, { color: palette.ink }]}>{t("pushThisDevice")}</Text>
+        <Text style={[screen.preferenceTitle, { color: palette.ink }]}>
+          {t("mobilePushNotifications")}
+        </Text>
         <View style={screen.preferenceStatusLine}>
           <View
             style={[
@@ -922,7 +927,6 @@ function ThemeChoice({
   return (
     <View style={screen.themeSection}>
       <Text style={[screen.presenceTitle, { color: palette.ink }]}>{t("theme")}</Text>
-      <Text style={[screen.presenceDetail, { color: palette.sub }]}>{t("themeHelp")}</Text>
       <View
         accessibilityLabel={t("theme")}
         accessibilityRole="radiogroup"
@@ -1408,7 +1412,7 @@ export function SettingsScreen({
     <>
       <ScrollView
         style={{ backgroundColor: palette.paper }}
-        contentContainerStyle={[screen.secondaryContent, { paddingBottom: bottomInset + 86 }]}
+        contentContainerStyle={[screen.secondaryContent, { paddingBottom: 16 }]}
       >
         <SecondaryHeader detail="" palette={palette} title={t("settings")} topInset={topInset} />
         <View style={screen.profilePanel}>
@@ -1502,7 +1506,8 @@ export function SettingsScreen({
                 accessibilityLabel={t("emailAlerts")}
                 disabled={emailBusy}
                 onValueChange={(value) => void changeEmail(value)}
-                trackColor={{ false: palette.line, true: palette.green }}
+                ios_backgroundColor={palette.switchOff}
+                trackColor={{ false: palette.switchOff, true: palette.green }}
                 value={alerts.email}
               />
             </View>

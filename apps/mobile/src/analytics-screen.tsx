@@ -620,12 +620,10 @@ export function AnalyticsScreen({
   api,
   palette,
   topInset,
-  bottomInset,
 }: {
   api: DinghyApi;
   palette: Palette;
   topInset: number;
-  bottomInset: number;
 }) {
   const [days, setDays] = useState<AnalyticsDays>(30);
   const [numbers, setNumbers] = useState<Analytics | null>(null);
@@ -672,10 +670,7 @@ export function AnalyticsScreen({
   return (
     <View style={[styles.screen, { backgroundColor: palette.paper }]}>
       <ScrollView
-        contentContainerStyle={[
-          styles.content,
-          { paddingTop: topInset + 18, paddingBottom: bottomInset + 28 },
-        ]}
+        contentContainerStyle={[styles.content, { paddingTop: topInset + 18, paddingBottom: 16 }]}
         refreshControl={
           numbers !== null ? (
             <RefreshControl
