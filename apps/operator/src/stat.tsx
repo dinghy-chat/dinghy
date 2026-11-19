@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { plural, type TextId, t } from "./text.ts";
 
 // The key numbers of Analytics and a campaign's results: a band of stats, each with its
@@ -23,7 +23,8 @@ type Tip = TipContent & { x: number; y: number };
 function tipAt(area: HTMLElement | null, target: EventTarget | null): Tip | null {
   const part =
     target instanceof Element ? target.closest<HTMLElement>("[data-value], [data-tip]") : null;
-  if (part === null || area === null) return null;
+  // A part that left the area, as a re-render can remove it, shows nothing.
+  if (part === null || area === null || !area.contains(part)) return null;
   const outer = area.getBoundingClientRect();
   const inner = part.getBoundingClientRect();
   const { tip, value, label } = part.dataset;
@@ -36,7 +37,8 @@ function tipAt(area: HTMLElement | null, target: EventTarget | null): Tip | null
 
 /**
  * An area whose parts carry data-value and data-label, or data-tip. The pointer over a part, or
- * the focus on it, shows them in a card above it, kept inside the area. Escape hides the card.
+ * the focus on it, shows them in a card above it, kept inside the area, and the card follows a
+ * new value of the part, such as a live count. Escape hides the card.
  * The words for screen readers are in each figure's caption, or in each button's label. An inline
  * area is a span, for a line of text such as a page's context.
  */
@@ -54,6 +56,18 @@ export function Tipped({
   // Either tag takes the ref, as it is both.
   const box = useRef<HTMLDivElement & HTMLSpanElement>(null);
   const Area = inline ? "span" : "div";
+  // The part under the pointer or the focus, to read again when its values change.
+  const target = useRef<EventTarget | null>(null);
+  const show = useCallback((at: EventTarget | null) => {
+    target.current = at;
+    setTip(tipAt(box.current, at));
+  }, []);
+  // After each render, the shown part may carry new values.
+  useLayoutEffect(() => {
+    if (target.current === null) return;
+    const next = tipAt(box.current, target.current);
+    setTip((shown) => (JSON.stringify(shown) === JSON.stringify(next) ? shown : next));
+  });
   useLayoutEffect(() => {
     const element = card.current;
     const width = box.current?.clientWidth ?? 0;
@@ -65,8 +79,8 @@ export function Tipped({
   useEffect(() => {
     const area = box.current;
     if (area === null) return;
-    const focus = (event: FocusEvent) => setTip(tipAt(area, event.target));
-    const hide = () => setTip(null);
+    const focus = (event: FocusEvent) => show(event.target);
+    const hide = () => show(null);
     const hideOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") hide();
     };
@@ -78,13 +92,13 @@ export function Tipped({
       area.removeEventListener("focusout", hide);
       document.removeEventListener("keydown", hideOnEscape);
     };
-  }, []);
+  }, [show]);
   return (
     <Area
       ref={box}
       className={`tipped ${className}`}
-      onPointerOver={(event) => setTip(tipAt(box.current, event.target))}
-      onPointerLeave={() => setTip(null)}
+      onPointerOver={(event) => show(event.target)}
+      onPointerLeave={() => show(null)}
     >
       {children}
       {tip !== null && (
