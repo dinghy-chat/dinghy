@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -16,7 +17,9 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { t } from "../../operator/src/text.ts";
 import type { DinghyApi } from "./api";
+import { PhotoComposer } from "./attachments";
 import { readableError, SheetCloseButton } from "./common";
+import { openComposerMenu } from "./composer-menu";
 import { fonts } from "./fonts";
 import { Icon } from "./icon";
 import type { Palette } from "./theme";
@@ -24,7 +27,8 @@ import type { Message, SavedReply } from "./types";
 
 type ConversationToolsProps = {
   api: DinghyApi;
-  children?: ReactNode;
+  bottomInset: number;
+  onError(error: unknown): void;
   conversationId: string;
   palette: Palette;
   onInsert(text: string): void;
@@ -61,13 +65,13 @@ function Sheet({
         <Pressable
           accessibilityLabel={t("mobileDismiss")}
           onPress={onClose}
-          style={styles.backdrop}
+          style={[styles.backdrop, { backgroundColor: palette.scrim }]}
         />
         <View
           accessibilityViewIsModal
           style={[
             styles.sheet,
-            { backgroundColor: palette.paper, paddingBottom: Math.max(bottom, 14) },
+            { backgroundColor: palette.sheet, paddingBottom: Math.max(bottom, 14) },
           ]}
         >
           <View style={styles.sheetHead}>
@@ -84,45 +88,16 @@ function Sheet({
   );
 }
 
-function ToolButton({
-  icon,
-  label,
-  onPress,
-  palette,
-}: {
-  icon: "bookmark" | "lock";
-  label: string;
-  onPress(): void;
-  palette: Palette;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      onPress={onPress}
-      style={({ pressed }) => [
-        styles.tool,
-        {
-          backgroundColor: pressed ? palette.tint : palette.paper,
-          borderColor: palette.line,
-        },
-      ]}
-    >
-      <Icon color={palette.blue} name={icon} size={15} />
-      <Text style={[styles.toolText, { color: palette.ink, fontFamily: fonts.medium }]}>
-        {label}
-      </Text>
-    </Pressable>
-  );
-}
-
 export function ConversationTools({
   api,
-  children,
+  bottomInset,
+  onError,
   conversationId,
   onInsert,
   onNoteAdded,
   palette,
 }: ConversationToolsProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
   const [savedOpen, setSavedOpen] = useState(false);
   const [noteOpen, setNoteOpen] = useState(false);
   const [savedReplies, setSavedReplies] = useState<SavedReply[] | null>(null);
@@ -196,24 +171,71 @@ export function ConversationTools({
 
   return (
     <>
-      <View accessibilityLabel={t("mobileConversationTools")} style={styles.toolbar}>
-        {children}
-        <ToolButton
-          icon="bookmark"
-          label={t("mobileUseSavedReply")}
-          onPress={openSavedReplies}
-          palette={palette}
-        />
-        <ToolButton
-          icon="lock"
-          label={t("mobileAddPrivateNote")}
-          onPress={() => {
-            setNoteError(null);
-            setNoteOpen(true);
-          }}
-          palette={palette}
-        />
-      </View>
+      <PhotoComposer
+        api={api}
+        bottomInset={bottomInset}
+        conversationId={conversationId}
+        onError={onError}
+        onSent={onNoteAdded}
+        palette={palette}
+        trigger={(pickPhoto) => {
+          const actions = [
+            { label: t("mobilePhotoTool"), icon: "attach", run: pickPhoto },
+            { label: t("mobileUseSavedReply"), icon: "bookmark", run: openSavedReplies },
+            {
+              label: t("mobileAddPrivateNote"),
+              icon: "lock",
+              run: () => {
+                setNoteError(null);
+                setNoteOpen(true);
+              },
+            },
+          ] as const;
+          return (
+            <>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={t("mobileConversationTools")}
+                onPress={() => {
+                  Keyboard.dismiss();
+                  openComposerMenu(actions, () => setMenuOpen(true));
+                }}
+                style={({ pressed }) => [
+                  styles.addButton,
+                  { backgroundColor: pressed ? palette.tint : palette.wash },
+                ]}
+              >
+                <Icon name="plus" size={22} color={palette.ink} />
+              </Pressable>
+              {Platform.OS !== "ios" && (
+                <Sheet
+                  visible={menuOpen}
+                  onClose={() => setMenuOpen(false)}
+                  title={t("mobileConversationTools")}
+                  palette={palette}
+                >
+                  {actions.map((action) => (
+                    <Pressable
+                      accessibilityRole="button"
+                      key={action.icon}
+                      style={styles.menuItem}
+                      onPress={() => {
+                        setMenuOpen(false);
+                        action.run();
+                      }}
+                    >
+                      <Icon name={action.icon} color={palette.blue} />
+                      <Text style={{ color: palette.ink, fontFamily: fonts.medium, fontSize: 16 }}>
+                        {action.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </Sheet>
+              )}
+            </>
+          );
+        }}
+      />
 
       <Sheet
         onClose={() => setSavedOpen(false)}
@@ -221,9 +243,6 @@ export function ConversationTools({
         title={t("mobileSavedRepliesTitle")}
         visible={savedOpen}
       >
-        <Text style={[styles.help, { color: palette.sub, fontFamily: fonts.body }]}>
-          {t("mobileSavedRepliesHelp")}
-        </Text>
         <ScrollView
           contentContainerStyle={styles.replyList}
           keyboardShouldPersistTaps="handled"
@@ -365,24 +384,20 @@ export function ConversationTools({
 }
 
 const styles = StyleSheet.create({
-  toolbar: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 7,
-    paddingHorizontal: 2,
-    paddingBottom: 8,
+  addButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  tool: {
-    minHeight: 36,
-    maxWidth: "100%",
-    borderRadius: 18,
-    borderWidth: StyleSheet.hairlineWidth,
+  menuItem: {
+    minHeight: 52,
     flexDirection: "row",
     alignItems: "center",
-    gap: 7,
-    paddingHorizontal: 12,
+    gap: 14,
+    paddingHorizontal: 20,
   },
-  toolText: { flexShrink: 1, fontSize: 12, lineHeight: 16 },
   modalRoot: { flex: 1, justifyContent: "flex-end" },
   backdrop: {
     position: "absolute",
@@ -418,7 +433,6 @@ const styles = StyleSheet.create({
     opacity: 0.54,
   },
   sheetTitle: { flex: 1, fontSize: 24, lineHeight: 29, letterSpacing: -0.6 },
-  help: { fontSize: 13, lineHeight: 18, paddingHorizontal: 20, paddingBottom: 12 },
   replyList: { gap: 9, paddingHorizontal: 20, paddingBottom: 12 },
   loading: { paddingVertical: 28 },
   reply: {

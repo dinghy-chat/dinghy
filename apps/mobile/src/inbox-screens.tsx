@@ -196,6 +196,7 @@ function ConversationRow({
 function WorkspaceHeader({
   me,
   onAccount,
+  onWorkspace,
   palette,
   session,
   topInset,
@@ -204,82 +205,150 @@ function WorkspaceHeader({
 }: {
   me: Me | null;
   onAccount(): void;
+  onWorkspace(workspaceId: string): void;
   palette: Palette;
   session: Session;
   topInset: number;
   waiting: number;
   longest: string | null;
 }) {
+  const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const night = useColorScheme() === "dark";
+  const workspaces = me?.workspaces ?? [];
   const workspaceName =
     me?.workspaces.find((workspace) => workspace.workspaceId === session.workspace.id)?.name ??
     session.workspace.name;
+  const workspaceControl = (
+    <>
+      <View style={screen.workspaceBoatTile}>
+        <Image source={require("../assets/boat.png")} style={screen.workspaceBoat} />
+      </View>
+      <Text
+        numberOfLines={1}
+        style={[screen.workspaceName, { color: night ? "#f5efe0" : "#142f3c" }]}
+      >
+        {workspaceName}
+      </Text>
+      {me !== null && <Icon name="down" size={14} color={night ? "#f5efe0" : "#142f3c"} />}
+    </>
+  );
   return (
-    <View
-      style={[
-        screen.inboxCover,
-        { paddingTop: topInset, backgroundColor: night ? "#162b40" : "#e3f2ee" },
-      ]}
-    >
-      <View pointerEvents="none" style={[screen.harborArt, { top: topInset }]}>
-        <Harbor night={night} animated={false} />
-      </View>
-      <View style={screen.workspaceLine}>
-        <Pressable accessibilityRole="button" onPress={onAccount} style={screen.workspaceButton}>
-          <View style={screen.workspaceBoatTile}>
-            <Image source={require("../assets/boat.png")} style={screen.workspaceBoat} />
-          </View>
-          <Text
-            numberOfLines={1}
-            style={[screen.workspaceName, { color: night ? "#f5efe0" : "#142f3c" }]}
+    <>
+      <View
+        style={[
+          screen.inboxCover,
+          { paddingTop: topInset, backgroundColor: night ? "#162b40" : "#e3f2ee" },
+        ]}
+      >
+        <View pointerEvents="none" style={[screen.harborArt, { top: topInset }]}>
+          <Harbor night={night} animated={false} />
+        </View>
+        <View style={screen.workspaceLine}>
+          {me ? (
+            <Pressable
+              accessibilityLabel={t("workspaceMenu", { name: workspaceName })}
+              accessibilityRole="button"
+              onPress={() => setWorkspaceOpen(true)}
+              style={screen.workspaceButton}
+            >
+              {workspaceControl}
+            </Pressable>
+          ) : (
+            <View style={screen.workspaceButton}>{workspaceControl}</View>
+          )}
+          <Pressable
+            accessibilityLabel={t("settings")}
+            accessibilityRole="button"
+            onPress={onAccount}
+            style={screen.accountButton}
           >
-            {workspaceName}
+            <View style={screen.accountFace}>
+              {me?.pictureUrl ? (
+                <Avatar name={me.name} picture={me.pictureUrl} size={40} palette={palette} />
+              ) : (
+                <Text style={screen.accountInitial}>
+                  {initials(me?.name ?? session.operator.name).slice(0, 1)}
+                </Text>
+              )}
+            </View>
+            <View
+              style={[
+                screen.accountStatus,
+                {
+                  backgroundColor: me?.away ? palette.sub : palette.green,
+                  borderColor: night ? "#162b40" : "#e3f2ee",
+                },
+              ]}
+            />
+          </Pressable>
+        </View>
+        <View style={screen.inboxHero}>
+          <Text style={[screen.inboxTitle, { color: night ? "#f5efe0" : "#142f3c" }]}>
+            {t("inbox")}
           </Text>
-          <Icon name="down" size={14} color={night ? "#f5efe0" : "#142f3c"} />
-        </Pressable>
-        <Pressable accessibilityRole="button" onPress={onAccount} style={screen.accountButton}>
-          <View style={screen.accountFace}>
-            {me?.pictureUrl ? (
-              <Avatar name={me.name} picture={me.pictureUrl} size={40} palette={palette} />
-            ) : (
-              <Text style={screen.accountInitial}>
-                {initials(me?.name ?? session.operator.name).slice(0, 1)}
+          <View style={[screen.shiftPill, { backgroundColor: night ? "#162b40" : "#e3f2ee" }]}>
+            <View
+              style={[screen.shiftDot, { backgroundColor: me?.away ? palette.sub : palette.green }]}
+            />
+            <Text style={[screen.shiftText, { color: night ? "#d2e1e7" : "#264654" }]}>
+              <Text style={{ fontFamily: fonts.semibold, color: night ? "#f5efe0" : "#142f3c" }}>
+                {me?.away ? t("statusAway") : t("statusAvailable")}
               </Text>
-            )}
-          </View>
-          <View
-            style={[
-              screen.accountStatus,
-              {
-                backgroundColor: me?.away ? palette.sub : palette.green,
-                borderColor: night ? "#162b40" : "#e3f2ee",
-              },
-            ]}
-          />
-        </Pressable>
-      </View>
-      <View style={screen.inboxHero}>
-        <Text style={[screen.inboxTitle, { color: night ? "#f5efe0" : "#142f3c" }]}>
-          {t("inbox")}
-        </Text>
-        <View style={[screen.shiftPill, { backgroundColor: night ? "#162b40" : "#e3f2ee" }]}>
-          <View
-            style={[screen.shiftDot, { backgroundColor: me?.away ? palette.sub : palette.green }]}
-          />
-          <Text style={[screen.shiftText, { color: night ? "#d2e1e7" : "#264654" }]}>
-            <Text style={{ fontFamily: fonts.semibold, color: night ? "#f5efe0" : "#142f3c" }}>
-              {me?.away ? t("statusAway") : t("statusAvailable")}
+              {waiting > 0
+                ? t("mobileHarborQueue", {
+                    count: waiting,
+                    longest: longest ?? t("mobileWaitNow"),
+                  })
+                : t("mobileQueueClear")}
             </Text>
-            {waiting > 0
-              ? t("mobileHarborQueue", {
-                  count: waiting,
-                  longest: longest ?? t("mobileWaitNow"),
-                })
-              : t("mobileQueueClear")}
-          </Text>
+          </View>
         </View>
       </View>
-    </View>
+      <Modal
+        animationType="fade"
+        onRequestClose={() => setWorkspaceOpen(false)}
+        transparent
+        visible={workspaceOpen}
+      >
+        <View style={[screen.modalVeil, { backgroundColor: palette.scrim }]}>
+          <Pressable
+            accessibilityLabel={t("done")}
+            accessibilityRole="button"
+            onPress={() => setWorkspaceOpen(false)}
+            style={screen.modalBackdrop}
+          />
+          <View style={[screen.filterSheet, { backgroundColor: palette.sheet }]}>
+            <View style={screen.sheetHandle} />
+            <View style={screen.sheetTitleLine}>
+              <Text style={[screen.sheetTitle, { color: palette.ink }]}>
+                {t("workspaceMenu", { name: workspaceName })}
+              </Text>
+              <SheetCloseButton onPress={() => setWorkspaceOpen(false)} palette={palette} />
+            </View>
+            {workspaces.map((workspace) => {
+              const selected = workspace.workspaceId === session.workspace.id;
+              return (
+                <Pressable
+                  accessibilityRole="radio"
+                  accessibilityState={{ checked: selected }}
+                  key={workspace.workspaceId}
+                  onPress={() => {
+                    setWorkspaceOpen(false);
+                    if (!selected) onWorkspace(workspace.workspaceId);
+                  }}
+                  style={[screen.sheetChoice, { borderBottomColor: palette.line }]}
+                >
+                  <Text style={[screen.sheetChoiceText, { color: palette.ink }]}>
+                    {workspace.name}
+                  </Text>
+                  {selected && <Icon name="check" size={20} color={palette.blue} />}
+                </Pressable>
+              );
+            })}
+          </View>
+        </View>
+      </Modal>
+    </>
   );
 }
 
@@ -352,14 +421,14 @@ function FilterSheet({
 }) {
   return (
     <Modal animationType="fade" onRequestClose={onClose} transparent visible={visible}>
-      <View style={screen.modalVeil}>
+      <View style={[screen.modalVeil, { backgroundColor: palette.scrim }]}>
         <Pressable
           accessibilityLabel={t("done")}
           accessibilityRole="button"
           onPress={onClose}
           style={screen.modalBackdrop}
         />
-        <View style={[screen.filterSheet, { backgroundColor: palette.paper }]}>
+        <View style={[screen.filterSheet, { backgroundColor: palette.sheet }]}>
           <View style={screen.sheetHandle} />
           <View style={screen.sheetTitleLine}>
             <Text style={[screen.sheetTitle, { color: palette.ink }]}>
@@ -463,6 +532,7 @@ export function InboxScreen({
   topInset,
   waiting,
   onAccount,
+  onWorkspace,
   onRefresh,
   onOpen,
   onOpenPending,
@@ -477,13 +547,15 @@ export function InboxScreen({
   topInset: number;
   waiting: number;
   onAccount(): void;
-  onSearch(): void;
+  onWorkspace(workspaceId: string): void;
   onRefresh(): void;
   onOpen(conversation: Conversation): void;
   onOpenPending(conversationId: string): void;
 }) {
   const [scope, setScope] = useState<Scope>("all");
   const [filterOpen, setFilterOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [searchFocused, setSearchFocused] = useState(false);
   const [expanded, setExpanded] = useState<Record<Group, boolean>>({
     needsReply: true,
     teammates: false,
@@ -519,10 +591,20 @@ export function InboxScreen({
     (reply, index) =>
       pending.findIndex((other) => other.conversationId === reply.conversationId) === index,
   );
+  const wanted = normalized(query);
+  const searchResults = conversations.filter((conversation) => {
+    if (!isInScope(conversation, scope, meId)) return false;
+    const copy = rowText(conversation);
+    return normalized(
+      `${visitorName(conversation)} ${conversation.visitor.email ?? ""} ${copy.subject} ${copy.preview ?? ""}`,
+    ).includes(wanted);
+  });
+  const searching = query.trim().length > 0;
 
   return (
     <>
       <ScrollView
+        keyboardShouldPersistTaps="handled"
         refreshControl={
           <RefreshControl refreshing={loading} onRefresh={onRefresh} tintColor={palette.blue} />
         }
@@ -533,18 +615,53 @@ export function InboxScreen({
           longest={longest}
           me={me}
           onAccount={onAccount}
+          onWorkspace={onWorkspace}
           palette={palette}
           session={session}
           topInset={topInset}
           waiting={waiting}
         />
+        <View
+          style={[
+            screen.searchField,
+            {
+              backgroundColor: palette.wash,
+              borderColor: searchFocused ? palette.blue : palette.line,
+            },
+          ]}
+        >
+          <Icon name="search" size={21} color={palette.sub} />
+          <TextInput
+            accessibilityLabel={t("searchLabel")}
+            autoCapitalize="none"
+            autoCorrect={false}
+            onBlur={() => setSearchFocused(false)}
+            onChangeText={setQuery}
+            onFocus={() => setSearchFocused(true)}
+            placeholder={t("mobileHarborSearchInput")}
+            placeholderTextColor={palette.sub}
+            returnKeyType="search"
+            style={[screen.searchInput, { color: palette.ink }]}
+            value={query}
+          />
+          {query.length > 0 && (
+            <Pressable
+              accessibilityLabel={t("clearSearch")}
+              accessibilityRole="button"
+              onPress={() => setQuery("")}
+              style={screen.searchClear}
+            >
+              <Icon name="x" size={17} color={palette.sub} />
+            </Pressable>
+          )}
+        </View>
         <ScopeTabs
           onFilter={() => setFilterOpen(true)}
           onScope={setScope}
           palette={palette}
           scope={scope}
         />
-        {pendingByConversation.length > 0 && (
+        {!searching && pendingByConversation.length > 0 && (
           <View style={[screen.savedReplies, { borderBottomColor: palette.line }]}>
             <Text style={[screen.savedTitle, { color: palette.ink }]}>{t("pageSavedReplies")}</Text>
             {pendingByConversation.map((reply) => {
@@ -572,6 +689,27 @@ export function InboxScreen({
         )}
         {loading && conversations.length === 0 ? (
           <ActivityIndicator color={palette.blue} style={screen.loading} />
+        ) : searching ? (
+          searchResults.length === 0 ? (
+            <Text style={[screen.searchHint, { color: palette.sub }]}>
+              {t("mobileHarborNoMatches", { query: query.trim() })}
+            </Text>
+          ) : (
+            <View style={screen.searchResults}>
+              <Text style={[screen.resultHeading, { color: palette.ink }]}>
+                {t("mobileHarborConversations")}
+              </Text>
+              {searchResults.map((conversation) => (
+                <ConversationRow
+                  conversation={conversation}
+                  key={conversation.id}
+                  meId={meId}
+                  onPress={() => onOpen(conversation)}
+                  palette={palette}
+                />
+              ))}
+            </View>
+          )
         ) : (
           groupOrder.map((group) => (
             <View key={group}>
@@ -644,104 +782,6 @@ function SecondaryHeader({
         {detail}
       </Text>
     </View>
-  );
-}
-
-export function SearchScreen({
-  conversations,
-  me,
-  palette,
-  session,
-  topInset,
-  onOpen,
-}: {
-  conversations: Conversation[];
-  me: Me | null;
-  palette: Palette;
-  session: Session;
-  topInset: number;
-  onOpen(conversation: Conversation): void;
-}) {
-  const [query, setQuery] = useState("");
-  const [focused, setFocused] = useState(false);
-  const workspaceName =
-    me?.workspaces.find((workspace) => workspace.workspaceId === session.workspace.id)?.name ??
-    session.workspace.name;
-  const wanted = normalized(query);
-  const shown = conversations.filter((conversation) => {
-    const copy = rowText(conversation);
-    return normalized(
-      `${visitorName(conversation)} ${copy.subject} ${copy.preview ?? ""}`,
-    ).includes(wanted);
-  });
-  return (
-    <ScrollView
-      keyboardShouldPersistTaps="handled"
-      style={{ backgroundColor: palette.paper }}
-      contentContainerStyle={screen.secondaryContent}
-    >
-      <SecondaryHeader
-        detail={t("mobileHarborWorkspace", { workspace: workspaceName })}
-        palette={palette}
-        title={t("searchPlaceholder")}
-        topInset={topInset}
-      />
-      <View
-        style={[
-          screen.searchField,
-          { backgroundColor: palette.wash, borderColor: focused ? palette.blue : palette.line },
-        ]}
-      >
-        <Icon name="search" size={22} color={palette.sub} />
-        <TextInput
-          autoCapitalize="none"
-          autoCorrect={false}
-          accessibilityLabel={t("searchLabel")}
-          onBlur={() => setFocused(false)}
-          onFocus={() => setFocused(true)}
-          onChangeText={setQuery}
-          placeholder={t("mobileHarborSearchInput")}
-          placeholderTextColor={palette.sub}
-          returnKeyType="search"
-          style={[screen.searchInput, { color: palette.ink }]}
-          value={query}
-        />
-        {query.length > 0 && (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel={t("clearSearch")}
-            onPress={() => setQuery("")}
-            style={screen.searchClear}
-          >
-            <Icon name="x" size={17} color={palette.sub} />
-          </Pressable>
-        )}
-      </View>
-      {query.trim() === "" ? (
-        <Text style={[screen.searchHint, { color: palette.sub }]}>
-          {t("mobileHarborSearchHint")}
-        </Text>
-      ) : shown.length === 0 ? (
-        <Text style={[screen.searchHint, { color: palette.sub }]}>
-          {t("mobileHarborNoMatches", { query: query.trim() })}
-        </Text>
-      ) : (
-        <View style={screen.searchResults}>
-          <Text style={[screen.resultHeading, { color: palette.ink }]}>
-            {t("mobileHarborConversations")}
-          </Text>
-          {shown.map((conversation) => (
-            <ConversationRow
-              conversation={conversation}
-              key={conversation.id}
-              meId={session.operator.id}
-              onPress={() => onOpen(conversation)}
-              palette={palette}
-            />
-          ))}
-        </View>
-      )}
-    </ScrollView>
   );
 }
 

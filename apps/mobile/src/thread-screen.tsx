@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   FlatList,
+  Keyboard,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -18,8 +19,8 @@ import { t } from "../../operator/src/text.ts";
 import { Harbor } from "../Harbor";
 import type { PendingReply } from "../outbox";
 import type { DinghyApi } from "./api";
-import { MessageAttachmentView, PhotoComposerButton } from "./attachments";
-import { Avatar, SheetCloseButton, visitorName } from "./common";
+import { MessageAttachmentView } from "./attachments";
+import { Avatar, readableError, SheetCloseButton, visitorName } from "./common";
 import { ConversationTools } from "./composer-tools";
 import { fonts } from "./fonts";
 import { Icon } from "./icon";
@@ -51,13 +52,13 @@ function SheetFrame({
         <Pressable
           accessibilityLabel={t("mobileDismiss")}
           onPress={onClose}
-          style={screenStyles.modalBackdrop}
+          style={[screenStyles.modalBackdrop, { backgroundColor: palette.scrim }]}
         />
         <View
           accessibilityViewIsModal
           style={[
             screenStyles.sheet,
-            { backgroundColor: palette.paper, paddingBottom: Math.max(bottomInset, 12) },
+            { backgroundColor: palette.sheet, paddingBottom: Math.max(bottomInset, 12) },
           ]}
         >
           {children}
@@ -76,17 +77,8 @@ function SheetTools({ onClose, palette }: { onClose(): void; palette: Palette })
   );
 }
 
-function lastPagePath(conversation: Conversation): string | null {
-  const value = (conversation as Conversation & { lastPage?: unknown }).lastPage;
-  if (typeof value !== "string" || !value) return null;
-  try {
-    return new URL(value, "https://dinghy.invalid").pathname;
-  } catch {
-    return null;
-  }
-}
-
 function VisitorDetailsSheet({
+  api,
   bottomInset,
   conversation,
   isNight,
@@ -97,6 +89,7 @@ function VisitorDetailsSheet({
   palette,
   visible,
 }: {
+  api: DinghyApi;
   bottomInset: number;
   conversation: Conversation;
   isNight: boolean;
@@ -107,6 +100,28 @@ function VisitorDetailsSheet({
   palette: Palette;
   visible: boolean;
 }) {
+  const [detail, setDetail] = useState<Awaited<ReturnType<DinghyApi["contact"]>> | null>(null);
+  const [failure, setFailure] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const visitorId = conversation.visitor.id;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Retry reloads the same contact after a failed request.
+  useEffect(() => {
+    if (!visible || !visitorId) return;
+    let active = true;
+    setDetail(null);
+    setFailure(null);
+    void api.contact(visitorId).then(
+      (contact) => {
+        if (active) setDetail(contact);
+      },
+      (error) => {
+        if (active) setFailure(readableError(error));
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [api, visible, visitorId, attempt]);
   if (!visible) return null;
   const assignee = members.find((member) => member.id === conversation.assigneeOperatorId);
   const assignment = conversation.assigneeOperatorId
@@ -116,12 +131,32 @@ function VisitorDetailsSheet({
         ? t("mobileAssignedTo", { name: assignee.name })
         : t("mobileAssignedOther")
     : t("unassigned");
-  const page = lastPagePath(conversation);
+  const formatDate = (date?: string | null) =>
+    date
+      ? new Date(date).toLocaleDateString(undefined, {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+        })
+      : null;
   const facts = [
+    [t("colCompany"), detail?.company],
+    [t("countryLabel"), detail?.country],
+    [t("businessHoursZone"), detail?.timeZone],
+    [t("deviceLabel"), detail?.device],
+    [t("contactFirstSeen"), formatDate(detail?.createdAt)],
+    [t("sortLastSeen"), formatDate(detail?.lastSeenAt)],
+    [t("mobileLastPage"), detail?.lastPage],
+    [t("contactConversations"), detail?.conversationCount.toString()],
     [t("mobileConversationStatus"), conversation.status === "open" ? t("open") : t("closed")],
     [t("mobileConversationAssignment"), assignment],
-    ...(page ? [[t("mobileLastPage"), page]] : []),
-  ];
+  ].filter((fact): fact is [string, string] => Boolean(fact[1]));
+  const attributes = Object.entries(detail?.attributes ?? {}).filter(
+    ([key, value]) =>
+      key !== "company" &&
+      key !== "avatarPath" &&
+      ["string", "number", "boolean"].includes(typeof value),
+  );
   return (
     <SheetFrame bottomInset={bottomInset} onClose={onClose} palette={palette} visible={visible}>
       <View style={screenStyles.visitorSky}>
@@ -168,6 +203,47 @@ function VisitorDetailsSheet({
             </View>
           ))}
         </View>
+        {detail?.note && (
+          <View style={[screenStyles.contactNote, { backgroundColor: palette.note }]}>
+            <Text style={{ fontFamily: fonts.semibold, color: palette.noteInk }}>
+              {t("mobilePrivateNote")}
+            </Text>
+            <Text selectable style={{ fontFamily: fonts.body, color: palette.noteInk }}>
+              {detail.note}
+            </Text>
+          </View>
+        )}
+        {attributes.length > 0 && (
+          <View style={screenStyles.facts}>
+            <Text style={[screenStyles.sectionLabel, { color: palette.ink }]}>
+              {t("contactDataAttributes")}
+            </Text>
+            {attributes.map(([key, value]) => (
+              <View key={key} style={[screenStyles.factRow, { borderTopColor: palette.line }]}>
+                <Text style={[screenStyles.factLabel, { color: palette.sub }]}>{key}</Text>
+                <Text selectable style={[screenStyles.factValue, { color: palette.ink }]}>
+                  {String(value)}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
+        {!detail && visitorId !== "" && (
+          <View style={screenStyles.contactFeedback}>
+            <Text accessibilityLiveRegion="polite" style={{ color: palette.sub }}>
+              {failure ?? t("loading")}
+            </Text>
+            {failure && (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setAttempt((n) => n + 1)}
+                style={{ minHeight: 44, justifyContent: "center" }}
+              >
+                <Text style={{ color: palette.blue }}>{t("mobileRetry")}</Text>
+              </Pressable>
+            )}
+          </View>
+        )}
         <View style={screenStyles.detailsBottomSpace} />
       </ScrollView>
     </SheetFrame>
@@ -486,6 +562,21 @@ export function ThreadScreen({
   onStatus(): Promise<void>;
 }) {
   const isNight = useColorScheme() === "dark";
+  const [keyboardVisible, setKeyboardVisible] = useState(Keyboard.isVisible());
+  useEffect(() => {
+    const show = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
+      () => setKeyboardVisible(true),
+    );
+    const hide = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
+      () => setKeyboardVisible(false),
+    );
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
   const [draft, setDraft] = useState(initialDraft);
   const [sending, setSending] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -705,9 +796,9 @@ export function ThreadScreen({
           style={[
             screenStyles.composer,
             {
-              backgroundColor: palette.wash,
+              backgroundColor: palette.paper,
               borderTopColor: palette.line,
-              paddingBottom: Math.max(bottomInset, 10),
+              paddingBottom: keyboardVisible ? 5 : Math.max(bottomInset, 8),
             },
           ]}
         >
@@ -719,16 +810,9 @@ export function ThreadScreen({
             }
             onNoteAdded={onReload}
             palette={palette}
-          >
-            <PhotoComposerButton
-              api={api}
-              bottomInset={bottomInset}
-              conversationId={current.id}
-              onError={onError}
-              onSent={onReload}
-              palette={palette}
-            />
-          </ConversationTools>
+            bottomInset={bottomInset}
+            onError={onError}
+          />
           <View
             style={[
               screenStyles.composeBox,
@@ -746,6 +830,7 @@ export function ThreadScreen({
               value={draft}
             />
             <Pressable
+              hitSlop={5}
               accessibilityLabel={t("mobileSendReply")}
               accessibilityRole="button"
               disabled={!draft.trim() || sending}
@@ -768,6 +853,7 @@ export function ThreadScreen({
         </View>
       )}
       <VisitorDetailsSheet
+        api={api}
         bottomInset={bottomInset}
         conversation={current}
         isNight={isNight}
@@ -860,6 +946,9 @@ const screenStyles = StyleSheet.create({
   },
   factLabel: { flex: 1, fontSize: 13 },
   factValue: { flex: 1.4, fontSize: 13, lineHeight: 18, textAlign: "right" },
+  sectionLabel: { fontFamily: fonts.semibold, fontSize: 16, marginVertical: 12 },
+  contactNote: { margin: 16, padding: 14, gap: 6, borderRadius: 16 },
+  contactFeedback: { paddingHorizontal: 16, paddingVertical: 12 },
   detailsBottomSpace: { height: 12 },
   assignHead: { paddingLeft: 20, paddingRight: 11, paddingBottom: 5 },
   assignTitleRow: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 8 },
@@ -1013,13 +1102,17 @@ const screenStyles = StyleSheet.create({
   },
   reopenText: { flex: 1, fontSize: 14 },
   composer: {
+    flexDirection: "row",
+    alignItems: "flex-end",
+    gap: 8,
     paddingHorizontal: 10,
     paddingTop: 8,
     paddingBottom: 10,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   composeBox: {
-    minHeight: 54,
+    flex: 1,
+    minHeight: 44,
     borderRadius: 27,
     borderWidth: 1,
     paddingLeft: 14,
@@ -1036,17 +1129,17 @@ const screenStyles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    minHeight: 44,
+    minHeight: 34,
     maxHeight: 120,
     paddingHorizontal: 0,
-    paddingTop: 11,
-    paddingBottom: 9,
+    paddingTop: 7,
+    paddingBottom: 6,
     fontSize: 15,
     lineHeight: 20,
   },
   send: {
-    width: 44,
-    height: 44,
+    width: 34,
+    height: 34,
     borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",

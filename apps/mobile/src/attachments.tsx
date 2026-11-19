@@ -1,6 +1,6 @@
 import { randomUUID } from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { Image, Linking, Modal, Pressable, StyleSheet, Text, View } from "react-native";
 import { t } from "../../operator/src/text.ts";
 import { type DinghyApi, MAX_IMAGE_BYTES } from "./api";
@@ -34,11 +34,11 @@ function sizeLabel(bytes: number | null): string | null {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function PhotoComposerButton({
+export function PhotoComposer({
   api,
   bottomInset,
   conversationId,
-  disabled = false,
+  trigger,
   onError,
   onSent,
   palette,
@@ -46,7 +46,7 @@ export function PhotoComposerButton({
   api: DinghyApi;
   bottomInset: number;
   conversationId: string;
-  disabled?: boolean;
+  trigger(onPick: () => void): ReactNode;
   onError(error: unknown): void;
   onSent(message: Message): void | Promise<void>;
   palette: Palette;
@@ -113,28 +113,7 @@ export function PhotoComposerButton({
 
   return (
     <>
-      <Pressable
-        accessibilityLabel={t("mobileAttachPhoto")}
-        accessibilityRole="button"
-        disabled={disabled}
-        hitSlop={6}
-        onPress={() => void pick()}
-        style={({ pressed }) => [
-          attachmentStyles.composeButton,
-          {
-            backgroundColor: pressed ? palette.tint : palette.paper,
-            borderColor: palette.line,
-            opacity: disabled ? 0.4 : 1,
-          },
-        ]}
-      >
-        <Icon color={palette.blue} name="attach" size={15} />
-        <Text
-          style={{ color: palette.ink, fontFamily: fonts.medium, fontSize: 12, lineHeight: 16 }}
-        >
-          {t("mobilePhotoTool")}
-        </Text>
-      </Pressable>
+      {trigger(() => void pick())}
       <Modal
         animationType="slide"
         onRequestClose={close}
@@ -147,7 +126,7 @@ export function PhotoComposerButton({
             accessibilityLabel={t("mobileDismiss")}
             disabled={sending}
             onPress={close}
-            style={attachmentStyles.backdrop}
+            style={[attachmentStyles.backdrop, { backgroundColor: palette.scrim }]}
           />
           {photo && (
             <View
@@ -155,7 +134,7 @@ export function PhotoComposerButton({
               style={[
                 attachmentStyles.sheet,
                 {
-                  backgroundColor: palette.paper,
+                  backgroundColor: palette.sheet,
                   paddingBottom: Math.max(bottomInset, 12),
                 },
               ]}
@@ -377,16 +356,6 @@ export function MessageAttachmentView({
 }
 
 const attachmentStyles = StyleSheet.create({
-  composeButton: {
-    minHeight: 36,
-    borderRadius: 18,
-    borderWidth: StyleSheet.hairlineWidth,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 7,
-    paddingHorizontal: 12,
-  },
   sheetRoot: { flex: 1, justifyContent: "flex-end" },
   backdrop: {
     position: "absolute",

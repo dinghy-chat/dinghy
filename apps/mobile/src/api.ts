@@ -1,4 +1,5 @@
 import { fetch } from "expo/fetch";
+import type { components } from "../../../packages/sdk/src/openapi.ts";
 import { t } from "../../operator/src/text.ts";
 import type {
   AlertSettings,
@@ -188,6 +189,10 @@ export class DinghyApi {
 
   savedReplies(): Promise<{ savedReplies: SavedReply[] }> {
     return this.call(this.workspace("/saved-replies"));
+  }
+
+  contact(visitorId: string): Promise<components["schemas"]["ContactDetail"]> {
+    return this.call(this.workspace(`/contacts/${encodeURIComponent(visitorId)}`));
   }
 
   markRead(conversationId: string, seq: string): Promise<{ ok: true }> {

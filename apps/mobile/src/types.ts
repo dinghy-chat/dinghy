@@ -105,7 +105,7 @@ export type PushProvider = "apns" | "fcm";
 
 export type AlertSettings = {
   email: boolean;
-  nativePushProviders: PushProvider[];
+  nativePushProviders?: PushProvider[];
 };
 
 export type NotificationRoute = {

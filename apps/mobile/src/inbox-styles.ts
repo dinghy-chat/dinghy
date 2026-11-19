@@ -3,7 +3,7 @@ import { fonts } from "./fonts";
 import { controlShape } from "./theme";
 
 export const inboxStyles = StyleSheet.create({
-  inboxContent: { paddingBottom: 104 },
+  inboxContent: { paddingBottom: 24 },
   inboxCover: { position: "relative", overflow: "hidden" },
   harborArt: { position: "absolute", left: 0, right: 0, bottom: 0, overflow: "hidden" },
   workspaceLine: {
@@ -200,7 +200,7 @@ export const inboxStyles = StyleSheet.create({
     borderBottomWidth: StyleSheet.hairlineWidth,
   },
   sheetChoiceText: { fontFamily: fonts.medium, fontSize: 16 },
-  secondaryContent: { paddingBottom: 112 },
+  secondaryContent: { paddingBottom: 32 },
   secondaryHeader: {
     position: "relative",
     overflow: "hidden",
@@ -218,6 +218,7 @@ export const inboxStyles = StyleSheet.create({
     minHeight: 52,
     marginHorizontal: 20,
     marginTop: 18,
+    marginBottom: 4,
     borderRadius: controlShape.pill,
     borderWidth: 1,
     paddingLeft: 18,

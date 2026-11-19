@@ -1,22 +1,36 @@
 import { fetch } from "expo/fetch";
-import * as Crypto from "expo-crypto";
 import * as SecureStore from "expo-secure-store";
-import { Linking } from "react-native";
 import { t } from "../../operator/src/text.ts";
-import { normalizeOrigin } from "./api";
+import { ApiError, normalizeOrigin } from "./api";
 import type { Session } from "./types";
 
 const SESSION_KEY = "dinghy.native.session.v1";
-const PROOF_KEY = "dinghy.native.sign-in-proof.v1";
-const REDIRECT_URI = "dinghy://auth/callback";
-const PROOF_MAX_AGE_MS = 15 * 60_000;
+const LEGACY_PROOF_KEY = "dinghy.native.sign-in-proof.v1";
+const REQUEST_TIMEOUT_MS = 30_000;
+const DEFAULT_CODE_LIFETIME_SECONDS = 10 * 60;
+const DEFAULT_RESEND_SECONDS = 60;
 
-type PendingProof = {
-  origin: string;
-  state: string;
-  codeVerifier: string;
-  createdAt: number;
+type EmailCodeRequestResponse = {
+  ok: true;
+  expiresInSeconds?: number;
+  resendAfterSeconds?: number;
 };
+
+type SignedInResponse = { status: "signed_in"; session: Session };
+type EmailCodeVerifyResponse =
+  | SignedInResponse
+  | { status: "totp_required"; challenge: string; expiresInSeconds?: number };
+
+export type EmailCodeRequest = {
+  origin: string;
+  email: string;
+  expiresInSeconds: number;
+  resendAfterSeconds: number;
+};
+
+export type EmailCodeResult =
+  | { status: "signed_in"; session: Session }
+  | { status: "totp_required"; challenge: string; expiresInSeconds: number };
 
 function cloudOrigin(): string {
   const configured = process.env.EXPO_PUBLIC_DINGHY_ORIGIN;
@@ -35,17 +49,6 @@ function cloudOrigin(): string {
 
 export const CLOUD_ORIGIN = cloudOrigin();
 
-function base64Url(value: string): string {
-  return value.replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
-}
-
-async function randomText(): Promise<string> {
-  const bytes = await Crypto.getRandomBytesAsync(32);
-  let binary = "";
-  for (const byte of bytes) binary += String.fromCharCode(byte);
-  return base64Url(globalThis.btoa(binary));
-}
-
 function isSession(value: unknown): value is Session {
   if (typeof value !== "object" || value === null) return false;
   const session = value as Partial<Session>;
@@ -58,7 +61,7 @@ function isSession(value: unknown): value is Session {
 }
 
 export async function readSession(): Promise<Session | null> {
-  await readPendingProof();
+  await SecureStore.deleteItemAsync(LEGACY_PROOF_KEY);
   const saved = await SecureStore.getItemAsync(SESSION_KEY);
   if (saved === null) return null;
   try {
@@ -79,123 +82,119 @@ export async function clearSession(): Promise<void> {
   await SecureStore.deleteItemAsync(SESSION_KEY);
 }
 
-function isPendingProof(value: unknown): value is PendingProof {
-  if (typeof value !== "object" || value === null) return false;
-  const proof = value as Partial<PendingProof>;
-  return (
-    typeof proof.origin === "string" &&
-    typeof proof.state === "string" &&
-    typeof proof.codeVerifier === "string" &&
-    typeof proof.createdAt === "number"
-  );
+function positiveSeconds(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0
+    ? Math.floor(value)
+    : fallback;
 }
 
-async function readPendingProof(): Promise<PendingProof | null> {
-  const saved = await SecureStore.getItemAsync(PROOF_KEY);
-  if (saved === null) return null;
+async function post<T>(origin: string, path: string, body: object): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   try {
-    const value: unknown = JSON.parse(saved);
-    if (!isPendingProof(value) || Date.now() - value.createdAt > PROOF_MAX_AGE_MS) {
-      await SecureStore.deleteItemAsync(PROOF_KEY);
-      return null;
-    }
-    return value;
-  } catch {
-    await SecureStore.deleteItemAsync(PROOF_KEY);
-    return null;
-  }
-}
-
-export async function hasPendingSignIn(): Promise<boolean> {
-  return (await readPendingProof()) !== null;
-}
-
-export async function cancelPendingSignIn(): Promise<void> {
-  await SecureStore.deleteItemAsync(PROOF_KEY);
-}
-
-export async function beginSignIn(server: string): Promise<void> {
-  const origin = normalizeOrigin(server);
-  const state = await randomText();
-  const codeVerifier = await randomText();
-  const codeChallenge = base64Url(
-    await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, codeVerifier, {
-      encoding: Crypto.CryptoEncoding.BASE64,
-    }),
-  );
-  const query = new URLSearchParams({
-    code_challenge: codeChallenge,
-    code_challenge_method: "S256",
-    redirect_uri: REDIRECT_URI,
-    state,
-  });
-  await SecureStore.setItemAsync(
-    PROOF_KEY,
-    JSON.stringify({ origin, state, codeVerifier, createdAt: Date.now() } satisfies PendingProof),
-    { keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY },
-  );
-  try {
-    await Linking.openURL(`${origin}/operator/native-sign-in?${query.toString()}`);
-  } catch (failure) {
-    await cancelPendingSignIn();
-    throw failure;
-  }
-}
-
-export async function completeSignIn(url: string): Promise<Session | null> {
-  const callback = new URL(url);
-  if (
-    callback.protocol !== "dinghy:" ||
-    callback.host !== "auth" ||
-    callback.pathname !== "/callback"
-  ) {
-    return null;
-  }
-  const proof = await readPendingProof();
-  if (proof === null) throw new Error(t("mobileSignInExpired"));
-  if (callback.searchParams.get("state") !== proof.state) {
-    throw new Error(t("mobileSignInMismatch"));
-  }
-  const callbackError = callback.searchParams.get("error");
-  if (callbackError) {
-    await cancelPendingSignIn();
-    throw new Error(t("mobileSignInCancelled"));
-  }
-  const code = callback.searchParams.get("code");
-  if (!code) throw new Error(t("mobileSignInNoCode"));
-
-  const response = await fetch(`${proof.origin}/v1/auth/native/exchange`, {
-    method: "POST",
-    credentials: "omit",
-    redirect: "error",
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      Origin: proof.origin,
-    },
-    body: JSON.stringify({ code, codeVerifier: proof.codeVerifier }),
-  });
-  if (!response.ok) {
+    const response = await fetch(`${origin}${path}`, {
+      method: "POST",
+      credentials: "omit",
+      redirect: "error",
+      signal: controller.signal,
+      headers: {
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        Origin: origin,
+      },
+      body: JSON.stringify(body),
+    });
     const answer = (await response.json().catch(() => null)) as {
-      error?: { message?: unknown };
+      error?: { code?: unknown; message?: unknown };
     } | null;
-    const detail =
-      typeof answer?.error?.message === "string"
-        ? answer.error.message
-        : t("mobileSignInServerFailed");
-    await cancelPendingSignIn();
-    throw new Error(detail);
+    if (!response.ok) {
+      if (response.status === 404) {
+        throw new ApiError(
+          response.status,
+          "native_auth_unavailable",
+          t("mobileNativeAuthUnavailable"),
+        );
+      }
+      const code = typeof answer?.error?.code === "string" ? answer.error.code : null;
+      const message =
+        typeof answer?.error?.message === "string"
+          ? answer.error.message
+          : t("mobileServerStatus", { status: response.status });
+      throw new ApiError(response.status, code, message);
+    }
+    return answer as T;
+  } catch (failure) {
+    if (controller.signal.aborted) throw new Error(t("mobileNativeAuthTimedOut"));
+    throw failure;
+  } finally {
+    clearTimeout(timer);
   }
-  const session: unknown = await response.json();
-  if (!isSession(session)) {
-    await cancelPendingSignIn();
-    throw new Error(t("mobileSignInInvalidSession"));
+}
+
+async function acceptSession(origin: string, value: unknown): Promise<Session> {
+  if (!isSession(value)) throw new Error(t("mobileSignInInvalidSession"));
+  if (value.origin !== origin) throw new Error(t("mobileSignInWrongOrigin"));
+  await saveSession(value);
+  return value;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+export async function requestEmailCode(server: string, email: string): Promise<EmailCodeRequest> {
+  const origin = normalizeOrigin(server);
+  const normalizedEmail = email.trim().toLowerCase();
+  const answer = await post<EmailCodeRequestResponse>(
+    origin,
+    "/v1/auth/native/email-code/request",
+    { email: normalizedEmail },
+  );
+  if (!isRecord(answer) || answer.ok !== true) {
+    throw new Error(t("mobileSignInInvalidResponse"));
   }
-  if (session.origin !== proof.origin) {
-    await cancelPendingSignIn();
-    throw new Error(t("mobileSignInWrongOrigin"));
+  return {
+    origin,
+    email: normalizedEmail,
+    expiresInSeconds: positiveSeconds(answer.expiresInSeconds, DEFAULT_CODE_LIFETIME_SECONDS),
+    resendAfterSeconds: positiveSeconds(answer.resendAfterSeconds, DEFAULT_RESEND_SECONDS),
+  };
+}
+
+export async function verifyEmailCode(
+  request: EmailCodeRequest,
+  code: string,
+): Promise<EmailCodeResult> {
+  const answer = await post<EmailCodeVerifyResponse>(
+    request.origin,
+    "/v1/auth/native/email-code/verify",
+    { email: request.email, code },
+  );
+  if (!isRecord(answer)) throw new Error(t("mobileSignInInvalidResponse"));
+  if (answer.status === "signed_in") {
+    return { status: "signed_in", session: await acceptSession(request.origin, answer.session) };
   }
-  await cancelPendingSignIn();
-  await saveSession(session);
-  return session;
+  if (answer.status !== "totp_required" || typeof answer.challenge !== "string") {
+    throw new Error(t("mobileSignInInvalidResponse"));
+  }
+  return {
+    status: "totp_required",
+    challenge: answer.challenge,
+    expiresInSeconds: positiveSeconds(answer.expiresInSeconds, DEFAULT_CODE_LIFETIME_SECONDS),
+  };
+}
+
+export async function verifyTotp(
+  origin: string,
+  challenge: string,
+  code: string,
+): Promise<Session> {
+  const answer = await post<SignedInResponse>(origin, "/v1/auth/native/totp/verify", {
+    challenge,
+    code,
+  });
+  if (!isRecord(answer) || answer.status !== "signed_in") {
+    throw new Error(t("mobileSignInInvalidResponse"));
+  }
+  return await acceptSession(origin, answer.session);
 }

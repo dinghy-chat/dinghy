@@ -96,7 +96,7 @@ export async function registerForPush(
   };
   const refresh = async (ask = false): Promise<Exclude<PushStatus, "checking">> => {
     const settings = await api.alerts();
-    if (!settings.nativePushProviders.includes(provider)) return "unavailable";
+    if (!settings.nativePushProviders?.includes(provider)) return "unavailable";
     const current = await Notifications.getPermissionsAsync();
     const permission =
       current.status === "granted"

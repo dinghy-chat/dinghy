@@ -8,7 +8,7 @@ import { Icon } from "./icon";
 import { type Palette, styles } from "./theme";
 import type { Conversation } from "./types";
 
-export type Page = "inbox" | "search" | "settings" | "thread";
+export type Page = "inbox" | "settings" | "thread";
 
 export function visitorName(conversation: Conversation): string {
   return conversation.visitor.name || conversation.visitor.email || t("visitorAnonymous");
@@ -123,31 +123,41 @@ export function BottomNav({
   onPage(page: Page): void;
 }) {
   const { bottom } = useSafeAreaInsets();
-  const surface = { backgroundColor: palette.paper, borderColor: palette.line };
   return (
-    <View pointerEvents="box-none" style={[dock.row, { bottom: Math.max(8, bottom - 4) }]}>
-      {(["inbox", "search", "settings"] as const).map((target) => {
-        const label = target === "search" ? t("searchLabel") : t(target);
+    <View
+      accessibilityRole="tablist"
+      style={[
+        dock.bar,
+        {
+          backgroundColor: palette.paper,
+          borderTopColor: palette.line,
+          paddingBottom: Math.max(bottom, 8),
+        },
+      ]}
+    >
+      {(["inbox", "settings"] as const).map((target) => {
+        const selected = page === target;
+        const label = t(target);
         return (
           <Pressable
             key={target}
             accessibilityRole="tab"
-            accessibilityState={{ selected: page === target }}
+            accessibilityState={{ selected }}
             accessibilityLabel={label}
             onPress={() => onPage(target)}
             style={({ pressed }) => [
-              dock.control,
-              target === "search" && dock.search,
-              surface,
+              dock.tab,
+              selected && { backgroundColor: palette.wash },
               pressed && { opacity: 0.84 },
             ]}
           >
-            <Icon name={target} size={20} color={target === "search" ? palette.sub : palette.ink} />
-            {target === "search" && (
-              <Text numberOfLines={1} style={[dock.label, { color: palette.sub }]}>
-                {label}
-              </Text>
-            )}
+            <Icon name={target} size={21} color={selected ? palette.blue : palette.sub} />
+            <Text
+              numberOfLines={1}
+              style={[dock.label, { color: selected ? palette.ink : palette.sub }]}
+            >
+              {label}
+            </Text>
           </Pressable>
         );
       })}
@@ -156,35 +166,21 @@ export function BottomNav({
 }
 
 const dock = StyleSheet.create({
-  row: {
-    position: "absolute",
-    left: 14,
-    right: 14,
+  bar: {
+    minHeight: 62,
+    paddingHorizontal: 12,
+    paddingTop: 7,
     flexDirection: "row",
-    gap: 8,
-    alignItems: "center",
-    justifyContent: "center",
+    gap: 6,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
-  control: {
-    height: 50,
-    width: 50,
-    borderRadius: 25,
-    borderWidth: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#183441",
-    shadowOpacity: 0.13,
-    shadowRadius: 9,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 4,
-  },
-  search: {
+  tab: {
     flex: 1,
-    flexDirection: "row",
-    justifyContent: "flex-start",
-    paddingHorizontal: 18,
-    gap: 10,
-    maxWidth: 340,
+    minHeight: 48,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 2,
   },
-  label: { fontFamily: fonts.body, fontSize: 16 },
+  label: { fontFamily: fonts.semibold, fontSize: 12, lineHeight: 15 },
 });

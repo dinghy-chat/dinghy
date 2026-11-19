@@ -6,10 +6,10 @@ import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-cont
 import { t } from "../operator/src/text.ts";
 import { createOutbox, type PendingReply } from "./outbox";
 import { ApiError, DinghyApi } from "./src/api";
-import { clearSession, completeSignIn, readSession, saveSession } from "./src/auth";
+import { clearSession, readSession, saveSession } from "./src/auth";
 import { BottomNav, ErrorBanner, type Page, readableError } from "./src/common";
 import { fontFiles } from "./src/fonts";
-import { InboxScreen, SearchScreen, SettingsScreen } from "./src/inbox-screens";
+import { InboxScreen, SettingsScreen } from "./src/inbox-screens";
 import {
   coldStartRoute,
   conversationFromRoute,
@@ -492,6 +492,39 @@ function SignedInApp({
     }
   };
 
+  const switchWorkspace = async (workspaceId: string) => {
+    const workspace = me?.workspaces.find((item) => item.workspaceId === workspaceId);
+    if (!workspace || workspace.workspaceId === session.workspace.id) return;
+    const next = {
+      ...session,
+      workspace: { id: workspace.workspaceId, name: workspace.name },
+    };
+    try {
+      await saveSession(next);
+    } catch (failure) {
+      setError(readableError(failure));
+      return;
+    }
+    const nextScope = `${next.origin}\n${next.workspace.id}\n${next.operator.id}`;
+    scopeRef.current = nextScope;
+    inboxRequest.current += 1;
+    threadRequest.current += 1;
+    routeRequest.current += 1;
+    threadTarget.current = null;
+    pendingRoute.current = null;
+    setPage("inbox");
+    setSelected(null);
+    setThread(null);
+    setMe(null);
+    setMembers([]);
+    setConversations([]);
+    setWaiting(0);
+    setPendingErrors({});
+    setInboxLoading(false);
+    setThreadLoading(false);
+    setSession(next);
+  };
+
   const signOut = async () => {
     if (signingOut) return;
     setSigningOut(true);
@@ -568,19 +601,9 @@ function SignedInApp({
                 session={session}
                 meId={session.operator.id}
                 onAccount={() => setPage("settings")}
-                onSearch={() => setPage("search")}
+                onWorkspace={(workspaceId) => void switchWorkspace(workspaceId)}
                 topInset={error ? 0 : insets.top}
                 waiting={waiting}
-              />
-            )}
-            {page === "search" && (
-              <SearchScreen
-                me={me}
-                session={session}
-                topInset={error ? 0 : insets.top}
-                conversations={conversations}
-                onOpen={openConversation}
-                palette={palette}
               />
             )}
             {page === "settings" && (
@@ -612,7 +635,6 @@ function AppContent() {
   const isNight = useColorScheme() === "dark";
   const palette = isNight ? night : day;
   const [session, setSession] = useState<Session | null | undefined>(undefined);
-  const [authError, setAuthError] = useState<string | null>(null);
   useEffect(() => {
     let active = true;
     void readSession().then(
@@ -631,29 +653,6 @@ function AppContent() {
   useEffect(() => {
     if (isReady) SplashScreen.hide();
   }, [isReady]);
-  useEffect(() => {
-    if (session !== null) return;
-    let active = true;
-    const finish = async (url: string) => {
-      try {
-        const signedIn = await completeSignIn(url);
-        if (active && signedIn) {
-          setAuthError(null);
-          setSession(signedIn);
-        }
-      } catch (failure) {
-        if (active) setAuthError(readableError(failure));
-      }
-    };
-    void Linking.getInitialURL().then((url) => {
-      if (url) void finish(url);
-    });
-    const listener = Linking.addEventListener("url", ({ url }) => void finish(url));
-    return () => {
-      active = false;
-      listener.remove();
-    };
-  }, [session]);
   if (!isReady) return null;
   return (
     <>
@@ -662,9 +661,8 @@ function AppContent() {
         <SignInScreen
           topInset={insets.top}
           bottomInset={insets.bottom}
-          completionError={authError}
           isNight={isNight}
-          onStart={() => setAuthError(null)}
+          onSignedIn={setSession}
           palette={palette}
         />
       ) : (
