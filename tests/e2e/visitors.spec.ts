@@ -246,6 +246,36 @@ test("the operator filters who is on the site and picks a country on the map", a
   await operator.context().close();
 });
 
+test("the card over the last minute follows the live count while the pointer stays", async ({
+  browser,
+}) => {
+  // The page reads the visitors again every 15 seconds.
+  test.setTimeout(60_000);
+  const details = {
+    page: `${server.hostOrigin}/pricing`,
+    title: "Pricing",
+    timeZone: "Europe/Paris",
+    device: "Firefox on Linux",
+    country: "FR",
+    referrer: null,
+  };
+  await server.openTabs([details]);
+  const operator = await signedIn(browser, server, "vera@example.com");
+  await operator
+    .getByRole("navigation", { name: "Main menu" })
+    .getByRole("button", { name: /^Visitors/ })
+    .click();
+  const rows = operator.locator(".live-row");
+  await expect(rows.first()).toBeVisible();
+  const count = await rows.count();
+  await operator.locator(".live-spark .spark-point").last().hover();
+  const card = operator.locator(".chart-tip");
+  await expect(card).toContainText(`${count} ${count === 1 ? "person" : "people"}`);
+
+  await server.openTabs([{ ...details, title: "Docs" }]);
+  await expect(card).toContainText(`${count + 1} people`, { timeout: 20_000 });
+});
+
 test("the operator edits, blocks and deletes a contact from the contact page's menu", async ({
   browser,
 }) => {
