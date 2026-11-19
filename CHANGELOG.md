@@ -11,7 +11,7 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ### Removed
 
-- The chat's menu and its **Turn off automatic messages** item. Visitors misread it, and an annoyed visitor can still be blocked. Campaigns and API keys no longer check an opt-out, and the `optedOut` condition, the `opted_out` status reason and error, and `POST /v1/widget/{key}/opt-out` are gone. Messages it cancelled now read `cancelled_by_request`. The emails' own stop link stays.
+- The chat's menu and its **Turn off automatic messages** item. Visitors misread it, and an annoyed visitor can still be blocked. Campaigns and API keys no longer check an opt-out, and the `optedOut` condition, the `opted_out` status reason and error, and `POST /v1/widget/{key}/opt-out` are gone. An upgrade rewrites a saved rule on `optedOut` to one with the same answer, and messages the opt-out cancelled now read `cancelled_by_request`. An export file from 0.46.0 or before does not import. The emails' own stop link stays.
 
 ## [0.46.0] - 2026-11-19
 

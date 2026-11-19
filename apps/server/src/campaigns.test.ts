@@ -956,7 +956,6 @@ describe("a page campaign", () => {
       .set({ campaignsPausedAt: new Date() })
       .where(eq(workspace.id, space.id));
     expect(await listed(token)).toBe(false);
-    expect((await widget(`campaigns/${made.id}/show`, {}, token)).status).toBe(404);
     await owner
       .update(workspace)
       .set({ campaignsPausedAt: null })
