@@ -733,7 +733,6 @@ const en = {
   consentWorkspace: "Workspace",
   consentSignIn: "Sign in to connect {app}.",
   nativeSignInReason: "Sign in to continue in the Dinghy mobile app.",
-  nativeMobileSignInTitle: "Welcome aboard.",
   nativeMobileSignInHostLabel: "Workspace",
   mobileAssignedOther: "Assigned to a teammate",
   mobileAssignedTo: "Assigned to {name}",
