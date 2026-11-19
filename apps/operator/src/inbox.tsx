@@ -5,6 +5,7 @@ import { AnalyticsPage } from "./analytics.tsx";
 import { type Me, workspaceApi } from "./api.ts";
 import { pauseBots } from "./bots.tsx";
 import { CampaignsPage } from "./campaigns.tsx";
+import { focusComposer } from "./composer.tsx";
 import { ContactsPage } from "./contacts.tsx";
 import { NO_DRAFT, useDrafts } from "./drafts.ts";
 import type { PaneLook } from "./empty-look.ts";
@@ -156,6 +157,14 @@ export function Inbox({
   // A notification opens the app on its conversation.
   const [selected, setSelected] = useState(() => linkedConversation(workspaceId));
   const { view, setView, settingsPage, setSettingsPage, itemId, setItemId } = useViews(setFilter);
+  // The conversation a click on its row opened, whose reply takes the caret. J and K, a
+  // notification and a phone leave it out.
+  const [clicked, setClicked] = useState<string | null>(null);
+  // Any other way out of that conversation or the Inbox spends the click, so a return leaves it out.
+  useEffect(
+    () => setClicked((id) => (id === selected && view === "inbox" ? id : null)),
+    [selected, view],
+  );
   // Each opening of the shortcuts is a new sheet. A dialog's close event comes a moment after
   // Escape, so a quick ? must not meet the old sheet's late close.
   const selectedNow = useRef(selected);
@@ -425,7 +434,13 @@ export function Inbox({
                 steps={steps.data}
                 maySetUp={role !== "member" && !readOnly && !suspended}
                 onFilter={showFilter}
-                onSelect={setSelected}
+                onSelect={(id, byClick) => {
+                  const caret = byClick && matchMedia("(pointer: fine)").matches;
+                  // The open chat does not load again, so its reply takes the caret now.
+                  if (caret && id === selected) focusComposer();
+                  setSelected(id);
+                  setClicked(caret ? id : null);
+                }}
                 onMore={data.loadMore}
                 onChanged={reload}
                 onLook={setLook}
@@ -472,6 +487,7 @@ export function Inbox({
                   }}
                   onChanged={reload}
                   inView={view === "inbox"}
+                  clicked={clicked === selected}
                   onRead={data.markedRead}
                   onLoaded={(conversation) => {
                     if (linked.current !== conversation.id) return;

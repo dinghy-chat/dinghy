@@ -38,9 +38,26 @@ test("the keyboard moves through the Inbox, replies, and closes a chat to open t
   await expect(current(operator)).not.toHaveText(first);
   await operator.keyboard.press("k");
   await expect(current(operator)).toHaveText(first);
+  // J and K leave the caret out of the reply, so the next key moves on.
+  const reply = operator.getByRole("textbox", { name: "Your reply" });
+  await expect(reply).toBeVisible();
+  await expect(reply).not.toBeFocused();
+
+  // A click on a row opens the chat with the caret in the reply.
+  await rows.filter({ hasNotText: first }).click();
+  await expect(current(operator)).not.toHaveText(first);
+  await expect(reply).toBeFocused();
+  await operator.keyboard.press("Escape");
+  await expect(reply).not.toBeFocused();
+  // A second click on the open chat puts the caret back.
+  await current(operator).click();
+  await expect(reply).toBeFocused();
+  await operator.keyboard.press("Escape");
+  await expect(reply).not.toBeFocused();
+  await operator.keyboard.press("k");
+  await expect(current(operator)).toHaveText(first);
 
   // R puts the caret in the reply, Escape leaves it, and the keys work again.
-  const reply = operator.getByRole("textbox", { name: "Your reply" });
   // The conversation K opened has loaded.
   await expect(reply).toBeVisible();
   await operator.keyboard.press("r");
@@ -150,4 +167,31 @@ test("a view's keys never cover its label in the sidebar", async ({ browser }) =
     expect(label.cut, await item.innerText()).toBe(false);
     expect(label.right, await item.innerText()).toBeLessThanOrEqual(keysBox?.x ?? 0);
   }
+});
+
+test("a return to a clicked chat by another way leaves the caret out of the reply", async ({
+  browser,
+}) => {
+  await server.closeConversations();
+  await visitor(browser, server, "/", "Clicked question");
+  await visitor(browser, server, "/", "Linked question");
+  const operator = await signedIn(browser, server, "alice@example.com");
+  const reply = operator.getByRole("textbox", { name: "Your reply" });
+  await operator.locator(".row", { hasText: "Linked question" }).press("Enter");
+  await expect(reply).toBeVisible();
+  const linked = operator.url();
+
+  await operator.locator(".row", { hasText: "Clicked question" }).click();
+  await expect(reply).toBeFocused();
+  await operator.keyboard.press("Escape");
+  // A notification opens the other chat, and Back returns to the clicked one.
+  await operator.evaluate((address) => {
+    history.pushState(null, "", address);
+    dispatchEvent(new Event("dinghy:navigate"));
+  }, linked);
+  await expect(current(operator)).toContainText("Linked question");
+  await operator.goBack();
+  await expect(current(operator)).toContainText("Clicked question");
+  await expect(reply).toBeVisible();
+  await expect(reply).not.toBeFocused();
 });

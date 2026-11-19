@@ -57,7 +57,8 @@ function ConversationRow({
   draft: string | undefined;
   /** Search results mix open and closed conversations, so a closed one says so. */
   showClosed: boolean;
-  onSelect(): void;
+  /** `clicked` is true for a pointer click, false for a key or J and K. */
+  onSelect(clicked: boolean): void;
 }) {
   const assignee = members.find((member) => member.id === conversation.assigneeOperatorId);
   const last = conversation.lastMessage;
@@ -94,8 +95,8 @@ function ConversationRow({
         className={unread ? "row unread" : "row"}
         aria-current={selected}
         {...press}
-        onClick={() => {
-          if (!takesClick()) onSelect();
+        onClick={(event) => {
+          if (!takesClick()) onSelect(event.detail > 0);
         }}
       >
         <span className="avatar-wrap">
@@ -395,7 +396,7 @@ export function InboxList({
   /** An owner or admin, who may send a test message. */
   maySetUp: boolean;
   onFilter(filter: Filter): void;
-  onSelect(conversationId: string): void;
+  onSelect(conversationId: string, clicked: boolean): void;
   onMore(): void;
   /** A bulk action changed conversations, so the list loads again. */
   onChanged(): void;
@@ -477,7 +478,7 @@ export function InboxList({
             typing={conversation.id in typing}
             draft={drafts[conversation.id]?.text}
             showClosed={found !== null}
-            onSelect={() => onSelect(conversation.id)}
+            onSelect={(clicked) => onSelect(conversation.id, clicked)}
           />
         ))}
       </ul>
