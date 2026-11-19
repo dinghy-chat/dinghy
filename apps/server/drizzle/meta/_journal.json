@@ -862,6 +862,20 @@
       "when": 1795014889947,
       "tag": "0122_site_hour_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "7",
+      "when": 1795023131094,
+      "tag": "0123_native_push_devices",
+      "breakpoints": true
+    },
+    {
+      "idx": 124,
+      "version": "7",
+      "when": 1795023132896,
+      "tag": "0124_native_push_grants",
+      "breakpoints": true
     }
   ]
 }

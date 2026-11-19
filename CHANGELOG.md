@@ -4,6 +4,10 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- Operators can receive conversation alerts on their phones when their server has Apple or Firebase push credentials.
+
 ## [0.45.0] - 2026-11-19
 
 ### Added

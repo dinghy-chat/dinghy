@@ -19,6 +19,8 @@ import {
   planDelivery,
   pruneOnce,
   REPLY_EMAIL_DELAY_MS,
+  sendToOperator,
+  testPayload,
 } from "./alerts.ts";
 import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
@@ -29,10 +31,12 @@ import {
   emailStop,
   event,
   ipBlock,
+  nativePushDevice,
   operator,
   outboundMessage,
   pushSubscription,
   replyAddress,
+  session,
   visitor,
   widgetSettings,
   workspaceMember,
@@ -49,6 +53,7 @@ import {
   markRead,
   setConversationStatus,
 } from "./messages.ts";
+import type { NativePush } from "./native-push.ts";
 import { materializeOutbound } from "./outbound-delivery.ts";
 import { createPush, isPushEndpoint } from "./push.ts";
 import { retryDelayMs } from "./retry.ts";
@@ -140,6 +145,14 @@ async function addOperator(email: string, options: { alertEmail?: boolean } = {}
     alertEmail: options.alertEmail ?? false,
   });
   return id;
+}
+
+async function addSession(operatorId: string, expiresAt = new Date(Date.now() + 60_000)) {
+  const [row] = await owner
+    .insert(session)
+    .values({ userId: operatorId, token: randomUUID(), expiresAt })
+    .returning({ id: session.id });
+  return row?.id ?? "";
 }
 
 function browserKeys() {
@@ -255,6 +268,7 @@ afterEach(async () => {
   await owner.delete(alertDelivery);
   await owner.update(event).set({ needsAlert: false });
   await owner.delete(pushSubscription);
+  await owner.delete(nativePushDevice);
 });
 
 test("a failed alert or file delete waits twice as long each time, up to an hour", () => {
@@ -300,6 +314,150 @@ describe("web push", () => {
     }
     // One row for each recipient and channel, however many devices the recipient has.
     expect(await deliveries()).toHaveLength(2);
+  });
+
+  test("a visitor message reaches a native device through the alert worker", async () => {
+    const anna = await addOperator(`anna-${randomUUID()}@example.com`);
+    const sessionId = await addSession(anna);
+    await owner.insert(nativePushDevice).values({
+      operatorId: anna,
+      sessionId,
+      provider: "fcm",
+      token: `native-${randomUUID()}`,
+    });
+    const sent: Parameters<NativePush["send"]>[] = [];
+    const nativePush: NativePush = {
+      providers: ["fcm"],
+      async send(...args) {
+        sent.push(args);
+        return "sent";
+      },
+    };
+    const written = await visitorWrites(await addVisitor(), "Open the native app.");
+
+    runWorker({ push: undefined, nativePush });
+    await until(() => sent.length === 1, "the native push");
+    const [, payload] = sent[0] ?? [];
+    expect(payload).toMatchObject({
+      title: "Acme",
+      body: "Open the native app.",
+      workspaceId: space.id,
+      conversationId: written.message.conversationId,
+      url: `/?workspace=${space.id}&conversation=${written.message.conversationId}`,
+    });
+    await until(async () => (await deliveries())[0]?.outcome === "sent", "the delivery");
+  });
+
+  test("native delivery excludes expired and revoked sessions", async () => {
+    const anna = await addOperator(`anna-${randomUUID()}@example.com`);
+    const live = await addSession(anna);
+    const expired = await addSession(anna, new Date(Date.now() - 1000));
+    const revoked = await addSession(anna);
+    const awaitingTwoFactor = await addSession(anna);
+    await owner.insert(nativePushDevice).values([
+      { operatorId: anna, sessionId: live, provider: "fcm", token: "live-device-token" },
+      { operatorId: anna, sessionId: expired, provider: "fcm", token: "expired-device-token" },
+      { operatorId: anna, sessionId: revoked, provider: "fcm", token: "revoked-device-token" },
+      {
+        operatorId: anna,
+        sessionId: awaitingTwoFactor,
+        provider: "fcm",
+        token: "two-factor-required-device-token",
+      },
+    ]);
+    await owner.update(operator).set({ twoFactorOn: true }).where(eq(operator.id, anna));
+    await owner.update(session).set({ twoFactorAt: new Date() }).where(eq(session.id, live));
+    await owner.delete(session).where(eq(session.id, revoked));
+    expect((await owner.select().from(nativePushDevice)).map((row) => row.token).sort()).toEqual([
+      "expired-device-token",
+      "live-device-token",
+      "two-factor-required-device-token",
+    ]);
+    const tokens: string[] = [];
+    const nativePush: NativePush = {
+      providers: ["fcm"],
+      async send(target) {
+        tokens.push(target.token);
+        return "sent";
+      },
+    };
+
+    await visitorWrites(await addVisitor(), "Only the signed-in app gets this.");
+    runWorker({ push: undefined, nativePush });
+    await until(() => tokens.length === 1, "the live native device");
+    expect(tokens).toEqual(["live-device-token"]);
+  });
+
+  test("a native device awaiting two-factor does not make an operator reachable", async () => {
+    const anna = await addOperator(`anna-${randomUUID()}@example.com`);
+    const sessionId = await addSession(anna);
+    await owner.insert(nativePushDevice).values({
+      operatorId: anna,
+      sessionId,
+      provider: "fcm",
+      token: "two-factor-required-only-token",
+    });
+    await owner.update(operator).set({ twoFactorOn: true }).where(eq(operator.id, anna));
+    await visitorWrites(await addVisitor(), "This preview stays private.");
+
+    runWorker({
+      push: undefined,
+      nativePush: {
+        providers: ["fcm"],
+        async send() {
+          throw new Error("A session awaiting two-factor must not receive a native push");
+        },
+      },
+    });
+    await until(
+      async () => (await owner.select().from(event).where(eq(event.needsAlert, true))).length === 0,
+      "fan-out",
+    );
+    expect(await deliveries()).toEqual([]);
+  });
+
+  test("a gone result does not delete a token reassigned during its send", async () => {
+    const anna = await addOperator(`anna-${randomUUID()}@example.com`);
+    const ben = await addOperator(`ben-${randomUUID()}@example.com`);
+    const annaSession = await addSession(anna);
+    const benSession = await addSession(ben);
+    const token = "reassigned-device-token";
+    const [device] = await owner
+      .insert(nativePushDevice)
+      .values({ operatorId: anna, sessionId: annaSession, provider: "fcm", token })
+      .returning({ id: nativePushDevice.id });
+    let finish: (() => void) | undefined;
+    const sending = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    let started = false;
+    const nativePush: NativePush = {
+      providers: ["fcm"],
+      async send() {
+        started = true;
+        await sending;
+        return "gone";
+      },
+    };
+
+    const result = sendToOperator(
+      app,
+      undefined,
+      anna,
+      testPayload(randomUUID()),
+      undefined,
+      nativePush,
+    );
+    await until(() => started, "the native send to start");
+    await owner
+      .update(nativePushDevice)
+      .set({ operatorId: ben, sessionId: benSession })
+      .where(eq(nativePushDevice.id, device?.id ?? ""));
+    finish?.();
+    await result;
+    expect(await owner.select().from(nativePushDevice)).toMatchObject([
+      { operatorId: ben, sessionId: benSession, token },
+    ]);
   });
 
   test("a visitor's message deleted before its alert goes alerts nobody", async () => {
@@ -1733,10 +1891,18 @@ describe("the routes", () => {
   let operatorId: string;
   const ORIGIN = new URL(PUBLIC_URL).origin;
   const sends: string[] = [];
+  const nativeSends: Parameters<NativePush["send"]>[] = [];
   const push = createPush(keys, (async (url: string) => {
     sends.push(String(url));
     return new Response(null, { status: url.toString().includes("gone") ? 410 : 201 });
   }) as typeof fetch);
+  const nativePush: NativePush = {
+    providers: ["apns", "fcm"],
+    async send(...args) {
+      nativeSends.push(args);
+      return args[0].token.includes("gone") ? "gone" : "sent";
+    },
+  };
 
   const request = (method: string, path: string, body?: unknown, as = cookie) =>
     server.request(path, {
@@ -1757,9 +1923,10 @@ describe("the routes", () => {
 
   beforeEach(async () => {
     sends.length = 0;
+    nativeSends.length = 0;
     const auth = createAuth({ db: app, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
     server = createApp({
-      alerts: { push, emailAvailable: true, secret: AUTH_SECRET },
+      alerts: { push, nativePush, emailAvailable: true, secret: AUTH_SECRET },
       auth,
       checks: { postgres: async () => {}, valkey: async () => {} },
       db: app,
@@ -1781,6 +1948,7 @@ describe("the routes", () => {
     expect(await (await request("GET", path)).json()).toEqual({
       email: false,
       pushKey: keys.publicKey,
+      nativePushProviders: ["apns", "fcm"],
       emailAvailable: true,
     });
     const changed = await request("PATCH", path, { email: true });
@@ -1800,6 +1968,26 @@ describe("the routes", () => {
     const bad = device("https://169.254.169.254/latest/meta-data");
     expect((await request("PUT", "/v1/operator/push-subscription", bad)).status).toBe(400);
     expect(await mine()).toHaveLength(1);
+  });
+
+  test("a native device saves once, moves with sign-in and deletes only for its operator", async () => {
+    const token = "a".repeat(64);
+    const device = { provider: "apns", token } as const;
+    expect((await request("PUT", "/v1/operator/push-device", device)).status).toBe(200);
+    expect((await request("PUT", "/v1/operator/push-device", device)).status).toBe(200);
+    expect(await owner.select().from(nativePushDevice)).toHaveLength(1);
+
+    const anna = await addOperator(`native-${randomUUID()}@example.com`);
+    await owner
+      .update(nativePushDevice)
+      .set({ operatorId: anna })
+      .where(eq(nativePushDevice.token, token));
+    expect((await request("DELETE", "/v1/operator/push-device", device)).status).toBe(200);
+    expect(await owner.select().from(nativePushDevice)).toHaveLength(1);
+    expect((await request("PUT", "/v1/operator/push-device", device)).status).toBe(200);
+    expect((await owner.select().from(nativePushDevice))[0]?.operatorId).toBe(operatorId);
+    expect((await request("DELETE", "/v1/operator/push-device", device)).status).toBe(200);
+    expect(await owner.select().from(nativePushDevice)).toEqual([]);
   });
 
   test("a device is not saved for an account deleted while the request ran", async () => {

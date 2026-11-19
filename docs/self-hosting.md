@@ -83,6 +83,8 @@ All settings go in `.env`, next to `compose.yaml`. After a change, run `docker c
 | `COMPOSE_PROFILES=tls` | Starts Caddy with every command |
 | `DINGHY_PORT` | The local port when there is no domain |
 | `SMTP_URL`, `MAIL_FROM` | A mail server, such as `smtp://user:password@mail.example.com:587`. Sign-in links, operator alerts by email and replies to visitors who left all need it. Without one, `chat sign-in-link` makes the sign-in links |
+| `APNS_TEAM_ID`, `APNS_KEY_ID`, `APNS_PRIVATE_KEY`, `APNS_BUNDLE_ID`, `APNS_ENVIRONMENT` | Sends alerts directly to the native iOS operator app. Set the first four together. `APNS_ENVIRONMENT` is `production` by default, or `sandbox` for a development build. Optional |
+| `FCM_PROJECT_ID`, `FCM_CLIENT_EMAIL`, `FCM_PRIVATE_KEY` | Sends alerts directly to the native Android operator app through Firebase Cloud Messaging. Set all three together. Optional |
 | `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Keeps images and files in a bucket, not on this disk |
 | `BACKUP_S3_ENDPOINT`, `BACKUP_S3_REGION`, `BACKUP_S3_BUCKET`, `BACKUP_S3_ACCESS_KEY_ID`, `BACKUP_S3_SECRET_ACCESS_KEY` | An encrypted copy of each backup in another place |
 | `BACKUP_HEARTBEAT_URL` | An address that `chat backup` pings after each backup that worked, such as a [healthchecks.io](https://healthchecks.io) check, so a monitor tells you when a night has none. Optional |

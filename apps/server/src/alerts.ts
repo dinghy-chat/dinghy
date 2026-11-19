@@ -7,6 +7,7 @@ import {
   isNotNull,
   isNull,
   notExists,
+  or,
   type SQL,
   sql,
 } from "drizzle-orm";
@@ -22,8 +23,11 @@ import {
   type MESSAGE_KINDS,
   type MessagePayload,
   message,
+  type NativePushProvider,
+  nativePushDevice,
   operator,
   pushSubscription,
+  session,
   visitor,
   widgetSettings,
   workspace,
@@ -47,6 +51,7 @@ import {
   type StatusPayload,
   visitorQuote,
 } from "./messages.ts";
+import type { NativePush } from "./native-push.ts";
 import { pruneOutboundBodies } from "./outbound.ts";
 import { imageUrls } from "./public-images.ts";
 import type { Push, PushPayload } from "./push.ts";
@@ -137,24 +142,70 @@ const messageText = (
 /** Sends to each of the operator's devices. A device that is gone is deleted. */
 export async function sendToOperator(
   db: Database,
-  push: Push,
+  push: Push | undefined,
   operatorId: string,
   payload: PushPayload,
   signal?: AbortSignal,
+  nativePush?: NativePush,
 ): Promise<{ sent: number; failed: number }> {
-  const targets = await db
-    .select()
-    .from(pushSubscription)
-    .where(eq(pushSubscription.operatorId, operatorId));
-  const results = await Promise.all(
-    targets.map(async (target) => {
-      const result = await push.send(target, payload, signal);
+  const webTargets =
+    push === undefined
+      ? []
+      : await db.select().from(pushSubscription).where(eq(pushSubscription.operatorId, operatorId));
+  const nativeTargets =
+    nativePush === undefined
+      ? []
+      : await db
+          .select()
+          .from(nativePushDevice)
+          .innerJoin(
+            session,
+            and(
+              eq(session.id, nativePushDevice.sessionId),
+              eq(session.userId, nativePushDevice.operatorId),
+              gt(session.expiresAt, new Date()),
+            ),
+          )
+          .innerJoin(
+            operator,
+            and(
+              eq(operator.id, session.userId),
+              or(eq(operator.twoFactorOn, false), isNotNull(session.twoFactorAt)),
+            ),
+          )
+          .where(
+            and(
+              eq(nativePushDevice.operatorId, operatorId),
+              inArray(nativePushDevice.provider, [...nativePush.providers]),
+            ),
+          );
+  const { workspaceId: _workspaceId, conversationId: _conversationId, ...webPayload } = payload;
+  const results = await Promise.all([
+    ...webTargets.map(async (target) => {
+      const result = await push?.send(target, webPayload, signal);
       if (result === "gone") {
         await db.delete(pushSubscription).where(eq(pushSubscription.id, target.id));
       }
-      return result;
+      return result ?? "failed";
     }),
-  );
+    ...nativeTargets.map(async ({ native_push_device: target }) => {
+      const result = await nativePush?.send(target, payload, signal);
+      if (result === "gone") {
+        await db
+          .delete(nativePushDevice)
+          .where(
+            and(
+              eq(nativePushDevice.id, target.id),
+              eq(nativePushDevice.operatorId, target.operatorId),
+              eq(nativePushDevice.sessionId, target.sessionId),
+              eq(nativePushDevice.provider, target.provider),
+              eq(nativePushDevice.token, target.token),
+            ),
+          );
+      }
+      return result ?? "failed";
+    }),
+  ]);
   return {
     sent: results.filter((result) => result === "sent").length,
     failed: results.filter((result) => result === "failed").length,
@@ -162,7 +213,9 @@ export async function sendToOperator(
 }
 
 interface Channels {
+  /** Web push is configured. */
   push: boolean;
+  nativePushProviders?: readonly NativePushProvider[];
   email: boolean;
 }
 
@@ -199,9 +252,38 @@ async function alertReach(
           .from(pushSubscription)
           .where(inArray(pushSubscription.operatorId, ids))
       : [];
+  const withNativeDevice =
+    (channels.nativePushProviders?.length ?? 0) > 0 && ids.length > 0
+      ? await tx
+          .selectDistinct({ operatorId: nativePushDevice.operatorId })
+          .from(nativePushDevice)
+          .innerJoin(
+            session,
+            and(
+              eq(session.id, nativePushDevice.sessionId),
+              eq(session.userId, nativePushDevice.operatorId),
+              gt(session.expiresAt, new Date()),
+            ),
+          )
+          .innerJoin(
+            operator,
+            and(
+              eq(operator.id, session.userId),
+              or(eq(operator.twoFactorOn, false), isNotNull(session.twoFactorAt)),
+            ),
+          )
+          .where(
+            and(
+              inArray(nativePushDevice.operatorId, ids),
+              inArray(nativePushDevice.provider, [...(channels.nativePushProviders ?? [])]),
+            ),
+          )
+      : [];
   return members.map(({ operatorId, email }) => ({
     operatorId,
-    push: withDevice.some((device) => device.operatorId === operatorId),
+    push:
+      withDevice.some((device) => device.operatorId === operatorId) ||
+      withNativeDevice.some((device) => device.operatorId === operatorId),
     email: channels.email && email,
   }));
 }
@@ -968,6 +1050,8 @@ async function operatorPlan(
         body: Array.from(pushBody(said)).slice(0, PUSH_BODY_CHARACTERS).join(""),
         tag: `${workspaceId}:${row.eventSeq}`,
         url: threadPath(workspaceId, conversationId),
+        workspaceId,
+        conversationId,
       },
     };
   }

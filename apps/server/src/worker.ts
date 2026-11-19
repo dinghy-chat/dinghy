@@ -22,6 +22,7 @@ import { workerHeartbeat } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
 import { noLive, type Signals } from "./live.ts";
 import { MAIL_CONNECTIONS, type Mailer } from "./mailer.ts";
+import type { NativePush } from "./native-push.ts";
 import { pruneOAuth } from "./oauth-grants.ts";
 import { expireOutbound, runDueOutbound } from "./outbound.ts";
 import type { Push } from "./push.ts";
@@ -75,6 +76,7 @@ interface WorkerOptions {
   appDb: Database;
   logger: Logger;
   push?: Push | undefined;
+  nativePush?: NativePush | undefined;
   mailer?: Mailer | undefined;
   /** Where deleted conversations' uploads are removed from. */
   store?: ObjectStore | undefined;
@@ -172,6 +174,7 @@ export function startWorker({
   appDb,
   logger,
   push,
+  nativePush,
   mailer,
   store,
   uploads,
@@ -203,15 +206,26 @@ export function startWorker({
     secret,
     retryMs,
   });
-  const channels = { push: push !== undefined, email: mailer !== undefined };
+  const channels = {
+    push: push !== undefined,
+    nativePushProviders: nativePush?.providers ?? [],
+    email: mailer !== undefined,
+  };
   let wake = () => {};
 
   const send = async (
     plan: Exclude<AlertPlan, { channel: "later" }>,
   ): Promise<"sent" | "skipped"> => {
     if (plan.channel === "push") {
-      if (push === undefined) return "skipped";
-      const result = await sendToOperator(db, push, plan.operatorId, plan.payload, stopping.signal);
+      if (push === undefined && nativePush === undefined) return "skipped";
+      const result = await sendToOperator(
+        db,
+        push,
+        plan.operatorId,
+        plan.payload,
+        stopping.signal,
+        nativePush,
+      );
       // A retry would alert the working devices again, so one device reaching the operator is enough.
       if (result.sent === 0 && result.failed > 0) {
         throw new Error(`${result.failed} push devices failed`);

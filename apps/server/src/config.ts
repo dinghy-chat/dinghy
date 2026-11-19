@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import type { InboundEmail } from "./inbound-email.ts";
+import type { NativePushConfig } from "./native-push.ts";
 import type { PushKeys } from "./push.ts";
 import type { ShipmailInbound } from "./shipmail-inbound.ts";
 
@@ -23,6 +24,15 @@ const schema = z.object({
     .string()
     .regex(/^(mailto:|https:)/)
     .optional(),
+  // Native push stays off for each provider until all of that provider's settings are set.
+  APNS_TEAM_ID: z.string().min(1).optional(),
+  APNS_KEY_ID: z.string().min(1).optional(),
+  APNS_PRIVATE_KEY: z.string().min(1).optional(),
+  APNS_BUNDLE_ID: z.string().min(1).optional(),
+  APNS_ENVIRONMENT: z.enum(["production", "sandbox"]).default("production"),
+  FCM_PROJECT_ID: z.string().min(1).optional(),
+  FCM_CLIENT_EMAIL: z.email().optional(),
+  FCM_PRIVATE_KEY: z.string().min(1).optional(),
   // How many proxies you run in front of this server, such as 1 for Cloudflare alone. The default of 0
   // reads the address from the connection. Too high lets a client choose its own address, and too
   // low makes all visitors share one, so limits would apply to all of them at once.
@@ -105,6 +115,8 @@ const FROM_FILES = [
   "VAPID_PUBLIC_KEY",
   "VAPID_PRIVATE_KEY",
   "VAPID_SUBJECT",
+  "APNS_PRIVATE_KEY",
+  "FCM_PRIVATE_KEY",
   "STRIPE_SECRET_KEY",
   "STRIPE_WEBHOOK_SECRET",
   "INBOUND_EMAIL_SECRET",
@@ -157,6 +169,55 @@ export function pushKeysFromConfig(config: Config): PushKeys | undefined {
     throw new Error("Set VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY and VAPID_SUBJECT together.");
   }
   return { publicKey, privateKey, subject };
+}
+
+export function nativePushFromConfig(config: Config): NativePushConfig {
+  const apnsValues = [
+    config.APNS_TEAM_ID,
+    config.APNS_KEY_ID,
+    config.APNS_PRIVATE_KEY,
+    config.APNS_BUNDLE_ID,
+  ];
+  if (
+    apnsValues.some((value) => value !== undefined) &&
+    apnsValues.some((value) => value === undefined)
+  ) {
+    throw new Error("Set APNS_TEAM_ID, APNS_KEY_ID, APNS_PRIVATE_KEY and APNS_BUNDLE_ID together.");
+  }
+  const fcmValues = [config.FCM_PROJECT_ID, config.FCM_CLIENT_EMAIL, config.FCM_PRIVATE_KEY];
+  if (
+    fcmValues.some((value) => value !== undefined) &&
+    fcmValues.some((value) => value === undefined)
+  ) {
+    throw new Error("Set FCM_PROJECT_ID, FCM_CLIENT_EMAIL and FCM_PRIVATE_KEY together.");
+  }
+  const apns =
+    config.APNS_TEAM_ID === undefined ||
+    config.APNS_KEY_ID === undefined ||
+    config.APNS_PRIVATE_KEY === undefined ||
+    config.APNS_BUNDLE_ID === undefined
+      ? undefined
+      : {
+          teamId: config.APNS_TEAM_ID,
+          keyId: config.APNS_KEY_ID,
+          privateKey: config.APNS_PRIVATE_KEY,
+          bundleId: config.APNS_BUNDLE_ID,
+          environment: config.APNS_ENVIRONMENT,
+        };
+  const fcm =
+    config.FCM_PROJECT_ID === undefined ||
+    config.FCM_CLIENT_EMAIL === undefined ||
+    config.FCM_PRIVATE_KEY === undefined
+      ? undefined
+      : {
+          projectId: config.FCM_PROJECT_ID,
+          clientEmail: config.FCM_CLIENT_EMAIL,
+          privateKey: config.FCM_PRIVATE_KEY,
+        };
+  return {
+    ...(apns === undefined ? {} : { apns }),
+    ...(fcm === undefined ? {} : { fcm }),
+  };
 }
 
 export function inboundEmailFromConfig(config: Config): InboundEmail | undefined {

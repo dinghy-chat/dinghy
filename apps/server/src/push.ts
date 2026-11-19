@@ -12,6 +12,9 @@ export interface PushPayload {
   /** The service worker sets this as the notification's tag, so a repeated send collapses. */
   tag: string;
   url: string;
+  /** Present for a conversation alert. Native apps use these fields for a cold start or tap. */
+  workspaceId?: string;
+  conversationId?: string;
 }
 
 export interface PushKeys {
@@ -22,7 +25,7 @@ export interface PushKeys {
 }
 
 /** A 404 or 410 means the browser dropped this subscription, so it can go. */
-type PushResult = "sent" | "gone" | "failed";
+export type PushResult = "sent" | "gone" | "failed";
 
 export interface Push {
   publicKey: string;
