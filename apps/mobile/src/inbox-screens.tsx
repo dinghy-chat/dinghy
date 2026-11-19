@@ -20,7 +20,7 @@ import { Harbor } from "../Harbor";
 import type { PendingReply } from "../outbox";
 import { AdminTools } from "./AdminTools";
 import type { DinghyApi } from "./api";
-import { Avatar, readableError, visitorName } from "./common";
+import { Avatar, elapsedLabel, readableError, visitorName } from "./common";
 import { fonts } from "./fonts";
 import { Icon } from "./icon";
 import { inboxStyles as screen } from "./inbox-styles";
@@ -34,17 +34,6 @@ type Scope = "all" | "mine" | "unassigned";
 type Group = "needsReply" | "teammates" | "waiting" | "bot";
 
 const groupOrder: Group[] = ["needsReply", "teammates", "waiting", "bot"];
-
-function waitLabel(value: string): string {
-  const elapsed = Math.max(0, Date.now() - Date.parse(value));
-  const minutes = Math.floor(elapsed / 60_000);
-  if (minutes < 1) return t("mobileWaitNow");
-  if (minutes < 60) return t("mobileWaitMinutes", { count: minutes });
-  const hours = Math.floor(minutes / 60);
-  return hours < 24
-    ? t("mobileWaitHours", { count: hours })
-    : t("mobileWaitDays", { count: Math.floor(hours / 24) });
-}
 
 function lastActivity(conversation: Conversation): string {
   return conversation.lastMessage?.createdAt ?? conversation.updatedAt;
@@ -162,7 +151,7 @@ function ConversationRow({
           <View style={screen.timeLine}>
             {waits && <Icon name="clock" size={14} color={late ? palette.amber : palette.sub} />}
             <Text style={[screen.rowTime, { color: late ? palette.amber : palette.sub }]}>
-              {waitLabel(lastActivity(conversation))}
+              {elapsedLabel(lastActivity(conversation))}
             </Text>
           </View>
         </View>
@@ -586,7 +575,7 @@ export function InboxScreen({
   const allWaiting = conversations
     .filter((conversation) => groupFor(conversation, meId) === "needsReply")
     .sort((left, right) => Date.parse(lastActivity(left)) - Date.parse(lastActivity(right)));
-  const longest = allWaiting[0] ? waitLabel(lastActivity(allWaiting[0])) : null;
+  const longest = allWaiting[0] ? elapsedLabel(lastActivity(allWaiting[0])) : null;
   const pendingByConversation = pending.filter(
     (reply, index) =>
       pending.findIndex((other) => other.conversationId === reply.conversationId) === index,

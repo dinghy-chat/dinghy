@@ -161,6 +161,10 @@ export class DinghyApi {
     }
   }
 
+  liveVisitorCount(): Promise<{ count: number | null }> {
+    return this.call(this.workspace("/visitors/live/count"));
+  }
+
   async conversations(): Promise<{ conversations: Conversation[]; waiting: number }> {
     const page = await this.call<{ conversations: Conversation[]; waiting: number }>(
       this.workspace("/conversations?status=open&limit=100"),
@@ -295,8 +299,34 @@ export class DinghyApi {
     return this.call(this.workspace(`/saved-replies/${id}`), { method: "DELETE" });
   }
 
+  changeContact(
+    visitorId: string,
+    change: { note?: string | null; name?: string | null; email?: string | null },
+  ): Promise<components["schemas"]["ContactDetail"]> {
+    return this.call(this.workspace(`/contacts/${encodeURIComponent(visitorId)}`), {
+      method: "PATCH",
+      body: JSON.stringify(change),
+    });
+  }
+
   contact(visitorId: string): Promise<components["schemas"]["ContactDetail"]> {
     return this.call(this.workspace(`/contacts/${encodeURIComponent(visitorId)}`));
+  }
+
+  contacts(query: {
+    q: string;
+    sort: "lastSeen" | "firstSeen";
+    before: string | null;
+    hasChatted: boolean;
+  }): Promise<{ contacts: components["schemas"]["Contact"][]; next: string | null }> {
+    const search = new URLSearchParams({ sort: query.sort, hasChatted: String(query.hasChatted) });
+    if (query.q.trim()) search.set("q", query.q.trim());
+    if (query.before !== null) search.set("before", query.before);
+    return this.call(this.workspace(`/contacts?${search}`));
+  }
+
+  liveVisitors(): Promise<{ visitors: components["schemas"]["LiveVisitor"][] | null }> {
+    return this.call(this.workspace("/visitors/live"));
   }
 
   markRead(conversationId: string, seq: string): Promise<{ ok: true }> {
@@ -304,6 +334,11 @@ export class DinghyApi {
       method: "POST",
       body: JSON.stringify({ seq }),
     });
+  }
+
+  analytics(days: 7 | 30 | 90, timeZone: string): Promise<components["schemas"]["Analytics"]> {
+    const query = new URLSearchParams({ days: String(days), tz: timeZone });
+    return this.call(this.workspace(`/analytics?${query}`));
   }
 
   setStatus(conversationId: string, status: "open" | "closed"): Promise<{ ok: true }> {

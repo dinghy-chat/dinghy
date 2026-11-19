@@ -10,6 +10,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -20,7 +21,16 @@ import { Icon } from "./icon";
 import { night, type Palette, styles } from "./theme";
 import type { Conversation } from "./types";
 
-export type Page = "inbox" | "settings" | "thread";
+const tabs = ["inbox", "contacts", "visitors", "analytics", "settings"] as const;
+export type TabPage = (typeof tabs)[number];
+export type Page = TabPage | "thread";
+const tabIcons = {
+  inbox: "inbox",
+  contacts: "addressBook",
+  visitors: "globe",
+  analytics: "chart",
+  settings: "profileTab",
+} as const;
 
 export function visitorName(conversation: Conversation): string {
   return conversation.visitor.name || conversation.visitor.email || t("visitorAnonymous");
@@ -101,6 +111,17 @@ const closeButton = StyleSheet.create({
   disc: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" },
 });
 
+export function elapsedLabel(value: string): string {
+  const elapsed = Math.max(0, Date.now() - Date.parse(value));
+  const minutes = Math.floor(elapsed / 60_000);
+  if (minutes < 1) return t("mobileWaitNow");
+  if (minutes < 60) return t("mobileWaitMinutes", { count: minutes });
+  const hours = Math.floor(minutes / 60);
+  return hours < 24
+    ? t("mobileWaitHours", { count: hours })
+    : t("mobileWaitDays", { count: Math.floor(hours / 24) });
+}
+
 export function ErrorBanner({
   message,
   palette,
@@ -126,31 +147,32 @@ export function BottomNav({
   onPage,
   onSearch,
   searching,
+  liveCount,
 }: {
   page: Page;
+  liveCount: number | null;
   palette: Palette;
   onPage(page: Page): void;
   onSearch(): void;
   searching: boolean;
 }) {
   const { bottom } = useSafeAreaInsets();
-  const [keyboardVisible, setKeyboardVisible] = useState(() => Keyboard.isVisible());
+  const [keyboardVisible, setKeyboardVisible] = useState(false);
   useEffect(() => {
     const show = Keyboard.addListener(
       Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
       () => setKeyboardVisible(true),
     );
-    const hide = Keyboard.addListener(
-      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
-      () => setKeyboardVisible(false),
-    );
+    const hide = Keyboard.addListener("keyboardDidHide", () => setKeyboardVisible(false));
     return () => {
       show.remove();
       hide.remove();
     };
   }, []);
   const dark = palette === night;
-  const index = page === "settings" ? 1 : 0;
+  const { width } = useWindowDimensions();
+  const tabWidth = Math.max(44, Math.min(56, Math.floor((width - 90) / tabs.length)));
+  const index = page === "thread" ? 0 : tabs.indexOf(page);
   const position = useRef(new Animated.Value(index)).current;
   const settle = useCallback(
     (destination: number) => {
@@ -169,7 +191,7 @@ export function BottomNav({
   }, [index, settle]);
   const swipe = useMemo(() => {
     const progress = (dx: number) =>
-      Math.max(0, Math.min(1, index + (I18nManager.isRTL ? -dx : dx) / TAB_WIDTH));
+      Math.max(0, Math.min(tabs.length - 1, index + (I18nManager.isRTL ? -dx : dx) / tabWidth));
     return PanResponder.create({
       onMoveShouldSetPanResponderCapture: (_, gesture) =>
         Math.abs(gesture.dx) > 7 && Math.abs(gesture.dx) > Math.abs(gesture.dy) * 1.4,
@@ -178,12 +200,13 @@ export function BottomNav({
       onPanResponderRelease: (_, gesture) => {
         const next = Math.round(progress(gesture.dx));
         settle(next);
-        if (next !== index) onPage(next === 1 ? "settings" : "inbox");
+        const target = tabs[next];
+        if (next !== index && target) onPage(target);
       },
       onPanResponderTerminate: () => settle(index),
     });
-  }, [index, onPage, position, settle]);
-  if (keyboardVisible || searching) return null;
+  }, [index, onPage, position, settle, tabWidth]);
+  if (searching || (page === "contacts" && keyboardVisible)) return null;
   const glass = isLiquidGlassAvailable();
   const base = !glass && {
     backgroundColor: palette.sheet,
@@ -207,35 +230,47 @@ export function BottomNav({
           style={[
             dock.selection,
             {
+              width: tabWidth,
               backgroundColor: dark ? "rgba(255,255,255,0.17)" : "rgba(49,83,104,0.13)",
               transform: [
                 {
                   translateX: position.interpolate({
-                    inputRange: [0, 1],
-                    outputRange: [0, I18nManager.isRTL ? -TAB_WIDTH : TAB_WIDTH],
+                    inputRange: [0, tabs.length - 1],
+                    outputRange: [0, (I18nManager.isRTL ? -1 : 1) * tabWidth * (tabs.length - 1)],
                   }),
                 },
               ],
             },
           ]}
         />
-        {(["inbox", "settings"] as const).map((target) => {
+        {tabs.map((target) => {
           const selected = page === target;
           return (
             <Pressable
               key={target}
               accessibilityRole="tab"
-              accessibilityLabel={t(target)}
+              accessibilityLabel={
+                target === "visitors" && liveCount !== null
+                  ? `${t(target)}, ${t("liveCount", { count: liveCount })}`
+                  : t(target)
+              }
               accessibilityState={{ selected }}
               onPress={() => onPage(target)}
-              style={({ pressed }) => [dock.tab, { opacity: pressed ? 0.65 : 1 }]}
+              style={({ pressed }) => [dock.tab, { width: tabWidth, opacity: pressed ? 0.65 : 1 }]}
             >
               <Icon
-                name={target === "settings" ? "profileTab" : "inbox"}
+                name={tabIcons[target]}
                 color={selected ? palette.ink : palette.sub}
                 size={24}
                 filled={selected}
               />
+              {target === "visitors" && liveCount !== null && liveCount > 0 && (
+                <View accessible={false} style={[dock.badge, { backgroundColor: palette.ink }]}>
+                  <Text allowFontScaling={false} style={[dock.count, { color: palette.paper }]}>
+                    {liveCount > 99 ? "99+" : liveCount}
+                  </Text>
+                </View>
+              )}
             </Pressable>
           );
         })}
@@ -255,7 +290,6 @@ export function BottomNav({
   );
 }
 
-const TAB_WIDTH = 70;
 const dock = StyleSheet.create({
   anchor: {
     position: "absolute",
@@ -283,13 +317,24 @@ const dock = StyleSheet.create({
     boxShadow: "0 4px 18px rgba(8, 23, 38, 0.16)",
   },
   glass: { ...StyleSheet.absoluteFill, borderRadius: 27 },
+  badge: {
+    position: "absolute",
+    top: 3,
+    end: 1,
+    minWidth: 16,
+    paddingHorizontal: 3,
+    height: 16,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  count: { fontSize: 10, fontWeight: "700" },
   selection: {
     position: "absolute",
     start: 5,
     top: 5,
-    width: TAB_WIDTH,
     height: 44,
     borderRadius: 22,
   },
-  tab: { width: TAB_WIDTH, height: 50, alignItems: "center", justifyContent: "center" },
+  tab: { height: 50, alignItems: "center", justifyContent: "center" },
 });

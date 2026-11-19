@@ -5,9 +5,11 @@ import { Alert, AppState, Linking, StatusBar, useColorScheme, View } from "react
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { t } from "../operator/src/text.ts";
 import { createOutbox, type PendingReply } from "./outbox";
+import { AnalyticsScreen } from "./src/analytics-screen";
 import { ApiError, DinghyApi } from "./src/api";
 import { clearSession, readSession, saveSession } from "./src/auth";
-import { BottomNav, ErrorBanner, type Page, readableError } from "./src/common";
+import { BottomNav, ErrorBanner, type Page, readableError, type TabPage } from "./src/common";
+import { ContactsScreen } from "./src/contacts-screen";
 import { fontFiles } from "./src/fonts";
 import { InboxScreen, SettingsScreen } from "./src/inbox-screens";
 import {
@@ -31,6 +33,9 @@ import {
 } from "./src/theme";
 import { ThreadScreen } from "./src/thread-screen";
 import type { Conversation, Me, Member, NotificationRoute, Session, Thread } from "./src/types";
+import { VisitorsScreen } from "./src/visitors-screen";
+
+const LIVE_COUNT_INTERVAL_MS = 30_000;
 
 void SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -63,6 +68,37 @@ function SignedInApp({
     [session],
   );
   const [page, setPage] = useState<Page>("inbox");
+  const [returnContactId, setReturnContactId] = useState<string | null>(null);
+  const threadOrigin = useRef<TabPage>("inbox");
+  const [liveCount, setLiveCount] = useState<number | null>(null);
+  const showLiveBadge = page !== "visitors" && page !== "thread";
+  useEffect(() => {
+    if (!showLiveBadge) return;
+    let active = true;
+    let pending = false;
+    const read = async () => {
+      if (AppState.currentState !== "active" || pending) return;
+      pending = true;
+      try {
+        const { count } = await api.liveVisitorCount();
+        if (active) setLiveCount(count);
+      } catch {
+        if (active) setLiveCount(null);
+      } finally {
+        pending = false;
+      }
+    };
+    void read();
+    const timer = setInterval(read, LIVE_COUNT_INTERVAL_MS);
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") void read();
+    });
+    return () => {
+      active = false;
+      clearInterval(timer);
+      subscription.remove();
+    };
+  }, [api, showLiveBadge]);
   const [inboxSearchOpen, setInboxSearchOpen] = useState(false);
   const [members, setMembers] = useState<Member[]>([]);
   const [me, setMe] = useState<Me | null>(null);
@@ -206,7 +242,8 @@ function SignedInApp({
   );
 
   const openConversation = useCallback(
-    (conversation: Conversation) => {
+    (conversation: Conversation, origin: TabPage = "inbox") => {
+      threadOrigin.current = origin;
       setInboxSearchOpen(false);
       threadTarget.current = { scope: scopeKey, conversationId: conversation.id };
       threadRequest.current += 1;
@@ -216,6 +253,30 @@ function SignedInApp({
       void loadThread(conversation.id);
     },
     [loadThread, scopeKey],
+  );
+
+  const openById = useCallback(
+    (conversationId: string, origin: TabPage | "outbox" = "inbox") => {
+      const found = conversations.find((item) => item.id === conversationId);
+      const stub: Conversation = found ?? {
+        id: conversationId,
+        status: "open",
+        updatedAt: new Date().toISOString(),
+        assigneeOperatorId: null,
+        visitor: {
+          id: "",
+          name: t(origin === "outbox" ? "mobileSavedReply" : "visitorAnonymous"),
+          email: null,
+          pictureUrl: null,
+        },
+        lastMessage: null,
+        handler: null,
+        unread: origin !== "outbox",
+        snooze: null,
+      };
+      openConversation(stub, origin === "outbox" ? "inbox" : origin);
+    },
+    [conversations, openConversation],
   );
 
   const openRoute = useCallback(
@@ -241,6 +302,7 @@ function SignedInApp({
           inboxRequest.current += 1;
           threadRequest.current += 1;
           threadTarget.current = null;
+          setLiveCount(null);
           setPage("inbox");
           setSelected(null);
           setThread(null);
@@ -260,21 +322,9 @@ function SignedInApp({
       if (routeRequest.current !== request || scopeRef.current !== scopeKey) return;
       const conversationId = conversationFromRoute(route, session.workspace.id);
       if (!conversationId) return;
-      const found = conversations.find((item) => item.id === conversationId);
-      const stub: Conversation = found ?? {
-        id: conversationId,
-        status: "open",
-        updatedAt: new Date().toISOString(),
-        assigneeOperatorId: null,
-        visitor: { id: "", name: t("visitorAnonymous"), email: null, pictureUrl: null },
-        lastMessage: null,
-        handler: null,
-        unread: true,
-        snooze: null,
-      };
-      openConversation(stub);
+      openById(conversationId);
     },
-    [api, conversations, handleFailure, openConversation, scopeKey, session],
+    [api, handleFailure, openById, scopeKey, session],
   );
 
   useEffect(() => {
@@ -456,23 +506,6 @@ function SignedInApp({
     ]);
   };
 
-  const openPending = (conversationId: string) => {
-    const found = conversations.find((conversation) => conversation.id === conversationId);
-    openConversation(
-      found ?? {
-        id: conversationId,
-        status: "open",
-        updatedAt: new Date().toISOString(),
-        assigneeOperatorId: null,
-        visitor: { id: "", name: t("mobileSavedReply"), email: null, pictureUrl: null },
-        lastMessage: null,
-        handler: null,
-        unread: false,
-        snooze: null,
-      },
-    );
-  };
-
   const assign = async (operatorId: string) => {
     const target = threadTarget.current;
     if (!target || target.scope !== scopeKey) return;
@@ -533,6 +566,8 @@ function SignedInApp({
     routeRequest.current += 1;
     threadTarget.current = null;
     pendingRoute.current = null;
+    setReturnContactId(null);
+    setLiveCount(null);
     setPage("inbox");
     setSelected(null);
     setThread(null);
@@ -592,7 +627,7 @@ function SignedInApp({
             threadTarget.current = null;
             threadRequest.current += 1;
             setThreadLoading(false);
-            setPage("inbox");
+            setPage(threadOrigin.current);
             setSelected(null);
             setThread(null);
           }}
@@ -619,7 +654,7 @@ function SignedInApp({
                 loading={inboxLoading}
                 me={me}
                 onOpen={openConversation}
-                onOpenPending={openPending}
+                onOpenPending={(id) => openById(id, "outbox")}
                 onRefresh={() => void refreshInbox()}
                 palette={palette}
                 pending={outbox.list()}
@@ -631,6 +666,41 @@ function SignedInApp({
                 onCloseSearch={() => setInboxSearchOpen(false)}
                 topInset={error ? 0 : insets.top}
                 waiting={waiting}
+              />
+            )}
+            {page === "contacts" && (
+              <ContactsScreen
+                api={api}
+                palette={palette}
+                topInset={error ? 0 : insets.top}
+                bottomInset={insets.bottom}
+                initialContactId={returnContactId}
+                readOnly={
+                  me?.workspaces.find((w) => w.workspaceId === session.workspace.id)?.readOnly ??
+                  true
+                }
+                onOpenConversation={(id, contactId) => {
+                  setReturnContactId(contactId);
+                  openById(id, "contacts");
+                }}
+              />
+            )}
+            {page === "visitors" && (
+              <VisitorsScreen
+                api={api}
+                palette={palette}
+                topInset={error ? 0 : insets.top}
+                bottomInset={insets.bottom}
+                onOpenConversation={(id) => openById(id, "visitors")}
+                onCount={setLiveCount}
+              />
+            )}
+            {page === "analytics" && (
+              <AnalyticsScreen
+                api={api}
+                palette={palette}
+                topInset={error ? 0 : insets.top}
+                bottomInset={insets.bottom}
               />
             )}
             {page === "settings" && (
@@ -696,7 +766,9 @@ function SignedInApp({
             )}
           </View>
           <BottomNav
+            liveCount={liveCount}
             onPage={(next) => {
+              setReturnContactId(null);
               setInboxSearchOpen(false);
               setPage(next);
             }}

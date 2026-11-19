@@ -2,6 +2,10 @@ import Svg, { Path } from "react-native-svg";
 
 const paths = {
   server: "M4 4h16v6H4z M4 14h16v6H4z M7 7h1 M7 17h1",
+  addressBook:
+    "M5 3h14a1 1 0 0 1 1 1v16a1 1 0 0 1-1 1H5z M3 7h3m-3 5h3m-3 5h3 M15.5 9a2.5 2.5 0 1 1-5 0 2.5 2.5 0 1 1 5 0 M8.5 17a4.5 4.5 0 0 1 9 0",
+  globe: "M21 12a9 9 0 1 1-18 0 9 9 0 1 1 18 0 M3 12h18 M12 3c5 5 5 13 0 18-5-5-5-13 0-18z",
+  chart: "M2 20h20 M4 20v-7h4v7 M10 20V9h4v11 M16 20V4h4v16",
   profileTab:
     "M22 12a10 10 0 1 1-20 0 10 10 0 1 1 20 0z M15.2 9a3.2 3.2 0 1 1-6.4 0 3.2 3.2 0 1 1 6.4 0z M5.8 19.5a6.4 6.4 0 0 1 12.4 0",
   back: "m14 5-7 7 7 7",
