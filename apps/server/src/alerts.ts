@@ -7,6 +7,7 @@ import {
   isNotNull,
   isNull,
   notExists,
+  or,
   type SQL,
   sql,
 } from "drizzle-orm";
@@ -165,6 +166,13 @@ export async function sendToOperator(
               gt(session.expiresAt, new Date()),
             ),
           )
+          .innerJoin(
+            operator,
+            and(
+              eq(operator.id, session.userId),
+              or(eq(operator.twoFactorOn, false), isNotNull(session.twoFactorAt)),
+            ),
+          )
           .where(
             and(
               eq(nativePushDevice.operatorId, operatorId),
@@ -255,6 +263,13 @@ async function alertReach(
               eq(session.id, nativePushDevice.sessionId),
               eq(session.userId, nativePushDevice.operatorId),
               gt(session.expiresAt, new Date()),
+            ),
+          )
+          .innerJoin(
+            operator,
+            and(
+              eq(operator.id, session.userId),
+              or(eq(operator.twoFactorOn, false), isNotNull(session.twoFactorAt)),
             ),
           )
           .where(

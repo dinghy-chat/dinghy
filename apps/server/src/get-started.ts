@@ -73,7 +73,9 @@ export function registerGetStartedRoutes(app: App, db: Database): void {
           (exists (select 1 from push_subscription where operator_id = ${operatorId})
            or exists (select 1 from native_push_device d join session s
              on s.id = d.session_id and s.user_id = d.operator_id
-             where d.operator_id = ${operatorId} and s.expires_at > now())
+             join operator o on o.id = s.user_id
+             where d.operator_id = ${operatorId} and s.expires_at > now()
+               and (not o.two_factor_on or s.two_factor_at is not null))
            or coalesce((select alert_email from workspace_member
              where workspace_id = ${id} and operator_id = ${operatorId}), false)) as notifications,
           exists (select 1 from conversation c
