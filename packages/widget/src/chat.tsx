@@ -21,7 +21,6 @@ import {
   backLine,
   ChatHead,
   ChatLine,
-  ChatMenu,
   Composer,
   CSS,
   EmailCard,
@@ -185,7 +184,6 @@ function Chat({
   const [chatted, setChatted] = useState(false);
   // Whether the visitor gave an email, from the server. Undefined until it answers.
   const [hasEmail, setHasEmail] = useState<boolean>();
-  const [optedOut, setOptedOut] = useState(false);
   const [loaded, setLoaded] = useState(false);
   // The newest position the stream has delivered. A send's own response does not move this, so a
   // reply that has not arrived yet cannot be marked as read.
@@ -415,7 +413,6 @@ function Chat({
         if (restoring) restored(hasOpenConversation || !me.chatted);
         setChatted((current) => current || me.chatted);
         setHasEmail(me.hasEmail);
-        setOptedOut(me.optedOut);
         serverSaid(me.unread, BigInt(me.lastReadSeq));
         readCursor.current = me.readCursor;
       })
@@ -594,18 +591,6 @@ function Chat({
         creatingVisitor.current = null;
       });
     return creatingVisitor.current;
-  };
-
-  /** The menu's switch, which needs a visitor to remember it, so it makes one when there is none. */
-  const toggleAutomatic = () => {
-    const next = !optedOut;
-    setOptedOut(next);
-    ensureToken()
-      .then((current) => client.optOut(current, next))
-      .then(
-        (me) => setOptedOut(me.optedOut),
-        () => setOptedOut(!next),
-      );
   };
 
   const markLine = (lineId: string, status: Line["status"]) =>
@@ -833,7 +818,6 @@ function Chat({
         saved={saved}
         say={say}
         back={closed && hours.reopensAt ? backLine(hours.reopensAt, new Date()) : undefined}
-        menu={<ChatMenu optedOut={optedOut} onToggle={toggleAutomatic} />}
         {...(fullPage ? {} : { onClose: () => setOpen(false) })}
       />
       <div class="log" role="log" aria-live="polite" ref={log}>

@@ -407,7 +407,6 @@ export type OutboundStatusReason =
   | "unless_matched"
   | "cancelled_by_request"
   | "conversation_deleted"
-  | "opted_out"
   | "audience_unmatched"
   | "frequency_capped"
   | "goal_reached"

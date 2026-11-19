@@ -121,7 +121,7 @@ const unreadCount = (tx: Transaction, workspaceId: string, visitorId: string) =>
 
 /**
  * Why this visitor may not get the message now, or null. The bots' pause holds a key's own send,
- * not a campaign's, and the visitor's opt-out holds every automatic one. The caller holds the locks.
+ * not a campaign's. The caller holds the locks.
  */
 async function refusal(
   tx: Transaction,
@@ -131,9 +131,7 @@ async function refusal(
   const { workspaceId, visitorId, actor, campaign } = send;
   const isKey = actor.kind === "key";
   if (isKey && campaign === null && botsPaused && !scheduled) return "bots_paused";
-  const { blocked, optedOut } = await visitorFlags(tx, workspaceId, visitorId);
-  if (blocked) return "blocked";
-  if (optedOut && (isKey || campaign !== null)) return "opted_out";
+  if ((await visitorFlags(tx, workspaceId, visitorId)).blocked) return "blocked";
   if ((await unreadCount(tx, workspaceId, visitorId)) >= WAITING_PER_VISITOR) {
     return "too_many_waiting";
   }

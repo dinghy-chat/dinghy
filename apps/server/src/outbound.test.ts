@@ -970,7 +970,6 @@ describe("decide", () => {
   const calm: Parameters<typeof decide>[1] = {
     writable: true,
     blocked: false,
-    optedOut: false,
     botsPaused: false,
     key: { revoked: false, replyMode: "send", mayActAsMember: true, maySendEmail: true },
     senderActive: true,

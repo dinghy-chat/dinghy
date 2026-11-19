@@ -431,8 +431,8 @@ export function createCampaigns({ db, live }: { db: Database; live: Live }) {
 
     /**
      * Runs a campaign for one person from code: it skips the audience and the trigger, and keeps
-     * the frequency and the opt-out. A retry with the same client ID, and a send the frequency
-     * keeps out, answer the message that is there.
+     * the frequency. A retry with the same client ID, and a send the frequency keeps out, answer
+     * the message that is there.
      */
     async send(workspaceId: string, ref: CampaignRef, input: SendInput) {
       const outcome = await withWorkspace(db, workspaceId, async (tx) => {

@@ -117,8 +117,6 @@ interface Me {
   unread: number;
   /** A stream from here reads only what follows the read position. */
   readCursor: string;
-  /** The visitor turned off automatic messages. */
-  optedOut: boolean;
 }
 
 /**
@@ -254,9 +252,6 @@ export function createClient(
         method: "POST",
         body: JSON.stringify({ language, button }),
       }),
-    /** Turns automatic messages off, or on again. */
-    optOut: (token: string, optedOut: boolean) =>
-      call<Me>("opt-out", token, { method: "POST", body: JSON.stringify({ optedOut }) }),
 
     /** Reads the stream until it ends. See readStream. */
     async stream(

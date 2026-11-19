@@ -341,9 +341,6 @@ export const visitor = pgTable(
     locale: visitorLocale("locale"),
     // Made by a bot's simulated visitor message, to test it. Lists and analytics leave it out.
     isTest: boolean("is_test").notNull().default(false),
-    // When the visitor turned off automatic messages in the widget's menu. Campaigns and outbound
-    // messages from keys skip them while it is set.
-    optedOutAt: timestamp("opted_out_at", { withTimezone: true }),
     createdAt: createdAt(),
   },
   (table) => [
@@ -1847,7 +1844,6 @@ export const OUTBOUND_STATUS_REASONS = [
   "unless_matched",
   "cancelled_by_request",
   "conversation_deleted",
-  "opted_out",
   "audience_unmatched",
   "frequency_capped",
   "goal_reached",

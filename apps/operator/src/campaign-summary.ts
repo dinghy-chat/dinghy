@@ -32,7 +32,6 @@ export const FIELD_TEXT: Record<FieldChoice, TextId> = {
   timeZone: "conditionFieldTimeZone",
   signedIn: "conditionFieldSignedIn",
   hasChatted: "conditionFieldHasChatted",
-  optedOut: "conditionFieldOptedOut",
   conversationCount: "colConversations",
   firstSeenAt: "sortFirstSeen",
   lastSeenAt: "sortLastSeen",
@@ -83,13 +82,12 @@ export function durationWords(duration: string): string {
   return plural(Number(duration.slice(0, -1)), one, many);
 }
 
-type BooleanField = "signedIn" | "hasChatted" | "optedOut" | "repliedToCampaign";
+type BooleanField = "signedIn" | "hasChatted" | "repliedToCampaign";
 
 /** What a yes, then a no, of a field says the person did, after "they" or "people who". */
 const DID_TEXT: Record<BooleanField, [TextId, TextId]> = {
   signedIn: ["summarySignedIn", "summaryNotSignedIn"],
   hasChatted: ["summaryChatted", "summaryNotChatted"],
-  optedOut: ["summaryOptedOut", "summaryNotOptedOut"],
   repliedToCampaign: ["summaryReplied", "summaryNotReplied"],
 };
 const isBooleanField = (field: FieldChoice): field is BooleanField =>

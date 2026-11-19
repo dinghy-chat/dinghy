@@ -6414,7 +6414,7 @@ export interface paths {
     put?: never;
     /**
      * Run a live campaign for one person, from your code
-     * @description It skips the audience and the trigger, because your code chose the person, and keeps the frequency and the visitor's opt-out. `data` fills `{{ data.<key> }}` in the text. A retry with the same `clientId`, and a send that the frequency keeps out, answer 200 with the message that is there.
+     * @description It skips the audience and the trigger, because your code chose the person, and keeps the frequency. `data` fills `{{ data.<key> }}` in the text. A retry with the same `clientId`, and a send that the frequency keeps out, answer 200 with the message that is there.
      */
     post: {
       parameters: {
@@ -6508,7 +6508,7 @@ export interface paths {
             "application/json": components["schemas"]["Error"];
           };
         };
-        /** @description campaign_not_live: the campaign is a draft, paused or ended. opted_out: the visitor turned off automatic messages */
+        /** @description campaign_not_live: the campaign is a draft, paused or ended */
         409: {
           headers: {
             [name: string]: unknown;
@@ -6563,7 +6563,7 @@ export interface paths {
     put?: never;
     /**
      * Run a live campaign for one person, from your code
-     * @description It skips the audience and the trigger, because your code chose the person, and keeps the frequency and the visitor's opt-out. `data` fills `{{ data.<key> }}` in the text. A retry with the same `clientId`, and a send that the frequency keeps out, answer 200 with the message that is there.
+     * @description It skips the audience and the trigger, because your code chose the person, and keeps the frequency. `data` fills `{{ data.<key> }}` in the text. A retry with the same `clientId`, and a send that the frequency keeps out, answer 200 with the message that is there.
      */
     post: {
       parameters: {
@@ -6657,7 +6657,7 @@ export interface paths {
             "application/json": components["schemas"]["Error"];
           };
         };
-        /** @description campaign_not_live: the campaign is a draft, paused or ended. opted_out: the visitor turned off automatic messages */
+        /** @description campaign_not_live: the campaign is a draft, paused or ended */
         409: {
           headers: {
             [name: string]: unknown;
@@ -7738,7 +7738,6 @@ export interface components {
           | "not_an_image"
           | "not_found"
           | "operator_limit"
-          | "opted_out"
           | "origin_not_allowed"
           | "payment_pending"
           | "payment_required"
@@ -7973,7 +7972,6 @@ export interface components {
       lastReadSeq: string;
       unread: number;
       readCursor: string;
-      optedOut: boolean;
     };
     /**
      * @example {
@@ -8524,7 +8522,6 @@ export interface components {
         | "unless_matched"
         | "cancelled_by_request"
         | "conversation_deleted"
-        | "opted_out"
         | "audience_unmatched"
         | "frequency_capped"
         | "goal_reached"
@@ -8615,7 +8612,7 @@ export interface components {
           email: string;
         };
     /**
-     * @description A rule `{ field, op, value }`, or a group `{ all: [...] }`, `{ any: [...] }` or `{ not: ... }`, which nest. Fields: name, firstName, email, userId, language, country, timeZone, signedIn, firstSeenAt, lastSeenAt, hasChatted, conversationCount, optedOut, attributes.<key>, events.<name>.count, events.<name>.lastAt. Ops: eq, ne, in, not_in, exists, missing, gt, gte, lt, lte, contains, older_than; older_than takes a duration such as 7d.
+     * @description A rule `{ field, op, value }`, or a group `{ all: [...] }`, `{ any: [...] }` or `{ not: ... }`, which nest. Fields: name, firstName, email, userId, language, country, timeZone, signedIn, firstSeenAt, lastSeenAt, hasChatted, conversationCount, attributes.<key>, events.<name>.count, events.<name>.lastAt. Ops: eq, ne, in, not_in, exists, missing, gt, gte, lt, lte, contains, older_than; older_than takes a duration such as 7d.
      * @example {
      *       "all": [
      *         {

@@ -99,7 +99,6 @@ The key must be in **Send directly**. To show a member's name and picture with `
 | `send_email_required` | The key may not send email | Leave `sendEmail` out, or ask a person to turn on **May email visitors** |
 | `bots_paused` | An owner or admin paused every bot | Do not send now. A message with `delay` or `sendAt` waits for the resume instead |
 | `blocked` | The team blocked this visitor | Do nothing |
-| `opted_out` | The visitor turned off automatic messages | Do not send. Only a member can write to them by hand |
 | `too_many_waiting` | 5 outbound messages already wait for this visitor | Cancel one, or wait |
 
 For example, when a job ends, tell the user in a conversation that starts now:
@@ -123,7 +122,7 @@ A [campaign](campaigns.md) is a saved rule that sends outbound messages: who, wh
 - `list_campaigns` lists the campaigns, oldest first, each with its `status` (`draft`, `live`, `paused` or `ended`), its `definition` and its `totals`. `status` keeps one status.
 - `get_campaign` reads one, by `id` or `key`, exactly one of them.
 - `get_campaign_results` reads a campaign's results per day in UTC and per A/B variant, by `id` or `key`, between `from` and `to` (`YYYY-MM-DD`): contacts reached, messages sent, delivered, read, replied and dismissed, clicks by button value, goals reached and conversations started.
-- `send_campaign` runs a live campaign for one person, by `id` or `key`, with `visitor`, `clientId` and `data`, which fills `{{ data.<key> }}` in the text. It skips the audience and the trigger, and keeps the frequency and the visitor's opt-out. A retry with the same `clientId`, and a send the frequency keeps out, answer the message that is there.
+- `send_campaign` runs a live campaign for one person, by `id` or `key`, with `visitor`, `clientId` and `data`, which fills `{{ data.<key> }}` in the text. It skips the audience and the trigger, and keeps the frequency. A retry with the same `clientId`, and a send the frequency keeps out, answer the message that is there.
 - `track_event` tells Dinghy that something happened to a contact, such as `export.finished`, with `visitor`, `name`, and the optional `properties`, `occurredAt` and `id`. Conditions read `events.<name>.count` and `events.<name>.lastAt`, and a live campaign with the trigger `{ "type": "event", "name" }` runs for the contact. Properties are never stored. A repeat of a recent `id` answers `counted: false`.
 
 A Full access key also gets these:
@@ -141,7 +140,6 @@ A new campaign is a draft until `resume_campaign`, so a person can check it firs
 | `invalid_request` | The definition does not fit together, such as an unknown variable | Read the message, which has one line per problem, and fix the definition |
 | `campaign_not_live` | `send_campaign` named a draft, paused or ended campaign | Ask a person to start it |
 | `campaign_ended` | The campaign ended, and does not change again | Save a new one with another key |
-| `opted_out` | The visitor turned off automatic messages | Do nothing |
 | `blocked`, `too_many_waiting` | As for `send_outbound_message` | As above |
 
 ## Hand off to a person

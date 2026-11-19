@@ -104,7 +104,7 @@ export function campaignTools({
       name: "send_campaign",
       title: "Send a campaign to one person",
       description:
-        "Runs a live campaign for one person, by `id` or `key`: `visitor` is `{ userId, name?, email?, attributes? }`, which creates or updates them, or `{ id }`. It skips the audience and the trigger, and keeps the frequency and the visitor's opt-out. `data` fills `{{ data.<key> }}` in the text. A retry with the same `clientId`, and a send the frequency keeps out, answer the message that is there. Errors: `campaign_not_live`, `opted_out`, `blocked`, `too_many_waiting`.",
+        "Runs a live campaign for one person, by `id` or `key`: `visitor` is `{ userId, name?, email?, attributes? }`, which creates or updates them, or `{ id }`. It skips the audience and the trigger, and keeps the frequency. `data` fills `{{ data.<key> }}` in the text. A retry with the same `clientId`, and a send the frequency keeps out, answer the message that is there. Errors: `campaign_not_live`, `blocked`, `too_many_waiting`.",
       input: Ref.extend(CampaignSendSchema.shape),
       idempotent: true,
       async run(ref, { clientId, visitor, data }, workspaceId) {

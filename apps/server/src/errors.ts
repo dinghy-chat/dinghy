@@ -111,7 +111,6 @@ export const ERROR_CODES = [
   "not_an_image",
   "not_found",
   "operator_limit",
-  "opted_out",
   "origin_not_allowed",
   "payment_pending",
   "payment_required",

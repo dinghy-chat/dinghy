@@ -60,7 +60,4 @@ export const fr: Texts = {
   botTyping: "{name} écrit...",
   outboundCard: "Un message de l'équipe",
   outboundClose: "Fermer ce message",
-  menu: "Plus d'options",
-  automaticOff: "Désactiver les messages automatiques",
-  automaticOn: "Activer les messages automatiques",
 };

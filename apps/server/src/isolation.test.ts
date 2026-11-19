@@ -480,18 +480,6 @@ const CAMPAIGN_ATTACKS: Record<string, Attack> = {
       },
     ]),
   ),
-  "POST /v1/widget/:key/opt-out": async ({ widget, a, b, one, two }) => {
-    const twoBefore = (await owner.select().from(visitor).where(eq(visitor.id, two.id)))[0];
-    const own = await widget(a.publicKey, "POST", "opt-out", one.token, SITE_A, {
-      optedOut: false,
-    });
-    expect(own.status).toBe(200);
-    expect(
-      (await widget(b.publicKey, "POST", "opt-out", one.token, SITE_B, { optedOut: true })).status,
-    ).toBe(401);
-    const twoAfter = (await owner.select().from(visitor).where(eq(visitor.id, two.id)))[0];
-    expect(twoAfter?.optedOutAt).toEqual(twoBefore?.optedOutAt);
-  },
 };
 
 /** Runs against a route as the one caller that must be refused or see only its own data. */

@@ -1,0 +1,5 @@
+ALTER TABLE "outbound_message" DROP CONSTRAINT "outbound_message_status_reason";--> statement-breakpoint
+ALTER TABLE "visitor" DROP COLUMN "opted_out_at";--> statement-breakpoint
+-- The visitor's opt-out is gone. A message it cancelled reads as cancelled on request, the visitor's.
+UPDATE "outbound_message" SET "status_reason" = 'cancelled_by_request' WHERE "status_reason" = 'opted_out';--> statement-breakpoint
+ALTER TABLE "outbound_message" ADD CONSTRAINT "outbound_message_status_reason" CHECK ("outbound_message"."status_reason" in ('open_conversation', 'open_conversation_skipped', 'human_handling', 'bots_paused', 'blocked', 'permission_revoked', 'workspace_inactive', 'unless_matched', 'cancelled_by_request', 'conversation_deleted', 'audience_unmatched', 'frequency_capped', 'goal_reached', 'outside_business_hours', 'outside_send_window', 'campaign_paused', 'campaign_ended', 'control_group'));

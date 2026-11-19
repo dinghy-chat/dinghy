@@ -17,7 +17,6 @@ const FIELD_KINDS = {
   timeZone: "text",
   signedIn: "boolean",
   hasChatted: "boolean",
-  optedOut: "boolean",
   conversationCount: "number",
   firstSeenAt: "time",
   lastSeenAt: "time",
