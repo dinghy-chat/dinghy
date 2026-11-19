@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.46.0] - 2026-11-19
+
 ### Added
 
 - Operators can receive conversation alerts on their phones when their server has Apple or Firebase push credentials.
@@ -724,7 +726,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.45.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.46.0...HEAD
+[0.46.0]: https://github.com/dinghy-chat/dinghy/compare/v0.45.0...v0.46.0
 [0.45.0]: https://github.com/dinghy-chat/dinghy/compare/v0.44.0...v0.45.0
 [0.44.0]: https://github.com/dinghy-chat/dinghy/compare/v0.43.0...v0.44.0
 [0.43.0]: https://github.com/dinghy-chat/dinghy/compare/v0.42.0...v0.43.0
