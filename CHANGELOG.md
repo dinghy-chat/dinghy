@@ -6,6 +6,7 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ### Changed
 
+- A click on a conversation in the Inbox puts the caret in the reply box. J and K still leave it in the list.
 - In a conversation, one line under an outbound message says who sent it, such as "Sent as Julien by Welcome bot · 20:12", and the receipt follows it.
 
 ## [0.46.0] - 2026-11-19

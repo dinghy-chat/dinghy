@@ -111,6 +111,7 @@ export function Thread({
   onChanged,
   onLoaded,
   inView,
+  clicked,
   onRead,
   onOpenContact,
   onOpenConversation,
@@ -157,6 +158,8 @@ export function Thread({
   onLoaded(conversation: Conversation): void;
   /** The Inbox shows this thread, and not another page over it. */
   inView: boolean;
+  /** The operator opened it with a click, so the caret goes in the reply box. */
+  clicked: boolean;
   /** The operator read this conversation. */
   onRead(conversationId: string): void;
   onOpenContact(visitorId: string): void;
@@ -197,6 +200,19 @@ export function Thread({
     keep: thread.keep,
   });
   const { quoting, setQuoting, info, setInfo, deleting, setDeleting } = actions;
+  // A click on the row puts the caret in the reply once the chat loads, unless the operator
+  // already moved the focus elsewhere.
+  const loaded = conversation !== null;
+  useEffect(() => {
+    const focused = document.activeElement;
+    if (
+      loaded &&
+      clicked &&
+      (focused === document.body || focused?.matches('.row[aria-current="true"]'))
+    ) {
+      focusComposer();
+    }
+  }, [loaded, clicked]);
   // A reply to a message goes in the box, so the caret goes there.
   useEffect(() => {
     if (quoting !== null) focusComposer();
