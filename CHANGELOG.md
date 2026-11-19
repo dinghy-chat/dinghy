@@ -9,6 +9,10 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - A click on a conversation in the Inbox puts the caret in the reply box. J and K still leave it in the list.
 - In a conversation, one line under an outbound message says who sent it, such as "Sent as Julien by Welcome bot · 20:12", and the receipt follows it.
 
+### Removed
+
+- The chat's menu and its **Turn off automatic messages** item. Visitors misread it, and an annoyed visitor can still be blocked. Campaigns and API keys no longer check an opt-out, and the `optedOut` condition, the `opted_out` status reason and error, and `POST /v1/widget/{key}/opt-out` are gone. An upgrade rewrites a saved rule on `optedOut` to one with the same answer, and messages the opt-out cancelled now read `cancelled_by_request`. An export file from 0.46.0 or before does not import. The emails' own stop link stays.
+
 ## [0.46.0] - 2026-11-19
 
 ### Added

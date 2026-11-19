@@ -115,9 +115,9 @@ export async function openRuns(finder: Database, writer: Database): Promise<void
 }
 
 /**
- * The next contacts of a run: in the audience, after the cursor, in ID order. A test visitor, a
- * blocked one and one who turned off automatic messages are left out, and a daily pass reaches
- * only those with an email address, as it is for them.
+ * The next contacts of a run: in the audience, after the cursor, in ID order. A test visitor and a
+ * blocked one are left out, and a daily pass reaches only those with an email address, as it is for
+ * them.
  */
 function nextContacts(
   tx: Transaction,
@@ -135,7 +135,6 @@ function nextContacts(
         cursor === null ? undefined : gt(visitor.id, cursor),
         eq(visitor.isTest, false),
         isNull(visitor.blockedAt),
-        isNull(visitor.optedOutAt),
         trigger.type === "match" ? isNotNull(visitor.email) : undefined,
         audience === undefined ? undefined : toSql(audience),
       ),

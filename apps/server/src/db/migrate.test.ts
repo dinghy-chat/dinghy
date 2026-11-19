@@ -205,6 +205,67 @@ describe("chat migrate", () => {
     ]);
   });
 
+  test("saved rules on the visitor's opt-out become rules with the same answer", async () => {
+    await run(await migrationsBefore("0125_"));
+    const workspace = "00000000-0000-4000-8000-0000000000ee";
+    const campaign = "00000000-0000-4000-8000-0000000000ef";
+    await query(
+      `insert into workspace (id, name, public_key, signing_secret)
+       values ('${workspace}', 'Old', 'wk_00000000000000000000000000000001', 'secret')`,
+    );
+    const rule = (op: string, value?: boolean) => ({ field: "optedOut", op, value });
+    const audience = {
+      all: [
+        rule("eq", true),
+        { not: rule("ne", true) },
+        { any: [rule("eq", false), rule("exists"), { field: "attributes.plan", op: "exists" }] },
+      ],
+    };
+    const author = "00000000-0000-4000-8000-0000000000f0";
+    await query(
+      `insert into operator (id, name, email, email_verified)
+       values ('${author}', 'Author', 'author@example.com', true)`,
+    );
+    await query(
+      `insert into workspace_member (workspace_id, operator_id, role)
+       values ('${workspace}', '${author}', 'owner')`,
+    );
+    await query(
+      `insert into campaign (workspace_id, id, key, name, definition, author_operator_id)
+       values ('${workspace}', '${campaign}', 'old', 'Old', '${JSON.stringify({ audience, rules: { goal: { ...rule("eq", false), within: "7d" } } })}', '${author}')`,
+    );
+    await query(
+      `insert into campaign_trigger (workspace_id, campaign_id, field)
+       values ('${workspace}', '${campaign}', 'optedOut'), ('${workspace}', '${campaign}', 'attributes.plan')`,
+    );
+    await query(
+      `insert into visitor (workspace_id, user_id, opted_out_at, field_times)
+       values ('${workspace}', 'user-1', now(), '{"optedOut": 1, "email": 2}')`,
+    );
+    await run();
+    const always = { field: "signedIn", op: "exists" };
+    const never = { field: "signedIn", op: "missing" };
+    expect(await query("select definition from campaign")).toEqual([
+      {
+        definition: {
+          audience: {
+            all: [
+              never,
+              { not: always },
+              { any: [always, always, { field: "attributes.plan", op: "exists" }] },
+            ],
+          },
+          rules: { goal: { ...always, within: "7d" } },
+        },
+      },
+    ]);
+    expect(await query("select field from campaign_trigger order by field")).toEqual([
+      { field: "attributes.plan" },
+      { field: "signedIn" },
+    ]);
+    expect(await query("select field_times from visitor")).toEqual([{ field_times: { email: 2 } }]);
+  });
+
   test("the page journey and the search index arrive on a database with messages", async () => {
     await run(await migrationsBefore("0046_"));
     const workspace = "00000000-0000-4000-8000-0000000000dd";

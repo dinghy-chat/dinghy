@@ -188,7 +188,6 @@ type SendRefusal =
   | "send_email_required"
   | "bots_paused"
   | "blocked"
-  | "opted_out"
   | "too_many_waiting"
   | "not_found"
   | "unknown_member"
@@ -218,13 +217,6 @@ export const SEND_REFUSALS = {
   },
   bots_paused: { status: 409, body: BOTS_PAUSED },
   blocked: { status: 403, body: failure("blocked", "The team blocked this visitor.") },
-  opted_out: {
-    status: 409,
-    body: failure(
-      "opted_out",
-      "This visitor turned off automatic messages in the chat's menu. A member can still write by hand.",
-    ),
-  },
   too_many_waiting: {
     status: 429,
     body: failure(

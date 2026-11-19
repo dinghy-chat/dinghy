@@ -89,10 +89,6 @@ export const CSS = `
 button:focus-visible{outline:2px solid var(--d-accent,${ACCENT});outline-offset:1px}
 input:focus-visible{outline:2px solid #1f6bff;outline-offset:-1px}
 .head button:focus-visible{outline-color:currentColor}
-.menu{position:relative;flex:none}
-.menu summary{list-style:none}
-.menu summary::-webkit-details-marker{display:none}
-.menu button:not(.x){position:absolute;z-index:2;top:36px;right:0;width:max-content;max-width:240px;padding:10px 12px;border:0;border-radius:10px;background:var(--paper);color:var(--ink);font:inherit;font-size:13.5px;text-align:left;cursor:pointer;box-shadow:0 2px 6px rgb(13 34 64/.08),0 12px 32px rgb(13 34 64/.18)}
 form{display:flex;align-items:flex-end;gap:10px;padding:10px 12px 12px;border-top:1px solid var(--line)}
 input{flex:1;min-width:0;font:inherit;color:inherit;background:var(--fog);border:1px solid transparent;border-radius:22px;padding:11px 16px}
 .compose{display:block;padding:8px 12px;border:0}
@@ -358,38 +354,6 @@ export function CloseButton({ label, onClick }: { label: string; onClick(): void
   );
 }
 
-/**
- * The chat's menu: one switch that turns automatic messages off, or on again. Campaigns and
- * messages from the team's code then skip the visitor. A member can still write by hand.
- */
-export function ChatMenu({ optedOut, onToggle }: { optedOut: boolean; onToggle(): void }) {
-  return (
-    <details class="menu">
-      <summary class="x" aria-label={t("menu")}>
-        <svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true">
-          <path
-            d="M5 12h.01M12 12h.01M19 12h.01"
-            stroke="currentColor"
-            stroke-width="3"
-            stroke-linecap="round"
-          />
-        </svg>
-      </summary>
-      <button
-        type="button"
-        role="menuitemcheckbox"
-        aria-checked={!optedOut}
-        onClick={(event) => {
-          event.currentTarget.closest("details")?.removeAttribute("open");
-          onToggle();
-        }}
-      >
-        {t(optedOut ? "automaticOn" : "automaticOff")}
-      </button>
-    </details>
-  );
-}
-
 /** A person's picture, a bot's icon, or an initial. */
 function Face({ name, pictureUrl, bot = false }: TeamFace & { bot?: boolean }) {
   if (pictureUrl !== null) return <img class="face" src={pictureUrl} alt="" />;
@@ -458,7 +422,6 @@ export function ChatHead({
   saved,
   say,
   back,
-  menu,
   onClose,
 }: {
   scene: SceneState;
@@ -472,8 +435,6 @@ export function ChatHead({
   say: Say;
   /** Outside business hours, when the team is back, under the away text. */
   back?: string | undefined;
-  /** The chat's menu, beside the close button. */
-  menu?: ComponentChildren;
   /** Missing on the full-page chat, which has nothing to close. */
   onClose?: () => void;
 }) {
@@ -523,7 +484,6 @@ export function ChatHead({
           ))}
         </span>
       )}
-      {menu}
       {onClose !== undefined && <CloseButton label={t("close")} onClick={onClose} />}
     </div>
   );

@@ -22,7 +22,6 @@ const REASON_TEXT: Record<OutboundStatusReason, TextId> = {
   unless_matched: "outboundReasonUnless",
   cancelled_by_request: "outboundReasonCancelled",
   conversation_deleted: "outboundReasonConversationDeleted",
-  opted_out: "outboundReasonOptedOut",
   audience_unmatched: "outboundReasonAudience",
   frequency_capped: "outboundReasonFrequency",
   goal_reached: "outboundReasonGoal",

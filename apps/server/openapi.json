@@ -91,7 +91,6 @@
                   "not_an_image",
                   "not_found",
                   "operator_limit",
-                  "opted_out",
                   "origin_not_allowed",
                   "payment_pending",
                   "payment_required",
@@ -845,9 +844,6 @@
           },
           "readCursor": {
             "type": "string"
-          },
-          "optedOut": {
-            "type": "boolean"
           }
         },
         "required": [
@@ -858,8 +854,7 @@
           "hasEmail",
           "lastReadSeq",
           "unread",
-          "readCursor",
-          "optedOut"
+          "readCursor"
         ]
       },
       "PageContext": {
@@ -2472,7 +2467,6 @@
               "unless_matched",
               "cancelled_by_request",
               "conversation_deleted",
-              "opted_out",
               "audience_unmatched",
               "frequency_capped",
               "goal_reached",
@@ -2804,7 +2798,7 @@
             "additionalProperties": false
           }
         ],
-        "description": "A rule `{ field, op, value }`, or a group `{ all: [...] }`, `{ any: [...] }` or `{ not: ... }`, which nest. Fields: name, firstName, email, userId, language, country, timeZone, signedIn, firstSeenAt, lastSeenAt, hasChatted, conversationCount, optedOut, attributes.<key>, events.<name>.count, events.<name>.lastAt. Ops: eq, ne, in, not_in, exists, missing, gt, gte, lt, lte, contains, older_than; older_than takes a duration such as 7d.",
+        "description": "A rule `{ field, op, value }`, or a group `{ all: [...] }`, `{ any: [...] }` or `{ not: ... }`, which nest. Fields: name, firstName, email, userId, language, country, timeZone, signedIn, firstSeenAt, lastSeenAt, hasChatted, conversationCount, attributes.<key>, events.<name>.count, events.<name>.lastAt. Ops: eq, ne, in, not_in, exists, missing, gt, gte, lt, lte, contains, older_than; older_than takes a duration such as 7d.",
         "example": {
           "all": [
             {
@@ -5936,106 +5930,6 @@
           },
           "404": {
             "description": "not_found: not this visitor's, it ended, or it has no such button",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "too_large: the body is over 64 KB",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "too_many_requests: over the rate limit. Retry after `retry-after`",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/widget/{key}/opt-out": {
-      "post": {
-        "security": [
-          {
-            "visitorToken": []
-          }
-        ],
-        "summary": "Turn automatic messages off or on for this visitor",
-        "description": "Off, campaigns and outbound messages from keys skip the visitor, and those that wait for them are cancelled with `opted_out`. A member can still write by hand.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "pattern": "^wk_[0-9a-f]{32}$"
-            },
-            "required": true,
-            "name": "key",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "optedOut": {
-                    "type": "boolean"
-                  }
-                },
-                "required": ["optedOut"]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The visitor",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Visitor"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "invalid_request: the request is not valid",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "unauthorized: the browser token or host token is not valid",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "origin_not_allowed: the key is unknown, the Origin is not an allowed site, or the workspace's widget is off: it is suspended, waits for payment, is read-only or was deleted",
             "content": {
               "application/json": {
                 "schema": {
@@ -21138,7 +21032,7 @@
           }
         ],
         "summary": "Run a live campaign for one person, from your code",
-        "description": "It skips the audience and the trigger, because your code chose the person, and keeps the frequency and the visitor's opt-out. `data` fills `{{ data.<key> }}` in the text. A retry with the same `clientId`, and a send that the frequency keeps out, answer 200 with the message that is there.",
+        "description": "It skips the audience and the trigger, because your code chose the person, and keeps the frequency. `data` fills `{{ data.<key> }}` in the text. A retry with the same `clientId`, and a send that the frequency keeps out, answer 200 with the message that is there.",
         "parameters": [
           {
             "schema": {
@@ -21284,7 +21178,7 @@
             }
           },
           "409": {
-            "description": "campaign_not_live: the campaign is a draft, paused or ended. opted_out: the visitor turned off automatic messages",
+            "description": "campaign_not_live: the campaign is a draft, paused or ended",
             "content": {
               "application/json": {
                 "schema": {
@@ -21337,7 +21231,7 @@
           }
         ],
         "summary": "Run a live campaign for one person, from your code",
-        "description": "It skips the audience and the trigger, because your code chose the person, and keeps the frequency and the visitor's opt-out. `data` fills `{{ data.<key> }}` in the text. A retry with the same `clientId`, and a send that the frequency keeps out, answer 200 with the message that is there.",
+        "description": "It skips the audience and the trigger, because your code chose the person, and keeps the frequency. `data` fills `{{ data.<key> }}` in the text. A retry with the same `clientId`, and a send that the frequency keeps out, answer 200 with the message that is there.",
         "parameters": [
           {
             "schema": {
@@ -21484,7 +21378,7 @@
             }
           },
           "409": {
-            "description": "campaign_not_live: the campaign is a draft, paused or ended. opted_out: the visitor turned off automatic messages",
+            "description": "campaign_not_live: the campaign is a draft, paused or ended",
             "content": {
               "application/json": {
                 "schema": {

@@ -876,6 +876,13 @@
       "when": 1795023132896,
       "tag": "0124_native_push_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 125,
+      "version": "7",
+      "when": 1795122664310,
+      "tag": "0125_remove_opt_out",
+      "breakpoints": true
     }
   ]
 }

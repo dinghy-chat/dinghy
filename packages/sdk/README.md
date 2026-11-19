@@ -83,7 +83,7 @@ await dinghy.campaigns.send("onboarding-done", {
 });
 ```
 
-`send` skips the campaign's audience and trigger, and keeps its frequency and the visitor's opt-out. `data` fills `{{ data.plan }}` in its text. A campaign is named by its key, or by `{ id }`. To keep campaigns in your repository, save each one with `dinghy.campaigns.upsert(definition)`, which never changes its status. See the [campaigns guide](https://dinghy.chat/docs/campaigns).
+`send` skips the campaign's audience and trigger, and keeps its frequency. `data` fills `{{ data.plan }}` in its text. A campaign is named by its key, or by `{ id }`. To keep campaigns in your repository, save each one with `dinghy.campaigns.upsert(definition)`, which never changes its status. See the [campaigns guide](https://dinghy.chat/docs/campaigns).
 
 ## Track what happened
 

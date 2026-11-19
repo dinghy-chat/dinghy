@@ -279,7 +279,7 @@ const sendRoutes = refPaths("/send").map(({ path, params }) =>
     security: SESSION_OR_KEY,
     summary: "Run a live campaign for one person, from your code",
     description:
-      "It skips the audience and the trigger, because your code chose the person, and keeps the frequency and the visitor's opt-out. `data` fills `{{ data.<key> }}` in the text. A retry with the same `clientId`, and a send that the frequency keeps out, answer 200 with the message that is there.",
+      "It skips the audience and the trigger, because your code chose the person, and keeps the frequency. `data` fills `{{ data.<key> }}` in the text. A retry with the same `clientId`, and a send that the frequency keeps out, answer 200 with the message that is there.",
     request: { params, body: jsonBody(CampaignSendSchema) },
     responses: {
       ...KEY_LIMITED,
@@ -291,9 +291,7 @@ const sendRoutes = refPaths("/send").map(({ path, params }) =>
       ...MEMBER_WRITE_ERRORS,
       403: errorAnswer("blocked: the team blocked this visitor"),
       404: errorAnswer("not_found: no such campaign, or no visitor has this `id`"),
-      409: errorAnswer(
-        "campaign_not_live: the campaign is a draft, paused or ended. opted_out: the visitor turned off automatic messages",
-      ),
+      409: errorAnswer("campaign_not_live: the campaign is a draft, paused or ended"),
       429: errorAnswer(
         "too_many_requests: over the key's rate limit. too_many_waiting: the visitor has too many outbound messages waiting",
       ),

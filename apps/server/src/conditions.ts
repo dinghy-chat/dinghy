@@ -42,7 +42,6 @@ const FIELDS = {
   lastSeenAt: { kind: "time", sql: column("last_seen_at") },
   hasChatted: { kind: "boolean", sql: hasChatted },
   conversationCount: { kind: "number", sql: conversationCount },
-  optedOut: { kind: "boolean", sql: sql`(${column("opted_out_at")} is not null)` },
 } as const satisfies Record<string, { kind: string; sql: SQL }>;
 
 type FieldName = keyof typeof FIELDS;

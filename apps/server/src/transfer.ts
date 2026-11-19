@@ -168,8 +168,6 @@ const ExportFile = z.strictObject({
       locale: z.enum(LOCALES).nullable().default(null),
       // A file from before test visitors has none.
       isTest: z.boolean().default(false),
-      // A file from before campaigns has none: the visitor never turned automatic messages off.
-      optedOutAt: nullableDate.default(null),
       createdAt: date,
     }),
   ),
@@ -606,7 +604,6 @@ async function readWorkspace(
           timeZone: row.timeZone,
           locale: row.locale,
           isTest: row.isTest,
-          optedOutAt: isoOrNull(row.optedOutAt),
           createdAt: iso(row.createdAt),
         })),
         conversations: conversations.map((row) => ({
@@ -1013,7 +1010,6 @@ async function insertWorkspace(
         timeZone: row.timeZone,
         locale: row.locale,
         isTest: row.isTest,
-        optedOutAt: dateOrNull(row.optedOutAt),
         createdAt: new Date(row.createdAt),
       })),
     );

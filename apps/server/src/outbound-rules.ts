@@ -167,8 +167,6 @@ export async function cancelWhere(
 interface Situation {
   writable: boolean;
   blocked: boolean;
-  /** The visitor turned off automatic messages. */
-  optedOut: boolean;
   botsPaused: boolean;
   /** The key that sent it, or null for a member's. */
   key: KeyState | null;
@@ -203,7 +201,7 @@ type Message = Pick<
   "authorApiKeyId" | "campaignId" | "senderKind" | "ifConversationOpen" | "sendEmail"
 >;
 
-/** A message that no person wrote: a key's or a campaign's. The opt-out and the reply gate hold. */
+/** A message that no person wrote: a key's or a campaign's. The reply gate holds. */
 const isAutomatic = (message: Pick<Row, "authorApiKeyId" | "campaignId">) =>
   message.authorApiKeyId !== null || message.campaignId !== null;
 
@@ -227,7 +225,6 @@ function campaignVerdict(check: CampaignCheck): Verdict | null {
 export function decide(message: Message, state: Situation): Verdict {
   if (state.blocked) return { kind: "cancel", reason: "blocked" };
   if (state.unlessMatched) return { kind: "cancel", reason: "unless_matched" };
-  if (state.optedOut && isAutomatic(message)) return { kind: "cancel", reason: "opted_out" };
   const fromCampaign = state.campaign === null ? null : campaignVerdict(state.campaign);
   if (fromCampaign !== null) return fromCampaign;
   if (state.key?.revoked === true || !state.senderActive) {
@@ -260,21 +257,19 @@ export function decide(message: Message, state: Situation): Verdict {
 }
 
 /**
- * Whether the team blocked the visitor, and whether they turned off automatic messages. A visitor
- * that is gone counts as blocked.
+ * Whether the team blocked the visitor, and whether it is a test visitor. A visitor that is gone
+ * counts as blocked.
  */
 export async function visitorFlags(tx: Transaction, workspaceId: string, visitorId: string) {
   const [who] = await tx
     .select({
       blockedAt: visitor.blockedAt,
-      optedOutAt: visitor.optedOutAt,
       isTest: visitor.isTest,
     })
     .from(visitor)
     .where(and(eq(visitor.workspaceId, workspaceId), eq(visitor.id, visitorId)));
   return {
     blocked: who === undefined || who.blockedAt !== null,
-    optedOut: who?.optedOutAt != null,
     isTest: who?.isTest === true,
   };
 }
@@ -305,7 +300,7 @@ async function openConversation(tx: Transaction, workspaceId: string, visitorId:
   return open ?? null;
 }
 
-const NOBODY = { blocked: false, optedOut: false, isTest: false };
+const NOBODY = { blocked: false, isTest: false };
 
 /**
  * Reads what decides a message now. `atSendTime` also checks its `unless` and its campaign, as it
@@ -323,12 +318,11 @@ export async function situation(
   }: { botsPaused: boolean; atSendTime: boolean; found?: CampaignRow | undefined },
 ): Promise<Situation> {
   const { campaignId, visitorId } = draft;
-  const { blocked, optedOut, isTest } =
+  const { blocked, isTest } =
     visitorId === null ? NOBODY : await visitorFlags(tx, workspaceId, visitorId);
   return {
     writable: writable(await workspaceAccess(tx, workspaceId)),
     blocked,
-    optedOut,
     botsPaused,
     key:
       draft.authorApiKeyId === null ? null : await keyState(tx, workspaceId, draft.authorApiKeyId),

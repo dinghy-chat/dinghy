@@ -344,7 +344,6 @@ If your Dinghy serves images and files from a separate origin (`UPLOADS_ORIGIN`)
 - Leave an email, if they are not signed in and your Dinghy install has a mail server. They then get your reply by email if they left the page. With no mail server, the widget does not ask.
 - Write outside your [business hours](operator-guide.md#business-hours). The chat then says when your team is back, on the visitor's own clock, and asks for their email before the first message.
 - Continue from the reply email. Its link opens the conversation on a page of your Dinghy server, at `https://chat.example.com/chat/...`, where they can read and reply. The link works for 30 days, and each email has a new one. The email still has the link that stops these emails.
-- Turn off automatic messages, with **Turn off automatic messages** in the chat's menu, and turn them back on there. Off, no [campaign](campaigns.md#the-visitors-opt-out) or API key sends them an outbound message, and those that waited are cancelled. Your team can still write to them by hand.
 - Answer the reply email from their mail app, if your server has [replies by email](self-hosting.md#replies-by-email) on. The answer goes into the same conversation and reopens it if it was closed.
 
 ## What operators see about a visitor

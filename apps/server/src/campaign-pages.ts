@@ -127,8 +127,7 @@ export async function pageCampaigns(
   visitorId: string | null,
 ) {
   if (visitorId !== null) {
-    const { blocked, optedOut } = await visitorFlags(tx, workspaceId, visitorId);
-    if (blocked || optedOut) return [];
+    if ((await visitorFlags(tx, workspaceId, visitorId)).blocked) return [];
   }
   return (await lettingIn(tx, workspaceId, visitorId)).flatMap(({ id, definition }) =>
     definition.trigger.type === "page"
@@ -211,7 +210,7 @@ async function senderMaySend(tx: Transaction, workspaceId: string, { actor, as }
  * The visitor answers a page campaign's card: its message comes in as an outbound message they
  * read, in the language the card showed, so it goes in the conversation before the answer. The
  * show decided: the answer checks only what makes adding the card unsafe now, as the campaign's
- * end or pause, and the visitor's block or opt-out at its placement. Null when one stops it, and
+ * end or pause, and the visitor's block at its placement. Null when one stops it, and
  * the answer goes in alone.
  */
 export async function answerPageCampaign(

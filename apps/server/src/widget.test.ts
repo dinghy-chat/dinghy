@@ -283,7 +283,6 @@ describe("browser tokens", () => {
       lastReadSeq: "0",
       unread: 0,
       readCursor: expect.stringMatching(/^\d+\.0$/),
-      optedOut: false,
     });
   });
 

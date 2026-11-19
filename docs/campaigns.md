@@ -92,7 +92,7 @@ A campaign that never sent a message, such as a draft or a trial run, can be del
 
 ### match
 
-Dinghy checks a contact against a `match` campaign when a field its audience reads changes: through the [contact upsert](outbound-messages.md#contacts), a send's `visitor`, a host token, a [tracked event](#server-events), the visitor's message in the chat, or the [opt-out](#the-visitors-opt-out). A new contact is checked against every live campaign. Each campaign is indexed by the fields it reads, so a change checks only the campaigns that read a changed field, for that one contact.
+Dinghy checks a contact against a `match` campaign when a field its audience reads changes: through the [contact upsert](outbound-messages.md#contacts), a send's `visitor`, a host token, a [tracked event](#server-events), or the visitor's message in the chat. A new contact is checked against every live campaign. Each campaign is indexed by the fields it reads, so a change checks only the campaigns that read a changed field, for that one contact.
 
 A contact who already matched when the campaign went live gets the message at their next change, not at once. To reach everyone who matches now, use a `schedule` with `repeat: "once"`.
 
@@ -115,7 +115,7 @@ With `delay`, the message is `scheduled` until then. At its send time, Dinghy ch
 | `endDate` | Optional. The last day it runs |
 | `timeZone` | An IANA time zone for `time` and the dates. `UTC` by default |
 
-Each time comes, the worker starts a run over the audience. A run goes through the contacts in batches of 50, and each batch commits its messages with its place in the list. A contact gets at most one message per run, so a crash or a restart resumes the run with no double and no gap. A run leaves out test visitors, blocked visitors and visitors who turned off automatic messages. A paused campaign's run waits, as do the runs of a workspace that paused every campaign, and goes on from where it stopped after the resume. A time that came before the campaign went live, or while it was paused, is skipped.
+Each time comes, the worker starts a run over the audience. A run goes through the contacts in batches of 50, and each batch commits its messages with its place in the list. A contact gets at most one message per run, so a crash or a restart resumes the run with no double and no gap. A run leaves out test visitors and blocked visitors. A paused campaign's run waits, as do the runs of a workspace that paused every campaign, and goes on from where it stopped after the resume. A time that came before the campaign went live, or while it was paused, is skipped.
 
 ### event
 
@@ -252,16 +252,6 @@ A campaign's message does not wait for paused bots: it has its own pause. It sti
 - `paused: true` is **Pause all campaigns**: every campaign's messages wait, with `campaign_paused`, until it is `false` again. It is apart from pausing the bots.
 - `gapHours` is the fewest hours between two campaign messages to one visitor, from 0 to 720, 24 by default. 0 turns it off. Dinghy checks it when a campaign's message becomes `sent`, under the workspace's lock, so two campaigns cannot both pass. A message that comes too soon after another is cancelled with `frequency_capped`. It counts messages from every campaign, `api` ones too, and never outbound messages sent without a campaign.
 
-## The visitor's opt-out
-
-The chat's menu has **Turn off automatic messages**, and the same item turns them back on. Off, the visitor gets no message from a campaign or from an API key:
-
-- their waiting ones are cancelled, with `statusReason: "opted_out"`;
-- a campaign skips them, and its runs leave them out;
-- a send from a key or a campaign's send answers 409 `opted_out`.
-
-A member can still write to them by hand. The condition field `optedOut` is true for them, so an audience can leave them out, and the contacts filter can find them. The widget calls `POST /v1/widget/{key}/opt-out` with `{ "optedOut": true }` or `false`.
-
 ## Results
 
 `GET .../campaigns/{id}/results` answers the campaign's results per day in UTC and per variant, and `from` and `to`, such as `2026-12-01`, choose the days. Each campaign also answers `totals`, its results since it started, all variants together.
@@ -387,9 +377,9 @@ curl -X POST https://chat.example.com/v1/operator/workspaces/WORKSPACE_ID/campai
   -d '{ "clientId": "onboarding-done-42", "visitor": { "userId": "42" }, "data": { "plan": "pro" } }'
 ```
 
-A send runs a live campaign for one person, whatever its trigger. It skips the audience and the trigger, because your code chose the person, and keeps the frequency, the other rules and the visitor's opt-out. `data` fills `{{ data.<key> }}`: up to 20 keys of up to 40 letters, digits and `_`, each with text of up to 500 characters, a number or a yes or no.
+A send runs a live campaign for one person, whatever its trigger. It skips the audience and the trigger, because your code chose the person, and keeps the frequency and the other rules. `data` fills `{{ data.<key> }}`: up to 20 keys of up to 40 letters, digits and `_`, each with text of up to 500 characters, a number or a yes or no.
 
-It answers 201 with `{ outboundMessage }`. A retry with the same `clientId`, and a send that the frequency keeps out, answer 200 with the message that is there. The library makes a `clientId` when you give none. A send answers 409 `campaign_not_live` for a draft, a paused or an ended campaign, 409 `opted_out`, 403 `blocked`, 404 `not_found` for an unknown visitor `id`, and 429 `too_many_waiting`. Sends count in the key's 60 outbound messages a minute.
+It answers 201 with `{ outboundMessage }`. A retry with the same `clientId`, and a send that the frequency keeps out, answer 200 with the message that is there. The library makes a `clientId` when you give none. A send answers 409 `campaign_not_live` for a draft, a paused or an ended campaign, 403 `blocked`, 404 `not_found` for an unknown visitor `id`, and 429 `too_many_waiting`. Sends count in the key's 60 outbound messages a minute.
 
 ### MCP
 
@@ -401,7 +391,6 @@ Campaigns set these `statusReason` values on their messages, beside those of [It
 
 | `statusReason` | Waits or cancels | Why |
 |---|---|---|
-| `opted_out` | Cancels | The visitor turned off automatic messages |
 | `audience_unmatched` | Cancels | The contact no longer matched the audience at the send time |
 | `frequency_capped` | Cancels | Another campaign message reached the visitor within the workspace's gap |
 | `goal_reached` | Cancels | The contact reached the campaign's goal |
