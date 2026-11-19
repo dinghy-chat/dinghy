@@ -232,7 +232,7 @@ describe("chat migrate", () => {
     );
     await query(
       `insert into campaign (workspace_id, id, key, name, definition, author_operator_id)
-       values ('${workspace}', '${campaign}', 'old', 'Old', '${JSON.stringify({ audience })}', '${author}')`,
+       values ('${workspace}', '${campaign}', 'old', 'Old', '${JSON.stringify({ audience, rules: { goal: { ...rule("eq", false), within: "7d" } } })}', '${author}')`,
     );
     await query(
       `insert into campaign_trigger (workspace_id, campaign_id, field)
@@ -255,6 +255,7 @@ describe("chat migrate", () => {
               { any: [always, always, { field: "attributes.plan", op: "exists" }] },
             ],
           },
+          rules: { goal: { ...always, within: "7d" } },
         },
       },
     ]);

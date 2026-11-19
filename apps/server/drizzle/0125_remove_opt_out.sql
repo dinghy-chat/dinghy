@@ -4,10 +4,11 @@ ALTER TABLE "visitor" DROP COLUMN "opted_out_at";--> statement-breakpoint
 UPDATE "outbound_message" SET "status_reason" = 'cancelled_by_request' WHERE "status_reason" = 'opted_out';--> statement-breakpoint
 -- Nobody is opted out now, so a saved rule on optedOut is always true or always false. It becomes a
 -- rule with the same answer for everyone: signedIn exists is always true, signedIn missing never.
+-- Other keys, such as a goal's within, stay.
 CREATE FUNCTION pg_temp.without_opted_out(c jsonb) RETURNS jsonb LANGUAGE plpgsql IMMUTABLE AS $$
 BEGIN
   IF jsonb_typeof(c) = 'object' AND c->>'field' = 'optedOut' THEN
-    RETURN jsonb_build_object('field', 'signedIn', 'op', CASE
+    RETURN (c - 'value') || jsonb_build_object('field', 'signedIn', 'op', CASE
       WHEN c->>'op' = 'exists'
         OR (c->>'op' = 'eq' AND c->'value' = 'false'::jsonb)
         OR (c->>'op' = 'ne' AND c->'value' = 'true'::jsonb) THEN 'exists'
