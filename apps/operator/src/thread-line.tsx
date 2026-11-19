@@ -147,7 +147,7 @@ export function ThreadLine({
   flash: boolean;
   /** The receipt line under this reply, or null when it shows none. */
   receipt: Receipt | null;
-  /** The author and time line under this message, from groupMeta, or null when it shows none. */
+  /** The author and time line above the receipt, from groupMeta, or null when it shows none. */
   meta: string | null;
   onView(): void;
   onUploadError(): void;
@@ -170,8 +170,6 @@ export function ThreadLine({
           {menu}
         </div>
       )}
-      {meta !== null && <div className={line.fromVisitor ? "meta visitor" : "meta"}>{meta}</div>}
-      {receipt !== null && <ReceiptLine receipt={receipt} />}
       {line.button !== null && (
         <div className="meta visitor">{t("outboundChose", { label: line.button.label })}</div>
       )}
@@ -182,6 +180,8 @@ export function ThreadLine({
             : t("repliedByEmailFrom", { address: line.fromAddress })}
         </div>
       )}
+      {meta !== null && <div className={line.fromVisitor ? "meta visitor" : "meta"}>{meta}</div>}
+      {receipt !== null && <ReceiptLine receipt={receipt} />}
       {line.status === "sending" && <div className="state">{t("sending")}</div>}
       {line.status === "failed" && (
         <button type="button" className="retry" onClick={onRetry}>
@@ -202,9 +202,7 @@ function outboundAuthor(line: Line, meId: string): string {
       ? (line.authorName ?? t("apiKeyUnknown"))
       : replyAuthor(line, meId);
   const { sender } = line;
-  if (sender === null || (sender !== "team" && sender.operatorId === line.authorOperatorId)) {
-    return author;
-  }
+  if (sender === null) return author;
   const shown = sender === "team" ? t("outboundTeam") : (sender.name ?? t("aTeammate"));
   return t("outboundSentAs", { name: shown, by: author });
 }
@@ -305,9 +303,10 @@ export function groupMeta(lines: Line[], index: number, meId: string): string | 
   const after = lines[index + 1];
   // An edited reply always shows its time, with "edited" beside it.
   const edited = line.editedAt !== null && !line.deleted;
-  // An outbound message always says who sent it, as each one may show another name.
+  // An outbound message always says who sent it, and ends a run, as each may show another name.
   const ends =
     line.outboundId !== null ||
+    (after !== undefined && after.outboundId !== null) ||
     !sameSender(line, after) ||
     dayOf(after) !== dayOf(line) ||
     after?.status !== "sent";

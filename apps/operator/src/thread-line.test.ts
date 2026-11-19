@@ -31,6 +31,12 @@ describe("the line under an outbound message", () => {
     expect(groupMeta([outbound(null)], 0, "me")).toMatch(/^Welcome bot · /);
   });
 
+  test("ends the key's run of plain replies before it, so they keep their own line", () => {
+    const reply = { ...outbound(null), id: "m0", outboundId: null, sender: null } as Line;
+    const line = outbound({ operatorId: "julien", name: "Julien" });
+    expect(groupMeta([reply, line], 0, "me")).toMatch(/^Welcome bot \(automated reply\) · /);
+  });
+
   test("shows on each one, even in a run from the same key", () => {
     const lines = [outbound(null), { ...outbound(null), id: "m2" }];
     expect(groupMeta(lines, 0, "me")).not.toBeNull();
