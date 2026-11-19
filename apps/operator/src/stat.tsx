@@ -37,12 +37,23 @@ function tipAt(area: HTMLElement | null, target: EventTarget | null): Tip | null
 /**
  * An area whose parts carry data-value and data-label, or data-tip. The pointer over a part, or
  * the focus on it, shows them in a card above it, kept inside the area. Escape hides the card.
- * The words for screen readers are in each figure's caption, or in each button's label.
+ * The words for screen readers are in each figure's caption, or in each button's label. An inline
+ * area is a span, for a line of text such as a page's context.
  */
-export function Tipped({ className, children }: { className: string; children: ReactNode }) {
+export function Tipped({
+  className,
+  inline = false,
+  children,
+}: {
+  className: string;
+  inline?: boolean;
+  children: ReactNode;
+}) {
   const [tip, setTip] = useState<Tip | null>(null);
-  const card = useRef<HTMLDivElement>(null);
-  const box = useRef<HTMLDivElement>(null);
+  const card = useRef<HTMLSpanElement>(null);
+  // Either tag takes the ref, as it is both.
+  const box = useRef<HTMLDivElement & HTMLSpanElement>(null);
+  const Area = inline ? "span" : "div";
   useLayoutEffect(() => {
     const element = card.current;
     const width = box.current?.clientWidth ?? 0;
@@ -69,7 +80,7 @@ export function Tipped({ className, children }: { className: string; children: R
     };
   }, []);
   return (
-    <div
+    <Area
       ref={box}
       className={`tipped ${className}`}
       onPointerOver={(event) => setTip(tipAt(box.current, event.target))}
@@ -77,7 +88,7 @@ export function Tipped({ className, children }: { className: string; children: R
     >
       {children}
       {tip !== null && (
-        <div
+        <span
           ref={card}
           className={"text" in tip ? "chart-tip words" : "chart-tip"}
           style={{ top: tip.y }}
@@ -91,9 +102,9 @@ export function Tipped({ className, children }: { className: string; children: R
               <span>{tip.label}</span>
             </>
           )}
-        </div>
+        </span>
       )}
-    </div>
+    </Area>
   );
 }
 
@@ -197,28 +208,31 @@ export function ShareChange({
 const SPARK_WIDTH = 120;
 const SPARK_HEIGHT = 32;
 
+/** What a point of a Sparkline shows under the pointer: its number and its time. */
+export type SparkTip = { value: string; label: string };
+
 /**
  * The values as a small line over its own area, oldest first. With a label it is an image that
- * screen readers name; without, the numbers beside it say the same.
+ * screen readers name; without, the numbers beside it say the same. With tips, one per value,
+ * each point has a column that shows its tip in the Tipped card and a guide down to the floor.
  */
 export function Sparkline({
   values,
   className = "spark",
   label,
+  tips,
 }: {
   values: number[];
   className?: string;
-  label?: string;
+  label?: string | undefined;
+  tips?: SparkTip[] | undefined;
 }) {
   const most = Math.max(1, ...values);
   const last = Math.max(1, values.length - 1);
-  const line = `M${values
-    .map((value, index) => {
-      const x = (index / last) * SPARK_WIDTH;
-      const y = SPARK_HEIGHT - (value / most) * (SPARK_HEIGHT - 2);
-      return `${x},${y}`;
-    })
-    .join("L")}`;
+  const step = SPARK_WIDTH / last;
+  const xOf = (index: number) => index * step;
+  const yOf = (value: number) => SPARK_HEIGHT - (value / most) * (SPARK_HEIGHT - 2);
+  const line = `M${values.map((value, index) => `${xOf(index)},${yOf(value)}`).join("L")}`;
   return (
     <svg
       className={className}
@@ -233,6 +247,23 @@ export function Sparkline({
         d={`${line}L${SPARK_WIDTH},${SPARK_HEIGHT}L0,${SPARK_HEIGHT}Z`}
       />
       <path className="spark-line" d={line} />
+      {tips?.map((tip, index) => {
+        const x = xOf(index);
+        const left = Math.max(0, x - step / 2);
+        return (
+          // By position, as two minutes can read the same when the clocks go back.
+          // biome-ignore lint/suspicious/noArrayIndexKey: the points are positions on the line.
+          <g key={index} className="spark-point" data-value={tip.value} data-label={tip.label}>
+            <rect
+              x={left}
+              y={0}
+              width={Math.min(SPARK_WIDTH, x + step / 2) - left}
+              height={SPARK_HEIGHT}
+            />
+            <line x1={x} x2={x} y1={yOf(values[index] ?? 0)} y2={SPARK_HEIGHT} />
+          </g>
+        );
+      })}
     </svg>
   );
 }
