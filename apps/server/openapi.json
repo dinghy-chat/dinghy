@@ -66,6 +66,7 @@
                   "grant_limit",
                   "internal_error",
                   "invalid_client",
+                  "invalid_code",
                   "invalid_name",
                   "invalid_redirect_uri",
                   "invalid_reply_to",
@@ -7424,6 +7425,436 @@
           },
           "503": {
             "description": "busy: too many emails are being received, or the image queue is full. The message stays",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/native/email-code/request": {
+      "post": {
+        "summary": "Email a short sign-in code for the native operator app",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "maxLength": 254,
+                    "format": "email"
+                  }
+                },
+                "required": ["email"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The code lifetime and the time before this address may ask again. The answer does not reveal whether the account exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [true]
+                    },
+                    "expiresInSeconds": {
+                      "type": "number",
+                      "enum": [600]
+                    },
+                    "resendAfterSeconds": {
+                      "type": "number",
+                      "enum": [60]
+                    }
+                  },
+                  "required": ["ok", "expiresInSeconds", "resendAfterSeconds"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the email has the wrong shape. email_unavailable: this server cannot send email",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 8 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_attempts: this email or address asked too often",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/native/email-code/verify": {
+      "post": {
+        "summary": "Use an emailed code to start or finish native operator sign-in",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "maxLength": 254,
+                    "format": "email"
+                  },
+                  "code": {
+                    "type": "string",
+                    "pattern": "^\\d{6}$"
+                  }
+                },
+                "required": ["email", "code"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "A signed-in native session, or a short-lived challenge when two-step sign-in is on",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": ["signed_in"]
+                        },
+                        "session": {
+                          "type": "object",
+                          "properties": {
+                            "origin": {
+                              "type": "string"
+                            },
+                            "session": {
+                              "type": "string"
+                            },
+                            "operator": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "format": "uuid"
+                                },
+                                "name": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": ["id", "name"]
+                            },
+                            "workspace": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "format": "uuid"
+                                },
+                                "name": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": ["id", "name"]
+                            }
+                          },
+                          "required": ["origin", "session", "operator", "workspace"]
+                        }
+                      },
+                      "required": ["status", "session"]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": ["totp_required"]
+                        },
+                        "challenge": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9_-]{43}$"
+                        },
+                        "expiresInSeconds": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": ["status", "challenge", "expiresInSeconds"]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the email or code has the wrong shape. invalid_code: the code is wrong, expired or already used",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: every workspace waits for its first payment, so none can open",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "not_a_member: the operator is not in a workspace on this server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 8 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_attempts: the account reached its email-code attempt limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "check_unavailable: the server cannot enforce the email-code attempt limit right now",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/native/totp/verify": {
+      "post": {
+        "summary": "Finish native sign-in with an authenticator or recovery code",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "challenge": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{43}$"
+                  },
+                  "code": {
+                    "type": "string"
+                  }
+                },
+                "required": ["challenge", "code"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "A signed-in native session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": ["signed_in"]
+                    },
+                    "session": {
+                      "type": "object",
+                      "properties": {
+                        "origin": {
+                          "type": "string"
+                        },
+                        "session": {
+                          "type": "string"
+                        },
+                        "operator": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "name": {
+                              "type": "string"
+                            }
+                          },
+                          "required": ["id", "name"]
+                        },
+                        "workspace": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "name": {
+                              "type": "string"
+                            }
+                          },
+                          "required": ["id", "name"]
+                        }
+                      },
+                      "required": ["origin", "session", "operator", "workspace"]
+                    }
+                  },
+                  "required": ["status", "session"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the challenge or code has the wrong shape. invalid_code: the challenge or code is wrong, expired or already used",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: every workspace waits for its first payment, so none can open",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "not_a_member: the operator is not in a workspace on this server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 8 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_attempts: the account reached its two-step attempt limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "two_factor_unreadable: AUTH_SECRET changed, so the stored two-step secret cannot open",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "check_unavailable: the server cannot enforce the two-step attempt limit right now",
             "content": {
               "application/json": {
                 "schema": {

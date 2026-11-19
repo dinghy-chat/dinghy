@@ -26,14 +26,14 @@ import {
 } from "./errors.ts";
 import { emailAddressHash } from "./identity.ts";
 import { noAccountMail, signInMail } from "./letter.ts";
-import { createLinkLimit, tooManyAttempts } from "./login-limit.ts";
+import { createLinkLimit, createNativeEmailCodeLimit, tooManyAttempts } from "./login-limit.ts";
 import type { Mailer } from "./mailer.ts";
 import { WORKSPACE_PREFIX } from "./member.ts";
 import { countWaiting } from "./messages.ts";
 import { registerNativeAuthRoutes } from "./native-auth.ts";
 import type { ImageUrls } from "./public-images.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
-import { type TwoFactorState, twoFactorStateOf } from "./two-factor.ts";
+import { type TwoFactorCodeChecker, type TwoFactorState, twoFactorStateOf } from "./two-factor.ts";
 import { waitingRemoval } from "./two-factor-removal.ts";
 import {
   PUBLIC_IMAGE_MAX_BYTES,
@@ -199,6 +199,7 @@ interface OperatorOptions {
   contact: string | null;
   /** True when anyone can sign up here, as on the cloud. */
   signup: boolean;
+  twoFactorCodes: TwoFactorCodeChecker;
 }
 
 const LinkRequest = z.strictObject({ email: z.email().max(254) });
@@ -214,6 +215,9 @@ const AUTH_ROUTES = new Set([
   "POST /v1/auth/magic-link/verify",
   "POST /v1/auth/native/authorize",
   "POST /v1/auth/native/exchange",
+  "POST /v1/auth/native/email-code/request",
+  "POST /v1/auth/native/email-code/verify",
+  "POST /v1/auth/native/totp/verify",
 ]);
 
 export function registerOperatorRoutes(
@@ -228,11 +232,13 @@ export function registerOperatorRoutes(
     mailer,
     rateLimit,
     signup,
+    twoFactorCodes,
     valkey,
   }: OperatorOptions,
 ) {
   const publicOrigin = new URL(String(auth.options.baseURL)).origin;
   const links = createLinkLimit(valkey, logger);
+  const nativeEmailCodes = createNativeEmailCodeLimit(valkey, logger);
 
   /** Sends a link to an operator. On the cloud, any other email gets a note that points to signup. */
   const sendLink = async (email: string, ip: string) => {
@@ -407,7 +413,15 @@ export function registerOperatorRoutes(
     return c.json({ ok: true as const }, 200);
   });
 
-  registerNativeAuthRoutes(app, { auth, db, logger, rateLimit });
+  registerNativeAuthRoutes(app, {
+    auth,
+    db,
+    logger,
+    mailer,
+    nativeEmailCodes,
+    rateLimit,
+    twoFactorCodes,
+  });
 
   app.on(["GET", "POST"], "/v1/auth/*", (c) => auth.handler(c.req.raw));
 

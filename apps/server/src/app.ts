@@ -68,7 +68,11 @@ import { createTestVisitors, registerTestVisitorRoutes } from "./test-visitors.t
 import { MINUTE_MS } from "./time.ts";
 import { createTracking, registerTrackRoute } from "./track.ts";
 import { registerExportRoute } from "./transfer.ts";
-import { registerTwoFactorRoutes, type TwoFactorState } from "./two-factor.ts";
+import {
+  createTwoFactorCodeChecker,
+  registerTwoFactorRoutes,
+  type TwoFactorState,
+} from "./two-factor.ts";
 import { registerRemovalRoutes } from "./two-factor-removal.ts";
 import { registerUploadFiles, type Uploads } from "./uploads.ts";
 import {
@@ -435,6 +439,14 @@ export function createApp({
     }
   }
   if (auth !== undefined) {
+    const twoFactorCodes = createTwoFactorCodeChecker({
+      db,
+      live,
+      logger,
+      authSecret: auth.options.secret,
+      valkey,
+      mailer,
+    });
     registerOperatorRoutes(app, {
       auth,
       billing: cloud?.billing ?? false,
@@ -445,6 +457,7 @@ export function createApp({
       mailer,
       rateLimit,
       signup: cloud !== undefined,
+      twoFactorCodes,
       valkey,
     });
     registerTwoFactorRoutes(app, {
@@ -453,7 +466,7 @@ export function createApp({
       logger,
       // AUTH_SECRET itself. A fallback to a random secret would change the keys at each restart.
       authSecret: auth.options.secret,
-      valkey,
+      codeChecker: twoFactorCodes,
       mailer,
     });
     // Right after the session check, so every workspace route runs behind it, whatever its order.
