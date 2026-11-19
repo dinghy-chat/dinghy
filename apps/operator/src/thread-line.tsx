@@ -131,6 +131,7 @@ export function ThreadLine({
   editor,
   flash,
   receipt,
+  meta,
   onView,
   onUploadError,
   onRetry,
@@ -146,6 +147,8 @@ export function ThreadLine({
   flash: boolean;
   /** The receipt line under this reply, or null when it shows none. */
   receipt: Receipt | null;
+  /** The author and time line under this message, from groupMeta, or null when it shows none. */
+  meta: string | null;
   onView(): void;
   onUploadError(): void;
   onRetry(): void;
@@ -167,13 +170,8 @@ export function ThreadLine({
           {menu}
         </div>
       )}
+      {meta !== null && <div className={line.fromVisitor ? "meta visitor" : "meta"}>{meta}</div>}
       {receipt !== null && <ReceiptLine receipt={receipt} />}
-      {line.outboundId !== null && (
-        <div className="meta">
-          {line.authorApiKeyId !== null && <span className="chip">{t("outboundAutomatic")}</span>}
-          {outboundSender(line)}
-        </div>
-      )}
       {line.button !== null && (
         <div className="meta visitor">{t("outboundChose", { label: line.button.label })}</div>
       )}
@@ -195,14 +193,20 @@ export function ThreadLine({
 }
 
 /**
- * Who the visitor saw on a message that an outbound message became, and who sent it when that
- * differs: "Julien, via Welcome bot". The visitor sees only the first name.
+ * Who sent a message that an outbound message became. When the visitor saw another name, both
+ * show: "Sent as Julien by Welcome bot". A key's name has no "(automated reply)": nobody asked.
  */
-function outboundSender(line: Line): string {
-  const author = line.authorName ?? t("aTeammate");
-  if (line.sender === null) return author;
-  const shown = line.sender === "team" ? t("outboundTeam") : (line.sender.name ?? t("aTeammate"));
-  return t("outboundVia", { name: shown, via: author });
+function outboundAuthor(line: Line, meId: string): string {
+  const author =
+    line.authorApiKeyId !== null
+      ? (line.authorName ?? t("apiKeyUnknown"))
+      : replyAuthor(line, meId);
+  const { sender } = line;
+  if (sender === null || (sender !== "team" && sender.operatorId === line.authorOperatorId)) {
+    return author;
+  }
+  const shown = sender === "team" ? t("outboundTeam") : (sender.name ?? t("aTeammate"));
+  return t("outboundSentAs", { name: shown, by: author });
 }
 
 /** Someone closed or reopened the conversation. */
@@ -301,11 +305,16 @@ export function groupMeta(lines: Line[], index: number, meId: string): string | 
   const after = lines[index + 1];
   // An edited reply always shows its time, with "edited" beside it.
   const edited = line.editedAt !== null && !line.deleted;
-  const ends = !sameSender(line, after) || dayOf(after) !== dayOf(line) || after?.status !== "sent";
+  // An outbound message always says who sent it, as each one may show another name.
+  const ends =
+    line.outboundId !== null ||
+    !sameSender(line, after) ||
+    dayOf(after) !== dayOf(line) ||
+    after?.status !== "sent";
   if (!edited && !ends) return null;
   const at = line.createdAt === undefined ? null : clockTime(line.createdAt);
   const time = edited ? [at, t("messageEdited")].filter(Boolean).join(" · ") : at;
   if (line.fromVisitor) return time;
-  const who = replyAuthor(line, meId);
+  const who = line.outboundId === null ? replyAuthor(line, meId) : outboundAuthor(line, meId);
   return time === null ? who : `${who} · ${time}`;
 }

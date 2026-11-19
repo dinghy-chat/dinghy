@@ -168,6 +168,7 @@ const en = {
   outboundAutomatic: "Automatic",
   outboundTeam: "The team",
   outboundVia: "{name}, via {via}",
+  outboundSentAs: "Sent as {name} by {by}",
   outboundChose: "Chose {label}",
   outboundNone: "Nobody on the team has sent this person a message outside a chat.",
   outboundBodyGone: "Text removed after 30 days",
