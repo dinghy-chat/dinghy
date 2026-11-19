@@ -60,6 +60,9 @@ const config = loadConfig(process.env);
 const stopErrorReports = await startErrorReports(config, role, serverPackage.version);
 const logger = pino({ level: config.LOG_LEVEL });
 const stops: (() => Promise<unknown>)[] = [];
+let stopping = false;
+process.on("SIGTERM", () => void stop("SIGTERM"));
+process.on("SIGINT", () => void stop("SIGINT"));
 const pushKeys = pushKeysFromConfig(config);
 // Unset on a self-hosted install, which then never turns on the code in ee/.
 const cloud = cloudFromConfig(config);
@@ -227,7 +230,6 @@ function mailboxSweepFor(signals: Signals, valkey: Redis) {
   return { pool, run: mailboxSweep({ db, intake, domain, settings: shipmail, logger }) };
 }
 
-let stopping = false;
 async function stop(signal: string): Promise<void> {
   if (stopping) return;
   stopping = true;
@@ -244,6 +246,3 @@ async function stop(signal: string): Promise<void> {
   logger.info("stopped");
   process.exit(0);
 }
-
-process.on("SIGTERM", () => void stop("SIGTERM"));
-process.on("SIGINT", () => void stop("SIGINT"));
