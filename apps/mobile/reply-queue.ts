@@ -8,6 +8,11 @@ export interface PendingReply {
   conversationId: string;
   clientId: string;
   body: string;
+  replyToMessageId: string | null;
+}
+
+interface TableColumn {
+  name: string;
 }
 
 interface StoredDraft {
@@ -16,8 +21,8 @@ interface StoredDraft {
 
 interface QueueDatabase {
   execSync(sql: string): void;
-  runSync(sql: string, ...values: string[]): unknown;
-  getAllSync<T>(sql: string, ...values: string[]): T[];
+  runSync(sql: string, ...values: (string | null)[]): unknown;
+  getAllSync<T>(sql: string, ...values: (string | null)[]): T[];
 }
 
 const activeSends = new Map<string, Promise<void>>();
@@ -44,8 +49,13 @@ export function openReplyQueue(db: QueueDatabase, scope: ReplyScope, newId: () =
     account TEXT NOT NULL,
     conversationId TEXT NOT NULL,
     clientId TEXT NOT NULL UNIQUE,
-    body TEXT NOT NULL
+    body TEXT NOT NULL,
+    replyToMessageId TEXT
   )`);
+  const columns = db.getAllSync<TableColumn>("PRAGMA table_info(pending_reply)");
+  if (!columns.some((column) => column.name === "replyToMessageId")) {
+    db.execSync("ALTER TABLE pending_reply ADD COLUMN replyToMessageId TEXT");
+  }
   db.execSync(`CREATE TABLE IF NOT EXISTS public_reply_draft (
     account TEXT NOT NULL,
     conversationId TEXT NOT NULL,
@@ -53,7 +63,8 @@ export function openReplyQueue(db: QueueDatabase, scope: ReplyScope, newId: () =
     PRIMARY KEY (account, conversationId)
   )`);
   const account = JSON.stringify([scope.origin, scope.workspaceId, scope.operatorId]);
-  const select = "SELECT conversationId, clientId, body FROM pending_reply WHERE account = ?";
+  const select =
+    "SELECT conversationId, clientId, body, replyToMessageId FROM pending_reply WHERE account = ?";
   return {
     list(conversationId?: string) {
       return conversationId === undefined
@@ -90,15 +101,18 @@ export function openReplyQueue(db: QueueDatabase, scope: ReplyScope, newId: () =
         body,
       );
     },
-    enqueue(conversationId: string, body: string) {
+    enqueue(conversationId: string, body: string, replyToMessageId: string | null = null) {
       const clientId = newId();
       runTransaction(db, () => {
         db.runSync(
-          "INSERT INTO pending_reply (account, conversationId, clientId, body) VALUES (?, ?, ?, ?)",
+          `INSERT INTO pending_reply
+             (account, conversationId, clientId, body, replyToMessageId)
+           VALUES (?, ?, ?, ?, ?)`,
           account,
           conversationId,
           clientId,
           body,
+          replyToMessageId,
         );
         db.runSync(
           "DELETE FROM public_reply_draft WHERE account = ? AND conversationId = ?",
@@ -106,7 +120,7 @@ export function openReplyQueue(db: QueueDatabase, scope: ReplyScope, newId: () =
           conversationId,
         );
       });
-      return { conversationId, clientId, body };
+      return { conversationId, clientId, body, replyToMessageId };
     },
     discard(reply: PendingReply) {
       if (activeSends.has(JSON.stringify([account, reply.clientId]))) return false;

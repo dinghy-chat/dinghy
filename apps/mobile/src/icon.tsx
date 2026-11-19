@@ -2,6 +2,8 @@ import Svg, { Path } from "react-native-svg";
 
 const paths = {
   server: "M4 4h16v6H4z M4 14h16v6H4z M7 7h1 M7 17h1",
+  profileTab:
+    "M22 12a10 10 0 1 1-20 0 10 10 0 1 1 20 0z M15.2 9a3.2 3.2 0 1 1-6.4 0 3.2 3.2 0 1 1 6.4 0z M5.8 19.5a6.4 6.4 0 0 1 12.4 0",
   back: "m14 5-7 7 7 7",
   androidBack: "M20 12H4m7-7-7 7 7 7",
   next: "m9 6 6 6-6 6",
@@ -40,19 +42,26 @@ const paths = {
 export function Icon({
   name,
   size = 20,
+  filled = false,
   color,
 }: {
   name: keyof typeof paths;
   size?: number;
+  filled?: boolean;
   color: string;
 }) {
   return (
     <Svg width={size} height={size} viewBox="0 0 24 24" accessible={false}>
       <Path
-        d={paths[name]}
-        fill="none"
+        d={
+          filled && name === "inbox"
+            ? "M5 4h14l3 10v6H2v-6z M4.7 13H9l1.5 3h3l1.5-3h4.3L17.5 6h-11z"
+            : paths[name]
+        }
+        fill={filled && name === "inbox" ? color : "none"}
+        fillRule="evenodd"
         stroke={color}
-        strokeWidth={name === "more" || name === "vertical" ? 3.2 : 1.7}
+        strokeWidth={name === "more" || name === "vertical" ? 3.2 : filled ? 2.2 : 1.7}
         strokeLinecap="round"
         strokeLinejoin="round"
       />

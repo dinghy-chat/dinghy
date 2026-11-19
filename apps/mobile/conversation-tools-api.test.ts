@@ -25,6 +25,21 @@ beforeEach(() => {
 });
 
 describe("mobile conversation tools API", () => {
+  test("resolves profile pictures and workspace logos on self-hosted instances", async () => {
+    mockedFetch.mockResolvedValue(
+      jsonResponse({
+        pictureUrl: "/v1/pictures/ana",
+        workspaces: [{ name: "Harbor", logoUrl: "/v1/widget/test/logo" }, { name: "Second" }],
+      }),
+    );
+    const account = await new DinghyApi(session).me();
+    expect(account.pictureUrl).toBe("https://chat.example.com/v1/pictures/ana");
+    expect(account.workspaces.map((w) => w.logoUrl)).toEqual([
+      "https://chat.example.com/v1/widget/test/logo",
+      null,
+    ]);
+  });
+
   test("lists saved replies through the native operator session", async () => {
     const savedReply = {
       id: "reply-1",
@@ -103,6 +118,67 @@ describe("mobile conversation tools API", () => {
           Cookie: session.session,
           Origin: session.origin,
         }),
+      }),
+    );
+  });
+
+  test("sends a reply with its quoted message relation", async () => {
+    mockedFetch.mockResolvedValue(jsonResponse({ id: "message-2", kind: "text" }, 201));
+
+    await new DinghyApi(session).reply(
+      "conversation-1",
+      "reply-client-1",
+      "The annual plan is available.",
+      "message-1",
+    );
+
+    expect(mockedFetch).toHaveBeenCalledWith(
+      "https://chat.example.com/v1/operator/workspaces/workspace-1/conversations/conversation-1/messages",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({
+          clientId: "reply-client-1",
+          body: "The annual plan is available.",
+          replyToMessageId: "message-1",
+          note: false,
+          mentions: [],
+        }),
+      }),
+    );
+  });
+
+  test("edits, deletes and reads receipt details through the message routes", async () => {
+    mockedFetch
+      .mockResolvedValueOnce(jsonResponse({ id: "message-1", body: "Updated" }))
+      .mockResolvedValueOnce(jsonResponse({ ok: true }))
+      .mockResolvedValueOnce(jsonResponse({ readAt: null, emailedAt: null }));
+    const api = new DinghyApi(session);
+
+    await api.editMessage("conversation-1", "message-1", "Updated");
+    await api.deleteMessage("conversation-1", "message-1");
+    await api.messageReceipt("conversation-1", "message-1");
+
+    const base =
+      "https://chat.example.com/v1/operator/workspaces/workspace-1/conversations/conversation-1/messages/message-1";
+    expect(mockedFetch).toHaveBeenNthCalledWith(
+      1,
+      base,
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({ body: "Updated", mentions: [] }),
+      }),
+    );
+    expect(mockedFetch).toHaveBeenNthCalledWith(
+      2,
+      base,
+      expect.objectContaining({ method: "DELETE" }),
+    );
+    expect(mockedFetch).toHaveBeenNthCalledWith(
+      3,
+      `${base}/receipt`,
+      expect.objectContaining({
+        credentials: "omit",
+        headers: expect.objectContaining({ Cookie: session.session }),
       }),
     );
   });

@@ -13,7 +13,8 @@ function queue(db: DatabaseSync, account = scope) {
     {
       execSync: (sql) => db.exec(sql),
       runSync: (sql, ...args) => db.prepare(sql).run(...args),
-      getAllSync: <T>(sql: string, ...args: string[]) => db.prepare(sql).all(...args) as T[],
+      getAllSync: <T>(sql: string, ...args: (string | null)[]) =>
+        db.prepare(sql).all(...args) as T[],
     },
     account,
     randomUUID,
@@ -27,7 +28,7 @@ test("a lost acknowledgement and app restart retry the stored reply with its ori
   try {
     const outbox = queue(db);
     outbox.saveDraft("conversation", "Your invoice is ready.");
-    const reply = outbox.enqueue("conversation", "Your invoice is ready.");
+    const reply = outbox.enqueue("conversation", "Your invoice is ready.", "message-to-quote");
     const committed = new Set<string>();
     await expect(
       outbox.deliver(reply, async (record) => {
@@ -39,6 +40,7 @@ test("a lost acknowledgement and app restart retry the stored reply with its ori
     db = new DatabaseSync(path);
     const restored = queue(db);
     expect(restored.list()).toEqual([reply]);
+    expect(reply.replyToMessageId).toBe("message-to-quote");
     expect(restored.getDraft("conversation")).toBe("");
     const post = vi.fn(async (record: typeof reply) => {
       committed.add(record.clientId);
@@ -180,6 +182,34 @@ test("a failed draft update keeps the last durable text", () => {
       "simulated storage failure",
     );
     expect(outbox.getDraft("conversation")).toBe("Last durable text");
+  } finally {
+    db.close();
+  }
+});
+
+test("an existing outbox adds the reply relation without losing queued messages", () => {
+  const db = new DatabaseSync(":memory:");
+  try {
+    db.exec(`CREATE TABLE pending_reply (
+      sequence INTEGER PRIMARY KEY,
+      account TEXT NOT NULL,
+      conversationId TEXT NOT NULL,
+      clientId TEXT NOT NULL UNIQUE,
+      body TEXT NOT NULL
+    )`);
+    const account = JSON.stringify([scope.origin, scope.workspaceId, scope.operatorId]);
+    db.prepare(
+      "INSERT INTO pending_reply (account, conversationId, clientId, body) VALUES (?, ?, ?, ?)",
+    ).run(account, "conversation", "old-client", "Already queued");
+
+    expect(queue(db).list()).toEqual([
+      {
+        conversationId: "conversation",
+        clientId: "old-client",
+        body: "Already queued",
+        replyToMessageId: null,
+      },
+    ]);
   } finally {
     db.close();
   }

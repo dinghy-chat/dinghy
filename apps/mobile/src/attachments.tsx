@@ -1,11 +1,12 @@
 import { randomUUID } from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
 import { type ReactNode, useState } from "react";
-import { Image, Linking, Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { Image, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { t } from "../../operator/src/text.ts";
 import { type DinghyApi, MAX_IMAGE_BYTES } from "./api";
 import { fonts } from "./fonts";
 import { Icon } from "./icon";
+import { Sheet } from "./sheet";
 import type { Palette } from "./theme";
 import type { Message, MessageAttachment, PhotoUpload } from "./types";
 
@@ -38,6 +39,7 @@ export function PhotoComposer({
   api,
   bottomInset,
   conversationId,
+  replyToMessageId,
   trigger,
   onError,
   onSent,
@@ -46,6 +48,7 @@ export function PhotoComposer({
   api: DinghyApi;
   bottomInset: number;
   conversationId: string;
+  replyToMessageId?: string | undefined;
   trigger(onPick: () => void): ReactNode;
   onError(error: unknown): void;
   onSent(message: Message): void | Promise<void>;
@@ -100,7 +103,7 @@ export function PhotoComposer({
     setSending(true);
     setSendFailed(false);
     try {
-      const message = await api.uploadPhoto(conversationId, clientId, photo);
+      const message = await api.uploadPhoto(conversationId, clientId, photo, replyToMessageId);
       await onSent(message);
       close();
     } catch (failure) {
@@ -114,109 +117,73 @@ export function PhotoComposer({
   return (
     <>
       {trigger(() => void pick())}
-      <Modal
-        animationType="slide"
-        onRequestClose={close}
-        presentationStyle="overFullScreen"
-        transparent
+      <Sheet
         visible={photo !== null}
+        onClose={close}
+        bottomInset={bottomInset}
+        palette={palette}
+        title={t("mobilePhotoPreview")}
       >
-        <View style={attachmentStyles.sheetRoot}>
-          <Pressable
-            accessibilityLabel={t("mobileDismiss")}
-            disabled={sending}
-            onPress={close}
-            style={[attachmentStyles.backdrop, { backgroundColor: palette.scrim }]}
-          />
-          {photo && (
-            <View
-              accessibilityViewIsModal
-              style={[
-                attachmentStyles.sheet,
-                {
-                  backgroundColor: palette.sheet,
-                  paddingBottom: Math.max(bottomInset, 12),
-                },
-              ]}
-            >
-              <View style={attachmentStyles.sheetHead}>
-                <Text
-                  style={[
-                    attachmentStyles.sheetTitle,
-                    { color: palette.ink, fontFamily: fonts.display },
-                  ]}
-                >
-                  {t("mobilePhotoPreview")}
-                </Text>
-                <Pressable
-                  accessibilityLabel={t("mobileDismiss")}
-                  accessibilityRole="button"
-                  disabled={sending}
-                  onPress={close}
-                  style={attachmentStyles.closeButton}
-                >
-                  <Icon color={palette.ink} name="x" size={20} />
-                </Pressable>
-              </View>
-              <Image
-                accessibilityLabel={t("imageAlt")}
-                resizeMode="contain"
-                source={{ uri: photo.uri }}
-                style={[attachmentStyles.pickedImage, { backgroundColor: palette.wash }]}
-              />
-              <View style={attachmentStyles.photoMeta}>
-                <Text
-                  numberOfLines={1}
-                  style={[
-                    attachmentStyles.photoName,
-                    { color: palette.ink, fontFamily: fonts.medium },
-                  ]}
-                >
-                  {photo.name}
-                </Text>
-                {sizeLabel(photo.size) && (
-                  <Text style={{ color: palette.sub, fontFamily: fonts.body, fontSize: 12 }}>
-                    {sizeLabel(photo.size)}
-                  </Text>
-                )}
-              </View>
-              {sendFailed && (
-                <Text
-                  accessibilityRole="alert"
-                  style={[
-                    attachmentStyles.sendError,
-                    { color: palette.sub, fontFamily: fonts.body },
-                  ]}
-                >
-                  {t("mobilePhotoSendFailed")}
-                </Text>
-              )}
-              <Pressable
-                accessibilityRole="button"
-                disabled={sending}
-                onPress={() => void send()}
-                style={({ pressed }) => [
-                  attachmentStyles.sendButton,
-                  { backgroundColor: palette.blue, opacity: sending ? 0.5 : pressed ? 0.72 : 1 },
+        {photo && (
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={attachmentStyles.photoSheet}
+          >
+            <Image
+              accessibilityLabel={t("imageAlt")}
+              resizeMode="contain"
+              source={{ uri: photo.uri }}
+              style={[attachmentStyles.pickedImage, { backgroundColor: palette.wash }]}
+            />
+            <View style={attachmentStyles.photoMeta}>
+              <Text
+                numberOfLines={1}
+                style={[
+                  attachmentStyles.photoName,
+                  { color: palette.ink, fontFamily: fonts.medium },
                 ]}
               >
-                <Text
-                  style={[
-                    attachmentStyles.sendText,
-                    { color: palette.onBlue, fontFamily: fonts.semibold },
-                  ]}
-                >
-                  {sending
-                    ? t("mobileSendingPhoto")
-                    : sendFailed
-                      ? t("mobileRetryPhoto")
-                      : t("mobileSendPhoto")}
+                {photo.name}
+              </Text>
+              {sizeLabel(photo.size) && (
+                <Text style={{ color: palette.sub, fontFamily: fonts.body, fontSize: 12 }}>
+                  {sizeLabel(photo.size)}
                 </Text>
-              </Pressable>
+              )}
             </View>
-          )}
-        </View>
-      </Modal>
+            {sendFailed && (
+              <Text
+                accessibilityRole="alert"
+                style={[attachmentStyles.sendError, { color: palette.sub, fontFamily: fonts.body }]}
+              >
+                {t("mobilePhotoSendFailed")}
+              </Text>
+            )}
+            <Pressable
+              accessibilityRole="button"
+              disabled={sending}
+              onPress={() => void send()}
+              style={({ pressed }) => [
+                attachmentStyles.sendButton,
+                { backgroundColor: palette.blue, opacity: sending ? 0.5 : pressed ? 0.72 : 1 },
+              ]}
+            >
+              <Text
+                style={[
+                  attachmentStyles.sendText,
+                  { color: palette.onBlue, fontFamily: fonts.semibold },
+                ]}
+              >
+                {sending
+                  ? t("mobileSendingPhoto")
+                  : sendFailed
+                    ? t("mobileRetryPhoto")
+                    : t("mobileSendPhoto")}
+              </Text>
+            </Pressable>
+          </ScrollView>
+        )}
+      </Sheet>
     </>
   );
 }
@@ -356,30 +323,7 @@ export function MessageAttachmentView({
 }
 
 const attachmentStyles = StyleSheet.create({
-  sheetRoot: { flex: 1, justifyContent: "flex-end" },
-  backdrop: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    backgroundColor: "rgba(8, 28, 48, 0.42)",
-  },
-  sheet: {
-    maxHeight: "88%",
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    paddingHorizontal: 18,
-    paddingTop: 8,
-  },
-  sheetHead: {
-    minHeight: 52,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  sheetTitle: { flex: 1, fontSize: 24, lineHeight: 29, letterSpacing: -0.6 },
-  closeButton: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
+  photoSheet: { paddingHorizontal: 20, paddingBottom: 8 },
   pickedImage: { width: "100%", height: 330, borderRadius: 15 },
   photoMeta: { flexDirection: "row", alignItems: "center", gap: 10, paddingVertical: 11 },
   photoName: { flex: 1, fontSize: 13 },

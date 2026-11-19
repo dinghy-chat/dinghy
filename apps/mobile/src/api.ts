@@ -4,6 +4,8 @@ import { t } from "../../operator/src/text.ts";
 import type {
   AlertSettings,
   Conversation,
+  Label,
+  LabelColor,
   Me,
   Member,
   Message,
@@ -16,6 +18,7 @@ import type {
 
 const REQUEST_TIMEOUT_MS = 30_000;
 const UPLOAD_TIMEOUT_MS = 5 * 60_000;
+export const MAX_PROFILE_IMAGE_BYTES = 2 * 1024 * 1024;
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
 
 export class ApiError extends Error {
@@ -88,8 +91,47 @@ export class DinghyApi {
     return `/v1/operator/workspaces/${this.auth.workspace.id}${path}`;
   }
 
-  me(): Promise<Me> {
-    return this.call("/v1/operator/me");
+  private pictureUrl(value: string | null | undefined): string | null {
+    if (!value) return null;
+    try {
+      const url = new URL(value, this.auth.origin);
+      return url.protocol === "https:" || url.protocol === "http:" ? url.href : null;
+    } catch {
+      return null;
+    }
+  }
+
+  async me(): Promise<Me> {
+    const account = await this.call<Me>("/v1/operator/me");
+    return {
+      ...account,
+      pictureUrl: this.pictureUrl(account.pictureUrl),
+      workspaces: account.workspaces.map((workspace) => ({
+        ...workspace,
+        logoUrl: this.pictureUrl(workspace.logoUrl),
+      })),
+    };
+  }
+
+  updateName(name: string): Promise<unknown> {
+    return this.call("/v1/auth/update-user", { method: "POST", body: JSON.stringify({ name }) });
+  }
+
+  async updatePicture(photo: PhotoUpload): Promise<{ pictureUrl: string | null }> {
+    const local = await fetch(photo.uri);
+    if (!local.ok) throw new Error(t("mobilePhotoReadFailed"));
+    const body = await local.arrayBuffer();
+    if (body.byteLength > MAX_PROFILE_IMAGE_BYTES) throw new Error(t("pictureTooLarge"));
+    const result = await this.call<{ pictureUrl: string }>(
+      "/v1/operator/me/picture",
+      { method: "PUT", headers: { "Content-Type": photo.mimeType }, body },
+      UPLOAD_TIMEOUT_MS,
+    );
+    return { pictureUrl: new URL(result.pictureUrl, this.auth.origin).href };
+  }
+
+  removePicture(): Promise<{ pictureUrl: null }> {
+    return this.call("/v1/operator/me/picture", { method: "DELETE" });
   }
 
   setAway(away: boolean): Promise<{ away: boolean }> {
@@ -155,10 +197,15 @@ export class DinghyApi {
     };
   }
 
-  reply(conversationId: string, clientId: string, body: string): Promise<Message> {
+  reply(
+    conversationId: string,
+    clientId: string,
+    body: string,
+    replyToMessageId?: string,
+  ): Promise<Message> {
     return this.call(this.workspace(`/conversations/${conversationId}/messages`), {
       method: "POST",
-      body: JSON.stringify({ clientId, body, note: false, mentions: [] }),
+      body: JSON.stringify({ clientId, body, replyToMessageId, note: false, mentions: [] }),
     });
   }
 
@@ -166,6 +213,7 @@ export class DinghyApi {
     conversationId: string,
     clientId: string,
     photo: PhotoUpload,
+    replyToMessageId?: string,
   ): Promise<Message> {
     const local = await fetch(photo.uri);
     if (!local.ok) throw new Error(t("mobilePhotoReadFailed"));
@@ -173,7 +221,10 @@ export class DinghyApi {
     if (body.byteLength > MAX_IMAGE_BYTES) throw new Error(t("imageTooLarge"));
     return this.call(
       this.workspace(
-        `/conversations/${conversationId}/uploads?clientId=${encodeURIComponent(clientId)}`,
+        `/conversations/${conversationId}/uploads?${new URLSearchParams({
+          clientId,
+          ...(replyToMessageId === undefined ? {} : { replyToMessageId }),
+        })}`,
       ),
       { method: "POST", headers: { "Content-Type": photo.mimeType }, body },
       UPLOAD_TIMEOUT_MS,
@@ -187,8 +238,61 @@ export class DinghyApi {
     });
   }
 
+  editMessage(
+    conversationId: string,
+    messageId: string,
+    body: string,
+    mentions: string[] = [],
+  ): Promise<Message> {
+    return this.call(this.workspace(`/conversations/${conversationId}/messages/${messageId}`), {
+      method: "PATCH",
+      body: JSON.stringify({ body, mentions }),
+    });
+  }
+
+  deleteMessage(conversationId: string, messageId: string): Promise<{ ok: true }> {
+    return this.call(this.workspace(`/conversations/${conversationId}/messages/${messageId}`), {
+      method: "DELETE",
+    });
+  }
+
+  messageReceipt(
+    conversationId: string,
+    messageId: string,
+  ): Promise<{ readAt: string | null; emailedAt: string | null }> {
+    return this.call(
+      this.workspace(`/conversations/${conversationId}/messages/${messageId}/receipt`),
+    );
+  }
+
+  messageLink(conversationId: string, messageId: string): string {
+    const url = new URL("/", this.auth.origin);
+    url.searchParams.set("workspace", this.auth.workspace.id);
+    url.searchParams.set("conversation", conversationId);
+    url.hash = `message-${messageId}`;
+    return url.href;
+  }
+
   savedReplies(): Promise<{ savedReplies: SavedReply[] }> {
     return this.call(this.workspace("/saved-replies"));
+  }
+
+  addSavedReply(reply: { shortcut: string; body: string }): Promise<SavedReply> {
+    return this.call(this.workspace("/saved-replies"), {
+      method: "POST",
+      body: JSON.stringify(reply),
+    });
+  }
+
+  changeSavedReply(id: string, change: { shortcut: string; body: string }): Promise<SavedReply> {
+    return this.call(this.workspace(`/saved-replies/${id}`), {
+      method: "PATCH",
+      body: JSON.stringify(change),
+    });
+  }
+
+  deleteSavedReply(id: string): Promise<{ ok: true }> {
+    return this.call(this.workspace(`/saved-replies/${id}`), { method: "DELETE" });
   }
 
   contact(visitorId: string): Promise<components["schemas"]["ContactDetail"]> {
@@ -216,12 +320,58 @@ export class DinghyApi {
     });
   }
 
-  members(): Promise<{ members: Member[] }> {
-    return this.call(this.workspace("/members"));
+  async members(): Promise<{ members: Member[] }> {
+    const team = await this.call<{ members: Member[] }>(this.workspace("/members"));
+    return {
+      members: team.members.map((member) => ({
+        ...member,
+        pictureUrl: this.pictureUrl(member.pictureUrl),
+      })),
+    };
+  }
+
+  renameWorkspace(name: string): Promise<{ name: string }> {
+    return this.call(this.workspace(""), {
+      method: "PATCH",
+      body: JSON.stringify({ name }),
+    });
   }
 
   alerts(): Promise<AlertSettings> {
     return this.call(this.workspace("/alerts"));
+  }
+
+  setAlerts(email: boolean): Promise<AlertSettings> {
+    return this.call(this.workspace("/alerts"), {
+      method: "PATCH",
+      body: JSON.stringify({ email }),
+    });
+  }
+
+  labels(): Promise<{ labels: Label[] }> {
+    return this.call(this.workspace("/labels"));
+  }
+
+  addLabel(input: { name: string; color: LabelColor }): Promise<Label> {
+    return this.call(this.workspace("/labels"), {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+  }
+
+  changeLabel(id: string, input: { name: string; color: LabelColor }): Promise<Label> {
+    return this.call(this.workspace(`/labels/${id}`), {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    });
+  }
+
+  deleteLabel(id: string): Promise<{ ok: true }> {
+    return this.call(this.workspace(`/labels/${id}`), { method: "DELETE" });
+  }
+
+  installSnippet(): Promise<components["schemas"]["InstallSnippet"]> {
+    return this.call(this.workspace("/install/snippet?framework=html"));
   }
 
   registerPush(provider: PushProvider, token: string): Promise<{ ok: true }> {

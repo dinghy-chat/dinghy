@@ -1,10 +1,9 @@
-import type { ReactNode } from "react";
-import { useEffect, useRef, useState } from "react";
+import { type ComponentRef, useEffect, useRef, useState } from "react";
 import {
+  Alert,
   FlatList,
   Keyboard,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   Pressable,
   RefreshControl,
@@ -19,59 +18,19 @@ import { t } from "../../operator/src/text.ts";
 import { Harbor } from "../Harbor";
 import type { PendingReply } from "../outbox";
 import type { DinghyApi } from "./api";
-import { MessageAttachmentView } from "./attachments";
 import { Avatar, readableError, SheetCloseButton, visitorName } from "./common";
 import { ConversationTools } from "./composer-tools";
 import { fonts } from "./fonts";
 import { Icon } from "./icon";
+import { shownReceipts } from "./message-state";
+import { Sheet } from "./sheet";
 import type { Palette } from "./theme";
-import type { Conversation, Member, Message, Thread } from "./types";
-
-function SheetFrame({
-  bottomInset,
-  children,
-  onClose,
-  palette,
-  visible,
-}: {
-  bottomInset: number;
-  children: ReactNode;
-  onClose(): void;
-  palette: Palette;
-  visible: boolean;
-}) {
-  return (
-    <Modal
-      animationType="slide"
-      onRequestClose={onClose}
-      presentationStyle="overFullScreen"
-      transparent
-      visible={visible}
-    >
-      <View style={screenStyles.modalRoot}>
-        <Pressable
-          accessibilityLabel={t("mobileDismiss")}
-          onPress={onClose}
-          style={[screenStyles.modalBackdrop, { backgroundColor: palette.scrim }]}
-        />
-        <View
-          accessibilityViewIsModal
-          style={[
-            screenStyles.sheet,
-            { backgroundColor: palette.sheet, paddingBottom: Math.max(bottomInset, 12) },
-          ]}
-        >
-          {children}
-        </View>
-      </View>
-    </Modal>
-  );
-}
+import { MessageQuote, ThreadMessage } from "./thread-message";
+import type { Conversation, Member, Message, Thread, Workspace } from "./types";
 
 function SheetTools({ onClose, palette }: { onClose(): void; palette: Palette }) {
   return (
     <View style={screenStyles.sheetTools}>
-      <View style={[screenStyles.sheetGrabber, { backgroundColor: palette.sub }]} />
       <SheetCloseButton label={t("mobileDismiss")} onPress={onClose} palette={palette} />
     </View>
   );
@@ -158,9 +117,9 @@ function VisitorDetailsSheet({
       ["string", "number", "boolean"].includes(typeof value),
   );
   return (
-    <SheetFrame bottomInset={bottomInset} onClose={onClose} palette={palette} visible={visible}>
+    <Sheet bottomInset={bottomInset} onClose={onClose} palette={palette} visible={visible}>
       <View style={screenStyles.visitorSky}>
-        <Harbor animated={false} night={isNight} />
+        <Harbor night={isNight} variant="banner" />
         <SheetTools onClose={onClose} palette={palette} />
       </View>
       <View style={screenStyles.visitorTop}>
@@ -246,7 +205,7 @@ function VisitorDetailsSheet({
         )}
         <View style={screenStyles.detailsBottomSpace} />
       </ScrollView>
-    </SheetFrame>
+    </Sheet>
   );
 }
 
@@ -280,10 +239,7 @@ function HandoffSheet({
   if (!visible) return null;
   const selectedMember = members.find((member) => member.id === selectedId);
   return (
-    <SheetFrame bottomInset={bottomInset} onClose={onClose} palette={palette} visible={visible}>
-      <View style={screenStyles.sheetGrabberOnly}>
-        <View style={[screenStyles.sheetGrabber, { backgroundColor: palette.sub }]} />
-      </View>
+    <Sheet bottomInset={bottomInset} onClose={onClose} palette={palette} visible={visible}>
       <View style={screenStyles.assignHead}>
         <View style={screenStyles.assignTitleRow}>
           <Text
@@ -387,68 +343,7 @@ function HandoffSheet({
           </Text>
         </Pressable>
       </View>
-    </SheetFrame>
-  );
-}
-
-function MessageBubble({
-  message,
-  onAttachmentError,
-  palette,
-}: {
-  message: Message;
-  onAttachmentError(): void | Promise<void>;
-  palette: Palette;
-}) {
-  if (message.kind === "closed" || message.kind === "reopened") {
-    return (
-      <Text style={[screenStyles.statusMessage, { color: palette.sub, fontFamily: fonts.body }]}>
-        {message.kind === "closed" ? t("closedPlain") : t("reopenedPlain")}
-      </Text>
-    );
-  }
-  if (message.kind === "note") {
-    return (
-      <View style={[screenStyles.note, { backgroundColor: palette.note }]}>
-        <View style={screenStyles.noteHeading}>
-          <Icon color={palette.noteInk} name="lock" size={13} />
-          <Text
-            style={[screenStyles.noteLabel, { color: palette.noteInk, fontFamily: fonts.semibold }]}
-          >
-            {message.authorName
-              ? t("mobilePrivateNoteBy", { name: message.authorName })
-              : t("mobilePrivateNote")}
-          </Text>
-        </View>
-        <Text style={[screenStyles.noteText, { color: palette.noteInk, fontFamily: fonts.body }]}>
-          {message.deleted ? t("messageDeleted") : message.body}
-        </Text>
-      </View>
-    );
-  }
-  const outgoing = !message.fromVisitor;
-  if (!message.deleted && message.attachment) {
-    return (
-      <MessageAttachmentView
-        attachment={message.attachment}
-        fromVisitor={message.fromVisitor}
-        onReload={onAttachmentError}
-        palette={palette}
-      />
-    );
-  }
-  return (
-    <View
-      style={[
-        screenStyles.bubble,
-        outgoing ? screenStyles.bubbleOut : screenStyles.bubbleIn,
-        { backgroundColor: outgoing ? palette.tint : palette.wash },
-      ]}
-    >
-      <Text style={[screenStyles.bubbleText, { color: palette.ink, fontFamily: fonts.body }]}>
-        {message.deleted ? t("messageDeleted") : message.body || t("mobileAttachment")}
-      </Text>
-    </View>
+    </Sheet>
   );
 }
 
@@ -482,6 +377,8 @@ function PendingBubble({
   canRetry,
   onDiscard,
   onRetry,
+  quote,
+  visitor,
 }: {
   reply: PendingReply;
   palette: Palette;
@@ -489,6 +386,8 @@ function PendingBubble({
   canRetry: boolean;
   onDiscard(): void;
   onRetry(): void;
+  quote: Message["replyTo"];
+  visitor: string;
 }) {
   return (
     <View style={[screenStyles.pending, { backgroundColor: palette.wash }]}>
@@ -498,6 +397,7 @@ function PendingBubble({
           {t("mobileWaitingSend")}
         </Text>
       </View>
+      {quote && <MessageQuote palette={palette} quote={quote} visitorName={visitor} />}
       <Text style={[screenStyles.pendingBody, { color: palette.ink, fontFamily: fonts.body }]}>
         {reply.body}
       </Text>
@@ -516,6 +416,57 @@ function PendingBubble({
   );
 }
 
+function dayLabel(iso: string): string {
+  const day = new Date(iso);
+  const today = new Date();
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (day.toDateString() === today.toDateString()) return t("today");
+  if (day.toDateString() === yesterday.toDateString()) return t("yesterday");
+  return day.toLocaleDateString([], {
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+    ...(day.getFullYear() === today.getFullYear() ? {} : { year: "numeric" }),
+  });
+}
+
+function sameMessageAuthor(one: Message | undefined, two: Message | undefined): boolean {
+  return Boolean(
+    one &&
+      two &&
+      one.kind !== "closed" &&
+      one.kind !== "reopened" &&
+      two.kind !== "closed" &&
+      two.kind !== "reopened" &&
+      one.fromVisitor === two.fromVisitor &&
+      one.authorOperatorId === two.authorOperatorId &&
+      one.authorApiKeyId === two.authorApiKeyId &&
+      (one.kind === "note") === (two.kind === "note"),
+  );
+}
+
+function messageMeta(messages: Message[], index: number, meId: string): string | null {
+  const message = messages[index];
+  if (!message || message.kind === "closed" || message.kind === "reopened") return null;
+  const next = messages[index + 1];
+  const edited = message.editedAt !== null && !message.deleted;
+  const ends =
+    !sameMessageAuthor(message, next) ||
+    !next ||
+    new Date(next.createdAt).toDateString() !== new Date(message.createdAt).toDateString();
+  if (!edited && !ends) return null;
+  const time = new Date(message.createdAt).toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+  const timed = edited ? `${time} · ${t("messageEdited")}` : time;
+  if (message.fromVisitor) return timed;
+  const author =
+    message.authorOperatorId === meId ? t("you") : (message.authorName ?? t("aTeammate"));
+  return `${author} · ${timed}`;
+}
+
 export function ThreadScreen({
   api,
   conversation,
@@ -528,6 +479,7 @@ export function ThreadScreen({
   palette,
   meId,
   members,
+  workspace,
   onBack,
   onDiscard,
   onDraftChange,
@@ -550,13 +502,14 @@ export function ThreadScreen({
   palette: Palette;
   meId: string;
   members: Member[];
+  workspace: Workspace | null;
   onBack(): void;
   onDiscard(reply: PendingReply): void;
   onDraftChange(body: string): void;
   onHandoff(operatorId: string): Promise<void>;
   onError(failure: unknown): void;
   onReload(): void;
-  onSend(body: string): Promise<void>;
+  onSend(body: string, replyToMessageId: string | null): Promise<void>;
   onRetry(reply: PendingReply): Promise<void>;
   onAssign(): Promise<void>;
   onStatus(): Promise<void>;
@@ -583,12 +536,19 @@ export function ThreadScreen({
   const [handoffOpen, setHandoffOpen] = useState(false);
   const [handoffBusy, setHandoffBusy] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const input = useRef<ComponentRef<typeof TextInput>>(null);
   const list = useRef<FlatList<Message | PendingReply>>(null);
   const current = thread?.conversation ?? conversation;
   const isClosed = current.status === "closed";
   const name = visitorName(current);
   const assignee = members.find((member) => member.id === current.assigneeOperatorId);
-  const rows: (Message | PendingReply)[] = [...(thread?.messages ?? []), ...pending];
+  const messages = thread?.messages ?? [];
+  const rows: (Message | PendingReply)[] = [...messages, ...pending];
+  const receiptByMessage = shownReceipts(messages, thread?.receipts ?? null);
+  const canWrite =
+    workspace === null || (workspace.active && !workspace.readOnly && !workspace.suspended);
+  const mayDeleteAnyone = workspace?.role === "owner" || workspace?.role === "admin";
   const isPending = (row: Message | PendingReply): row is PendingReply => !("kind" in row);
   const changeDraft = (body: string) => {
     setDraft(body);
@@ -600,13 +560,32 @@ export function ThreadScreen({
     if (!body) return;
     setSending(true);
     try {
-      await onSend(body);
+      await onSend(body, replyingTo?.id ?? null);
       setDraft((current) => (current === submittedDraft ? "" : current));
+      setReplyingTo(null);
     } catch {
       // The parent shows the storage error. Keep the draft so the operator can try again.
     } finally {
       setSending(false);
     }
+  };
+  const replyTo = (message: Message) => {
+    setReplyingTo(message);
+    requestAnimationFrame(() => input.current?.focus());
+  };
+  const confirmStatus = () => {
+    Alert.alert(
+      t(isClosed ? "mobileReopenConfirmTitle" : "mobileCloseConfirmTitle"),
+      t(isClosed ? "mobileReopenConfirmText" : "mobileCloseConfirmText"),
+      [
+        { text: t("cancel"), style: "cancel" },
+        {
+          text: t(isClosed ? "mobileReopenConfirmYes" : "mobileCloseConfirmYes"),
+          style: isClosed ? "default" : "destructive",
+          onPress: () => void onStatus(),
+        },
+      ],
+    );
   };
   const openHandoff = () => {
     const assigned = current.assigneeOperatorId;
@@ -670,7 +649,7 @@ export function ThreadScreen({
               numberOfLines={1}
               style={[screenStyles.meta, { color: palette.sub, fontFamily: fonts.body }]}
             >
-              {current.visitor.email || t("visitorAnonymous")}
+              {current.subject || current.visitor.email || t("visitorAnonymous")}
             </Text>
           </View>
         </Pressable>
@@ -679,20 +658,35 @@ export function ThreadScreen({
             isClosed ? t("mobileReopenConversation") : t("mobileCloseConversation")
           }
           accessibilityRole="button"
-          onPress={() => void onStatus()}
+          onPress={confirmStatus}
           style={({ pressed }) => [
-            screenStyles.headerButton,
-            { backgroundColor: pressed ? palette.wash : "transparent" },
+            screenStyles.statusButton,
+            {
+              backgroundColor: pressed ? palette.tint : palette.wash,
+              borderColor: palette.line,
+            },
           ]}
         >
-          <Icon color={palette.navy} name="done" size={21} />
+          <Text
+            style={[
+              screenStyles.statusButtonText,
+              { color: palette.ink, fontFamily: fonts.semibold },
+            ]}
+          >
+            {isClosed ? t("reopen") : t("close")}
+          </Text>
         </Pressable>
       </View>
 
       {!isClosed && (
         <View style={[screenStyles.ownership, { borderBottomColor: palette.line }]}>
           <View style={screenStyles.ownershipLabel}>
-            <Icon color={palette.sub} name="person" size={14} />
+            <Avatar
+              name={assignee?.name ?? t("unassigned")}
+              picture={assignee?.pictureUrl ?? null}
+              size={30}
+              palette={palette}
+            />
             <Text
               numberOfLines={1}
               style={[screenStyles.ownershipText, { color: palette.sub, fontFamily: fonts.body }]}
@@ -751,31 +745,74 @@ export function ThreadScreen({
           <RefreshControl refreshing={loading} onRefresh={onReload} tintColor={palette.blue} />
         }
         onContentSizeChange={() => list.current?.scrollToEnd({ animated: false })}
-        ListHeaderComponent={
-          <Text style={[screenStyles.day, { color: palette.sub, fontFamily: fonts.medium }]}>
-            {t("today")}
-          </Text>
-        }
-        renderItem={({ item }) =>
-          isPending(item) ? (
-            <PendingBubble
-              canRetry={!isClosed}
-              error={pendingErrors[item.clientId]}
-              onDiscard={() => onDiscard(item)}
-              onRetry={() => void onRetry(item)}
-              palette={palette}
-              reply={item}
-            />
-          ) : (
-            <MessageBubble message={item} palette={palette} onAttachmentError={onReload} />
-          )
-        }
+        renderItem={({ item, index }) => {
+          if (isPending(item)) {
+            const quoted = messages.find((message) => message.id === item.replyToMessageId);
+            return (
+              <PendingBubble
+                canRetry={!isClosed}
+                error={pendingErrors[item.clientId]}
+                onDiscard={() => onDiscard(item)}
+                onRetry={() => void onRetry(item)}
+                palette={palette}
+                reply={item}
+                quote={
+                  quoted
+                    ? {
+                        id: quoted.id,
+                        authorName: quoted.authorName,
+                        fromVisitor: quoted.fromVisitor,
+                        text:
+                          quoted.attachment?.type === "file" && !quoted.attachment.removed
+                            ? quoted.attachment.name
+                            : (quoted.body ?? ""),
+                        hasImage: quoted.kind === "image",
+                      }
+                    : null
+                }
+                visitor={name}
+              />
+            );
+          }
+          const previous = messages[index - 1];
+          const startsDay =
+            !previous ||
+            new Date(previous.createdAt).toDateString() !== new Date(item.createdAt).toDateString();
+          return (
+            <View>
+              {startsDay && (
+                <Text style={[screenStyles.day, { color: palette.sub, fontFamily: fonts.medium }]}>
+                  {dayLabel(item.createdAt)}
+                </Text>
+              )}
+              <ThreadMessage
+                api={api}
+                bottomInset={bottomInset}
+                canReply={!isClosed && canWrite}
+                canWrite={canWrite}
+                conversationId={current.id}
+                mayDeleteAnyone={mayDeleteAnyone}
+                meId={meId}
+                message={item}
+                meta={messageMeta(messages, index, meId)}
+                onAttachmentError={onReload}
+                onChanged={onReload}
+                onError={onError}
+                onReply={replyTo}
+                palette={palette}
+                receipt={receiptByMessage.get(item.id) ?? null}
+                receipts={thread?.receipts ?? null}
+                visitorName={name}
+              />
+            </View>
+          );
+        }}
       />
 
       {isClosed ? (
         <Pressable
           accessibilityRole="button"
-          onPress={() => void onStatus()}
+          onPress={confirmStatus}
           style={({ pressed }) => [
             screenStyles.reopen,
             {
@@ -802,53 +839,95 @@ export function ThreadScreen({
             },
           ]}
         >
-          <ConversationTools
-            api={api}
-            conversationId={current.id}
-            onInsert={(text) =>
-              changeDraft(draft && !/\s$/.test(draft) ? `${draft}\n${text}` : draft + text)
-            }
-            onNoteAdded={onReload}
-            palette={palette}
-            bottomInset={bottomInset}
-            onError={onError}
-          />
-          <View
-            style={[
-              screenStyles.composeBox,
-              { backgroundColor: palette.paper, borderColor: palette.line },
-            ]}
-          >
-            <TextInput
-              accessibilityLabel={t("mobileReplyTo", { name })}
-              multiline
-              onChangeText={changeDraft}
-              placeholder={t("mobileReplyPlaceholder", { name: name.split(" ")[0] ?? name })}
-              placeholderTextColor={palette.sub}
-              style={[screenStyles.input, { color: palette.ink, fontFamily: fonts.body }]}
-              textAlignVertical="top"
-              value={draft}
+          {replyingTo && (
+            <View style={[screenStyles.replyChip, { backgroundColor: palette.wash }]}>
+              <Icon color={palette.blue} name="chat" size={16} />
+              <View style={screenStyles.replyChipCopy}>
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    screenStyles.replyChipTitle,
+                    { color: palette.ink, fontFamily: fonts.semibold },
+                  ]}
+                >
+                  {t("replyingTo", {
+                    name: replyingTo.fromVisitor ? name : (replyingTo.authorName ?? t("aTeammate")),
+                  })}
+                </Text>
+                <Text
+                  numberOfLines={1}
+                  style={[
+                    screenStyles.replyChipText,
+                    { color: palette.sub, fontFamily: fonts.body },
+                  ]}
+                >
+                  {replyingTo.body ||
+                    t(replyingTo.kind === "image" ? "quoteImage" : "mobileAttachment")}
+                </Text>
+              </View>
+              <Pressable
+                accessibilityLabel={t("cancelReply")}
+                accessibilityRole="button"
+                hitSlop={8}
+                onPress={() => setReplyingTo(null)}
+                style={screenStyles.replyChipClose}
+              >
+                <Icon color={palette.sub} name="x" size={16} />
+              </Pressable>
+            </View>
+          )}
+          <View style={screenStyles.composeRow}>
+            <ConversationTools
+              api={api}
+              conversationId={current.id}
+              replyToMessageId={replyingTo?.id}
+              onInsert={(text) =>
+                changeDraft(draft && !/\s$/.test(draft) ? `${draft}\n${text}` : draft + text)
+              }
+              onNoteAdded={onReload}
+              onReplySent={() => setReplyingTo(null)}
+              palette={palette}
+              bottomInset={bottomInset}
+              onError={onError}
             />
-            <Pressable
-              hitSlop={5}
-              accessibilityLabel={t("mobileSendReply")}
-              accessibilityRole="button"
-              disabled={!draft.trim() || sending}
-              onPress={() => void send()}
-              style={({ pressed }) => [
-                screenStyles.send,
-                {
-                  backgroundColor: draft.trim() && !sending ? palette.blue : palette.wash,
-                  opacity: pressed ? 0.72 : 1,
-                },
+            <View
+              style={[
+                screenStyles.composeBox,
+                { backgroundColor: palette.paper, borderColor: palette.line },
               ]}
             >
-              <Icon
-                color={draft.trim() && !sending ? palette.onBlue : palette.sub}
-                name="send"
-                size={18}
+              <TextInput
+                ref={input}
+                accessibilityLabel={t("mobileReplyTo", { name })}
+                multiline
+                onChangeText={changeDraft}
+                placeholder={t("mobileReplyPlaceholder", { name: name.split(" ")[0] ?? name })}
+                placeholderTextColor={palette.sub}
+                style={[screenStyles.input, { color: palette.ink, fontFamily: fonts.body }]}
+                textAlignVertical="top"
+                value={draft}
               />
-            </Pressable>
+              <Pressable
+                hitSlop={5}
+                accessibilityLabel={t("mobileSendReply")}
+                accessibilityRole="button"
+                disabled={!draft.trim() || sending}
+                onPress={() => void send()}
+                style={({ pressed }) => [
+                  screenStyles.send,
+                  {
+                    backgroundColor: draft.trim() && !sending ? palette.blue : palette.wash,
+                    opacity: pressed ? 0.72 : 1,
+                  },
+                ]}
+              >
+                <Icon
+                  color={draft.trim() && !sending ? palette.onBlue : palette.sub}
+                  name="send"
+                  size={18}
+                />
+              </Pressable>
+            </View>
           </View>
         </View>
       )}
@@ -886,21 +965,6 @@ export function ThreadScreen({
 
 const screenStyles = StyleSheet.create({
   page: { flex: 1 },
-  modalRoot: { flex: 1, justifyContent: "flex-end" },
-  modalBackdrop: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    backgroundColor: "rgba(8, 28, 48, 0.34)",
-  },
-  sheet: {
-    maxHeight: "82%",
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    overflow: "hidden",
-  },
   sheetTools: {
     height: 64,
     flexDirection: "row",
@@ -912,17 +976,6 @@ const screenStyles = StyleSheet.create({
     position: "relative",
     zIndex: 2,
   },
-  sheetGrabber: {
-    position: "absolute",
-    left: "50%",
-    top: 8,
-    width: 36,
-    height: 4,
-    borderRadius: 6,
-    marginLeft: -18,
-    opacity: 0.54,
-  },
-  sheetGrabberOnly: { height: 24, position: "relative" },
   sheetScroll: { flexShrink: 1 },
   visitorSky: { height: 116, position: "relative", overflow: "hidden" },
   visitorTop: { paddingHorizontal: 19, paddingBottom: 12, marginTop: -25, position: "relative" },
@@ -1013,38 +1066,21 @@ const screenStyles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  statusButton: {
+    minHeight: 38,
+    borderRadius: 19,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 13,
+  },
+  statusButtonText: { fontSize: 12, lineHeight: 16 },
   person: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 8 },
   personCopy: { flex: 1, minWidth: 0 },
   name: { fontSize: 18, lineHeight: 21, letterSpacing: -0.3 },
   meta: { fontSize: 11, lineHeight: 15 },
   log: { flexGrow: 1, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10 },
   day: { textAlign: "center", fontSize: 10, marginTop: 2, marginBottom: 12 },
-  bubble: {
-    maxWidth: "88%",
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    marginBottom: 11,
-  },
-  bubbleIn: {
-    alignSelf: "flex-start",
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    borderBottomRightRadius: 16,
-    borderBottomLeftRadius: 4,
-  },
-  bubbleOut: {
-    alignSelf: "flex-end",
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
-    borderBottomLeftRadius: 16,
-    borderBottomRightRadius: 4,
-  },
-  bubbleText: { fontSize: 16, lineHeight: 22, letterSpacing: -0.18 },
-  statusMessage: { textAlign: "center", fontSize: 11, marginVertical: 9 },
-  note: { borderRadius: 12, paddingHorizontal: 12, paddingVertical: 10, marginVertical: 10 },
-  noteHeading: { flexDirection: "row", alignItems: "center", gap: 6 },
-  noteLabel: { flex: 1, fontSize: 12 },
-  noteText: { fontSize: 14, lineHeight: 20, marginTop: 5 },
   pending: {
     alignSelf: "flex-end",
     maxWidth: "91%",
@@ -1102,14 +1138,27 @@ const screenStyles = StyleSheet.create({
   },
   reopenText: { flex: 1, fontSize: 14 },
   composer: {
-    flexDirection: "row",
-    alignItems: "flex-end",
-    gap: 8,
+    gap: 6,
     paddingHorizontal: 10,
     paddingTop: 8,
     paddingBottom: 10,
     borderTopWidth: StyleSheet.hairlineWidth,
   },
+  composeRow: { flexDirection: "row", alignItems: "flex-end", gap: 8 },
+  replyChip: {
+    minHeight: 48,
+    borderRadius: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 9,
+    paddingLeft: 12,
+    paddingRight: 6,
+    paddingVertical: 7,
+  },
+  replyChipCopy: { flex: 1, minWidth: 0 },
+  replyChipTitle: { fontSize: 11, lineHeight: 15 },
+  replyChipText: { fontSize: 12, lineHeight: 16 },
+  replyChipClose: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
   composeBox: {
     flex: 1,
     minHeight: 44,

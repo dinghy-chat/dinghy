@@ -1,11 +1,8 @@
 import * as Crypto from "expo-crypto";
-import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Keyboard,
-  KeyboardAvoidingView,
-  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -14,14 +11,13 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { t } from "../../operator/src/text.ts";
 import type { DinghyApi } from "./api";
 import { PhotoComposer } from "./attachments";
-import { readableError, SheetCloseButton } from "./common";
-import { openComposerMenu } from "./composer-menu";
+import { readableError } from "./common";
 import { fonts } from "./fonts";
 import { Icon } from "./icon";
+import { Sheet } from "./sheet";
 import type { Palette } from "./theme";
 import type { Message, SavedReply } from "./types";
 
@@ -30,71 +26,22 @@ type ConversationToolsProps = {
   bottomInset: number;
   onError(error: unknown): void;
   conversationId: string;
+  replyToMessageId?: string | undefined;
   palette: Palette;
   onInsert(text: string): void;
   onNoteAdded(message: Message): void;
+  onReplySent(): void;
 };
-
-function Sheet({
-  children,
-  onClose,
-  palette,
-  title,
-  visible,
-}: {
-  children: ReactNode;
-  onClose(): void;
-  palette: Palette;
-  title: string;
-  visible: boolean;
-}) {
-  const { bottom } = useSafeAreaInsets();
-  if (!visible) return null;
-  return (
-    <Modal
-      animationType="slide"
-      onRequestClose={onClose}
-      presentationStyle="overFullScreen"
-      transparent
-      visible={visible}
-    >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={styles.modalRoot}
-      >
-        <Pressable
-          accessibilityLabel={t("mobileDismiss")}
-          onPress={onClose}
-          style={[styles.backdrop, { backgroundColor: palette.scrim }]}
-        />
-        <View
-          accessibilityViewIsModal
-          style={[
-            styles.sheet,
-            { backgroundColor: palette.sheet, paddingBottom: Math.max(bottom, 14) },
-          ]}
-        >
-          <View style={styles.sheetHead}>
-            <View style={[styles.grabber, { backgroundColor: palette.sub }]} />
-            <Text style={[styles.sheetTitle, { color: palette.ink, fontFamily: fonts.display }]}>
-              {title}
-            </Text>
-            <SheetCloseButton label={t("mobileDismiss")} onPress={onClose} palette={palette} />
-          </View>
-          {children}
-        </View>
-      </KeyboardAvoidingView>
-    </Modal>
-  );
-}
 
 export function ConversationTools({
   api,
   bottomInset,
   onError,
   conversationId,
+  replyToMessageId,
   onInsert,
   onNoteAdded,
+  onReplySent,
   palette,
 }: ConversationToolsProps) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -107,6 +54,7 @@ export function ConversationTools({
   const [noteBusy, setNoteBusy] = useState(false);
   const [noteError, setNoteError] = useState<string | null>(null);
   const noteClientId = useRef<string | null>(null);
+  const afterMenuClose = useRef<(() => void) | null>(null);
   const activeConversationId = useRef(conversationId);
 
   useEffect(() => {
@@ -175,8 +123,12 @@ export function ConversationTools({
         api={api}
         bottomInset={bottomInset}
         conversationId={conversationId}
+        replyToMessageId={replyToMessageId}
         onError={onError}
-        onSent={onNoteAdded}
+        onSent={async (message) => {
+          await onNoteAdded(message);
+          onReplySent();
+        }}
         palette={palette}
         trigger={(pickPhoto) => {
           const actions = [
@@ -198,7 +150,7 @@ export function ConversationTools({
                 accessibilityLabel={t("mobileConversationTools")}
                 onPress={() => {
                   Keyboard.dismiss();
-                  openComposerMenu(actions, () => setMenuOpen(true));
+                  setMenuOpen(true);
                 }}
                 style={({ pressed }) => [
                   styles.addButton,
@@ -207,31 +159,45 @@ export function ConversationTools({
               >
                 <Icon name="plus" size={22} color={palette.ink} />
               </Pressable>
-              {Platform.OS !== "ios" && (
-                <Sheet
-                  visible={menuOpen}
-                  onClose={() => setMenuOpen(false)}
-                  title={t("mobileConversationTools")}
-                  palette={palette}
-                >
+              <Sheet
+                visible={menuOpen}
+                onClose={() => setMenuOpen(false)}
+                onDismiss={() => {
+                  const next = afterMenuClose.current;
+                  afterMenuClose.current = null;
+                  next?.();
+                }}
+                title={t("mobileConversationTools")}
+                palette={palette}
+                bottomInset={bottomInset}
+              >
+                <View style={styles.toolRow}>
                   {actions.map((action) => (
                     <Pressable
                       accessibilityRole="button"
                       key={action.icon}
-                      style={styles.menuItem}
+                      style={({ pressed }) => [
+                        styles.tool,
+                        { backgroundColor: palette.wash, opacity: pressed ? 0.68 : 1 },
+                      ]}
                       onPress={() => {
+                        afterMenuClose.current = action.run;
                         setMenuOpen(false);
-                        action.run();
                       }}
                     >
-                      <Icon name={action.icon} color={palette.blue} />
-                      <Text style={{ color: palette.ink, fontFamily: fonts.medium, fontSize: 16 }}>
+                      <View style={[styles.toolIcon, { backgroundColor: palette.tint }]}>
+                        <Icon name={action.icon} color={palette.blue} size={22} />
+                      </View>
+                      <Text
+                        numberOfLines={2}
+                        style={[styles.toolLabel, { color: palette.ink, fontFamily: fonts.medium }]}
+                      >
                         {action.label}
                       </Text>
                     </Pressable>
                   ))}
-                </Sheet>
-              )}
+                </View>
+              </Sheet>
             </>
           );
         }}
@@ -242,6 +208,7 @@ export function ConversationTools({
         palette={palette}
         title={t("mobileSavedRepliesTitle")}
         visible={savedOpen}
+        bottomInset={bottomInset}
       >
         <ScrollView
           contentContainerStyle={styles.replyList}
@@ -325,6 +292,7 @@ export function ConversationTools({
         palette={palette}
         title={t("mobilePrivateNoteTitle")}
         visible={noteOpen}
+        bottomInset={bottomInset}
       >
         <View style={[styles.privateCallout, { backgroundColor: palette.note }]}>
           <Icon color={palette.noteInk} name="lock" size={15} />
@@ -391,48 +359,31 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  menuItem: {
-    minHeight: 52,
+  toolRow: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
+    alignItems: "stretch",
+    gap: 9,
     paddingHorizontal: 20,
+    paddingBottom: 12,
   },
-  modalRoot: { flex: 1, justifyContent: "flex-end" },
-  backdrop: {
-    position: "absolute",
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    backgroundColor: "rgba(8, 28, 48, 0.34)",
-  },
-  sheet: {
-    maxHeight: "82%",
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    overflow: "hidden",
-  },
-  sheetHead: {
-    minHeight: 66,
-    flexDirection: "row",
+  tool: {
+    flex: 1,
+    minHeight: 100,
+    borderRadius: 18,
     alignItems: "center",
-    gap: 8,
-    paddingLeft: 20,
-    paddingRight: 11,
-    paddingTop: 8,
+    justifyContent: "center",
+    gap: 9,
+    paddingHorizontal: 7,
+    paddingVertical: 12,
   },
-  grabber: {
-    position: "absolute",
-    left: "50%",
-    top: 8,
-    width: 36,
-    height: 4,
-    borderRadius: 2,
-    marginLeft: -18,
-    opacity: 0.54,
+  toolIcon: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    alignItems: "center",
+    justifyContent: "center",
   },
-  sheetTitle: { flex: 1, fontSize: 24, lineHeight: 29, letterSpacing: -0.6 },
+  toolLabel: { fontSize: 12, lineHeight: 16, textAlign: "center" },
   replyList: { gap: 9, paddingHorizontal: 20, paddingBottom: 12 },
   loading: { paddingVertical: 28 },
   reply: {

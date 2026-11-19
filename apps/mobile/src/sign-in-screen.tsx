@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   Image,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -45,7 +46,7 @@ export function SignInScreen({
   const [serverFocused, setServerFocused] = useState(false);
   const [emailFocused, setEmailFocused] = useState(false);
   const [codeFocused, setCodeFocused] = useState(false);
-  const [animated, setAnimated] = useState(true);
+  const [keyboardVisible, setKeyboardVisible] = useState(Keyboard.isVisible());
   const [step, setStep] = useState<SignInStep>("email");
   const [email, setEmail] = useState("");
   const [emailCode, setEmailCode] = useState("");
@@ -56,6 +57,21 @@ export function SignInScreen({
   const [now, setNow] = useState(Date.now());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const show = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
+      () => setKeyboardVisible(true),
+    );
+    const hide = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
+      () => setKeyboardVisible(false),
+    );
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
 
   useEffect(() => {
     if (step !== "email_code" || resendAt <= Date.now()) return;
@@ -78,6 +94,7 @@ export function SignInScreen({
       const request = await requestEmailCode(serverAddress, email);
       setCodeRequest(request);
       setEmailCode("");
+      setCodeFocused(false);
       setResendAt(Date.now() + request.resendAfterSeconds * 1_000);
       setNow(Date.now());
       setStep("email_code");
@@ -100,6 +117,7 @@ export function SignInScreen({
       }
       setTotpChallenge(result.challenge);
       setTotpCode("");
+      setCodeFocused(false);
       setStep("totp");
     } catch (failure) {
       setError(readableError(failure));
@@ -123,6 +141,7 @@ export function SignInScreen({
   };
 
   const restart = () => {
+    Keyboard.dismiss();
     setStep("email");
     setCodeRequest(null);
     setTotpChallenge(null);
@@ -144,9 +163,17 @@ export function SignInScreen({
       : busy
         ? t("mobileCheckingSignInCode")
         : t("mobileContinueSignIn");
-  const water = isNight ? "#17384b" : "#639eaf";
+  const water = isNight ? "#28586c" : "#84bec6";
   const controlInk = isNight ? "#eef5f6" : palette.authInk;
   const selectedHost = isNight ? "#315064" : "#ffffff";
+
+  const submit = () => {
+    if (disabled) return;
+    Keyboard.dismiss();
+    if (step === "email") void sendCode();
+    else if (step === "email_code") void checkEmailCode();
+    else void checkTotp();
+  };
 
   return (
     <KeyboardAvoidingView
@@ -160,8 +187,18 @@ export function SignInScreen({
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
-        <View style={screenStyles.scene}>
-          <Harbor animated night={isNight} paused={!animated} />
+        <View
+          style={[
+            screenStyles.scene,
+            keyboardVisible && screenStyles.sceneWithKeyboard,
+            keyboardVisible && {
+              height: Math.max(topInset + 108, 168),
+              minHeight: Math.max(topInset + 108, 168),
+              maxHeight: Math.max(topInset + 108, 168),
+            },
+          ]}
+        >
+          <Harbor night={isNight} variant="sign-in" />
           <View style={[screenStyles.wordmark, { top: topInset + 9 }]}>
             <View style={screenStyles.boatMark}>
               <Image
@@ -175,19 +212,6 @@ export function SignInScreen({
               {t("appName")}
             </Text>
           </View>
-          <Pressable
-            accessibilityLabel={animated ? t("mobilePauseHarbor") : t("mobilePlayHarbor")}
-            accessibilityRole="button"
-            onPress={() => setAnimated((value) => !value)}
-            style={({ pressed }) => [
-              screenStyles.motion,
-              { top: topInset + 4, opacity: pressed ? 0.68 : 1 },
-            ]}
-          >
-            <View style={[screenStyles.motionDisc, { backgroundColor: palette.authPanel }]}>
-              <Icon color={controlInk} name={animated ? "pause" : "play"} size={13} />
-            </View>
-          </Pressable>
         </View>
 
         <View
@@ -199,221 +223,228 @@ export function SignInScreen({
             },
           ]}
         >
-          {step === "email" && (
-            <>
-              <Text
-                style={[
-                  screenStyles.title,
-                  { color: palette.authInk, fontFamily: fonts.displayBold },
-                ]}
-              >
-                {t("nativeMobileSignInTitle")}
-              </Text>
-              <Text
-                style={[screenStyles.hostLabel, { color: palette.sub, fontFamily: fonts.semibold }]}
-              >
-                {t("nativeMobileSignInHostLabel")}
-              </Text>
-              <View
-                accessibilityLabel={t("nativeMobileSignInHostLabel")}
-                accessibilityRole="tablist"
-                style={[
-                  screenStyles.tabs,
-                  { backgroundColor: palette.wash, borderColor: palette.authLine },
-                ]}
-              >
-                <Pressable
-                  accessibilityRole="tab"
-                  accessibilityState={{ selected: !selfHosted }}
-                  disabled={busy}
-                  onPress={() => setSelfHosted(false)}
-                  style={[screenStyles.tab, !selfHosted && { backgroundColor: selectedHost }]}
+          <View style={screenStyles.panelContent}>
+            {step === "email" && (
+              <>
+                <Text
+                  style={[
+                    screenStyles.title,
+                    { color: palette.authInk, fontFamily: fonts.displayBold },
+                  ]}
                 >
-                  <Text
-                    style={[
-                      screenStyles.tabText,
-                      {
-                        color: !selfHosted ? palette.authInk : palette.sub,
-                        fontFamily: fonts.semibold,
-                      },
-                    ]}
-                  >
-                    {t("mobileDinghyCloud")}
-                  </Text>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="tab"
-                  accessibilityState={{ selected: selfHosted }}
-                  disabled={busy}
-                  onPress={() => setSelfHosted(true)}
-                  style={[screenStyles.tab, selfHosted && { backgroundColor: selectedHost }]}
+                  {t("nativeMobileSignInTitle")}
+                </Text>
+                <Text
+                  style={[
+                    screenStyles.hostLabel,
+                    { color: palette.sub, fontFamily: fonts.semibold },
+                  ]}
                 >
-                  <Text
-                    style={[
-                      screenStyles.tabText,
-                      {
-                        color: selfHosted ? palette.authInk : palette.sub,
-                        fontFamily: fonts.semibold,
-                      },
-                    ]}
+                  {t("nativeMobileSignInHostLabel")}
+                </Text>
+                <View
+                  accessibilityLabel={t("nativeMobileSignInHostLabel")}
+                  accessibilityRole="tablist"
+                  style={[
+                    screenStyles.tabs,
+                    { backgroundColor: palette.wash, borderColor: palette.authLine },
+                  ]}
+                >
+                  <Pressable
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: !selfHosted }}
+                    disabled={busy}
+                    onPress={() => setSelfHosted(false)}
+                    style={[screenStyles.tab, !selfHosted && { backgroundColor: selectedHost }]}
                   >
-                    {t("mobileSelfHosted")}
-                  </Text>
-                </Pressable>
-              </View>
-              {selfHosted && (
+                    <Text
+                      style={[
+                        screenStyles.tabText,
+                        {
+                          color: !selfHosted ? palette.authInk : palette.sub,
+                          fontFamily: fonts.semibold,
+                        },
+                      ]}
+                    >
+                      {t("mobileDinghyCloud")}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    accessibilityRole="tab"
+                    accessibilityState={{ selected: selfHosted }}
+                    disabled={busy}
+                    onPress={() => setSelfHosted(true)}
+                    style={[screenStyles.tab, selfHosted && { backgroundColor: selectedHost }]}
+                  >
+                    <Text
+                      style={[
+                        screenStyles.tabText,
+                        {
+                          color: selfHosted ? palette.authInk : palette.sub,
+                          fontFamily: fonts.semibold,
+                        },
+                      ]}
+                    >
+                      {t("mobileSelfHosted")}
+                    </Text>
+                  </Pressable>
+                </View>
+                {selfHosted && (
+                  <SignInField
+                    autoCapitalize="none"
+                    editable={!busy}
+                    focused={serverFocused}
+                    icon="server"
+                    keyboardType="url"
+                    label={t("mobileServerAddress")}
+                    onChange={setServer}
+                    onFocus={setServerFocused}
+                    palette={palette}
+                    placeholder={t("mobileServerPlaceholder")}
+                    value={server}
+                  />
+                )}
                 <SignInField
+                  autoComplete="email"
                   autoCapitalize="none"
                   editable={!busy}
-                  focused={serverFocused}
-                  icon="server"
-                  keyboardType="url"
-                  label={t("mobileServerAddress")}
-                  onChange={setServer}
-                  onFocus={setServerFocused}
+                  focused={emailFocused}
+                  icon="mail"
+                  keyboardType="email-address"
+                  label={t("mobileEmailAddress")}
+                  onChange={setEmail}
+                  onFocus={setEmailFocused}
                   palette={palette}
-                  placeholder={t("mobileServerPlaceholder")}
-                  value={server}
+                  placeholder={t("mobileEmailPlaceholder")}
+                  textContentType="emailAddress"
+                  onSubmit={submit}
+                  value={email}
                 />
-              )}
-              <SignInField
-                autoCapitalize="none"
-                editable={!busy}
-                focused={emailFocused}
-                icon="mail"
-                keyboardType="email-address"
-                label={t("mobileEmailAddress")}
-                onChange={setEmail}
-                onFocus={setEmailFocused}
-                palette={palette}
-                placeholder={t("mobileEmailPlaceholder")}
-                textContentType="emailAddress"
-                value={email}
-              />
-            </>
-          )}
+              </>
+            )}
 
-          {step === "email_code" && codeRequest && (
-            <>
-              <StepHeading
-                copy={t("mobileEmailCodeCopy", { email: codeRequest.email })}
-                palette={palette}
-                title={t("mobileEmailCodeTitle")}
-              />
-              <SignInField
-                editable={!busy}
-                focused={codeFocused}
-                icon="mail"
-                keyboardType="number-pad"
-                label={t("mobileEmailCodeLabel")}
-                maxLength={6}
-                onChange={(value) => setEmailCode(value.replace(/\D/g, ""))}
-                onFocus={setCodeFocused}
-                palette={palette}
-                placeholder="123456"
-                secureTextEntry
-                textContentType="oneTimeCode"
-                value={emailCode}
-              />
-            </>
-          )}
+            {step === "email_code" && codeRequest && (
+              <>
+                <StepHeading
+                  copy={t("mobileEmailCodeCopy", { email: codeRequest.email })}
+                  palette={palette}
+                  title={t("mobileEmailCodeTitle")}
+                />
+                <SignInField
+                  autoComplete="one-time-code"
+                  editable={!busy}
+                  focused={codeFocused}
+                  icon="mail"
+                  keyboardType="number-pad"
+                  label={t("mobileEmailCodeLabel")}
+                  maxLength={6}
+                  onChange={(value) => setEmailCode(value.replace(/\D/g, ""))}
+                  onFocus={setCodeFocused}
+                  palette={palette}
+                  placeholder="123456"
+                  secureTextEntry
+                  textContentType="oneTimeCode"
+                  onSubmit={submit}
+                  value={emailCode}
+                />
+              </>
+            )}
 
-          {step === "totp" && (
-            <>
-              <StepHeading
-                copy={t("mobileTotpCopy")}
-                palette={palette}
-                title={t("mobileTotpTitle")}
-              />
-              <SignInField
-                autoCapitalize="none"
-                editable={!busy}
-                focused={codeFocused}
-                icon="lock"
-                label={t("mobileTotpLabel")}
-                maxLength={32}
-                onChange={setTotpCode}
-                onFocus={setCodeFocused}
-                palette={palette}
-                placeholder={t("mobileTotpPlaceholder")}
-                secureTextEntry
-                textContentType="oneTimeCode"
-                value={totpCode}
-              />
-            </>
-          )}
+            {step === "totp" && (
+              <>
+                <StepHeading
+                  copy={t("mobileTotpCopy")}
+                  palette={palette}
+                  title={t("mobileTotpTitle")}
+                />
+                <SignInField
+                  autoComplete="one-time-code"
+                  autoCapitalize="none"
+                  editable={!busy}
+                  focused={codeFocused}
+                  icon="lock"
+                  label={t("mobileTotpLabel")}
+                  maxLength={32}
+                  onChange={setTotpCode}
+                  onFocus={setCodeFocused}
+                  palette={palette}
+                  placeholder={t("mobileTotpPlaceholder")}
+                  secureTextEntry
+                  textContentType="oneTimeCode"
+                  onSubmit={submit}
+                  value={totpCode}
+                />
+              </>
+            )}
 
-          {error && (
-            <Text
-              accessibilityRole="alert"
-              style={[
-                screenStyles.error,
-                { color: isNight ? "#ffb3aa" : "#9f2d29", fontFamily: fonts.body },
+            {error && (
+              <Text
+                accessibilityRole="alert"
+                style={[
+                  screenStyles.error,
+                  { color: isNight ? "#ffb3aa" : "#9f2d29", fontFamily: fonts.body },
+                ]}
+              >
+                {error}
+              </Text>
+            )}
+
+            <Pressable
+              accessibilityLabel={primaryLabel}
+              accessibilityRole="button"
+              accessibilityState={busy ? { busy: true, disabled } : { disabled }}
+              disabled={disabled}
+              onPress={submit}
+              style={({ pressed }) => [
+                screenStyles.primary,
+                {
+                  backgroundColor: isNight ? "#2d75c0" : "#0b5794",
+                  opacity: disabled ? 0.45 : pressed ? 0.74 : 1,
+                },
               ]}
             >
-              {error}
-            </Text>
-          )}
-
-          <Pressable
-            accessibilityLabel={primaryLabel}
-            accessibilityRole="button"
-            accessibilityState={busy ? { busy: true, disabled } : { disabled }}
-            disabled={disabled}
-            onPress={() => {
-              if (step === "email") void sendCode();
-              else if (step === "email_code") void checkEmailCode();
-              else void checkTotp();
-            }}
-            style={({ pressed }) => [
-              screenStyles.primary,
-              {
-                backgroundColor: isNight ? "#2d75c0" : "#0b5794",
-                opacity: disabled ? 0.45 : pressed ? 0.74 : 1,
-              },
-            ]}
-          >
-            <Text style={[screenStyles.primaryText, { fontFamily: fonts.semibold }]}>
-              {primaryLabel}
-            </Text>
-          </Pressable>
-
-          {step === "email_code" && (
-            <Pressable
-              accessibilityRole="button"
-              disabled={busy || resendSeconds > 0}
-              onPress={() => void sendCode()}
-              style={screenStyles.textButton}
-            >
-              <Text
-                style={[
-                  screenStyles.textButtonLabel,
-                  { color: palette.blue, fontFamily: fonts.semibold },
-                ]}
-              >
-                {resendSeconds > 0
-                  ? t("mobileResendCodeIn", { seconds: resendSeconds })
-                  : t("mobileResendCode")}
+              <Text style={[screenStyles.primaryText, { fontFamily: fonts.semibold }]}>
+                {primaryLabel}
               </Text>
             </Pressable>
-          )}
-          {step !== "email" && (
-            <Pressable
-              accessibilityRole="button"
-              disabled={busy}
-              onPress={restart}
-              style={screenStyles.textButton}
-            >
-              <Text
-                style={[
-                  screenStyles.textButtonLabel,
-                  { color: palette.sub, fontFamily: fonts.semibold },
-                ]}
+
+            {step === "email_code" && (
+              <Pressable
+                accessibilityRole="button"
+                disabled={busy || resendSeconds > 0}
+                onPress={() => void sendCode()}
+                style={screenStyles.textButton}
               >
-                {step === "email_code" ? t("mobileChangeEmail") : t("mobileRestartSignIn")}
-              </Text>
-            </Pressable>
-          )}
+                <Text
+                  style={[
+                    screenStyles.textButtonLabel,
+                    { color: palette.blue, fontFamily: fonts.semibold },
+                  ]}
+                >
+                  {resendSeconds > 0
+                    ? t("mobileResendCodeIn", { seconds: resendSeconds })
+                    : t("mobileResendCode")}
+                </Text>
+              </Pressable>
+            )}
+            {step !== "email" && (
+              <Pressable
+                accessibilityRole="button"
+                disabled={busy}
+                onPress={restart}
+                style={screenStyles.textButton}
+              >
+                <Text
+                  style={[
+                    screenStyles.textButtonLabel,
+                    { color: palette.sub, fontFamily: fonts.semibold },
+                  ]}
+                >
+                  {step === "email_code" ? t("mobileChangeEmail") : t("mobileRestartSignIn")}
+                </Text>
+              </Pressable>
+            )}
+          </View>
         </View>
       </ScrollView>
     </KeyboardAvoidingView>
@@ -444,9 +475,11 @@ function SignInField({
   palette,
   keyboardType = "default",
   autoCapitalize = "sentences",
+  autoComplete,
   textContentType,
   maxLength,
   editable,
+  onSubmit,
   secureTextEntry = false,
 }: {
   label: string;
@@ -459,11 +492,15 @@ function SignInField({
   palette: Palette;
   keyboardType?: "default" | "email-address" | "number-pad" | "url";
   autoCapitalize?: "none" | "sentences";
+  autoComplete?: "email" | "one-time-code";
   textContentType?: "emailAddress" | "oneTimeCode";
   maxLength?: number;
   editable: boolean;
+  onSubmit?(): void;
   secureTextEntry?: boolean;
 }) {
+  // iOS adds a toolbar above number pads when a return key type is set.
+  const returnKeyType = keyboardType === "number-pad" ? undefined : "done";
   return (
     <View style={screenStyles.fieldGroup}>
       <Text
@@ -484,6 +521,7 @@ function SignInField({
         <TextInput
           accessibilityLabel={label}
           autoCapitalize={autoCapitalize}
+          autoComplete={autoComplete}
           autoCorrect={false}
           editable={editable}
           keyboardType={keyboardType}
@@ -491,11 +529,13 @@ function SignInField({
           onBlur={() => onFocus(false)}
           onChangeText={onChange}
           onFocus={() => onFocus(true)}
+          onSubmitEditing={onSubmit}
           placeholder={placeholder}
           placeholderTextColor={palette.sub}
-          returnKeyType="done"
+          returnKeyType={returnKeyType}
           secureTextEntry={secureTextEntry}
           style={[screenStyles.input, { color: palette.ink, fontFamily: fonts.body }]}
+          submitBehavior="blurAndSubmit"
           textContentType={textContentType}
           value={value}
         />
@@ -507,7 +547,16 @@ function SignInField({
 const screenStyles = StyleSheet.create({
   page: { flex: 1 },
   content: { flexGrow: 1 },
-  scene: { flex: 1, minHeight: 285, position: "relative", overflow: "hidden" },
+  scene: {
+    flexGrow: 1,
+    flexShrink: 1,
+    height: 312,
+    minHeight: 260,
+    maxHeight: 390,
+    position: "relative",
+    overflow: "hidden",
+  },
+  sceneWithKeyboard: { flexGrow: 0, flexShrink: 0 },
   wordmark: {
     position: "absolute",
     left: 20,
@@ -524,37 +573,22 @@ const screenStyles = StyleSheet.create({
   },
   boat: { width: 22, height: 22 },
   brand: { fontSize: 25, lineHeight: 30, letterSpacing: -0.9 },
-  motion: {
-    position: "absolute",
-    right: 10,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  motionDisc: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    opacity: 0.9,
-  },
   panel: {
+    flexGrow: 1,
     minHeight: 330,
-    marginTop: -30,
-    borderTopLeftRadius: 32,
-    borderTopRightRadius: 32,
+    marginTop: -24,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
     paddingHorizontal: 24,
-    paddingTop: 30,
+    paddingTop: 28,
     shadowColor: "#0b2239",
     shadowOpacity: 0.18,
     shadowRadius: 20,
     shadowOffset: { width: 0, height: -6 },
     elevation: 10,
   },
-  title: { fontSize: 40, lineHeight: 42, letterSpacing: -1.6, marginBottom: 12 },
+  panelContent: { width: "100%", maxWidth: 520, alignSelf: "center" },
+  title: { fontSize: 34, lineHeight: 38, letterSpacing: -1.2, marginBottom: 10 },
   copy: { maxWidth: 340, fontSize: 15, lineHeight: 22, marginBottom: 20 },
   hostLabel: { fontSize: 13, lineHeight: 18, marginBottom: 8 },
   tabs: {

@@ -19,7 +19,15 @@ import {
   registerForPush,
 } from "./src/notifications";
 import { SignInScreen } from "./src/sign-in-screen";
-import { day, night, type Palette, styles } from "./src/theme";
+import {
+  day,
+  night,
+  type Palette,
+  readThemePreference,
+  saveThemePreference,
+  styles,
+  type ThemePreference,
+} from "./src/theme";
 import { ThreadScreen } from "./src/thread-screen";
 import type { Conversation, Me, Member, NotificationRoute, Session, Thread } from "./src/types";
 
@@ -29,10 +37,14 @@ function SignedInApp({
   session: initialSession,
   onSignedOut,
   palette,
+  theme,
+  onTheme,
 }: {
   session: Session;
   onSignedOut(): void;
   palette: Palette;
+  theme: ThemePreference;
+  onTheme(theme: ThemePreference): void;
 }) {
   const insets = useSafeAreaInsets();
   const [session, setSession] = useState(initialSession);
@@ -50,6 +62,7 @@ function SignedInApp({
     [session],
   );
   const [page, setPage] = useState<Page>("inbox");
+  const [inboxSearchOpen, setInboxSearchOpen] = useState(false);
   const [members, setMembers] = useState<Member[]>([]);
   const [me, setMe] = useState<Me | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -193,6 +206,7 @@ function SignedInApp({
 
   const openConversation = useCallback(
     (conversation: Conversation) => {
+      setInboxSearchOpen(false);
       threadTarget.current = { scope: scopeKey, conversationId: conversation.id };
       threadRequest.current += 1;
       setSelected(conversation);
@@ -358,7 +372,12 @@ function SignedInApp({
     setOutboxVersion((value) => value + 1);
     try {
       await outbox.deliver(reply, async (pending) => {
-        await api.reply(pending.conversationId, pending.clientId, pending.body);
+        await api.reply(
+          pending.conversationId,
+          pending.clientId,
+          pending.body,
+          pending.replyToMessageId ?? undefined,
+        );
       });
       if (scopeRef.current !== deliveryScope) return;
       setPendingErrors((current) => {
@@ -389,14 +408,14 @@ function SignedInApp({
     }
   };
 
-  const send = async (conversationId: string, body: string) => {
+  const send = async (conversationId: string, body: string, replyToMessageId: string | null) => {
     const target = threadTarget.current;
     if (!target || target.scope !== scopeKey || target.conversationId !== conversationId) {
       return;
     }
     let reply: PendingReply;
     try {
-      reply = outbox.enqueue(conversationId, body);
+      reply = outbox.enqueue(conversationId, body, replyToMessageId);
     } catch (failure) {
       setError(t("mobileReplySaveFailed", { error: readableError(failure) }));
       throw failure;
@@ -493,6 +512,7 @@ function SignedInApp({
   };
 
   const switchWorkspace = async (workspaceId: string) => {
+    setInboxSearchOpen(false);
     const workspace = me?.workspaces.find((item) => item.workspaceId === workspaceId);
     if (!workspace || workspace.workspaceId === session.workspace.id) return;
     const next = {
@@ -561,6 +581,10 @@ function SignedInApp({
           initialDraft={draftSnapshot.body}
           meId={session.operator.id}
           members={members}
+          workspace={
+            me?.workspaces.find((workspace) => workspace.workspaceId === session.workspace.id) ??
+            null
+          }
           onHandoff={assign}
           onAssign={() => assign(session.operator.id).catch(() => undefined)}
           onBack={() => {
@@ -578,7 +602,7 @@ function SignedInApp({
           }}
           onRetry={deliver}
           onDraftChange={(body) => saveDraft(selected.id, body)}
-          onSend={(body) => send(selected.id, body)}
+          onSend={(body, replyToMessageId) => send(selected.id, body, replyToMessageId)}
           onStatus={changeStatus}
           palette={palette}
           pending={outbox.list(selected.id)}
@@ -601,28 +625,85 @@ function SignedInApp({
                 session={session}
                 meId={session.operator.id}
                 onAccount={() => setPage("settings")}
-                onWorkspace={(workspaceId) => void switchWorkspace(workspaceId)}
+                bottomInset={insets.bottom}
+                searchOpen={inboxSearchOpen}
+                onCloseSearch={() => setInboxSearchOpen(false)}
                 topInset={error ? 0 : insets.top}
                 waiting={waiting}
               />
             )}
             {page === "settings" && (
               <SettingsScreen
+                api={api}
+                bottomInset={insets.bottom}
                 session={session}
                 topInset={error ? 0 : insets.top}
                 me={me}
+                members={members}
                 onAway={changeAway}
                 onEnablePush={() =>
-                  pushStatus === "denied" ? void Linking.openSettings() : void syncPush(true)
+                  pushStatus === "denied" || pushStatus === "enabled"
+                    ? void Linking.openSettings()
+                    : void syncPush(true)
                 }
+                onProfileSaved={(account) => {
+                  setMe(account);
+                  setMembers((current) =>
+                    current.map((member) =>
+                      member.id === account.id
+                        ? {
+                            ...member,
+                            name: account.name,
+                            email: account.email,
+                            pictureUrl: account.pictureUrl,
+                          }
+                        : member,
+                    ),
+                  );
+                  const next = {
+                    ...session,
+                    operator: { ...session.operator, name: account.name },
+                  };
+                  setSession(next);
+                  void saveSession(next).catch(() => undefined);
+                }}
                 onSignOut={signOut}
+                onWorkspace={(workspaceId) => void switchWorkspace(workspaceId)}
+                onWorkspaceRenamed={(name) => {
+                  const next = { ...session, workspace: { ...session.workspace, name } };
+                  setSession(next);
+                  setMe((current) =>
+                    current === null
+                      ? current
+                      : {
+                          ...current,
+                          workspaces: current.workspaces.map((workspace) =>
+                            workspace.workspaceId === session.workspace.id
+                              ? { ...workspace, name }
+                              : workspace,
+                          ),
+                        },
+                  );
+                  void saveSession(next).catch(() => undefined);
+                }}
+                onTheme={onTheme}
                 palette={palette}
                 pushStatus={pushStatus}
                 signingOut={signingOut}
+                theme={theme}
               />
             )}
           </View>
-          <BottomNav page={page} palette={palette} onPage={setPage} />
+          <BottomNav
+            onPage={(next) => {
+              setInboxSearchOpen(false);
+              setPage(next);
+            }}
+            onSearch={() => setInboxSearchOpen(true)}
+            page={page}
+            palette={palette}
+            searching={page === "inbox" && inboxSearchOpen}
+          />
         </>
       )}
     </View>
@@ -632,9 +713,25 @@ function SignedInApp({
 function AppContent() {
   const [fontsLoaded, fontError] = useFonts(fontFiles);
   const insets = useSafeAreaInsets();
-  const isNight = useColorScheme() === "dark";
+  const systemTheme = useColorScheme();
+  const [theme, setTheme] = useState<ThemePreference | undefined>(undefined);
+  const isNight = theme === "dark" || (theme !== "light" && systemTheme === "dark");
   const palette = isNight ? night : day;
   const [session, setSession] = useState<Session | null | undefined>(undefined);
+  useEffect(() => {
+    let active = true;
+    void readThemePreference().then(
+      (saved) => {
+        if (active) setTheme(saved);
+      },
+      () => {
+        if (active) setTheme("system");
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, []);
   useEffect(() => {
     let active = true;
     void readSession().then(
@@ -649,7 +746,8 @@ function AppContent() {
       active = false;
     };
   }, []);
-  const isReady = session !== undefined && (fontsLoaded || fontError !== null);
+  const isReady =
+    theme !== undefined && session !== undefined && (fontsLoaded || fontError !== null);
   useEffect(() => {
     if (isReady) SplashScreen.hide();
   }, [isReady]);
@@ -669,8 +767,13 @@ function AppContent() {
         <SignedInApp
           key={`${session.origin}-${session.workspace.id}-${session.operator.id}`}
           onSignedOut={() => setSession(null)}
+          onTheme={(next) => {
+            setTheme(next);
+            void saveThemePreference(next).catch(() => undefined);
+          }}
           palette={palette}
           session={session}
+          theme={theme}
         />
       )}
     </>

@@ -5,12 +5,28 @@ export type Session = {
   workspace: { id: string; name: string };
 };
 
-type Workspace = {
+export type Workspace = {
   workspaceId: string;
+  role: "owner" | "admin" | "member";
   name: string;
+  logoUrl: string | null;
   active: boolean;
   readOnly: boolean;
   suspended: boolean;
+};
+
+export type Quote = {
+  id: string | null;
+  authorName: string | null;
+  fromVisitor: boolean;
+  text: string;
+  hasImage: boolean;
+};
+
+export type ReplyReceipts = {
+  readSeq: string;
+  emails: { fromSeq: string; toSeq: string; sent: boolean }[];
+  notEmailed: string[];
 };
 
 export type Me = {
@@ -61,12 +77,19 @@ export type Message = {
   kind: "text" | "image" | "file" | "closed" | "reopened" | "note";
   fromVisitor: boolean;
   authorOperatorId: string | null;
+  authorApiKeyId: string | null;
   authorName: string | null;
   clientId: string;
   body: string | null;
   attachment: MessageAttachment;
+  replyTo: Quote | null;
+  editedAt: string | null;
+  readAt: string | null;
+  mentions: string[];
   createdAt: string;
   deleted: boolean;
+  via: "api" | "mcp" | "draft" | "email" | null;
+  fromAddress?: string | null;
 };
 
 export type MessageAttachment =
@@ -85,12 +108,14 @@ export type Thread = {
   messages: Message[];
   hasMore: boolean;
   visitorOnline: boolean | null;
+  receipts: ReplyReceipts;
 };
 
 export type Member = {
   id: string;
   name: string;
   email: string;
+  role: "owner" | "admin" | "member";
   pictureUrl: string | null;
 };
 
@@ -101,10 +126,24 @@ export type SavedReply = {
   updatedAt: string;
 };
 
+export type LabelColor =
+  | "gray"
+  | "red"
+  | "orange"
+  | "yellow"
+  | "green"
+  | "teal"
+  | "blue"
+  | "purple";
+
+export type Label = { id: string; name: string; color: LabelColor };
+
 export type PushProvider = "apns" | "fcm";
 
 export type AlertSettings = {
   email: boolean;
+  emailAvailable: boolean;
+  pushKey: string | null;
   nativePushProviders?: PushProvider[];
 };
 

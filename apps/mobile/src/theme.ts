@@ -1,4 +1,24 @@
+import * as SecureStore from "expo-secure-store";
 import { StyleSheet } from "react-native";
+
+export type ThemePreference = "system" | "light" | "dark";
+
+const THEME_KEY = "dinghy.native.theme.v1";
+
+export async function readThemePreference(): Promise<ThemePreference> {
+  const saved = await SecureStore.getItemAsync(THEME_KEY);
+  return saved === "light" || saved === "dark" ? saved : "system";
+}
+
+export async function saveThemePreference(theme: ThemePreference): Promise<void> {
+  if (theme === "system") {
+    await SecureStore.deleteItemAsync(THEME_KEY);
+    return;
+  }
+  await SecureStore.setItemAsync(THEME_KEY, theme, {
+    keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+  });
+}
 
 export const controlShape = { pill: 999 } as const;
 
@@ -22,6 +42,9 @@ export const day = {
   authPanel: "#fffdf7",
   authInk: "#112e3b",
   authLine: "#c8d7d6",
+  cover: "#e3f2ee",
+  coverInk: "#142f3c",
+  coverSub: "#264654",
 };
 
 export type Palette = typeof day;
@@ -46,6 +69,9 @@ export const night: Palette = {
   authPanel: "#172d3c",
   authInk: "#eef5f6",
   authLine: "#47606c",
+  cover: "#162b40",
+  coverInk: "#f5efe0",
+  coverSub: "#d2e1e7",
 };
 
 export const styles = StyleSheet.create({
