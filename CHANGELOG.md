@@ -4,6 +4,10 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- `APP_REVIEW_EMAIL` and `APP_REVIEW_CODE` give one account a fixed sign-in code for the Dinghy app, so an app store's reviewer can sign in without its mailbox. Both are optional, and no code goes to that account's mailbox.
+
 ## [0.47.0] - 2026-11-21
 
 ### Changed

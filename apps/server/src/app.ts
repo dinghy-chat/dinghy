@@ -43,6 +43,7 @@ import type { Mailer } from "./mailer.ts";
 import { registerMcp } from "./mcp.ts";
 import { registerMemberCheck } from "./member.ts";
 import { registerModerationRoutes } from "./moderation.ts";
+import type { AppReview } from "./native-auth.ts";
 import type { NativePush } from "./native-push.ts";
 import { oauthIssuer, registerOAuth, resourceMetadataUrl } from "./oauth.ts";
 import { type FetchClientDocument, fetchClientDocument } from "./oauth-client.ts";
@@ -100,6 +101,8 @@ interface Checks {
 }
 
 export interface AppOptions {
+  /** The account an app store's reviewer signs in to the app with. Unset on most servers. */
+  appReview?: AppReview | undefined;
   auth?: Auth | undefined;
   /** Dinghy Cloud's settings, read by `ee/`. A self-hosted install leaves them unset. */
   cloud?: CloudSettings | undefined;
@@ -239,6 +242,7 @@ function isBusy(error: unknown): boolean {
 
 export function createApp({
   alerts,
+  appReview,
   auth,
   checks,
   cloud: cloudSettings,
@@ -448,6 +452,7 @@ export function createApp({
       mailer,
     });
     registerOperatorRoutes(app, {
+      appReview,
       auth,
       billing: cloud?.billing ?? false,
       contact: cloud?.contact ?? null,

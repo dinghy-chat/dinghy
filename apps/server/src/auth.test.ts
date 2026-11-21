@@ -10,7 +10,7 @@ import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import { authenticatorCode, turnOnTwoFactor } from "../test/authenticator.ts";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
-import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
+import { AUTH_SECRET, DATABASE_URL, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
 import {
   addOperator,
   captureMail,
@@ -23,6 +23,7 @@ import {
 } from "../test/operators.ts";
 import { type App, createApp, openApiDocument } from "./app.ts";
 import { type Auth, createAuth, signInLink } from "./auth.ts";
+import { appReviewFromConfig, loadConfig } from "./config.ts";
 import { session, verification, workspaceMember } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
 import { sha256Hex } from "./identity.ts";
@@ -683,6 +684,51 @@ describe("native email-code sign-in", () => {
       where identifier like 'native-email-code:%' and value like ${`%${person.id}%`}
     `);
     expect((await verifyCode(person.email, code)).status).toBe(400);
+  });
+
+  test("signs in the app review account with its fixed code, once per request, and mails nothing", async () => {
+    const space = await createWorkspace(db, "App review", []);
+    const reviewer = await addOperator({
+      auth,
+      owner,
+      email: email("native-app-review"),
+      workspaceId: space.id,
+    });
+    const other = await addOperator({
+      auth,
+      owner,
+      email: email("native-app-review-other"),
+      workspaceId: space.id,
+    });
+    const base = { DATABASE_URL, VALKEY_URL, AUTH_SECRET, APP_REVIEW_EMAIL: "Review@Example.com" };
+    expect(() => appReviewFromConfig(loadConfig(base))).toThrow(/APP_REVIEW_CODE/);
+    expect(appReviewFromConfig(loadConfig({ ...base, APP_REVIEW_CODE: "123456" }))).toEqual({
+      email: "review@example.com",
+      code: "123456",
+    });
+    expect(() => loadConfig({ ...base, APP_REVIEW_CODE: "12345" })).toThrow();
+    // A leading zero, which an emailed code never has.
+    const fixed = "024680";
+    const review = createApp({
+      appReview: { email: reviewer.email, code: fixed },
+      db,
+      logger,
+      valkey,
+      mailer: mail,
+      trustedProxyHops: 1,
+      checks: { postgres: ok, valkey: ok },
+      auth,
+    });
+    for (const round of [1, 2]) {
+      await requestCode(reviewer.email, { target: review });
+      expect((await verifyCode(reviewer.email, fixed, review)).status, `round ${round}`).toBe(200);
+      expect((await verifyCode(reviewer.email, fixed, review)).status).toBe(400);
+    }
+    expect(sentCodes(reviewer.email)).toHaveLength(0);
+
+    await requestCode(other.email, { target: review });
+    await codeTo(other.email);
+    expect((await verifyCode(other.email, fixed, review)).status).toBe(400);
   });
 
   test("keeps the five-guess account budget when a replacement code is sent", async () => {
