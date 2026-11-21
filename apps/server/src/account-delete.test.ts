@@ -3,6 +3,7 @@ import { and, eq, isNull, like, ne, sql } from "drizzle-orm";
 import { Redis } from "iovalkey";
 import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { turnOnTwoFactor } from "../test/authenticator.ts";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
 import {
@@ -370,6 +371,111 @@ describe("a server with no mail server", () => {
     expect(await done.json()).toEqual({ deleted: true });
     expect(await operatorRow(first.id)).toMatchObject({ name: FORMER_MEMBER_NAME });
     expect((await me(first)).status).toBe(401);
+  });
+});
+
+describe("the app review account", () => {
+  test("signs out everywhere and stays, with its workspace, for the next review", async () => {
+    const space = await createWorkspace(db, "Review harbor", []);
+    const reviewer = await person(space.id, "owner");
+    const other = await person(space.id, "member");
+    const review = createApp({
+      appReview: { email: reviewer.email, code: "024680" },
+      auth,
+      db,
+      logger,
+      live,
+      valkey,
+      mailer: mail,
+      checks: { postgres: ok, valkey: ok },
+    });
+    const second = { ...reviewer, cookie: await signIn(app, auth, reviewer.email) };
+    await owner.insert(pushSubscription).values({
+      operatorId: reviewer.id,
+      endpoint: `https://push.example.com/${reviewer.id}`,
+      p256dh: "key",
+      auth: "secret",
+    });
+    await turnOnTwoFactor(app, reviewer.cookie);
+    const mailed = mail.countTo(reviewer.email);
+
+    const done = await askDelete(reviewer, {}, review);
+    expect(done.status).toBe(200);
+    expect(await done.json()).toEqual({ deleted: true });
+    expect(mail.countTo(reviewer.email)).toBe(mailed);
+    expect((await me(reviewer)).status).toBe(401);
+    expect((await me(second)).status).toBe(401);
+    expect(await operatorRow(reviewer.id)).toMatchObject({
+      email: reviewer.email,
+      deletedAt: null,
+      twoFactorOn: false,
+    });
+    expect(
+      await owner
+        .select()
+        .from(pushSubscription)
+        .where(eq(pushSubscription.operatorId, reviewer.id)),
+    ).toEqual([]);
+    expect(await workspaceRow(space.id)).toMatchObject({ deletedAt: null });
+    expect(await roleOf(space.id, reviewer.id)).toBe("owner");
+    expect(audits("account.review_signed_out", reviewer.id)).toHaveLength(1);
+    expect(audits("account.deleted", reviewer.id)).toHaveLength(0);
+    expect(wakes).toContain(space.id);
+
+    const again = { ...reviewer, cookie: await signIn(app, auth, reviewer.email) };
+    expect((await me(again)).status).toBe(200);
+    // Another account on the same server still confirms by email.
+    expect(await (await askDelete(other, {}, review)).json()).toEqual({ deleted: false });
+  });
+
+  test("each reviewer deletes the same account, with no limit", async () => {
+    const space = await createWorkspace(db, "Review harbor limit", []);
+    const reviewer = await person(space.id, "owner");
+    const review = createApp({
+      appReview: { email: reviewer.email, code: "024680" },
+      auth,
+      db,
+      logger,
+      live,
+      valkey,
+      mailer: mail,
+      checks: { postgres: ok, valkey: ok },
+    });
+    for (let round = 0; round < 7; round += 1) {
+      const signedIn = { ...reviewer, cookie: await signIn(app, auth, reviewer.email) };
+      expect((await askDelete(signedIn, {}, review)).status).toBe(200);
+    }
+  });
+
+  test("a delete link sent before the review settings only signs it out", async () => {
+    const space = await createWorkspace(db, "Review harbor link", []);
+    const reviewer = await person(space.id, "owner");
+    const link = await deleteLink(reviewer);
+    const review = createApp({
+      appReview: { email: reviewer.email, code: "024680" },
+      auth,
+      db,
+      logger,
+      live,
+      valkey,
+      mailer: mail,
+      checks: { postgres: ok, valkey: ok },
+    });
+    expect((await pressLinkButton(review, link)).status).toBe(200);
+    expect((await me(reviewer)).status).toBe(401);
+    expect(await operatorRow(reviewer.id)).toMatchObject({ deletedAt: null });
+    expect(await workspaceRow(space.id)).toMatchObject({ deletedAt: null });
+    // The link works once, even when two presses race.
+    const link2 = await deleteLink({
+      ...reviewer,
+      cookie: await signIn(app, auth, reviewer.email),
+    });
+    const presses = await Promise.all([
+      pressLinkButton(review, link2),
+      pressLinkButton(review, link2),
+    ]);
+    expect(presses.map((answer) => answer.status).sort()).toEqual([200, 400]);
+    expect((await pressLinkButton(review, link)).status).toBe(400);
   });
 });
 

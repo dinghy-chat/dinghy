@@ -4,6 +4,10 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- The app review account set by `APP_REVIEW_EMAIL` deletes at once, with no email link. The delete signs it out on every device, turns off its two-step sign-in, and keeps the account and its workspace for the next review.
+
 ## [0.48.0] - 2026-11-21
 
 ### Added
