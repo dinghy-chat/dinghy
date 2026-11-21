@@ -674,9 +674,13 @@ export function registerNativeAuthRoutes(
       return tooManyAttempts(c, { windowSeconds: wait });
     }
     // The known and unknown paths both continue after the same answer. Only a known account gets mail.
-    sendEmailCode(auth, db, mailer, logger, appReview, email, ip).catch((error: unknown) => {
-      logger.error(safeErrorFields(error), "could not send a native sign-in code");
-    });
+    const sent = sendEmailCode(auth, db, mailer, logger, appReview, email, ip).catch(
+      (error: unknown) => {
+        logger.error(safeErrorFields(error), "could not send a native sign-in code");
+      },
+    );
+    // A reviewer already knows the code, so it must be stored before the answer.
+    if (email === appReview?.email) await sent;
     return c.json(
       {
         ok: true,

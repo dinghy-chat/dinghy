@@ -707,7 +707,8 @@ describe("native email-code sign-in", () => {
       code: "123456",
     });
     expect(() => loadConfig({ ...base, APP_REVIEW_CODE: "12345" })).toThrow();
-    const fixed = "246810";
+    // A leading zero, which an emailed code never has.
+    const fixed = "024680";
     const review = createApp({
       appReview: { email: reviewer.email, code: fixed },
       db,
@@ -718,17 +719,8 @@ describe("native email-code sign-in", () => {
       checks: { postgres: ok, valkey: ok },
       auth,
     });
-    const stored = async (operatorId: string) => {
-      const rows = await owner.execute(sql`
-        select 1 from verification
-        where identifier like 'native-email-code:%' and value like ${`%${operatorId}%`}
-      `);
-      return rows.rows.length;
-    };
-
     for (const round of [1, 2]) {
       await requestCode(reviewer.email, { target: review });
-      await vi.waitFor(async () => expect(await stored(reviewer.id)).toBe(1));
       expect((await verifyCode(reviewer.email, fixed, review)).status, `round ${round}`).toBe(200);
       expect((await verifyCode(reviewer.email, fixed, review)).status).toBe(400);
     }
