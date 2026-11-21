@@ -11,7 +11,7 @@ import type {
 } from "./api.ts";
 import { type ComposeMode, Composer, focusComposer } from "./composer.tsx";
 import { useConversationActions } from "./conversation-actions.ts";
-import type { Draft } from "./drafts.ts";
+import type { Draft, DraftUpdate } from "./drafts.ts";
 import { Icon } from "./icons.tsx";
 import type { LabelPicks } from "./labels.tsx";
 import { useTabVisible } from "./live.ts";
@@ -120,7 +120,7 @@ export function Thread({
   meId: string;
   /** The operator's unsent reply or note here. The inbox keeps it, so it outlives this thread. */
   draft: Draft;
-  setDraft(draft: Draft): void;
+  setDraft(update: DraftUpdate): void;
   members: Member[];
   labels: Label[];
   /** The operator added a label to the team from the picker. */
@@ -249,17 +249,9 @@ export function Thread({
   // gets one reply even when another operator sent it meanwhile. A note never sends it.
   const [editedDraft, setEditingDraft] = useState<SuggestedReply | null>(null);
   const editingDraft = mode === "reply" ? editedDraft : null;
-  // What the composer holds now, and whether this thread still shows, so a late answer to a draft
-  // send changes only the text that sent it.
-  const composerNow = useRef(draft);
-  composerNow.current = draft;
-  const isShown = useRef(true);
-  useEffect(() => {
-    isShown.current = true;
-    return () => {
-      isShown.current = false;
-    };
-  }, []);
+  // One draft send at a time, and no switch to Note while it waits, so its answer meets the text
+  // and the mode that sent it.
+  const isSendingDraft = useRef(false);
   // A draft goes as it was written, so quoting a message makes the text the operator's own reply.
   useEffect(() => {
     if (quoting !== null) setEditingDraft(null);
@@ -267,7 +259,7 @@ export function Thread({
   /** Puts the caret in the composer, as a reply or a note. A closed conversation takes notes only. */
   const write = (next: ComposeMode) => {
     if (repliesOffReason !== null) return;
-    if (!closed && next !== mode) {
+    if (!closed && next !== mode && !isSendingDraft.current) {
       setEditingDraft(null);
       setDraft({ ...draft, isNote: next === "note" });
     }
@@ -311,12 +303,22 @@ export function Thread({
     if (editingDraft !== null) {
       // The composer keeps the text until the server answers, so a failure loses nothing and a
       // retry goes to the same draft. A draft replaced or discarded meanwhile lets go of the text,
-      // and the next Send sends it as the operator's own reply.
-      return void suggestions.send(editingDraft, body).then((outcome) => {
-        if (outcome === "failed" || !isShown.current) return;
-        setEditingDraft(null);
+      // and the next Send sends it as the operator's own reply. A success empties the composer,
+      // even after the operator left this conversation, unless they typed on.
+      if (isSendingDraft.current) return;
+      isSendingDraft.current = true;
+      const chosen = editingDraft;
+      const sentText = draft.text;
+      return void suggestions.send(chosen, body).then((outcome) => {
+        isSendingDraft.current = false;
+        if (outcome === "failed") return;
+        setEditingDraft((current) => (current?.id === chosen.id ? null : current));
         if (outcome === "gone") return setProblem("draftGone");
-        if (composerNow.current.text.trim() === body) setDraft({ text: "", isNote: false });
+        setDraft((current) =>
+          current.text === sentText || current.text.trim() === body
+            ? { ...current, text: "" }
+            : current,
+        );
       });
     }
     setProblem(null);
@@ -340,7 +342,7 @@ export function Thread({
     canSend: canReply,
     onSend: async (chosen: SuggestedReply) => {
       const isSent = (await suggestions.send(chosen)) === "sent";
-      if (isSent && editingDraft?.id === chosen.id) setEditingDraft(null);
+      if (isSent) setEditingDraft((current) => (current?.id === chosen.id ? null : current));
       return isSent;
     },
     onEdit: editDraft,
@@ -494,6 +496,7 @@ export function Thread({
                   : {
                       value: mode,
                       onChange: (next) => {
+                        if (isSendingDraft.current) return;
                         setEditingDraft(null);
                         setDraft({ ...draft, isNote: next === "note" });
                       },

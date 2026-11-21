@@ -8,6 +8,9 @@ export interface Draft {
 
 export const NO_DRAFT: Draft = { text: "", isNote: false };
 
+/** A new draft, or a change to the current one, which a late answer uses to touch only its text. */
+export type DraftUpdate = Draft | ((current: Draft) => Draft);
+
 type Drafts = Record<string, Draft>;
 
 const isDraft = (value: unknown): value is Draft =>
@@ -43,10 +46,11 @@ export function useDrafts(operatorId: string, workspaceId: string) {
   const [drafts, setDrafts] = useState(() => readDrafts(key));
   useEffect(() => writeDrafts(key, drafts), [key, drafts]);
   // An empty note stays, so the Note tab stays chosen.
-  const setDraft = useCallback((conversationId: string, draft: Draft) => {
-    setDrafts(({ [conversationId]: _, ...rest }) =>
-      draft.text === "" && !draft.isNote ? rest : { ...rest, [conversationId]: draft },
-    );
+  const setDraft = useCallback((conversationId: string, update: DraftUpdate) => {
+    setDrafts(({ [conversationId]: current = NO_DRAFT, ...rest }) => {
+      const draft = typeof update === "function" ? update(current) : update;
+      return draft.text === "" && !draft.isNote ? rest : { ...rest, [conversationId]: draft };
+    });
   }, []);
   return [drafts, setDraft] as const;
 }
