@@ -249,9 +249,17 @@ export function Thread({
   // gets one reply even when another operator sent it meanwhile. A note never sends it.
   const [editedDraft, setEditingDraft] = useState<SuggestedReply | null>(null);
   const editingDraft = mode === "reply" ? editedDraft : null;
-  // What the composer holds now, so a late answer to a send never overwrites newer typing.
+  // What the composer holds now, and whether this thread still shows, so a late answer to a draft
+  // send changes only the text that sent it.
   const composerNow = useRef(draft);
   composerNow.current = draft;
+  const isShown = useRef(true);
+  useEffect(() => {
+    isShown.current = true;
+    return () => {
+      isShown.current = false;
+    };
+  }, []);
   // A draft goes as it was written, so quoting a message makes the text the operator's own reply.
   useEffect(() => {
     if (quoting !== null) setEditingDraft(null);
@@ -301,14 +309,14 @@ export function Thread({
   const authorOf = (line: Line) => (line.fromVisitor ? visitorName : replyAuthor(line, meId));
   const send = (body: string, picked: ReadonlyMap<string, string>) => {
     if (editingDraft !== null) {
-      // The composer emptied itself, so a failure puts the text back. A draft replaced or discarded
-      // meanwhile lets go of it, and the next Send sends the text as the operator's own reply.
+      // The composer keeps the text until the server answers, so a failure loses nothing and a
+      // retry goes to the same draft. A draft replaced or discarded meanwhile lets go of the text,
+      // and the next Send sends it as the operator's own reply.
       return void suggestions.send(editingDraft, body).then((outcome) => {
-        const isUntouched = composerNow.current.text === "" && !composerNow.current.isNote;
-        if (outcome !== "sent" && isUntouched) setDraft({ text: body, isNote: false });
-        if (outcome === "failed") return;
+        if (outcome === "failed" || !isShown.current) return;
         setEditingDraft(null);
-        if (outcome === "gone") setProblem("draftGone");
+        if (outcome === "gone") return setProblem("draftGone");
+        if (composerNow.current.text.trim() === body) setDraft({ text: "", isNote: false });
       });
     }
     setProblem(null);
@@ -331,8 +339,9 @@ export function Thread({
     visitor: conversation.visitor.name?.split(" ")[0] ?? visitorName,
     canSend: canReply,
     onSend: async (chosen: SuggestedReply) => {
-      if (editingDraft?.id === chosen.id) setEditingDraft(null);
-      return (await suggestions.send(chosen)) === "sent";
+      const isSent = (await suggestions.send(chosen)) === "sent";
+      if (isSent && editingDraft?.id === chosen.id) setEditingDraft(null);
+      return isSent;
     },
     onEdit: editDraft,
     onDiscard: (chosen: SuggestedReply) => {
@@ -476,6 +485,7 @@ export function Thread({
               draft={draft.text}
               setDraft={(text) => setDraft({ text, isNote: mode === "note" })}
               onSend={send}
+              holdsText={editingDraft !== null}
               onFiles={uploadsOn ? sendFiles : undefined}
               picks={composerPicks(savedReplies, members, meId, mode === "note")}
               mode={

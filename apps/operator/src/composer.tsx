@@ -282,6 +282,7 @@ export function Composer({
   above,
   mode,
   editing = false,
+  holdsText = editing,
   picks,
 }: {
   draft: string;
@@ -298,6 +299,8 @@ export function Composer({
   mode?: { value: ComposeMode; onChange?(mode: ComposeMode): void } | undefined;
   /** It edits a sent reply, in place of its bubble. */
   editing?: boolean;
+  /** Its text stays until the server takes it, as for a bot's suggestion being edited. */
+  holdsText?: boolean;
   /** What `/` and `@` offer here: saved replies, and teammates in a note. */
   picks: PickerSources;
 }) {
@@ -314,9 +317,9 @@ export function Composer({
     const body = toMarkdown(editor.getJSON()).trim();
     if (body === "") return;
     // An edit keeps its text until the server takes it, so a failed save loses nothing.
-    if (!editing) setDraft("");
+    if (!holdsText) setDraft("");
     onSend(body, new Map(picker.picked));
-    if (!editing) picker.picked.clear();
+    if (!holdsText) picker.picked.clear();
   };
   const now: Latest = {
     label: t(editing ? "editLabel" : isNote ? "composeNoteLabel" : "replyLabel"),
