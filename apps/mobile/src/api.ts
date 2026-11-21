@@ -269,10 +269,15 @@ export class DinghyApi {
     );
   }
 
-  messageLink(conversationId: string, messageId: string): string {
+  conversationLink(conversationId: string): string {
     const url = new URL("/", this.auth.origin);
     url.searchParams.set("workspace", this.auth.workspace.id);
     url.searchParams.set("conversation", conversationId);
+    return url.href;
+  }
+
+  messageLink(conversationId: string, messageId: string): string {
+    const url = new URL(this.conversationLink(conversationId));
     url.hash = `message-${messageId}`;
     return url.href;
   }
@@ -307,6 +312,14 @@ export class DinghyApi {
       method: "PATCH",
       body: JSON.stringify(change),
     });
+  }
+
+  /** Blocks or unblocks a visitor. A block goes through one of their conversations. */
+  setBlocked(conversationId: string, blocked: boolean): Promise<{ ok: true }> {
+    return this.call(
+      this.workspace(`/conversations/${encodeURIComponent(conversationId)}/block`),
+      blocked ? { method: "POST", body: "{}" } : { method: "DELETE" },
+    );
   }
 
   contact(visitorId: string): Promise<components["schemas"]["ContactDetail"]> {

@@ -1,6 +1,9 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  type AccessibilityActionEvent,
+  type AccessibilityActionInfo,
   ActivityIndicator,
+  PanResponder,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -8,28 +11,55 @@ import {
   Text,
   View,
 } from "react-native";
-import Svg, { Circle, Line, Path } from "react-native-svg";
-import type { components } from "../../../packages/sdk/src/openapi.ts";
-import { browserTimeZone, duration, weekdayNames } from "../../operator/src/format.ts";
+import Svg, { Line, Path, Rect } from "react-native-svg";
+import { browserTimeZone, weekdayNames } from "../../operator/src/format.ts";
 import { t } from "../../operator/src/text.ts";
+import {
+  type Analytics,
+  type AnalyticsDays,
+  averageText,
+  barLayout,
+  type Change,
+  calendarDay,
+  chats,
+  dailySummary,
+  dayAt,
+  heatLevel,
+  type Metric,
+  metricCell,
+  metricDetail,
+  peakSlot,
+  percent,
+  shareOf,
+  twoHourSlots,
+  zoneName,
+} from "./analytics-logic";
+import { AnalyticsScene } from "./analytics-scene";
 import type { DinghyApi } from "./api";
 import { Avatar, readableError } from "./common";
 import { fonts } from "./fonts";
 import { Icon } from "./icon";
-import type { Palette } from "./theme";
-
-type Analytics = components["schemas"]["Analytics"];
-type AnalyticsDays = 7 | 30 | 90;
+import { usePinnedHeaderLayout } from "./pinned-header";
+import { Sheet } from "./sheet";
+import { useTabBarInset } from "./tab-bar-inset";
+import { night, type Palette } from "./theme";
 
 const PERIODS: AnalyticsDays[] = [7, 30, 90];
-const GRAPH_WIDTH = 300;
-const GRAPH_HEIGHT = 100;
-const GRAPH_INSET = 7;
+const METRICS: Metric[] = ["started", "median", "fast", "answered"];
 const DAY_NAMES_SHORT = weekdayNames("short");
 const DAY_NAMES = weekdayNames("long");
 const HOUR_NAMES = Array.from({ length: 24 }, (_, hour) =>
   new Date(2024, 0, 1, hour).toLocaleTimeString([], { hour: "numeric" }),
 );
+const CHART_HEIGHT = 132;
+const CHART_TOP = 16;
+const CHART_BASE = CHART_HEIGHT - 2;
+
+// The operator web app's tokens (app.css): the night sky of the pixel scenes and the heat ramp.
+const HEAT = {
+  day: ["#d6e4ff", "#9dbdff", "#5b8fff", "#1f5ad6"],
+  night: ["#1d3558", "#24508f", "#3a74d6", "#7fb0ff"],
+};
 
 const LABEL_COLORS: Record<Analytics["labels"][number]["color"], string> = {
   gray: "#77858c",
@@ -42,79 +72,62 @@ const LABEL_COLORS: Record<Analytics["labels"][number]["color"], string> = {
   purple: "#7d58b3",
 };
 
-const shareOf = (count: number, total: number) => (total === 0 ? 0 : count / total);
-
-const percent = (share: number) =>
-  new Intl.NumberFormat([], { style: "percent", maximumFractionDigits: 0 }).format(share);
-
-function dayName(date: string): string {
-  const [year, month, day] = date.split("-").map(Number);
-  return new Date(year ?? 0, (month ?? 1) - 1, day ?? 1).toLocaleDateString([], {
-    month: "short",
-    day: "numeric",
+const longDay = (date: string) =>
+  calendarDay(date).toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
+const shortDay = (date: string) =>
+  calendarDay(date).toLocaleDateString([], { month: "short", day: "numeric" });
+const slotName = (day: number, slot: number) =>
+  t("mobileHoursSlot", {
+    day: DAY_NAMES_SHORT[day] ?? "",
+    from: HOUR_NAMES[slot * 2] ?? "",
+    to: HOUR_NAMES[(slot * 2 + 2) % 24] ?? "",
   });
-}
-
-function conversations(count: number): string {
-  return count === 1 ? t("chartOne") : t("chartMany", { count });
-}
-
-type Change = { text: string; kind: "better" | "worse" | "neutral" } | null;
-
-function startedChange(numbers: Analytics, days: AnalyticsDays): Change {
-  const before = numbers.previous.started;
-  if (before === 0) return null;
-  const change = numbers.started / before - 1;
-  const formatted = percent(Math.abs(change));
-  const text =
-    formatted === percent(0)
-      ? t("changeSame")
-      : t(change > 0 ? "changeUp" : "changeDown", { change: formatted });
-  return { text: `${text} ${t("vsPrevious", { days })}`, kind: "neutral" };
-}
-
-function medianChange(numbers: Analytics, days: AnalyticsDays): Change {
-  const now = numbers.firstReply.medianSeconds;
-  const before = numbers.previous.firstReply.medianSeconds;
-  if (now === null || before === null) return null;
-  if (Math.round(now) === Math.round(before)) {
-    return {
-      text: `${t("changeSame")} ${t("vsPrevious", { days })}`,
-      kind: "neutral",
-    };
-  }
-  const faster = now < before;
-  return {
-    text: `${t(faster ? "replyFaster" : "replySlower", {
-      time: duration(Math.abs(before - now)),
-    })} ${t("vsPrevious", { days })}`,
-    kind: faster ? "better" : "worse",
-  };
-}
-
-function fastChange(numbers: Analytics, days: AnalyticsDays): Change {
-  if (numbers.started === 0 || numbers.previous.started === 0) return null;
-  const now = shareOf(numbers.firstReply.fast, numbers.started);
-  const before = shareOf(numbers.previous.firstReply.fast, numbers.previous.started);
-  const points = Math.round((now - before) * 100);
-  if (points === 0) {
-    return {
-      text: `${t("changeSame")} ${t("vsPrevious", { days })}`,
-      kind: "neutral",
-    };
-  }
-  return {
-    text: `${t(points > 0 ? "pointsUp" : "pointsDown", {
-      points: Math.abs(points),
-    })} ${t("vsPrevious", { days })}`,
-    kind: points > 0 ? "better" : "worse",
-  };
-}
 
 function changeColor(change: Change, palette: Palette): string {
   if (change?.kind === "better") return palette.green;
   if (change?.kind === "worse") return palette.amber;
   return palette.sub;
+}
+
+function stepAction(event: AccessibilityActionEvent): 1 | -1 | 0 {
+  if (event.nativeEvent.actionName === "increment") return 1;
+  if (event.nativeEvent.actionName === "decrement") return -1;
+  return 0;
+}
+
+const ADJUSTABLE_ACTIONS: AccessibilityActionInfo[] = [
+  { name: "increment" },
+  { name: "decrement" },
+];
+
+function AnalyticsHeader({
+  days,
+  hasLargeText,
+  zone,
+  palette,
+}: {
+  days: AnalyticsDays;
+  hasLargeText: boolean;
+  zone: string;
+  palette: Palette;
+}) {
+  const dark = palette === night;
+  const sky = palette.analyticsSky;
+  return (
+    <View style={[styles.header, hasLargeText && styles.largeHeader, { backgroundColor: sky }]}>
+      {/* The sky continues above the header when the page bounces. */}
+      <View pointerEvents="none" style={[styles.headerBounce, { backgroundColor: sky }]} />
+      <AnalyticsScene dark={dark} />
+      <Text accessibilityRole="header" style={[styles.title, { color: palette.coverInk }]}>
+        {t("analytics")}
+      </Text>
+      <Text
+        style={[styles.subtitle, hasLargeText && styles.wideSubtitle, { color: palette.coverSub }]}
+      >
+        {t("mobileAnalyticsSubtitle", { days, zone: zoneName(zone) })}
+      </Text>
+    </View>
+  );
 }
 
 function PeriodPicker({
@@ -127,24 +140,38 @@ function PeriodPicker({
   palette: Palette;
 }) {
   return (
-    <View accessibilityLabel={t("period")} accessibilityRole="radiogroup" style={styles.periods}>
+    <View
+      accessibilityLabel={t("period")}
+      accessibilityRole="radiogroup"
+      style={[styles.periods, { backgroundColor: palette.wash }]}
+    >
       {PERIODS.map((period) => {
         const selected = days === period;
         return (
           <Pressable
             key={period}
             accessibilityRole="radio"
+            accessibilityLabel={t("mobileAnalyticsPeriod", { days: period })}
             accessibilityState={{ checked: selected }}
-            onPress={() => onChange(period)}
+            onPress={() => {
+              if (!selected) onChange(period);
+            }}
             style={({ pressed }) => [
               styles.period,
               {
-                backgroundColor: selected ? palette.ink : "transparent",
+                backgroundColor: selected ? palette.sheet : "transparent",
+                borderColor: selected ? palette.line : "transparent",
                 opacity: pressed ? 0.72 : 1,
               },
             ]}
           >
-            <Text style={[styles.periodText, { color: selected ? palette.paper : palette.sub }]}>
+            <Text
+              style={[
+                styles.periodText,
+                { color: selected ? palette.ink : palette.sub },
+                selected && { fontFamily: fonts.bold },
+              ]}
+            >
               {t(period === 7 ? "period7" : period === 30 ? "period30" : "period90")}
             </Text>
           </Pressable>
@@ -154,144 +181,130 @@ function PeriodPicker({
   );
 }
 
-function StatCard({
-  title,
-  value,
-  note,
-  change,
+function Metrics({
+  numbers,
+  days,
+  open,
+  onOpen,
   palette,
 }: {
-  title: string;
-  value: string;
-  note?: string | undefined;
-  change: Change;
+  numbers: Analytics;
+  days: AnalyticsDays;
+  open: Metric | null;
+  onOpen(metric: Metric): void;
   palette: Palette;
 }) {
   return (
-    <View style={[styles.statCard, { backgroundColor: palette.sheet, borderColor: palette.line }]}>
-      <Text style={[styles.statTitle, { color: palette.sub }]}>{title}</Text>
-      <Text
-        numberOfLines={1}
-        adjustsFontSizeToFit
-        style={[styles.statValue, { color: palette.ink }]}
-      >
-        {value}
-      </Text>
-      {note !== undefined && (
-        <Text numberOfLines={2} style={[styles.statNote, { color: palette.sub }]}>
-          {note}
-        </Text>
-      )}
-      {change !== null && (
-        <Text numberOfLines={2} style={[styles.change, { color: changeColor(change, palette) }]}>
-          {change.text}
-        </Text>
-      )}
-    </View>
-  );
-}
-
-function DailyTrend({ days, palette }: { days: Analytics["perDay"]; palette: Palette }) {
-  const busiest = days.reduce((top, day) => (day.conversations > top.conversations ? day : top));
-  const most = Math.max(1, busiest.conversations);
-  const lastIndex = Math.max(1, days.length - 1);
-  const points = days.map((day, index) => ({
-    x: GRAPH_INSET + (index / lastIndex) * (GRAPH_WIDTH - GRAPH_INSET * 2),
-    y: GRAPH_HEIGHT - GRAPH_INSET - (day.conversations / most) * (GRAPH_HEIGHT - GRAPH_INSET * 2),
-  }));
-  const line = points
-    .map((point, index) => `${index === 0 ? "M" : "L"}${point.x},${point.y}`)
-    .join("");
-  const firstPoint = points[0];
-  const lastPoint = points.at(-1);
-  const area =
-    firstPoint === undefined || lastPoint === undefined
-      ? ""
-      : `${line}L${lastPoint.x},${GRAPH_HEIGHT - GRAPH_INSET}L${firstPoint.x},${GRAPH_HEIGHT - GRAPH_INSET}Z`;
-  const first = days[0];
-  const last = days.at(-1);
-  const summary = t("perDaySummary", {
-    day: dayName(busiest.date),
-    conversations: conversations(busiest.conversations),
-  });
-
-  return (
     <View
-      accessible
-      accessibilityRole="image"
-      accessibilityLabel={summary}
-      style={[styles.trendCard, { backgroundColor: palette.sheet, borderColor: palette.line }]}
+      accessibilityLabel={t("statsTitle")}
+      style={[
+        styles.card,
+        styles.metrics,
+        { backgroundColor: palette.sheet, borderColor: palette.line },
+      ]}
     >
-      <View style={styles.trendHeader}>
-        <View style={styles.trendHeading}>
-          <Text style={[styles.trendTitle, { color: palette.ink }]}>{t("perDayTitle")}</Text>
-          <Text style={[styles.trendHint, { color: palette.sub }]}>
-            {t("perDayBusiest", {
-              day: dayName(busiest.date),
-              conversations: conversations(busiest.conversations),
-            })}
-          </Text>
-        </View>
-        <Text style={[styles.trendMaximum, { color: palette.sub }]}>{most}</Text>
-      </View>
-      <Svg
-        accessible={false}
-        height={126}
-        width="100%"
-        viewBox={`0 0 ${GRAPH_WIDTH} ${GRAPH_HEIGHT}`}
-      >
-        <Line
-          x1={GRAPH_INSET}
-          x2={GRAPH_WIDTH - GRAPH_INSET}
-          y1={GRAPH_HEIGHT - GRAPH_INSET}
-          y2={GRAPH_HEIGHT - GRAPH_INSET}
-          stroke={palette.line}
-          strokeWidth={1}
-        />
-        <Line
-          x1={GRAPH_INSET}
-          x2={GRAPH_WIDTH - GRAPH_INSET}
-          y1={GRAPH_HEIGHT / 2}
-          y2={GRAPH_HEIGHT / 2}
-          stroke={palette.line}
-          strokeDasharray="3 4"
-          strokeWidth={1}
-        />
-        <Path d={area} fill={palette.tint} opacity={0.78} />
-        <Path
-          d={line}
-          fill="none"
-          stroke={palette.blue}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          strokeWidth={2.8}
-        />
-        {points.length <= 30 &&
-          points.map((point, index) => (
-            <Circle
-              key={days[index]?.date ?? index}
-              cx={point.x}
-              cy={point.y}
-              fill={palette.sheet}
-              stroke={palette.blue}
-              strokeWidth={1.8}
-              r={points.length <= 7 ? 3 : 1.8}
-            />
-          ))}
-      </Svg>
-      <View style={styles.trendAxis}>
-        <Text style={[styles.axisText, { color: palette.sub }]}>
-          {first === undefined ? "" : dayName(first.date)}
-        </Text>
-        <Text style={[styles.axisText, { color: palette.sub }]}>
-          {last === undefined ? "" : dayName(last.date)}
-        </Text>
-      </View>
+      {METRICS.map((metric, index) => {
+        const cell = metricCell(metric, numbers, days);
+        const selected = open === metric;
+        return (
+          <Pressable
+            key={metric}
+            accessibilityRole="button"
+            accessibilityLabel={[cell.title, cell.value, cell.detail, cell.change?.text]
+              .filter(Boolean)
+              .join(", ")}
+            accessibilityHint={t("mobileMetricHint")}
+            onPress={() => onOpen(metric)}
+            style={({ pressed }) => [
+              styles.metric,
+              {
+                borderColor: palette.line,
+                borderRightWidth: index % 2 === 0 ? StyleSheet.hairlineWidth : 0,
+                borderBottomWidth: index < 2 ? StyleSheet.hairlineWidth : 0,
+                backgroundColor: pressed || selected ? palette.wash : "transparent",
+              },
+            ]}
+          >
+            <View style={styles.metricTop}>
+              <Text numberOfLines={1} style={[styles.metricTitle, { color: palette.sub }]}>
+                {cell.title}
+              </Text>
+              <Icon name="next" size={13} color={palette.sub} />
+            </View>
+            <Text
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              style={[styles.metricValue, { color: palette.ink }]}
+            >
+              {cell.value}
+            </Text>
+            <Text numberOfLines={1} style={[styles.metricDetail, { color: palette.sub }]}>
+              {cell.detail}
+            </Text>
+            {cell.change !== null && (
+              <Text
+                numberOfLines={2}
+                style={[styles.metricChange, { color: changeColor(cell.change, palette) }]}
+              >
+                {cell.change.text}
+              </Text>
+            )}
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
 
-function AnalyticsCard({
+function MetricSheet({
+  metric,
+  numbers,
+  days,
+  zone,
+  onClose,
+  palette,
+}: {
+  metric: Metric | null;
+  numbers: Analytics;
+  days: AnalyticsDays;
+  zone: string;
+  onClose(): void;
+  palette: Palette;
+}) {
+  // Keep the last number while the sheet slides away.
+  const [shown, setShown] = useState<Metric>(metric ?? "started");
+  if (metric !== null && metric !== shown) setShown(metric);
+  const cell = metricCell(shown, numbers, days);
+  const detail = metricDetail(shown, numbers, days, zone);
+  return (
+    <Sheet visible={metric !== null} onClose={onClose} palette={palette} title={cell.title}>
+      <View style={styles.sheetBody}>
+        <Text style={[styles.sheetValue, { color: palette.ink }]}>{cell.value}</Text>
+        {cell.change !== null && (
+          <Text style={[styles.sheetChange, { color: changeColor(cell.change, palette) }]}>
+            {cell.change.text}
+          </Text>
+        )}
+        <Text style={[styles.sheetHelp, { color: palette.sub }]}>{detail.help}</Text>
+        <View style={[styles.sheetRows, { borderColor: palette.line }]}>
+          {detail.rows.map(([label, value]) => (
+            <View
+              key={label}
+              accessible
+              accessibilityLabel={`${label}, ${value}`}
+              style={[styles.sheetRow, { borderColor: palette.line }]}
+            >
+              <Text style={[styles.sheetRowLabel, { color: palette.sub }]}>{label}</Text>
+              <Text style={[styles.sheetRowValue, { color: palette.ink }]}>{value}</Text>
+            </View>
+          ))}
+        </View>
+      </View>
+    </Sheet>
+  );
+}
+
+function Card({
   title,
   hint,
   palette,
@@ -300,16 +313,22 @@ function AnalyticsCard({
   title: string;
   hint?: string | undefined;
   palette: Palette;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <View
-      style={[styles.detailCard, { backgroundColor: palette.sheet, borderColor: palette.line }]}
+      style={[
+        styles.card,
+        styles.cardPad,
+        { backgroundColor: palette.sheet, borderColor: palette.line },
+      ]}
     >
-      <View style={styles.detailHeader}>
-        <Text style={[styles.detailTitle, { color: palette.ink }]}>{title}</Text>
+      <View style={styles.cardHeader}>
+        <Text accessibilityRole="header" style={[styles.cardTitle, { color: palette.ink }]}>
+          {title}
+        </Text>
         {hint !== undefined && (
-          <Text style={[styles.detailHint, { color: palette.sub }]}>{hint}</Text>
+          <Text style={[styles.cardHint, { color: palette.sub }]}>{hint}</Text>
         )}
       </View>
       {children}
@@ -317,250 +336,578 @@ function AnalyticsCard({
   );
 }
 
-function ShareTrack({ share, palette }: { share: number; palette: Palette }) {
+function StepButton({
+  icon,
+  label,
+  disabled = false,
+  onPress,
+  palette,
+}: {
+  icon: "back" | "next" | "x";
+  label: string;
+  disabled?: boolean;
+  onPress(): void;
+  palette: Palette;
+}) {
   return (
-    <View accessible={false} style={[styles.shareTrack, { backgroundColor: palette.wash }]}>
-      <View
-        style={[
-          styles.shareFill,
-          { backgroundColor: palette.blue, width: `${Math.min(1, share) * 100}%` },
-        ]}
-      />
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityState={{ disabled }}
+      disabled={disabled}
+      hitSlop={4}
+      onPress={onPress}
+      style={({ pressed }) => [
+        styles.step,
+        { backgroundColor: palette.wash, opacity: disabled ? 0.35 : pressed ? 0.6 : 1 },
+      ]}
+    >
+      <Icon name={icon} size={16} color={palette.ink} />
+    </Pressable>
+  );
+}
+
+function barPath(x: number, y: number, width: number, height: number): string {
+  const r = Math.min(3, width / 2, height);
+  return `M${x},${y + height}V${y + r}Q${x},${y} ${x + r},${y}H${x + width - r}Q${x + width},${y} ${x + width},${y + r}V${y + height}Z`;
+}
+
+function DailyChart({ perDay, palette }: { perDay: Analytics["perDay"]; palette: Palette }) {
+  const [width, setWidth] = useState(0);
+  const [selected, setSelected] = useState<number | null>(null);
+  const summary = useMemo(() => dailySummary(perDay), [perDay]);
+  const count = perDay.length;
+  const layout = barLayout(count, width);
+  const plot = CHART_BASE - CHART_TOP;
+  const averageY = CHART_BASE - (summary.average / summary.most) * plot;
+  const busiest = perDay[summary.busiest];
+  const day = selected === null ? undefined : perDay[selected];
+
+  const selectedNow = useRef(selected);
+  selectedNow.current = selected;
+  const gesture = useRef({ start: 0, before: null as number | null, last: -1 });
+  const responder = useMemo(
+    () =>
+      PanResponder.create({
+        onStartShouldSetPanResponder: () => true,
+        onPanResponderGrant: (event) => {
+          const index = dayAt(event.nativeEvent.locationX, width, count);
+          gesture.current.start = event.nativeEvent.locationX;
+          gesture.current.last = index;
+          gesture.current.before = selectedNow.current;
+        },
+        onPanResponderMove: (_, move) => {
+          if (Math.abs(move.dx) < Math.max(4, Math.abs(move.dy))) return;
+          const index = dayAt(gesture.current.start + move.dx, width, count);
+          if (index === gesture.current.last) return;
+          gesture.current.last = index;
+          setSelected(index);
+        },
+        onPanResponderRelease: (_, move) => {
+          // A second tap on the same bar clears it.
+          const tap = Math.abs(move.dx) < 4 && Math.abs(move.dy) < 4;
+          if (tap) {
+            const { before, last } = gesture.current;
+            setSelected(before === last ? null : last);
+          }
+        },
+      }),
+    [count, width],
+  );
+
+  const step = (by: number) =>
+    setSelected((current) =>
+      Math.min(count - 1, Math.max(0, current === null ? (by > 0 ? 0 : count - 1) : current + by)),
+    );
+
+  const dayText = (index: number) => {
+    const item = perDay[index];
+    return item === undefined
+      ? ""
+      : t("mobileChartDay", { day: longDay(item.date), chats: chats(item.conversations) });
+  };
+  const overview =
+    busiest === undefined
+      ? ""
+      : t("mobileChartSummary", {
+          chats: chats(summary.total),
+          days: count,
+          average: averageText(summary.average),
+          day: longDay(busiest.date),
+          busiest: chats(busiest.conversations),
+        });
+
+  return (
+    <Card title={t("mobileChartTitle")} palette={palette}>
+      <View style={styles.readout}>
+        {day === undefined || selected === null ? (
+          <View style={styles.readoutText}>
+            <Text style={[styles.readoutMain, { color: palette.ink }]}>
+              {busiest === undefined
+                ? ""
+                : t("mobileChartBusiest", {
+                    day: longDay(busiest.date),
+                    chats: chats(busiest.conversations),
+                  })}
+            </Text>
+            <Text style={[styles.readoutHint, { color: palette.sub }]}>{t("mobileChartHint")}</Text>
+          </View>
+        ) : (
+          <>
+            <StepButton
+              icon="back"
+              label={t("mobileChartPrevious")}
+              disabled={selected === 0}
+              onPress={() => step(-1)}
+              palette={palette}
+            />
+            <Text
+              accessibilityLiveRegion="polite"
+              numberOfLines={1}
+              style={[styles.readoutSelected, { color: palette.ink }]}
+            >
+              {dayText(selected)}
+            </Text>
+            <StepButton
+              icon="next"
+              label={t("mobileChartNext")}
+              disabled={selected === count - 1}
+              onPress={() => step(1)}
+              palette={palette}
+            />
+            <StepButton
+              icon="x"
+              label={t("mobileChartClear")}
+              onPress={() => setSelected(null)}
+              palette={palette}
+            />
+          </>
+        )}
+      </View>
+      <View style={styles.chart} onLayout={(event) => setWidth(event.nativeEvent.layout.width)}>
+        {width > 0 && (
+          <Svg width={width} height={CHART_HEIGHT}>
+            {perDay.map((item, index) => {
+              const x = layout.x(index);
+              if (item.conversations === 0) {
+                return (
+                  <Rect
+                    key={item.date}
+                    x={x}
+                    y={CHART_BASE - 2}
+                    width={layout.bar}
+                    height={2}
+                    fill={index === selected ? palette.blue : palette.line}
+                  />
+                );
+              }
+              const height = Math.max(3, (item.conversations / summary.most) * plot);
+              return (
+                <Path
+                  key={item.date}
+                  d={barPath(x, CHART_BASE - height, layout.bar, height)}
+                  fill={palette.blue}
+                  opacity={selected === null || selected === index ? 1 : 0.3}
+                />
+              );
+            })}
+            <Line
+              x1={0}
+              x2={width}
+              y1={averageY}
+              y2={averageY}
+              stroke={palette.sub}
+              strokeDasharray="4 4"
+              strokeWidth={1}
+            />
+          </Svg>
+        )}
+        <Text
+          style={[
+            styles.averageLabel,
+            { color: palette.sub, backgroundColor: palette.sheet, top: Math.max(0, averageY - 17) },
+          ]}
+        >
+          {t("mobileChartAverage", { value: averageText(summary.average) })}
+        </Text>
+        <View
+          {...responder.panHandlers}
+          accessible
+          accessibilityRole="adjustable"
+          accessibilityLabel={t("mobileChartTitle")}
+          accessibilityValue={{ text: selected === null ? overview : dayText(selected) }}
+          accessibilityActions={ADJUSTABLE_ACTIONS}
+          onAccessibilityAction={(event) => {
+            const by = stepAction(event);
+            if (by !== 0) step(by);
+          }}
+          style={StyleSheet.absoluteFill}
+        />
+      </View>
+      <View accessible={false} style={styles.axis}>
+        {summary.axis.map((index, position) => {
+          const item = perDay[index];
+          return (
+            <Text
+              key={index}
+              style={[
+                styles.axisText,
+                { color: palette.sub },
+                position === 0
+                  ? styles.axisStart
+                  : position === summary.axis.length - 1
+                    ? styles.axisEnd
+                    : styles.axisMiddle,
+              ]}
+            >
+              {item === undefined ? "" : shortDay(item.date)}
+            </Text>
+          );
+        })}
+      </View>
+    </Card>
+  );
+}
+
+type Row = {
+  key: string;
+  name: string;
+  count: number;
+  detail: string;
+  leading?: ReactNode;
+};
+
+function BreakdownRows({
+  rows,
+  total,
+  inline = false,
+  palette,
+}: {
+  rows: Row[];
+  total: number;
+  inline?: boolean;
+  palette: Palette;
+}) {
+  const [open, setOpen] = useState<string | null>(null);
+  return (
+    <View style={styles.rows}>
+      {rows.map((row) => {
+        const share = shareOf(row.count, total);
+        const expanded = open === row.key;
+        const amount = (
+          <Text style={[styles.rowCount, { color: palette.ink }]}>
+            {row.count.toLocaleString()}
+            <Text style={{ color: palette.sub }}> · {percent(share)}</Text>
+          </Text>
+        );
+        const track = (
+          <View
+            style={[styles.track, inline && styles.trackInline, { backgroundColor: palette.wash }]}
+          >
+            <View
+              style={[
+                styles.trackFill,
+                { backgroundColor: palette.blue, width: `${Math.min(1, share) * 100}%` },
+              ]}
+            />
+          </View>
+        );
+        return (
+          <Pressable
+            key={row.key}
+            accessibilityRole="button"
+            accessibilityLabel={`${row.name}, ${row.count.toLocaleString()}, ${percent(share)}`}
+            accessibilityHint={t("mobileRowHint")}
+            accessibilityState={{ expanded }}
+            onPress={() => setOpen(expanded ? null : row.key)}
+            style={({ pressed }) => [styles.row, { opacity: pressed ? 0.7 : 1 }]}
+          >
+            {inline ? (
+              <View style={styles.rowLine}>
+                <Text
+                  numberOfLines={2}
+                  style={[styles.rowName, styles.rowNameInline, { color: palette.ink }]}
+                >
+                  {row.name}
+                </Text>
+                {track}
+                {amount}
+              </View>
+            ) : (
+              <View style={styles.rowLine}>
+                {row.leading}
+                <View style={styles.rowStack}>
+                  <View style={styles.rowLine}>
+                    <Text numberOfLines={1} style={[styles.rowName, { color: palette.ink }]}>
+                      {row.name}
+                    </Text>
+                    {amount}
+                  </View>
+                  {track}
+                </View>
+              </View>
+            )}
+            {expanded && (
+              <Text
+                style={[styles.rowDetail, { color: palette.sub, backgroundColor: palette.wash }]}
+              >
+                {row.detail}
+              </Text>
+            )}
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
 
 function Outcomes({ numbers, palette }: { numbers: Analytics; palette: Palette }) {
-  const rows = [
-    { key: "started", title: t("outcomeStarted"), count: numbers.started },
+  const { started, answered, closed, startedByTeam } = numbers;
+  const fast = numbers.firstReply.fast;
+  const total = started.toLocaleString();
+  const rows: Row[] = [
+    {
+      key: "started",
+      name: t("outcomeStarted"),
+      count: started,
+      detail:
+        startedByTeam > 0
+          ? t("mobileOutcomeStartedTeam", { count: startedByTeam.toLocaleString(), total })
+          : t("mobileOutcomeStartedVisitors", { total }),
+    },
     {
       key: "answered",
-      title: t("outcomeAnswered"),
-      count: numbers.answered,
-      note:
-        numbers.answered < numbers.started
-          ? t("outcomeWaiting", { count: numbers.started - numbers.answered })
-          : undefined,
+      name: t("outcomeAnswered"),
+      count: answered,
+      detail:
+        answered < started
+          ? t("mobileOutcomeAnsweredSome", {
+              count: answered.toLocaleString(),
+              total,
+              rest: (started - answered).toLocaleString(),
+            })
+          : t("mobileOutcomeAnsweredAll", { total }),
     },
-    { key: "fast", title: t("outcomeFast"), count: numbers.firstReply.fast },
+    {
+      key: "fast",
+      name: t("outcomeFast"),
+      count: fast,
+      detail: t("mobileOutcomeFastDetail", { count: fast.toLocaleString(), total }),
+    },
     {
       key: "closed",
-      title: t("outcomeClosed"),
-      count: numbers.closed,
-      note:
-        numbers.closed < numbers.started
-          ? t("outcomeOpen", { count: numbers.started - numbers.closed })
-          : undefined,
+      name: t("outcomeClosed"),
+      count: closed,
+      detail:
+        closed < started
+          ? t("mobileOutcomeClosedSome", {
+              count: closed.toLocaleString(),
+              total,
+              rest: (started - closed).toLocaleString(),
+            })
+          : t("mobileOutcomeClosedAll", { total }),
     },
   ];
   return (
-    <AnalyticsCard title={t("outcomesTitle")} palette={palette}>
-      <View style={styles.outcomes}>
-        {rows.map((row) => {
-          const share = shareOf(row.count, numbers.started);
-          return (
-            <View key={row.key} style={styles.outcomeRow}>
-              <View style={styles.shareLine}>
-                <Text style={[styles.shareName, { color: palette.ink }]}>{row.title}</Text>
-                <Text style={[styles.shareCount, { color: palette.ink }]}>
-                  {row.count.toLocaleString()}
-                  <Text style={{ color: palette.sub }}> · {percent(share)}</Text>
-                </Text>
-              </View>
-              <ShareTrack share={share} palette={palette} />
-              {row.note !== undefined && (
-                <Text style={[styles.outcomeNote, { color: palette.sub }]}>{row.note}</Text>
-              )}
-            </View>
-          );
-        })}
-      </View>
-    </AnalyticsCard>
+    <Card
+      title={t("mobileOutcomesTitle")}
+      hint={t("mobileOutcomesOf", { count: total })}
+      palette={palette}
+    >
+      <BreakdownRows rows={rows} total={started} inline palette={palette} />
+    </Card>
   );
-}
-
-function heatColor(count: number, most: number, palette: Palette): string {
-  if (count === 0) return palette.wash;
-  const alpha = ["33", "66", "a3", "e6"][Math.ceil((count / most) * 4) - 1] ?? "e6";
-  return `${palette.blue}${alpha}`;
 }
 
 function BusiestHours({ hours, palette }: { hours: Analytics["hours"]; palette: Palette }) {
-  const most = Math.max(1, ...hours.flat());
-  let peak = { day: 0, hour: 0, count: 0 };
-  hours.forEach((row, day) => {
-    row.forEach((count, hour) => {
-      if (count > peak.count) peak = { day, hour, count };
-    });
-  });
-  const peakDay = DAY_NAMES[peak.day] ?? "";
-  const peakHour = HOUR_NAMES[peak.hour] ?? "";
-  const summary = t("hoursSummary", {
-    day: peakDay,
-    hour: peakHour,
-    conversations: conversations(peak.count),
-  });
-  return (
-    <View accessible accessibilityRole="image" accessibilityLabel={summary}>
-      <AnalyticsCard
-        title={t("hoursTitle")}
-        hint={t("hoursBusiest", { day: peakDay, hour: peakHour })}
-        palette={palette}
-      >
-        <View accessible={false}>
-          <View style={styles.heatAxis}>
-            <View style={styles.heatDay} />
-            <View style={styles.heatHours}>
-              {[0, 6, 12, 18].map((hour) => (
-                <Text key={hour} style={[styles.heatHour, { color: palette.sub }]}>
-                  {HOUR_NAMES[hour]}
-                </Text>
-              ))}
-            </View>
-          </View>
-          {hours.map((row, day) => (
-            <View key={DAY_NAMES[day] ?? day} style={styles.heatRow}>
-              <Text style={[styles.heatDay, { color: palette.sub }]}>{DAY_NAMES_SHORT[day]}</Text>
-              <View style={styles.heatCells}>
-                {row.map((count, hour) => (
-                  <View
-                    // biome-ignore lint/suspicious/noArrayIndexKey: the hour cells do not move.
-                    key={hour}
-                    style={[
-                      styles.heatCell,
-                      {
-                        backgroundColor: heatColor(count, most, palette),
-                        borderColor:
-                          day === peak.day && hour === peak.hour ? palette.ink : "transparent",
-                      },
-                    ]}
-                  />
-                ))}
-              </View>
-            </View>
-          ))}
-          <View style={styles.heatLegend}>
-            <Text style={[styles.heatLegendText, { color: palette.sub }]}>{t("hoursFewer")}</Text>
-            {[1, 2, 3, 4].map((level) => (
-              <View
-                key={level}
-                style={[styles.heatSwatch, { backgroundColor: heatColor(level, 4, palette) }]}
-              />
-            ))}
-            <Text style={[styles.heatLegendText, { color: palette.sub }]}>{t("hoursMore")}</Text>
-          </View>
-        </View>
-      </AnalyticsCard>
-    </View>
+  const slots = useMemo(() => twoHourSlots(hours), [hours]);
+  const peak = useMemo(() => peakSlot(slots), [slots]);
+  const filled = useMemo(
+    () =>
+      slots.flatMap((row, day) => row.flatMap((count, slot) => (count > 0 ? [{ day, slot }] : []))),
+    [slots],
   );
-}
+  const [selected, setSelected] = useState<{ day: number; slot: number } | null>(null);
+  const ramp = palette === night ? HEAT.night : HEAT.day;
+  const most = peak?.count ?? 1;
+  const cellText = (day: number, slot: number) =>
+    t("mobileHoursCell", { slot: slotName(day, slot), chats: chats(slots[day]?.[slot] ?? 0) });
+  const busiest =
+    peak === null
+      ? ""
+      : t("mobileHoursBusiest", { slot: slotName(peak.day, peak.slot), chats: chats(peak.count) });
 
-type ShareRow = {
-  key: string;
-  name: string;
-  count: number;
-  avatar?: string | undefined;
-  color?: string | undefined;
-};
+  const step = (by: number) => {
+    if (filled.length === 0) return;
+    const at =
+      selected === null
+        ? -1
+        : filled.findIndex((cell) => cell.day === selected.day && cell.slot === selected.slot);
+    const next =
+      at === -1 ? (by > 0 ? 0 : filled.length - 1) : (at + by + filled.length) % filled.length;
+    setSelected(filled[next] ?? null);
+  };
 
-function ShareList({
-  title,
-  empty,
-  total,
-  rows,
-  palette,
-}: {
-  title: string;
-  empty: string;
-  total: number;
-  rows: ShareRow[];
-  palette: Palette;
-}) {
   return (
-    <AnalyticsCard title={title} palette={palette}>
-      {rows.length === 0 ? (
-        <Text style={[styles.listEmpty, { color: palette.sub }]}>{empty}</Text>
-      ) : (
-        <View style={styles.shareList}>
-          {rows.map((row) => {
-            const share = shareOf(row.count, total);
-            return (
-              <View key={row.key} style={styles.shareRow}>
-                <View style={styles.shareLine}>
-                  {row.avatar !== undefined && (
-                    <Avatar name={row.avatar} size={30} palette={palette} />
-                  )}
-                  {row.color !== undefined && (
-                    <View style={[styles.labelDot, { backgroundColor: row.color }]} />
-                  )}
-                  <Text numberOfLines={1} style={[styles.shareName, { color: palette.ink }]}>
-                    {row.name}
-                  </Text>
-                  <Text style={[styles.shareCount, { color: palette.ink }]}>
-                    {row.count.toLocaleString()}
-                    <Text style={{ color: palette.sub }}> · {percent(share)}</Text>
-                  </Text>
-                </View>
-                <ShareTrack share={share} palette={palette} />
-              </View>
-            );
-          })}
+    <Card title={t("hoursTitle")} palette={palette}>
+      <View style={styles.readout}>
+        {selected === null ? (
+          <View style={styles.readoutText}>
+            <Text style={[styles.readoutMain, { color: palette.ink }]}>{busiest}</Text>
+            <Text style={[styles.readoutHint, { color: palette.sub }]}>{t("mobileHoursHint")}</Text>
+          </View>
+        ) : (
+          <>
+            <Text
+              accessibilityLiveRegion="polite"
+              numberOfLines={1}
+              style={[styles.readoutSelected, { color: palette.ink }]}
+            >
+              {cellText(selected.day, selected.slot)}
+            </Text>
+            <StepButton
+              icon="x"
+              label={t("mobileChartClear")}
+              onPress={() => setSelected(null)}
+              palette={palette}
+            />
+          </>
+        )}
+      </View>
+      <View
+        accessible
+        accessibilityRole="adjustable"
+        accessibilityLabel={t("hoursTitle")}
+        accessibilityValue={{
+          text: selected === null ? busiest : cellText(selected.day, selected.slot),
+        }}
+        accessibilityActions={ADJUSTABLE_ACTIONS}
+        onAccessibilityAction={(event) => {
+          const by = stepAction(event);
+          if (by !== 0) step(by);
+        }}
+      >
+        <View style={styles.heatAxis}>
+          <View style={styles.heatDay} />
+          {[0, 3, 6, 9].map((slot) => (
+            <Text key={slot} numberOfLines={1} style={[styles.heatHour, { color: palette.sub }]}>
+              {HOUR_NAMES[slot * 2]}
+            </Text>
+          ))}
         </View>
-      )}
-    </AnalyticsCard>
+        {slots.map((row, day) => (
+          <View key={DAY_NAMES[day] ?? day} style={styles.heatRow}>
+            <Text style={[styles.heatDay, { color: palette.sub }]}>{DAY_NAMES_SHORT[day]}</Text>
+            {row.map((count, slot) => {
+              const level = heatLevel(count, most);
+              const active = selected?.day === day && selected.slot === slot;
+              return (
+                <Pressable
+                  // biome-ignore lint/suspicious/noArrayIndexKey: the slots do not move.
+                  key={slot}
+                  accessible={false}
+                  hitSlop={1}
+                  onPress={() => setSelected(active ? null : { day, slot })}
+                  style={[
+                    styles.heatCell,
+                    {
+                      backgroundColor: level === 0 ? palette.wash : ramp[level - 1],
+                      borderColor: active ? palette.ink : "transparent",
+                    },
+                  ]}
+                />
+              );
+            })}
+          </View>
+        ))}
+        <View style={styles.heatLegend}>
+          <Text style={[styles.heatLegendText, { color: palette.sub }]}>{t("hoursFewer")}</Text>
+          {ramp.map((color) => (
+            <View key={color} style={[styles.heatSwatch, { backgroundColor: color }]} />
+          ))}
+          <Text style={[styles.heatLegendText, { color: palette.sub }]}>{t("hoursMore")}</Text>
+        </View>
+      </View>
+    </Card>
   );
 }
 
 function Repliers({ numbers, palette }: { numbers: Analytics; palette: Palette }) {
-  const rows = numbers.repliers.map((replier): ShareRow => {
-    if (replier.kind === "operator") {
-      return {
-        key: `operator:${replier.operatorId}`,
-        avatar: replier.name,
-        name: replier.name,
-        count: replier.conversations,
-      };
-    }
-    if (replier.kind === "api_key") {
-      return {
-        key: `api:${replier.apiKeyId}`,
-        avatar: replier.name,
-        name: t("apiKeyAuthor", { name: replier.name }),
-        count: replier.conversations,
-      };
-    }
+  const total = numbers.answered;
+  const rows = numbers.repliers.map((replier): Row => {
+    const name =
+      replier.kind === "operator"
+        ? replier.name
+        : replier.kind === "api_key"
+          ? t("apiKeyAuthor", { name: replier.name })
+          : t("formerOperator");
     return {
-      key: "former",
-      avatar: t("formerOperator"),
-      name: t("formerOperator"),
+      key:
+        replier.kind === "operator"
+          ? `operator:${replier.operatorId}`
+          : replier.kind === "api_key"
+            ? `api:${replier.apiKeyId}`
+            : "former",
+      name,
       count: replier.conversations,
+      leading: (
+        <Avatar
+          name={replier.kind === "former" ? name : replier.name}
+          size={28}
+          palette={palette}
+        />
+      ),
+      detail: t("mobileReplierDetail", {
+        name,
+        count: replier.conversations.toLocaleString(),
+        total: total.toLocaleString(),
+      }),
     };
   });
   return (
-    <ShareList
-      title={t("byOperatorTitle")}
-      empty={t("noReplies")}
-      total={numbers.answered}
-      rows={rows}
+    <Card
+      title={t("mobileRepliersTitle")}
+      hint={
+        rows.length === 0 ? undefined : t("mobileRepliersOf", { count: total.toLocaleString() })
+      }
       palette={palette}
-    />
+    >
+      {rows.length === 0 ? (
+        <Text style={[styles.cardEmpty, { color: palette.sub }]}>{t("noReplies")}</Text>
+      ) : (
+        <BreakdownRows rows={rows} total={total} palette={palette} />
+      )}
+    </Card>
   );
 }
 
 function Labels({ numbers, palette }: { numbers: Analytics; palette: Palette }) {
-  return (
-    <ShareList
-      title={t("byLabelTitle")}
-      empty={t("noLabeledConversations")}
-      total={numbers.started}
-      rows={numbers.labels.map((label) => ({
-        key: label.labelId,
+  const total = numbers.started;
+  const rows = numbers.labels.map(
+    (label): Row => ({
+      key: label.labelId,
+      name: label.name,
+      count: label.conversations,
+      leading: <View style={[styles.labelDot, { backgroundColor: LABEL_COLORS[label.color] }]} />,
+      detail: t("mobileLabelDetail", {
+        count: label.conversations.toLocaleString(),
+        total: total.toLocaleString(),
         name: label.name,
-        count: label.conversations,
-        color: LABEL_COLORS[label.color],
-      }))}
+      }),
+    }),
+  );
+  return (
+    <Card
+      title={t("mobileLabelsTitle")}
+      hint={rows.length === 0 ? undefined : t("mobileLabelsOf", { count: total.toLocaleString() })}
       palette={palette}
-    />
+    >
+      {rows.length === 0 ? (
+        <Text style={[styles.cardEmpty, { color: palette.sub }]}>{t("mobileLabelsEmpty")}</Text>
+      ) : (
+        <BreakdownRows rows={rows} total={total} palette={palette} />
+      )}
+    </Card>
   );
 }
 
@@ -625,10 +972,13 @@ export function AnalyticsScreen({
   palette: Palette;
   topInset: number;
 }) {
+  const { hasLargeText, hideScene } = usePinnedHeaderLayout();
+  const dockInset = useTabBarInset();
   const [days, setDays] = useState<AnalyticsDays>(30);
   const [numbers, setNumbers] = useState<Analytics | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [metric, setMetric] = useState<Metric | null>(null);
   const request = useRef(0);
   const zone = useMemo(browserTimeZone, []);
 
@@ -660,107 +1010,92 @@ export function AnalyticsScreen({
   const changeDays = useCallback((next: AnalyticsDays) => {
     setNumbers(null);
     setError(null);
+    setMetric(null);
     setDays(next);
   }, []);
 
-  const firstReply = numbers?.firstReply;
-  const answeredShare = numbers === null ? 0 : shareOf(numbers.answered, numbers.started);
-  const fastShare = numbers === null ? 0 : shareOf(firstReply?.fast ?? 0, numbers.started);
-
   return (
-    <View style={[styles.screen, { backgroundColor: palette.paper }]}>
+    <View style={[styles.screen, { backgroundColor: palette.paper, paddingTop: topInset }]}>
+      <View>
+        {!hideScene && (
+          <AnalyticsHeader
+            days={days}
+            hasLargeText={hasLargeText}
+            zone={numbers?.timeZone ?? zone}
+            palette={palette}
+          />
+        )}
+      </View>
+      <View style={styles.controls}>
+        <PeriodPicker days={days} onChange={changeDays} palette={palette} />
+      </View>
       <ScrollView
-        contentContainerStyle={[styles.content, { paddingTop: topInset + 18, paddingBottom: 16 }]}
+        alwaysBounceVertical
+        contentContainerStyle={[styles.content, { paddingBottom: dockInset }]}
         refreshControl={
           numbers !== null ? (
             <RefreshControl
               refreshing={loading}
               onRefresh={() => void load(false)}
-              tintColor={palette.blue}
+              tintColor={palette === night ? palette.ink : palette.blue}
             />
           ) : undefined
         }
+        style={styles.list}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.header}>
-          <Text style={[styles.title, { color: palette.ink }]}>{t("analytics")}</Text>
-          <Text style={[styles.context, { color: palette.sub }]}>
-            {t("analyticsContext", { days, zone })}
-          </Text>
-          <PeriodPicker days={days} onChange={changeDays} palette={palette} />
+        <View style={styles.body}>
+          {numbers === null && loading ? (
+            <LoadingState palette={palette} />
+          ) : numbers === null && error !== null ? (
+            <ErrorState error={error} onRetry={() => void load(true)} palette={palette} />
+          ) : numbers === null || numbers.started === 0 ? (
+            <EmptyState days={days} palette={palette} />
+          ) : (
+            <>
+              {error !== null && (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => void load(false)}
+                  style={[styles.inlineError, { backgroundColor: palette.warm }]}
+                >
+                  <Text style={[styles.inlineErrorText, { color: palette.amber }]}>{error}</Text>
+                  <Text style={[styles.inlineRetry, { color: palette.amber }]}>
+                    {t("mobileRetry")}
+                  </Text>
+                </Pressable>
+              )}
+              <Metrics
+                numbers={numbers}
+                days={days}
+                open={metric}
+                onOpen={setMetric}
+                palette={palette}
+              />
+              {numbers.perDay.length > 0 && (
+                <DailyChart
+                  key={`${days}:${numbers.perDay[0]?.date}`}
+                  perDay={numbers.perDay}
+                  palette={palette}
+                />
+              )}
+              <Outcomes numbers={numbers} palette={palette} />
+              {numbers.hours.length > 0 && (
+                <BusiestHours key={days} hours={numbers.hours} palette={palette} />
+              )}
+              <Repliers numbers={numbers} palette={palette} />
+              <Labels numbers={numbers} palette={palette} />
+              <MetricSheet
+                metric={metric}
+                numbers={numbers}
+                days={days}
+                zone={numbers.timeZone}
+                onClose={() => setMetric(null)}
+                palette={palette}
+              />
+            </>
+          )}
         </View>
-
-        {numbers === null && loading ? (
-          <LoadingState palette={palette} />
-        ) : numbers === null && error !== null ? (
-          <ErrorState error={error} onRetry={() => void load(true)} palette={palette} />
-        ) : numbers === null || numbers.started === 0 ? (
-          <EmptyState days={days} palette={palette} />
-        ) : (
-          <>
-            {error !== null && (
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => void load(false)}
-                style={[styles.inlineError, { backgroundColor: palette.warm }]}
-              >
-                <Text style={[styles.inlineErrorText, { color: palette.amber }]}>{error}</Text>
-                <Text style={[styles.inlineRetry, { color: palette.amber }]}>
-                  {t("mobileRetry")}
-                </Text>
-              </Pressable>
-            )}
-            <View accessibilityLabel={t("statsTitle")} style={styles.statsGrid}>
-              <StatCard
-                title={t("statStarted")}
-                value={numbers.started.toLocaleString()}
-                note={
-                  numbers.startedByTeam > 0
-                    ? t("statStartedByTeam", { count: numbers.startedByTeam })
-                    : undefined
-                }
-                change={startedChange(numbers, days)}
-                palette={palette}
-              />
-              <StatCard
-                title={t("statMedian")}
-                value={
-                  firstReply?.medianSeconds === null || firstReply?.medianSeconds === undefined
-                    ? t("noReplies")
-                    : duration(firstReply.medianSeconds)
-                }
-                note={
-                  firstReply?.p90Seconds === null || firstReply?.p90Seconds === undefined
-                    ? undefined
-                    : t("statP90", { time: duration(firstReply.p90Seconds) })
-                }
-                change={medianChange(numbers, days)}
-                palette={palette}
-              />
-              <StatCard
-                title={t("statFast")}
-                value={percent(fastShare)}
-                change={fastChange(numbers, days)}
-                palette={palette}
-              />
-              <StatCard
-                title={t("statAnswered")}
-                value={percent(answeredShare)}
-                note={t("statAnsweredOf", {
-                  answered: numbers.answered,
-                  started: numbers.started,
-                })}
-                change={null}
-                palette={palette}
-              />
-            </View>
-            {numbers.perDay.length > 0 && <DailyTrend days={numbers.perDay} palette={palette} />}
-            <Outcomes numbers={numbers} palette={palette} />
-            {numbers.hours.length > 0 && <BusiestHours hours={numbers.hours} palette={palette} />}
-            <Repliers numbers={numbers} palette={palette} />
-            <Labels numbers={numbers} palette={palette} />
-          </>
-        )}
       </ScrollView>
     </View>
   );
@@ -768,20 +1103,125 @@ export function AnalyticsScreen({
 
 const styles = StyleSheet.create({
   screen: { flex: 1 },
-  content: { flexGrow: 1, paddingHorizontal: 16 },
-  header: { gap: 6, marginBottom: 22 },
-  title: { fontFamily: fonts.displayBold, fontSize: 34, lineHeight: 39, letterSpacing: -0.6 },
-  context: { fontFamily: fonts.body, fontSize: 14, lineHeight: 20, maxWidth: 560 },
-  periods: {
-    alignSelf: "flex-start",
-    flexDirection: "row",
-    borderRadius: 22,
-    backgroundColor: "rgba(128, 145, 153, 0.13)",
-    marginTop: 9,
-    padding: 3,
+  list: { flex: 1 },
+  content: { flexGrow: 1 },
+  header: { height: 150, overflow: "visible", paddingStart: 20, paddingTop: 20 },
+  largeHeader: { height: "auto", paddingEnd: 20, paddingBottom: 150 },
+  headerBounce: { position: "absolute", left: 0, right: 0, top: -600, height: 600 },
+  title: { fontFamily: fonts.displayBold, fontSize: 34, lineHeight: 38, letterSpacing: -0.6 },
+  subtitle: { fontFamily: fonts.medium, fontSize: 14, lineHeight: 19, marginTop: 2, maxWidth: 190 },
+  wideSubtitle: { maxWidth: "100%" },
+  controls: { paddingHorizontal: 16, paddingTop: 14 },
+  body: { paddingHorizontal: 16, paddingTop: 12, paddingBottom: 32, gap: 12 },
+  periods: { flexDirection: "row", height: 40, borderRadius: 12, padding: 3 },
+  period: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 9,
+    borderWidth: StyleSheet.hairlineWidth,
   },
-  period: { minHeight: 38, justifyContent: "center", paddingHorizontal: 15, borderRadius: 19 },
-  periodText: { fontFamily: fonts.semibold, fontSize: 13 },
+  periodText: { fontFamily: fonts.semibold, fontSize: 14 },
+  card: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 18, overflow: "hidden" },
+  cardPad: { padding: 16 },
+  cardHeader: { gap: 2, marginBottom: 12 },
+  cardTitle: { fontFamily: fonts.display, fontSize: 19, lineHeight: 24 },
+  cardHint: { fontFamily: fonts.body, fontSize: 12.5, lineHeight: 17 },
+  cardEmpty: { fontFamily: fonts.body, fontSize: 14, lineHeight: 20 },
+  metrics: { flexDirection: "row", flexWrap: "wrap" },
+  metric: { width: "50%", minHeight: 104, paddingHorizontal: 14, paddingVertical: 12 },
+  metricTop: { flexDirection: "row", alignItems: "center", gap: 4 },
+  metricTitle: { flex: 1, fontFamily: fonts.semibold, fontSize: 13, lineHeight: 17 },
+  metricValue: {
+    fontFamily: fonts.displayBold,
+    fontSize: 28,
+    lineHeight: 34,
+    letterSpacing: -0.4,
+    marginTop: 2,
+  },
+  metricDetail: { fontFamily: fonts.body, fontSize: 12.5, lineHeight: 17 },
+  metricChange: { fontFamily: fonts.medium, fontSize: 11.5, lineHeight: 15, marginTop: 3 },
+  sheetBody: { paddingHorizontal: 20, paddingBottom: 12, gap: 6 },
+  sheetValue: { fontFamily: fonts.displayBold, fontSize: 40, lineHeight: 46, letterSpacing: -0.6 },
+  sheetChange: { fontFamily: fonts.medium, fontSize: 13, lineHeight: 18 },
+  sheetHelp: { fontFamily: fonts.body, fontSize: 15, lineHeight: 21, marginTop: 6 },
+  sheetRows: { marginTop: 12, borderTopWidth: StyleSheet.hairlineWidth },
+  sheetRow: {
+    minHeight: 46,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+  },
+  sheetRowLabel: { flex: 1, fontFamily: fonts.body, fontSize: 15, lineHeight: 20 },
+  sheetRowValue: { fontFamily: fonts.semibold, fontSize: 15, lineHeight: 20, textAlign: "right" },
+  readout: { minHeight: 44, flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 6 },
+  readoutText: { flex: 1 },
+  readoutMain: { fontFamily: fonts.semibold, fontSize: 14, lineHeight: 19 },
+  readoutHint: { fontFamily: fonts.body, fontSize: 12.5, lineHeight: 17 },
+  readoutSelected: {
+    flex: 1,
+    fontFamily: fonts.semibold,
+    fontSize: 15,
+    lineHeight: 20,
+    textAlign: "center",
+  },
+  step: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center" },
+  chart: { height: CHART_HEIGHT },
+  averageLabel: {
+    position: "absolute",
+    left: 0,
+    fontFamily: fonts.medium,
+    fontSize: 11,
+    lineHeight: 15,
+    paddingEnd: 4,
+  },
+  axis: { height: 18, marginTop: 4 },
+  axisText: {
+    position: "absolute",
+    top: 0,
+    fontFamily: fonts.medium,
+    fontSize: 11,
+    lineHeight: 15,
+  },
+  axisStart: { left: 0 },
+  axisMiddle: { left: 0, right: 0, textAlign: "center" },
+  axisEnd: { right: 0 },
+  rows: { gap: 4 },
+  row: { paddingVertical: 6, gap: 8 },
+  rowLine: { flexDirection: "row", alignItems: "center", gap: 10 },
+  rowStack: { flex: 1, gap: 6 },
+  rowName: { flex: 1, fontFamily: fonts.medium, fontSize: 14, lineHeight: 19 },
+  rowNameInline: { flex: 0, width: 112 },
+  rowCount: { fontFamily: fonts.semibold, fontSize: 13, lineHeight: 18 },
+  rowDetail: {
+    fontFamily: fonts.body,
+    fontSize: 13,
+    lineHeight: 18,
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    overflow: "hidden",
+  },
+  track: { height: 8, borderRadius: 4, overflow: "hidden" },
+  trackInline: { flex: 1 },
+  trackFill: { height: "100%", borderRadius: 4 },
+  labelDot: { width: 10, height: 10, borderRadius: 5 },
+  heatAxis: { flexDirection: "row", gap: 3, marginBottom: 5 },
+  heatHour: { flex: 3, fontFamily: fonts.medium, fontSize: 10, lineHeight: 13 },
+  heatRow: { flexDirection: "row", alignItems: "center", gap: 3, marginBottom: 3 },
+  heatDay: { width: 34, fontFamily: fonts.medium, fontSize: 11, lineHeight: 14 },
+  heatCell: { flex: 1, height: 22, borderRadius: 4, borderWidth: 2 },
+  heatLegend: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    gap: 4,
+    marginTop: 8,
+  },
+  heatLegendText: { fontFamily: fonts.body, fontSize: 11, lineHeight: 14 },
+  heatSwatch: { width: 12, height: 12, borderRadius: 3 },
   centerState: {
     flex: 1,
     minHeight: 300,
@@ -799,12 +1239,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginBottom: 2,
   },
-  stateTitle: {
-    fontFamily: fonts.display,
-    fontSize: 20,
-    lineHeight: 25,
-    textAlign: "center",
-  },
+  stateTitle: { fontFamily: fonts.display, fontSize: 20, lineHeight: 25, textAlign: "center" },
   stateBody: { fontFamily: fonts.body, fontSize: 14, lineHeight: 20, textAlign: "center" },
   retry: { minHeight: 42, justifyContent: "center", borderRadius: 21, paddingHorizontal: 20 },
   retryText: { fontFamily: fonts.semibold, fontSize: 14 },
@@ -816,85 +1251,7 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingHorizontal: 14,
     paddingVertical: 9,
-    marginBottom: 12,
   },
   inlineErrorText: { flex: 1, fontFamily: fonts.body, fontSize: 13, lineHeight: 18 },
   inlineRetry: { fontFamily: fonts.bold, fontSize: 13 },
-  statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
-  statCard: {
-    flexBasis: "47%",
-    flexGrow: 1,
-    minHeight: 168,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 18,
-    padding: 15,
-  },
-  statTitle: { fontFamily: fonts.semibold, fontSize: 13, lineHeight: 17, minHeight: 34 },
-  statValue: {
-    fontFamily: fonts.displayBold,
-    fontSize: 29,
-    lineHeight: 35,
-    letterSpacing: -0.4,
-    marginTop: 6,
-  },
-  statNote: { fontFamily: fonts.body, fontSize: 12, lineHeight: 16, marginTop: 4 },
-  change: {
-    fontFamily: fonts.medium,
-    fontSize: 11,
-    lineHeight: 15,
-    marginTop: "auto",
-    paddingTop: 8,
-  },
-  trendCard: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 18,
-    marginTop: 10,
-    paddingHorizontal: 15,
-    paddingTop: 16,
-    paddingBottom: 12,
-  },
-  trendHeader: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" },
-  trendHeading: { flex: 1, paddingEnd: 10 },
-  trendTitle: { fontFamily: fonts.display, fontSize: 19, lineHeight: 24 },
-  trendHint: { fontFamily: fonts.body, fontSize: 12, lineHeight: 17, marginTop: 2 },
-  trendMaximum: { fontFamily: fonts.semibold, fontSize: 12, lineHeight: 17 },
-  trendAxis: { flexDirection: "row", justifyContent: "space-between", marginTop: -10 },
-  axisText: { fontFamily: fonts.medium, fontSize: 11 },
-  detailCard: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 18,
-    marginTop: 10,
-    padding: 15,
-  },
-  detailHeader: { gap: 2, marginBottom: 15 },
-  detailTitle: { fontFamily: fonts.display, fontSize: 19, lineHeight: 24 },
-  detailHint: { fontFamily: fonts.body, fontSize: 12, lineHeight: 17 },
-  outcomes: { gap: 15 },
-  outcomeRow: { gap: 7 },
-  shareLine: { flexDirection: "row", alignItems: "center", gap: 9 },
-  shareName: { flex: 1, fontFamily: fonts.medium, fontSize: 14, lineHeight: 19 },
-  shareCount: { fontFamily: fonts.semibold, fontSize: 13, lineHeight: 18 },
-  shareTrack: { height: 5, borderRadius: 3, overflow: "hidden" },
-  shareFill: { height: "100%", borderRadius: 3 },
-  outcomeNote: { fontFamily: fonts.body, fontSize: 12, lineHeight: 16 },
-  heatAxis: { flexDirection: "row", alignItems: "flex-end", marginBottom: 5 },
-  heatHours: { flex: 1, flexDirection: "row", justifyContent: "space-between" },
-  heatHour: { width: 36, fontFamily: fonts.medium, fontSize: 9, lineHeight: 12 },
-  heatRow: { flexDirection: "row", alignItems: "center", minHeight: 17 },
-  heatDay: { width: 30, fontFamily: fonts.medium, fontSize: 10, lineHeight: 14 },
-  heatCells: { flex: 1, flexDirection: "row", gap: 2 },
-  heatCell: { flex: 1, height: 11, borderWidth: 1, borderRadius: 2 },
-  heatLegend: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "flex-end",
-    gap: 4,
-    marginTop: 9,
-  },
-  heatLegendText: { fontFamily: fonts.body, fontSize: 10, lineHeight: 14 },
-  heatSwatch: { width: 11, height: 11, borderRadius: 2 },
-  shareList: { gap: 16 },
-  shareRow: { gap: 7 },
-  listEmpty: { fontFamily: fonts.body, fontSize: 13, lineHeight: 18 },
-  labelDot: { width: 10, height: 10, borderRadius: 5 },
 });

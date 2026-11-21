@@ -26,6 +26,7 @@ const paths = {
   hand: "M3 7h15m-4-4 4 4-4 4 M21 17H6m4-4-4 4 4 4",
   bot: "M5 7h14v13H5z M12 7V3 M8 12h1m6 0h1 M9 16h6",
   lock: "M6 10h12v11H6z M8 10V7a4 4 0 0 1 8 0v3",
+  pencil: "M4 20h4L19 9l-4-4L4 16z M13 7l4 4",
   send: "M12 20V5m-6 6 6-6 6 6",
   plus: "M5 12h14m-7-7v14",
   chat: "M3 4h18v13H9l-6 4z",
@@ -40,7 +41,19 @@ const paths = {
   file: "M5 3h9l5 5v13H5z M14 3v6h5",
   arrow: "M5 12h14m-6-6 6 6-6 6",
   play: "m7 4 13 8-13 8z",
-  attach: "m8 13 7-7a3 3 0 0 1 4 4l-9 9a5 5 0 0 1-7-7l10-10",
+  reopen: "M4 12a8 8 0 1 0 2.4-5.7 M4 4v4h4",
+  image: "M3 5h18v14H3z M3 17l5-5 4 4 3-3 6 6 M17.5 9a1.5 1.5 0 1 1-3 0 1.5 1.5 0 1 1 3 0",
+  savedReply: "M4 4h16v12h-8l-5 4v-4H4z M8 8.5h8 M8 12h5",
+  format: "M3 19 8 5l5 14 M4.8 14h6.4 M20 12v7 M20 16a2.5 2.5 0 1 1-5 0 2.5 2.5 0 1 1 5 0",
+  bold: "M7 5h5.5a3.5 3.5 0 0 1 0 7H7z M7 12h6.5a3.5 3.5 0 0 1 0 7H7z",
+  italic: "M10 5h8 M6 19h8 M14 5l-4 14",
+  code: "m8 7-5 5 5 5 M16 7l5 5-5 5 M14 4l-4 16",
+  copy: "M9 9h11v11H9z M5 15H4V4h11v1",
+  share: "M12 15V3 M7 8l5-5 5 5 M5 12v8h14v-8",
+  book: "M12 6.5C10 5 7 4.5 4 5v14c3-.5 6 0 8 1.5 2-1.5 5-2 8-1.5V5c-3-.5-6 0-8 1.5z M12 6.5v14",
+  bulletList: "M9 6h11 M9 12h11 M9 18h11 M4.5 6h.1 M4.5 12h.1 M4.5 18h.1",
+  numberList:
+    "M10 6h10 M10 12h10 M10 18h10 M3.8 4.8 5.3 4v5 M3.6 14.6a1.4 1.4 0 0 1 2.7.6L3.6 19h2.8",
 } as const;
 
 export function Icon({

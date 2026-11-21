@@ -2,19 +2,17 @@ import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
-  Dimensions,
   Image,
-  Keyboard,
-  type KeyboardEvent,
-  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
   Switch,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
+import { plainText } from "../../../packages/widget/src/markdown.ts";
 import { t } from "../../operator/src/text.ts";
 import { Harbor } from "../Harbor";
 import type { PendingReply } from "../outbox";
@@ -26,8 +24,10 @@ import { Icon } from "./icon";
 import { inboxStyles as screen } from "./inbox-styles";
 import type { PushStatus } from "./notifications";
 import { ProfileSheet } from "./profile-sheet";
+import { MovingPatch } from "./scene-motion";
 import { Sheet } from "./sheet";
-import type { Palette, ThemePreference } from "./theme";
+import { useTabBarInset } from "./tab-bar-inset";
+import { night, type Palette, type ThemePreference } from "./theme";
 import type { AlertSettings, Conversation, Me, Member, SavedReply, Session } from "./types";
 
 type Scope = "all" | "mine" | "unassigned";
@@ -75,7 +75,7 @@ function normalized(value: string): string {
 }
 
 function rowText(conversation: Conversation): { subject: string; preview: string | null } {
-  const body = conversation.lastMessage?.body?.trim() ?? "";
+  const body = plainText(conversation.lastMessage?.body ?? "");
   const suppliedSubject = conversation.subject?.trim() ?? "";
   if (!suppliedSubject) {
     const [first = "", ...rest] = body.split(/\r?\n/);
@@ -212,7 +212,7 @@ function WorkspaceHeader({
   return (
     <View style={[screen.inboxCover, { paddingTop: topInset, backgroundColor: palette.cover }]}>
       <View pointerEvents="none" style={[screen.harborArt, { top: topInset }]}>
-        <Harbor night={palette.paper !== "#fdfefd"} />
+        <Harbor night={palette === night} shore={palette.paper} moving />
       </View>
       <View style={screen.workspaceLine}>
         <View style={screen.workspaceButton}>
@@ -428,123 +428,43 @@ function SectionHeader({
   );
 }
 
-function useKeyboardInset(): number {
-  const [inset, setInset] = useState(0);
-  useEffect(() => {
-    const show = (event: KeyboardEvent) => {
-      const screenHeight = Dimensions.get("screen").height;
-      setInset(Math.max(0, screenHeight - event.endCoordinates.screenY));
-    };
-    const shown = Keyboard.addListener("keyboardDidShow", show);
-    const changed = Keyboard.addListener("keyboardWillChangeFrame", show);
-    const hidden = Keyboard.addListener("keyboardDidHide", () => setInset(0));
-    return () => {
-      shown.remove();
-      changed.remove();
-      hidden.remove();
-    };
-  }, []);
-  return inset;
-}
-
-function InboxSearch({
-  palette,
-  query,
-  onCancel,
-  onQuery,
-}: {
-  palette: Palette;
-  query: string;
-  onCancel(): void;
-  onQuery(query: string): void;
-}) {
-  const [focused, setFocused] = useState(false);
-  return (
-    <View
-      style={[
-        screen.searchField,
-        {
-          backgroundColor: palette.sheet,
-          borderColor: focused ? palette.blue : palette.line,
-        },
-      ]}
-    >
-      <Icon name="search" size={20} color={palette.sub} />
-      <TextInput
-        accessibilityLabel={t("searchLabel")}
-        autoFocus
-        autoCapitalize="none"
-        autoCorrect={false}
-        onBlur={() => setFocused(false)}
-        onChangeText={onQuery}
-        onFocus={() => setFocused(true)}
-        placeholder={t("mobileHarborSearchInput")}
-        placeholderTextColor={palette.sub}
-        returnKeyType="search"
-        style={[screen.searchInput, { color: palette.ink }]}
-        value={query}
-      />
-      {query.length > 0 && (
-        <Pressable
-          accessibilityLabel={t("clearSearch")}
-          accessibilityRole="button"
-          onPress={() => onQuery("")}
-          style={screen.searchClear}
-        >
-          <Icon name="x" size={17} color={palette.sub} />
-        </Pressable>
-      )}
-      <Pressable accessibilityRole="button" onPress={onCancel} style={screen.searchCancel}>
-        <Text style={[screen.searchCancelText, { color: palette.blue }]}>{t("cancel")}</Text>
-      </Pressable>
-    </View>
-  );
-}
-
 export function InboxScreen({
-  bottomInset,
   conversations,
   loading,
   me,
   meId,
   palette,
   pending,
-  searchOpen,
+  query,
+  onClearSearch,
   session,
   topInset,
   waiting,
   onAccount,
-  onCloseSearch,
   onRefresh,
   onOpen,
   onOpenPending,
 }: {
-  bottomInset: number;
   conversations: Conversation[];
   loading: boolean;
   me: Me | null;
   meId: string;
   palette: Palette;
   pending: PendingReply[];
-  searchOpen: boolean;
+  query: string;
+  onClearSearch(): void;
   session: Session;
   topInset: number;
   waiting: number;
   onAccount(): void;
-  onCloseSearch(): void;
-  onRefresh(): void;
+  onRefresh(): Promise<void>;
   onOpen(conversation: Conversation): void;
   onOpenPending(conversationId: string): void;
 }) {
   const [scope, setScope] = useState<Scope>("all");
+  const [refreshing, setRefreshing] = useState(false);
+  const [compact, setCompact] = useState(false);
   const [filterOpen, setFilterOpen] = useState(false);
-  const [query, setQuery] = useState("");
-  const keyboardInset = useKeyboardInset();
-  const keyboardOffset = Platform.OS === "ios" ? keyboardInset : 0;
-  const searchBottom = keyboardInset > 0 ? keyboardOffset + 10 : bottomInset + 6;
-  useEffect(() => {
-    if (!searchOpen) setQuery("");
-  }, [searchOpen]);
   const [expanded, setExpanded] = useState<Record<Group, boolean>>({
     needsReply: true,
     teammates: false,
@@ -582,29 +502,30 @@ export function InboxScreen({
   );
   const wanted = normalized(query);
   const searchResults = conversations.filter((conversation) => {
-    if (!isInScope(conversation, scope, meId)) return false;
+    if (!wanted || !isInScope(conversation, scope, meId)) return false;
     const copy = rowText(conversation);
     return normalized(
-      `${visitorName(conversation)} ${conversation.visitor.email ?? ""} ${copy.subject} ${copy.preview ?? ""}`,
+      `${visitorName(conversation)} ${conversation.visitor.email ?? ""} ${copy.subject} ${copy.preview ?? ""} ${conversation.lastMessage?.body ?? ""}`,
     ).includes(wanted);
   });
   const searching = query.trim().length > 0;
   const visibleCount = groupOrder.reduce((count, group) => count + groups[group].length, 0);
 
+  async function pullToRefresh() {
+    setRefreshing(true);
+    try {
+      await onRefresh();
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   return (
-    <>
-      <ScrollView
-        automaticallyAdjustKeyboardInsets
-        keyboardShouldPersistTaps="handled"
-        refreshControl={
-          <RefreshControl refreshing={loading} onRefresh={onRefresh} tintColor={palette.blue} />
-        }
-        style={{ backgroundColor: palette.paper }}
-        contentContainerStyle={[
-          screen.inboxContent,
-          { paddingBottom: searchOpen ? bottomInset + 82 : 16 },
-        ]}
-      >
+    <View
+      style={{ flex: 1, backgroundColor: palette.paper }}
+      onLayout={({ nativeEvent }) => setCompact(nativeEvent.layout.height < 320)}
+    >
+      {!compact && (
         <WorkspaceHeader
           longest={longest}
           me={me}
@@ -614,12 +535,26 @@ export function InboxScreen({
           topInset={topInset}
           waiting={waiting}
         />
-        <ScopeTabs
-          onFilter={() => setFilterOpen(true)}
-          onScope={setScope}
-          palette={palette}
-          scope={scope}
-        />
+      )}
+      <ScopeTabs
+        onFilter={() => setFilterOpen(true)}
+        onScope={setScope}
+        palette={palette}
+        scope={scope}
+      />
+      <ScrollView
+        style={{ flex: 1 }}
+        alwaysBounceVertical
+        keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={pullToRefresh}
+            tintColor={palette.blue}
+          />
+        }
+        contentContainerStyle={screen.inboxContent}
+      >
         {!searching && pendingByConversation.length > 0 && (
           <View style={[screen.savedReplies, { borderBottomColor: palette.line }]}>
             <Text style={[screen.savedTitle, { color: palette.ink }]}>{t("pageSavedReplies")}</Text>
@@ -646,7 +581,7 @@ export function InboxScreen({
             })}
           </View>
         )}
-        {loading && conversations.length === 0 ? (
+        {loading && !refreshing && conversations.length === 0 ? (
           <ActivityIndicator color={palette.blue} style={screen.loading} />
         ) : searching ? (
           searchResults.length === 0 ? (
@@ -660,7 +595,7 @@ export function InboxScreen({
               </Text>
               <Pressable
                 accessibilityRole="button"
-                onPress={() => setQuery("")}
+                onPress={onClearSearch}
                 style={[screen.emptyAction, { borderColor: palette.line }]}
               >
                 <Text style={[screen.emptyActionText, { color: palette.ink }]}>
@@ -725,20 +660,6 @@ export function InboxScreen({
           ))
         )}
       </ScrollView>
-      {searchOpen && (
-        <View pointerEvents="box-none" style={[screen.searchDock, { bottom: searchBottom }]}>
-          <InboxSearch
-            onCancel={() => {
-              Keyboard.dismiss();
-              setQuery("");
-              onCloseSearch();
-            }}
-            onQuery={setQuery}
-            palette={palette}
-            query={query}
-          />
-        </View>
-      )}
       <FilterSheet
         onClose={() => setFilterOpen(false)}
         onScope={setScope}
@@ -746,33 +667,48 @@ export function InboxScreen({
         scope={scope}
         visible={filterOpen}
       />
-    </>
+    </View>
   );
 }
 
-function SecondaryHeader({
-  detail,
+function SettingsHeader({
+  workspace,
   palette,
-  title,
   topInset,
 }: {
-  detail: string;
+  workspace: string;
   palette: Palette;
-  title: string;
   topInset: number;
 }) {
+  const dark = palette === night;
   return (
-    <View
-      style={[
-        screen.secondaryHeader,
-        { paddingTop: topInset + 14, backgroundColor: palette.cover },
-      ]}
-    >
-      <View pointerEvents="none" style={[screen.harborArt, { top: topInset }]}>
-        <Harbor night={palette.paper !== "#fdfefd"} />
+    <View style={[screen.settingsHeader, { backgroundColor: palette.analyticsSky }]}>
+      <View pointerEvents="none" style={screen.settingsArt}>
+        <Image
+          accessible={false}
+          source={
+            dark ? require("../assets/settings-night.png") : require("../assets/settings-day.png")
+          }
+          style={screen.settingsImage}
+        />
+        <MovingPatch
+          name="settings"
+          source={
+            dark
+              ? require("../assets/settings-nod-night.png")
+              : require("../assets/settings-nod-day.png")
+          }
+        />
       </View>
-      <Text style={[screen.secondaryTitle, { color: palette.coverInk }]}>{title}</Text>
-      <Text style={[screen.secondaryDetail, { color: palette.coverSub }]}>{detail}</Text>
+      <View style={[screen.settingsHeaderCopy, { paddingTop: topInset + 22 }]}>
+        <Text
+          accessibilityRole="header"
+          style={[screen.secondaryTitle, { color: palette.coverInk }]}
+        >
+          {t("settings")}
+        </Text>
+        <Text style={[screen.secondaryDetail, { color: palette.coverSub }]}>{workspace}</Text>
+      </View>
     </View>
   );
 }
@@ -904,7 +840,7 @@ function SettingsRow({
 }
 
 const themeChoices: { value: ThemePreference; label: string }[] = [
-  { value: "system", label: t("themeSystem") },
+  { value: "system", label: t("mobileThemeAutomatic") },
   { value: "light", label: t("themeLight") },
   { value: "dark", label: t("themeDark") },
 ];
@@ -926,30 +862,66 @@ function ThemeChoice({
 }) {
   return (
     <View style={screen.themeSection}>
-      <Text style={[screen.presenceTitle, { color: palette.ink }]}>{t("theme")}</Text>
-      <View
-        accessibilityLabel={t("theme")}
-        accessibilityRole="radiogroup"
-        style={[screen.themeControl, { backgroundColor: palette.wash }]}
+      <Text
+        accessibilityRole="header"
+        style={[screen.settingsSectionTitle, { color: palette.sub }]}
       >
-        {themeChoices.map((choice) => {
-          const selected = choice.value === theme;
+        {t("pageAppearance")}
+      </Text>
+      <View
+        accessibilityRole="radiogroup"
+        accessibilityLabel={t("pageAppearance")}
+        style={screen.themeControl}
+      >
+        {themeChoices.map(({ value, label }) => {
+          const selected = value === theme;
           return (
             <Pressable
+              key={value}
               accessibilityRole="radio"
+              accessibilityLabel={label}
               accessibilityState={{ checked: selected }}
-              key={choice.value}
-              onPress={() => onTheme(choice.value)}
-              style={[
+              onPress={() => onTheme(value)}
+              style={({ pressed }) => [
                 screen.themeChoice,
-                selected && { backgroundColor: palette.sheet, borderColor: palette.line },
+                {
+                  backgroundColor: palette.sheet,
+                  borderColor: selected ? palette.blue : palette.line,
+                  opacity: pressed ? 0.75 : 1,
+                },
               ]}
             >
+              <View accessible={false} style={screen.themePreview}>
+                {(value === "system" ? ["light", "dark"] : [value]).map((tone) => {
+                  const light = tone === "light";
+                  return (
+                    <View
+                      key={tone}
+                      style={[
+                        screen.previewPane,
+                        { backgroundColor: light ? "#f1f0ec" : "#1c2937" },
+                      ]}
+                    >
+                      <View
+                        style={[
+                          screen.previewHeading,
+                          { backgroundColor: light ? "#586879" : "#bac8d8" },
+                        ]}
+                      />
+                      <View
+                        style={[
+                          screen.previewLine,
+                          { backgroundColor: light ? "#c2c7ce" : "#536479" },
+                        ]}
+                      />
+                    </View>
+                  );
+                })}
+              </View>
               <Text
-                numberOfLines={1}
-                style={[screen.themeChoiceText, { color: selected ? palette.ink : palette.sub }]}
+                style={[screen.themeChoiceText, { color: selected ? palette.blue : palette.ink }]}
               >
-                {choice.label}
+                {label}
               </Text>
             </Pressable>
           );
@@ -1085,35 +1057,94 @@ function WorkspaceSheet({
 }
 
 function TeamSheet({
+  meId,
   members,
   palette,
   visible,
   onClose,
 }: {
+  meId: string;
   members: Member[];
   palette: Palette;
   visible: boolean;
   onClose(): void;
 }) {
+  const { width, fontScale } = useWindowDimensions();
+  const stacked = width / fontScale < 270;
   return (
-    <Sheet onClose={onClose} palette={palette} title={t("pageTeam")} visible={visible}>
-      <ScrollView style={screen.settingsSheetScroll}>
-        {members.map((member) => (
-          <View key={member.id} style={[screen.memberRow, { borderBottomColor: palette.line }]}>
-            <Avatar name={member.name} picture={member.pictureUrl} size={40} palette={palette} />
-            <View style={screen.workspaceChoiceCopy}>
-              <Text style={[screen.sheetChoiceText, { color: palette.ink }]}>{member.name}</Text>
-              <Text style={[screen.preferenceDetail, { color: palette.sub }]}>{member.email}</Text>
-            </View>
-            <Text style={[screen.memberRole, { color: palette.sub }]}>
-              {member.role === "owner"
-                ? t("roleOwner")
-                : member.role === "admin"
-                  ? t("roleAdmin")
-                  : t("roleMember")}
+    <Sheet
+      onClose={onClose}
+      palette={palette}
+      title={t("mobileTeamTitle", { count: members.length })}
+      visible={visible}
+    >
+      <ScrollView style={screen.teamList} contentContainerStyle={screen.teamListContent}>
+        {members.map((member, index) => {
+          const self = member.id === meId;
+          const owner = member.role === "owner";
+          const role = roleLabel(member.role);
+          const roleBadge = (
+            <Text
+              style={[
+                screen.teamRole,
+                stacked && screen.teamBadgeStart,
+                owner
+                  ? { color: palette.blue, backgroundColor: palette.tint }
+                  : { color: palette.sub, backgroundColor: palette.wash },
+              ]}
+            >
+              {role}
             </Text>
-          </View>
-        ))}
+          );
+          return (
+            <View key={member.id}>
+              {index > 0 && (
+                <View style={[screen.teamDivider, { backgroundColor: palette.line }]} />
+              )}
+              <View
+                accessible
+                accessibilityLabel={`${t("mobileTeamMember", {
+                  name: self ? `${member.name}, ${t("you")}` : member.name,
+                  role,
+                })}, ${member.email}`}
+                style={screen.teamRow}
+              >
+                <Avatar
+                  name={member.name}
+                  picture={member.pictureUrl}
+                  size={42}
+                  palette={palette}
+                />
+                <View style={screen.teamCopy}>
+                  <View style={[screen.teamNameLine, stacked && screen.teamNameWrap]}>
+                    <Text
+                      numberOfLines={stacked ? undefined : 1}
+                      style={[screen.teamName, { color: palette.ink }]}
+                    >
+                      {member.name}
+                    </Text>
+                    {self && (
+                      <Text
+                        style={[screen.teamYou, { color: palette.sub, borderColor: palette.line }]}
+                      >
+                        {t("you")}
+                      </Text>
+                    )}
+                  </View>
+                  <Text
+                    numberOfLines={stacked ? undefined : 1}
+                    style={[screen.teamEmail, { color: palette.sub }]}
+                  >
+                    {member.email}
+                  </Text>
+                  {stacked && roleBadge}
+                </View>
+                {!stacked && roleBadge}
+              </View>
+            </View>
+          );
+        })}
+        <Text style={[screen.teamFootnote, { color: palette.sub }]}>{t("mobileTeamFootnote")}</Text>
       </ScrollView>
     </Sheet>
   );
@@ -1329,7 +1360,6 @@ function SavedRepliesSheet({
 
 export function SettingsScreen({
   api,
-  bottomInset,
   me,
   members,
   palette,
@@ -1347,7 +1377,6 @@ export function SettingsScreen({
   onWorkspaceRenamed,
 }: {
   api: DinghyApi;
-  bottomInset: number;
   me: Me | null;
   members: Member[];
   palette: Palette;
@@ -1364,6 +1393,7 @@ export function SettingsScreen({
   onWorkspace(workspaceId: string): void;
   onWorkspaceRenamed(name: string): void;
 }) {
+  const dockInset = useTabBarInset();
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [teamOpen, setTeamOpen] = useState(false);
@@ -1410,12 +1440,26 @@ export function SettingsScreen({
   };
   return (
     <>
+      <View
+        pointerEvents="none"
+        style={[screen.settingsOverscrollSky, { backgroundColor: palette.analyticsSky }]}
+      />
       <ScrollView
-        style={{ backgroundColor: palette.paper }}
-        contentContainerStyle={[screen.secondaryContent, { paddingBottom: 16 }]}
+        scrollIndicatorInsets={{ bottom: dockInset }}
+        keyboardShouldPersistTaps="handled"
+        contentContainerStyle={{
+          backgroundColor: palette.paper,
+          flexGrow: 1,
+          paddingBottom: 16 + dockInset,
+        }}
       >
-        <SecondaryHeader detail="" palette={palette} title={t("settings")} topInset={topInset} />
-        <View style={screen.profilePanel}>
+        <SettingsHeader workspace={workspaceName} palette={palette} topInset={topInset} />
+        <View
+          style={[
+            screen.profilePanel,
+            { backgroundColor: palette.sheet, borderColor: palette.line },
+          ]}
+        >
           <Pressable
             accessibilityLabel={t("pageProfile")}
             accessibilityRole="button"
@@ -1423,35 +1467,29 @@ export function SettingsScreen({
             onPress={() => setProfileOpen(true)}
             style={({ pressed }) => [screen.profileIdentity, pressed && { opacity: 0.7 }]}
           >
-            <View style={[screen.profilePortraitFrame, { backgroundColor: palette.paper }]}>
-              <View style={screen.profileAvatar}>
-                <Avatar name={name} picture={me?.pictureUrl ?? null} size={68} palette={palette} />
-                <View
-                  style={[
-                    screen.profileStatusDot,
-                    {
-                      backgroundColor: away ? palette.amber : palette.green,
-                      borderColor: palette.paper,
-                    },
-                  ]}
-                />
-              </View>
+            <View style={screen.profileAvatar}>
+              <Avatar name={name} picture={me?.pictureUrl ?? null} size={52} palette={palette} />
+              <View
+                style={[
+                  screen.profileStatusDot,
+                  {
+                    backgroundColor: away ? palette.amber : palette.green,
+                    borderColor: palette.sheet,
+                  },
+                ]}
+              />
             </View>
             <View style={screen.profileCopy}>
               <Text style={[screen.profileName, { color: palette.ink }]}>{name}</Text>
               <Text style={[screen.profileEmail, { color: palette.sub }]}>{me?.email ?? ""}</Text>
-              <Text style={[screen.profileWorkspace, { color: palette.sub }]}>{workspaceName}</Text>
             </View>
-            {me !== null && <Icon name="next" size={18} color={palette.sub} />}
+            {me !== null && (
+              <View style={screen.editProfile}>
+                <Text style={[screen.themeChoiceText, { color: palette.blue }]}>{t("edit")}</Text>
+                <Icon name="next" size={14} color={palette.blue} />
+              </View>
+            )}
           </Pressable>
-        </View>
-        <View style={screen.availabilitySection}>
-          <Text style={[screen.presenceTitle, { color: palette.ink }]}>
-            {t("mobileHarborAvailability")}
-          </Text>
-          <Text style={[screen.presenceDetail, { color: palette.sub }]}>
-            {away ? t("mobileAwayDetail") : t("mobileAvailableDetail")}
-          </Text>
           <View
             accessibilityLabel={t("mobileHarborAvailability")}
             accessibilityRole="radiogroup"
@@ -1579,6 +1617,7 @@ export function SettingsScreen({
             visible={workspaceOpen}
           />
           <TeamSheet
+            meId={me.id}
             members={members}
             onClose={() => setTeamOpen(false)}
             palette={palette}

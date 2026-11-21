@@ -175,14 +175,12 @@ export function SignInScreen({
       >
         <View>
           <View style={screenStyles.wordmark}>
-            <View style={screenStyles.boatMark}>
-              <Image
-                accessible={false}
-                source={require("../assets/boat.png")}
-                style={screenStyles.boat}
-                resizeMode="contain"
-              />
-            </View>
+            <Image
+              accessible={false}
+              source={require("../assets/launch-mark.png")}
+              style={screenStyles.boat}
+              resizeMode="contain"
+            />
             <Text
               style={[screenStyles.brand, { color: palette.authInk, fontFamily: fonts.display }]}
             >
@@ -206,6 +204,7 @@ export function SignInScreen({
       </View>
       <Sheet
         visible={formOpen}
+        scrimColor="rgba(11, 34, 57, 0.35)"
         onClose={() => {
           Keyboard.dismiss();
           setFormOpen(false);
@@ -229,7 +228,10 @@ export function SignInScreen({
           {step === "email" && (
             <>
               <Text
-                style={[screenStyles.hostLabel, { color: palette.sub, fontFamily: fonts.semibold }]}
+                style={[
+                  screenStyles.hostLabel,
+                  { color: palette.authInk, fontFamily: fonts.semibold },
+                ]}
               >
                 {t("nativeMobileSignInHostLabel")}
               </Text>
@@ -516,7 +518,7 @@ function SignInField({
 }
 
 const screenStyles = StyleSheet.create({
-  page: { flex: 1, backgroundColor: "#fff3c4" },
+  page: { flex: 1, backgroundColor: "#ffc917" },
   background: { ...StyleSheet.absoluteFill, width: "100%", height: "100%" },
   landing: {
     flex: 1,
@@ -549,21 +551,13 @@ const screenStyles = StyleSheet.create({
     alignItems: "center",
     gap: 7,
   },
-  boatMark: {
-    width: 26,
-    height: 26,
-    borderRadius: 8,
-    padding: 2,
-    backgroundColor: "#fff8df",
-  },
-  boat: { width: 22, height: 22 },
+  boat: { width: 26, height: 26 },
   brand: { fontSize: 25, lineHeight: 30, letterSpacing: -0.9 },
   panelContent: {
     width: "100%",
     maxWidth: 560,
     alignSelf: "center",
     paddingHorizontal: 22,
-    paddingBottom: 8,
   },
   copy: { maxWidth: 340, fontSize: 15, lineHeight: 22, marginBottom: 20 },
   hostLabel: { fontSize: 13, lineHeight: 18, marginBottom: 8 },

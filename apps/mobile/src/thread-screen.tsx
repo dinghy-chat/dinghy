@@ -1,6 +1,10 @@
+import * as Clipboard from "expo-clipboard";
 import { type ComponentRef, useEffect, useRef, useState } from "react";
 import {
+  AccessibilityInfo,
+  ActivityIndicator,
   Alert,
+  BackHandler,
   FlatList,
   Keyboard,
   KeyboardAvoidingView,
@@ -10,21 +14,25 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
+  type TextInput,
   useColorScheme,
   View,
 } from "react-native";
 import { t } from "../../operator/src/text.ts";
 import { Harbor } from "../Harbor";
 import type { PendingReply } from "../outbox";
+import { AnchoredMenu, type MenuItem } from "./anchored-menu";
 import type { DinghyApi } from "./api";
 import { Avatar, readableError, SheetCloseButton, visitorName } from "./common";
-import { ConversationTools } from "./composer-tools";
+import { ThreadComposer } from "./composer-tools";
 import { fonts } from "./fonts";
 import { Icon } from "./icon";
+import { MessageIcon } from "./message-icon";
+import { MessageMarkdown } from "./message-markdown";
 import { shownReceipts } from "./message-state";
 import { Sheet } from "./sheet";
 import type { Palette } from "./theme";
+import { type Rect, visitorContext } from "./thread-logic";
 import { MessageQuote, ThreadMessage } from "./thread-message";
 import type { Conversation, Member, Message, Thread, Workspace } from "./types";
 
@@ -37,50 +45,33 @@ function SheetTools({ onClose, palette }: { onClose(): void; palette: Palette })
 }
 
 function VisitorDetailsSheet({
-  api,
   bottomInset,
   conversation,
+  detail,
+  failure,
   isNight,
   meId,
   members,
   name,
   onClose,
+  onRetry,
   palette,
   visible,
 }: {
-  api: DinghyApi;
   bottomInset: number;
   conversation: Conversation;
+  detail: Awaited<ReturnType<DinghyApi["contact"]>> | null;
+  failure: string | null;
   isNight: boolean;
   meId: string;
   members: Member[];
   name: string;
   onClose(): void;
+  onRetry(): void;
   palette: Palette;
   visible: boolean;
 }) {
-  const [detail, setDetail] = useState<Awaited<ReturnType<DinghyApi["contact"]>> | null>(null);
-  const [failure, setFailure] = useState<string | null>(null);
-  const [attempt, setAttempt] = useState(0);
   const visitorId = conversation.visitor.id;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: Retry reloads the same contact after a failed request.
-  useEffect(() => {
-    if (!visible || !visitorId) return;
-    let active = true;
-    setDetail(null);
-    setFailure(null);
-    void api.contact(visitorId).then(
-      (contact) => {
-        if (active) setDetail(contact);
-      },
-      (error) => {
-        if (active) setFailure(readableError(error));
-      },
-    );
-    return () => {
-      active = false;
-    };
-  }, [api, visible, visitorId, attempt]);
   if (!visible) return null;
   const assignee = members.find((member) => member.id === conversation.assigneeOperatorId);
   const assignment = conversation.assigneeOperatorId
@@ -195,7 +186,7 @@ function VisitorDetailsSheet({
             {failure && (
               <Pressable
                 accessibilityRole="button"
-                onPress={() => setAttempt((n) => n + 1)}
+                onPress={onRetry}
                 style={{ minHeight: 44, justifyContent: "center" }}
               >
                 <Text style={{ color: palette.blue }}>{t("mobileRetry")}</Text>
@@ -398,9 +389,20 @@ function PendingBubble({
         </Text>
       </View>
       {quote && <MessageQuote palette={palette} quote={quote} visitorName={visitor} />}
-      <Text style={[screenStyles.pendingBody, { color: palette.ink, fontFamily: fonts.body }]}>
-        {reply.body}
-      </Text>
+      <View style={screenStyles.pendingBody}>
+        <MessageMarkdown
+          lineHeight={21}
+          palette={palette}
+          size={15}
+          source={reply.body}
+          tone={{
+            ink: palette.ink,
+            link: palette.blue,
+            quoteLine: palette.blue,
+            quoteInk: palette.sub,
+          }}
+        />
+      </View>
       <View style={screenStyles.pendingFoot}>
         <Text style={[screenStyles.pendingError, { color: palette.sub, fontFamily: fonts.body }]}>
           {canRetry ? (error?.message ?? t("mobileConnectionInterrupted")) : t("mobileReopenRetry")}
@@ -467,6 +469,11 @@ function messageMeta(messages: Message[], index: number, meId: string): string |
   return `${author} · ${timed}`;
 }
 
+type ContactDetail = Awaited<ReturnType<DinghyApi["contact"]>>;
+
+/** A 16% wash of a six-digit color, for a tinted button behind an icon of that color. */
+const wash16 = (hex: string) => (/^#[0-9a-f]{6}$/i.test(hex) ? `${hex}29` : hex);
+
 export function ThreadScreen({
   api,
   conversation,
@@ -530,19 +537,40 @@ export function ThreadScreen({
       hide.remove();
     };
   }, []);
-  const [draft, setDraft] = useState(initialDraft);
-  const [sending, setSending] = useState(false);
+  useEffect(() => {
+    if (Platform.OS !== "android") return;
+    const back = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (keyboardVisible) {
+        Keyboard.dismiss();
+        return true;
+      }
+      onBack();
+      return true;
+    });
+    return () => back.remove();
+  }, [keyboardVisible, onBack]);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [handoffOpen, setHandoffOpen] = useState(false);
   const [handoffBusy, setHandoffBusy] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [statusBusy, setStatusBusy] = useState(false);
+  const [assignBusy, setAssignBusy] = useState(false);
+  const [menuAnchor, setMenuAnchor] = useState<Rect | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [contact, setContact] = useState<ContactDetail | null>(null);
+  const [contactFailure, setContactFailure] = useState<string | null>(null);
+  const [contactRequest, setContactRequest] = useState(0);
+  const [now, setNow] = useState(() => new Date());
   const input = useRef<ComponentRef<typeof TextInput>>(null);
+  const moreButton = useRef<ComponentRef<typeof View>>(null);
   const list = useRef<FlatList<Message | PendingReply>>(null);
   const current = thread?.conversation ?? conversation;
   const isClosed = current.status === "closed";
   const name = visitorName(current);
-  const assignee = members.find((member) => member.id === current.assigneeOperatorId);
+  const visitorId = current.visitor.id;
+  const owner = current.assigneeOperatorId;
+  const assignee = members.find((member) => member.id === owner);
   const messages = thread?.messages ?? [];
   const rows: (Message | PendingReply)[] = [...messages, ...pending];
   const receiptByMessage = shownReceipts(messages, thread?.receipts ?? null);
@@ -550,30 +578,57 @@ export function ThreadScreen({
     workspace === null || (workspace.active && !workspace.readOnly && !workspace.suspended);
   const mayDeleteAnyone = workspace?.role === "owner" || workspace?.role === "admin";
   const isPending = (row: Message | PendingReply): row is PendingReply => !("kind" in row);
-  const changeDraft = (body: string) => {
-    setDraft(body);
-    onDraftChange(body);
-  };
-  const send = async () => {
-    const submittedDraft = draft;
-    const body = draft.trim();
-    if (!body) return;
-    setSending(true);
-    try {
-      await onSend(body, replyingTo?.id ?? null);
-      setDraft((current) => (current === submittedDraft ? "" : current));
-      setReplyingTo(null);
-    } catch {
-      // The parent shows the storage error. Keep the draft so the operator can try again.
-    } finally {
-      setSending(false);
-    }
+
+  // The header's place, page and local time come from the contact record. A new request also runs
+  // when the details open, so both show the page the visitor is on now.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Each contactRequest reloads the contact.
+  useEffect(() => {
+    if (!visitorId) return;
+    let active = true;
+    setContactFailure(null);
+    void api.contact(visitorId).then(
+      (detail) => {
+        if (active) setContact(detail);
+      },
+      (failure) => {
+        if (active) setContactFailure(readableError(failure));
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [api, visitorId, contactRequest]);
+  useEffect(() => {
+    const timer = setInterval(() => setNow(new Date()), 60_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const { place, time } = visitorContext(contact?.country ?? null, contact?.timeZone ?? null, now);
+  const contextPlace = place ?? current.visitor.email;
+  const contextTime = time ? t("mobileVisitorTimeThere", { time }) : null;
+  const context = [contextPlace, contextTime]
+    .filter((part): part is string => Boolean(part))
+    .join(" · ");
+
+  const openDetails = () => {
+    setContactRequest((value) => value + 1);
+    setDetailsOpen(true);
   };
   const replyTo = (message: Message) => {
     setReplyingTo(message);
     requestAnimationFrame(() => input.current?.focus());
   };
+  const changeStatus = async () => {
+    if (statusBusy) return;
+    setStatusBusy(true);
+    try {
+      await onStatus();
+    } finally {
+      setStatusBusy(false);
+    }
+  };
   const confirmStatus = () => {
+    if (statusBusy) return;
     Alert.alert(
       t(isClosed ? "mobileReopenConfirmTitle" : "mobileCloseConfirmTitle"),
       t(isClosed ? "mobileReopenConfirmText" : "mobileCloseConfirmText"),
@@ -582,16 +637,39 @@ export function ThreadScreen({
         {
           text: t(isClosed ? "mobileReopenConfirmYes" : "mobileCloseConfirmYes"),
           style: isClosed ? "default" : "destructive",
-          onPress: () => void onStatus(),
+          onPress: () => void changeStatus(),
         },
       ],
     );
   };
+  const assignToMe = async () => {
+    if (assignBusy) return;
+    setAssignBusy(true);
+    try {
+      await onAssign();
+    } finally {
+      setAssignBusy(false);
+    }
+  };
+  // Taking a chat a teammate owns asks first. An unowned chat is yours at once.
+  const confirmAssign = () => {
+    if (!owner) {
+      void assignToMe();
+      return;
+    }
+    Alert.alert(
+      t("mobileTakeOverTitle"),
+      t("mobileTakeOverText", { name: assignee?.name ?? t("aTeammate") }),
+      [
+        { text: t("cancel"), style: "cancel" },
+        { text: t("keysAssignMe"), onPress: () => void assignToMe() },
+      ],
+    );
+  };
   const openHandoff = () => {
-    const assigned = current.assigneeOperatorId;
     setSelectedMemberId(
-      assigned && members.some((member) => member.id === assigned)
-        ? assigned
+      owner && members.some((member) => member.id === owner)
+        ? owner
         : (members.find((member) => member.id !== meId)?.id ?? members[0]?.id ?? null),
     );
     setHandoffOpen(true);
@@ -608,6 +686,67 @@ export function ThreadScreen({
       setHandoffBusy(false);
     }
   };
+  const openMenu = () => {
+    moreButton.current?.measureInWindow((x, y, width, height) => {
+      setMenuAnchor({ x, y, width, height });
+      setMenuOpen(true);
+    });
+  };
+  const menuItems: MenuItem[] = [
+    ...(!isClosed && owner !== meId
+      ? [
+          {
+            label: t("keysAssignMe"),
+            icon: (color: string) => <Icon color={color} name="person" size={19} />,
+            run: confirmAssign,
+          },
+        ]
+      : []),
+    ...(!isClosed
+      ? [
+          {
+            label: t("mobileHandoff"),
+            icon: (color: string) => <Icon color={color} name="hand" size={19} />,
+            run: openHandoff,
+          },
+        ]
+      : []),
+    {
+      label: t("mobileVisitorDetails"),
+      icon: (color: string) => <MessageIcon color={color} name="info" size={20} />,
+      run: openDetails,
+    },
+    {
+      label: t("messageCopyLink"),
+      icon: (color: string) => <MessageIcon color={color} name="link" size={20} />,
+      run: () => {
+        void Clipboard.setStringAsync(api.conversationLink(current.id))
+          .then(() => AccessibilityInfo.announceForAccessibility(t("linkCopied")))
+          .catch(() => {});
+      },
+    },
+    ...(isClosed
+      ? [
+          {
+            label: t("reopen"),
+            icon: (color: string) => <Icon color={color} name="reopen" size={19} />,
+            run: confirmStatus,
+          },
+        ]
+      : []),
+  ];
+  const ownership =
+    isClosed || owner === meId
+      ? null
+      : owner
+        ? {
+            text: assignee
+              ? t("mobileTeammateOwns", { name: assignee.name })
+              : t("mobileSomeoneOwns"),
+            action: t("mobileHandoff"),
+            run: openHandoff,
+          }
+        : { text: t("mobileNobodyOwns"), action: t("keysAssignMe"), run: confirmAssign };
 
   return (
     <KeyboardAvoidingView
@@ -615,134 +754,180 @@ export function ThreadScreen({
       style={[screenStyles.page, { backgroundColor: palette.paper }]}
     >
       <View style={[screenStyles.header, { borderBottomColor: palette.line }]}>
-        <Pressable
-          accessibilityLabel={t("back")}
-          accessibilityRole="button"
-          hitSlop={8}
-          onPress={onBack}
-          style={({ pressed }) => [
-            screenStyles.headerButton,
-            { backgroundColor: pressed ? palette.wash : "transparent" },
-          ]}
-        >
-          <Icon
-            color={palette.navy}
-            name={Platform.OS === "ios" ? "back" : "androidBack"}
-            size={21}
-          />
-        </Pressable>
-        <Pressable
-          accessibilityLabel={t("mobileOpenVisitorDetails", { name })}
-          accessibilityRole="button"
-          onPress={() => setDetailsOpen(true)}
-          style={({ pressed }) => [screenStyles.person, { opacity: pressed ? 0.68 : 1 }]}
-        >
-          <Avatar name={name} picture={current.visitor.pictureUrl} size={36} palette={palette} />
-          <View style={screenStyles.personCopy}>
-            <Text
-              numberOfLines={1}
-              style={[screenStyles.name, { color: palette.ink, fontFamily: fonts.display }]}
-            >
-              {name}
-            </Text>
-            <Text
-              numberOfLines={1}
-              style={[screenStyles.meta, { color: palette.sub, fontFamily: fonts.body }]}
-            >
-              {current.subject || current.visitor.email || t("visitorAnonymous")}
-            </Text>
-          </View>
-        </Pressable>
-        <Pressable
-          accessibilityLabel={
-            isClosed ? t("mobileReopenConversation") : t("mobileCloseConversation")
-          }
-          accessibilityRole="button"
-          onPress={confirmStatus}
-          style={({ pressed }) => [
-            screenStyles.statusButton,
-            {
-              backgroundColor: pressed ? palette.tint : palette.wash,
-              borderColor: palette.line,
-            },
-          ]}
-        >
-          <Text
-            style={[
-              screenStyles.statusButtonText,
-              { color: palette.ink, fontFamily: fonts.semibold },
+        <View style={screenStyles.headerRow}>
+          <Pressable
+            accessibilityLabel={t("back")}
+            accessibilityRole="button"
+            onPress={onBack}
+            style={({ pressed }) => [screenStyles.back, { opacity: pressed ? 0.5 : 1 }]}
+          >
+            <Icon
+              color={palette.blue}
+              name={Platform.OS === "ios" ? "back" : "androidBack"}
+              size={24}
+            />
+          </Pressable>
+          <Pressable
+            accessibilityHint={context || undefined}
+            accessibilityLabel={t("mobileOpenVisitorDetails", { name })}
+            accessibilityRole="button"
+            onPress={openDetails}
+            style={({ pressed }) => [screenStyles.person, { opacity: pressed ? 0.68 : 1 }]}
+          >
+            <View>
+              <Avatar
+                name={name}
+                picture={current.visitor.pictureUrl}
+                size={34}
+                palette={palette}
+              />
+              {thread?.visitorOnline && (
+                <View
+                  style={[
+                    screenStyles.online,
+                    { backgroundColor: palette.green, borderColor: palette.paper },
+                  ]}
+                />
+              )}
+            </View>
+            <View style={screenStyles.personCopy}>
+              <Text
+                numberOfLines={1}
+                style={[screenStyles.name, { color: palette.ink, fontFamily: fonts.displayBold }]}
+              >
+                {name}
+              </Text>
+              {context !== "" && (
+                <View style={screenStyles.contextRow}>
+                  {contextPlace && (
+                    <Text
+                      numberOfLines={1}
+                      style={[
+                        screenStyles.context,
+                        screenStyles.contextPlace,
+                        { color: palette.sub, fontFamily: fonts.medium },
+                      ]}
+                    >
+                      {contextPlace}
+                    </Text>
+                  )}
+                  {contextTime && (
+                    <Text
+                      numberOfLines={1}
+                      style={[
+                        screenStyles.context,
+                        screenStyles.contextTime,
+                        { color: palette.sub, fontFamily: fonts.medium },
+                      ]}
+                    >
+                      {`${contextPlace ? " · " : ""}${contextTime}`}
+                    </Text>
+                  )}
+                </View>
+              )}
+            </View>
+          </Pressable>
+          <Pressable
+            accessibilityLabel={t("mobileConversationMore")}
+            accessibilityRole="button"
+            hitSlop={3}
+            onPress={openMenu}
+            style={({ pressed }) => [
+              screenStyles.round,
+              { backgroundColor: palette.wash, opacity: pressed ? 0.6 : 1 },
             ]}
           >
-            {isClosed ? t("reopen") : t("close")}
-          </Text>
-        </Pressable>
-      </View>
-
-      {!isClosed && (
-        <View style={[screenStyles.ownership, { borderBottomColor: palette.line }]}>
-          <View style={screenStyles.ownershipLabel}>
-            <Avatar
-              name={assignee?.name ?? t("unassigned")}
-              picture={assignee?.pictureUrl ?? null}
-              size={30}
-              palette={palette}
-            />
+            <View collapsable={false} ref={moreButton} style={screenStyles.roundInner}>
+              <Icon color={palette.ink} name="dots" size={20} />
+            </View>
+          </Pressable>
+          <Pressable
+            accessibilityLabel={
+              isClosed ? t("mobileReopenConversation") : t("mobileCloseConversation")
+            }
+            accessibilityRole="button"
+            accessibilityState={{ busy: statusBusy, disabled: statusBusy }}
+            disabled={statusBusy}
+            hitSlop={3}
+            onPress={confirmStatus}
+            style={({ pressed }) => [
+              screenStyles.round,
+              {
+                backgroundColor: isClosed ? palette.wash : wash16(palette.green),
+                opacity: pressed ? 0.6 : 1,
+              },
+            ]}
+          >
+            {statusBusy ? (
+              <ActivityIndicator color={isClosed ? palette.ink : palette.green} size="small" />
+            ) : (
+              <Icon
+                color={isClosed ? palette.ink : palette.green}
+                name={isClosed ? "reopen" : "check"}
+                size={20}
+              />
+            )}
+          </Pressable>
+        </View>
+        {ownership && (
+          <View
+            style={[
+              screenStyles.ownership,
+              { backgroundColor: palette.warm, borderTopColor: palette.line },
+            ]}
+          >
+            <Icon color={palette.amber} name="person" size={15} />
             <Text
               numberOfLines={1}
-              style={[screenStyles.ownershipText, { color: palette.sub, fontFamily: fonts.body }]}
-            >
-              {current.assigneeOperatorId === meId
-                ? t("mobileAssigned")
-                : assignee
-                  ? t("mobileAssignedTo", { name: assignee.name })
-                  : current.assigneeOperatorId
-                    ? t("mobileAssignedOther")
-                    : t("unassigned")}
-            </Text>
-          </View>
-          <View style={screenStyles.ownershipActions}>
-            {!current.assigneeOperatorId && (
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => void onAssign()}
-                style={({ pressed }) => [
-                  screenStyles.assignButton,
-                  { backgroundColor: palette.blue, opacity: pressed ? 0.72 : 1 },
-                ]}
-              >
-                <Text style={{ color: palette.onBlue, fontFamily: fonts.semibold, fontSize: 12 }}>
-                  {t("keysAssignMe")}
-                </Text>
-              </Pressable>
-            )}
-            <Pressable
-              accessibilityRole="button"
-              onPress={openHandoff}
-              style={({ pressed }) => [
-                screenStyles.handoffLink,
-                {
-                  backgroundColor: palette.wash,
-                  borderColor: palette.line,
-                  opacity: pressed ? 0.68 : 1,
-                },
+              style={[
+                screenStyles.ownershipText,
+                { color: palette.amber, fontFamily: fonts.medium },
               ]}
             >
-              <Text style={{ color: palette.ink, fontFamily: fonts.semibold, fontSize: 12 }}>
-                {t("mobileHandoff")}
+              {ownership.text}
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ disabled: assignBusy }}
+              disabled={assignBusy}
+              hitSlop={{ top: 2, bottom: 2, left: 8, right: 8 }}
+              onPress={ownership.run}
+              style={({ pressed }) => [
+                screenStyles.ownershipAction,
+                { opacity: assignBusy ? 0.45 : pressed ? 0.6 : 1 },
+              ]}
+            >
+              <Text
+                style={[
+                  screenStyles.ownershipLink,
+                  { color: palette.blue, fontFamily: fonts.semibold },
+                ]}
+              >
+                {ownership.action}
               </Text>
-              <Icon color={palette.sub} name="next" size={13} />
             </Pressable>
           </View>
-        </View>
-      )}
+        )}
+      </View>
 
       <FlatList
         ref={list}
         data={rows}
         keyExtractor={(item) => (isPending(item) ? `pending-${item.clientId}` : item.id)}
         contentContainerStyle={screenStyles.log}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
+        ListEmptyComponent={
+          loading && thread === null ? (
+            <ActivityIndicator accessibilityLabel={t("loading")} color={palette.sub} />
+          ) : undefined
+        }
         refreshControl={
-          <RefreshControl refreshing={loading} onRefresh={onReload} tintColor={palette.blue} />
+          <RefreshControl
+            refreshing={loading && thread !== null}
+            onRefresh={onReload}
+            tintColor={palette.blue}
+          />
         }
         onContentSizeChange={() => list.current?.scrollToEnd({ animated: false })}
         renderItem={({ item, index }) => {
@@ -781,7 +966,9 @@ export function ThreadScreen({
           return (
             <View>
               {startsDay && (
-                <Text style={[screenStyles.day, { color: palette.sub, fontFamily: fonts.medium }]}>
+                <Text
+                  style={[screenStyles.day, { color: palette.sub, fontFamily: fonts.semibold }]}
+                >
                   {dayLabel(item.createdAt)}
                 </Text>
               )}
@@ -823,123 +1010,53 @@ export function ThreadScreen({
             },
           ]}
         >
-          <Icon color={palette.blue} name="chat" size={18} />
+          <Icon color={palette.blue} name="reopen" size={18} />
           <Text style={[screenStyles.reopenText, { color: palette.ink, fontFamily: fonts.medium }]}>
             {t("mobileReopenReply")}
           </Text>
         </Pressable>
       ) : (
-        <View
-          style={[
-            screenStyles.composer,
-            {
-              backgroundColor: palette.paper,
-              borderTopColor: palette.line,
-              paddingBottom: keyboardVisible ? 5 : Math.max(bottomInset, 8),
-            },
-          ]}
-        >
-          {replyingTo && (
-            <View style={[screenStyles.replyChip, { backgroundColor: palette.wash }]}>
-              <Icon color={palette.blue} name="chat" size={16} />
-              <View style={screenStyles.replyChipCopy}>
-                <Text
-                  numberOfLines={1}
-                  style={[
-                    screenStyles.replyChipTitle,
-                    { color: palette.ink, fontFamily: fonts.semibold },
-                  ]}
-                >
-                  {t("replyingTo", {
-                    name: replyingTo.fromVisitor ? name : (replyingTo.authorName ?? t("aTeammate")),
-                  })}
-                </Text>
-                <Text
-                  numberOfLines={1}
-                  style={[
-                    screenStyles.replyChipText,
-                    { color: palette.sub, fontFamily: fonts.body },
-                  ]}
-                >
-                  {replyingTo.body ||
-                    t(replyingTo.kind === "image" ? "quoteImage" : "mobileAttachment")}
-                </Text>
-              </View>
-              <Pressable
-                accessibilityLabel={t("cancelReply")}
-                accessibilityRole="button"
-                hitSlop={8}
-                onPress={() => setReplyingTo(null)}
-                style={screenStyles.replyChipClose}
-              >
-                <Icon color={palette.sub} name="x" size={16} />
-              </Pressable>
-            </View>
-          )}
-          <View style={screenStyles.composeRow}>
-            <ConversationTools
-              api={api}
-              conversationId={current.id}
-              replyToMessageId={replyingTo?.id}
-              onInsert={(text) =>
-                changeDraft(draft && !/\s$/.test(draft) ? `${draft}\n${text}` : draft + text)
-              }
-              onNoteAdded={onReload}
-              onReplySent={() => setReplyingTo(null)}
-              palette={palette}
-              bottomInset={bottomInset}
-              onError={onError}
-            />
-            <View
-              style={[
-                screenStyles.composeBox,
-                { backgroundColor: palette.paper, borderColor: palette.line },
-              ]}
-            >
-              <TextInput
-                ref={input}
-                accessibilityLabel={t("mobileReplyTo", { name })}
-                multiline
-                onChangeText={changeDraft}
-                placeholder={t("mobileReplyPlaceholder", { name: name.split(" ")[0] ?? name })}
-                placeholderTextColor={palette.sub}
-                style={[screenStyles.input, { color: palette.ink, fontFamily: fonts.body }]}
-                textAlignVertical="top"
-                value={draft}
-              />
-              <Pressable
-                hitSlop={5}
-                accessibilityLabel={t("mobileSendReply")}
-                accessibilityRole="button"
-                disabled={!draft.trim() || sending}
-                onPress={() => void send()}
-                style={({ pressed }) => [
-                  screenStyles.send,
-                  {
-                    backgroundColor: draft.trim() && !sending ? palette.blue : palette.wash,
-                    opacity: pressed ? 0.72 : 1,
-                  },
-                ]}
-              >
-                <Icon
-                  color={draft.trim() && !sending ? palette.onBlue : palette.sub}
-                  name="send"
-                  size={18}
-                />
-              </Pressable>
-            </View>
-          </View>
-        </View>
+        <ThreadComposer
+          api={api}
+          bottomInset={bottomInset}
+          conversationId={current.id}
+          initialDraft={initialDraft}
+          inputRef={input}
+          keyboardVisible={keyboardVisible}
+          name={name}
+          onCancelReply={() => setReplyingTo(null)}
+          onDraftChange={onDraftChange}
+          onError={onError}
+          onNoteAdded={onReload}
+          onPhotoSent={() => {
+            setReplyingTo(null);
+            onReload();
+          }}
+          onSend={onSend}
+          palette={palette}
+          replyingTo={replyingTo}
+        />
       )}
+      <AnchoredMenu
+        anchor={menuAnchor}
+        items={menuItems}
+        label={t("mobileConversationMore")}
+        onClose={() => setMenuOpen(false)}
+        palette={palette}
+        side="end"
+        visible={menuOpen}
+      />
       <VisitorDetailsSheet
-        api={api}
         bottomInset={bottomInset}
         conversation={current}
+        detail={contact}
+        failure={contactFailure}
         isNight={isNight}
         meId={meId}
         members={members}
         name={name}
         onClose={() => setDetailsOpen(false)}
+        onRetry={() => setContactRequest((value) => value + 1)}
         palette={palette}
         visible={detailsOpen}
       />
@@ -1050,37 +1167,42 @@ const screenStyles = StyleSheet.create({
     paddingHorizontal: 17,
   },
   handoffButtonText: { color: "#ffffff", fontSize: 15 },
-  header: {
-    minHeight: 55,
+  header: { borderBottomWidth: StyleSheet.hairlineWidth },
+  headerRow: {
+    height: 56,
     flexDirection: "row",
     alignItems: "center",
-    gap: 2,
-    paddingHorizontal: 9,
-    paddingBottom: 7,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: 6,
+    paddingLeft: 2,
+    paddingRight: 10,
   },
-  headerButton: {
-    width: 44,
-    height: 44,
-    borderRadius: Platform.OS === "ios" ? 22 : 10,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  statusButton: {
-    minHeight: 38,
+  back: { width: 40, height: 44, alignItems: "center", justifyContent: "center" },
+  round: {
+    width: 38,
+    height: 38,
     borderRadius: 19,
-    borderWidth: StyleSheet.hairlineWidth,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 13,
   },
-  statusButtonText: { fontSize: 12, lineHeight: 16 },
-  person: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 8 },
+  roundInner: { width: 38, height: 38, alignItems: "center", justifyContent: "center" },
+  person: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 10 },
+  online: {
+    position: "absolute",
+    right: -1,
+    bottom: -1,
+    width: 11,
+    height: 11,
+    borderRadius: 6,
+    borderWidth: 2,
+  },
   personCopy: { flex: 1, minWidth: 0 },
-  name: { fontSize: 18, lineHeight: 21, letterSpacing: -0.3 },
-  meta: { fontSize: 11, lineHeight: 15 },
+  name: { fontSize: 17, lineHeight: 21, letterSpacing: -0.2 },
+  contextRow: { flexDirection: "row", minWidth: 0, overflow: "hidden" },
+  context: { fontSize: 12.5, lineHeight: 16 },
+  contextPlace: { flexShrink: 1 },
+  contextTime: { flexShrink: 0 },
   log: { flexGrow: 1, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10 },
-  day: { textAlign: "center", fontSize: 10, marginTop: 2, marginBottom: 12 },
+  day: { textAlign: "center", fontSize: 12, lineHeight: 16, marginTop: 4, marginBottom: 10 },
   pending: {
     alignSelf: "flex-end",
     maxWidth: "91%",
@@ -1091,7 +1213,7 @@ const screenStyles = StyleSheet.create({
   },
   pendingHeading: { flexDirection: "row", alignItems: "center", gap: 7 },
   pendingLabel: { fontSize: 12 },
-  pendingBody: { fontSize: 15, lineHeight: 21, marginVertical: 5 },
+  pendingBody: { marginVertical: 5 },
   pendingFoot: { flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" },
   pendingError: { flex: 1, minWidth: 120, fontSize: 12 },
   pendingActions: { flexDirection: "row", alignItems: "center", gap: 4 },
@@ -1103,31 +1225,17 @@ const screenStyles = StyleSheet.create({
     justifyContent: "center",
   },
   ownership: {
-    minHeight: 54,
+    minHeight: 40,
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    paddingHorizontal: 10,
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    paddingLeft: 16,
+    paddingRight: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
-  ownershipLabel: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "center", gap: 6 },
-  ownershipText: { flex: 1, fontSize: 12 },
-  ownershipActions: { flexDirection: "row", alignItems: "center", gap: 6 },
-  assignButton: {
-    minHeight: 44,
-    justifyContent: "center",
-    paddingHorizontal: 13,
-    borderRadius: 22,
-  },
-  handoffLink: {
-    minHeight: 44,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 3,
-    paddingHorizontal: 12,
-    borderRadius: 22,
-    borderWidth: 1,
-  },
+  ownershipText: { flex: 1, fontSize: 13.5, lineHeight: 18 },
+  ownershipAction: { minHeight: 40, justifyContent: "center", paddingHorizontal: 8 },
+  ownershipLink: { fontSize: 13.5, lineHeight: 18 },
   reopen: {
     minHeight: 50,
     flexDirection: "row",
@@ -1137,60 +1245,4 @@ const screenStyles = StyleSheet.create({
     borderTopWidth: StyleSheet.hairlineWidth,
   },
   reopenText: { flex: 1, fontSize: 14 },
-  composer: {
-    gap: 6,
-    paddingHorizontal: 10,
-    paddingTop: 8,
-    paddingBottom: 10,
-    borderTopWidth: StyleSheet.hairlineWidth,
-  },
-  composeRow: { flexDirection: "row", alignItems: "flex-end", gap: 8 },
-  replyChip: {
-    minHeight: 48,
-    borderRadius: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 9,
-    paddingLeft: 12,
-    paddingRight: 6,
-    paddingVertical: 7,
-  },
-  replyChipCopy: { flex: 1, minWidth: 0 },
-  replyChipTitle: { fontSize: 11, lineHeight: 15 },
-  replyChipText: { fontSize: 12, lineHeight: 16 },
-  replyChipClose: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
-  composeBox: {
-    flex: 1,
-    minHeight: 44,
-    borderRadius: 27,
-    borderWidth: 1,
-    paddingLeft: 14,
-    paddingRight: 5,
-    paddingVertical: 4,
-    flexDirection: "row",
-    alignItems: "flex-end",
-    gap: 6,
-    shadowColor: "#22384d",
-    shadowOpacity: 0.04,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 1,
-  },
-  input: {
-    flex: 1,
-    minHeight: 34,
-    maxHeight: 120,
-    paddingHorizontal: 0,
-    paddingTop: 7,
-    paddingBottom: 6,
-    fontSize: 15,
-    lineHeight: 20,
-  },
-  send: {
-    width: 34,
-    height: 34,
-    borderRadius: 22,
-    alignItems: "center",
-    justifyContent: "center",
-  },
 });

@@ -1,6 +1,6 @@
 import { randomUUID } from "expo-crypto";
 import * as ImagePicker from "expo-image-picker";
-import { type ReactNode, useState } from "react";
+import { useState } from "react";
 import { Image, Linking, Modal, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { t } from "../../operator/src/text.ts";
 import { type DinghyApi, MAX_IMAGE_BYTES } from "./api";
@@ -35,12 +35,16 @@ function sizeLabel(bytes: number | null): string | null {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export function PhotoComposer({
+/**
+ * The photo flow of the composer: `pick` opens the system picker at once, and `sheet` shows the
+ * chosen photo for one last look before it goes to the visitor. A retry reuses the photo's clientId,
+ * so the server keeps one message however many times the upload is sent.
+ */
+export function usePhotoComposer({
   api,
   bottomInset,
   conversationId,
   replyToMessageId,
-  trigger,
   onError,
   onSent,
   palette,
@@ -49,7 +53,6 @@ export function PhotoComposer({
   bottomInset: number;
   conversationId: string;
   replyToMessageId?: string | undefined;
-  trigger(onPick: () => void): ReactNode;
   onError(error: unknown): void;
   onSent(message: Message): void | Promise<void>;
   palette: Palette;
@@ -114,78 +117,74 @@ export function PhotoComposer({
     }
   };
 
-  return (
-    <>
-      {trigger(() => void pick())}
-      <Sheet
-        visible={photo !== null}
-        onClose={close}
-        bottomInset={bottomInset}
-        palette={palette}
-        title={t("mobilePhotoPreview")}
-      >
-        {photo && (
-          <ScrollView
-            keyboardShouldPersistTaps="handled"
-            contentContainerStyle={attachmentStyles.photoSheet}
-          >
-            <Image
-              accessibilityLabel={t("imageAlt")}
-              resizeMode="contain"
-              source={{ uri: photo.uri }}
-              style={[attachmentStyles.pickedImage, { backgroundColor: palette.wash }]}
-            />
-            <View style={attachmentStyles.photoMeta}>
-              <Text
-                numberOfLines={1}
-                style={[
-                  attachmentStyles.photoName,
-                  { color: palette.ink, fontFamily: fonts.medium },
-                ]}
-              >
-                {photo.name}
-              </Text>
-              {sizeLabel(photo.size) && (
-                <Text style={{ color: palette.sub, fontFamily: fonts.body, fontSize: 12 }}>
-                  {sizeLabel(photo.size)}
-                </Text>
-              )}
-            </View>
-            {sendFailed && (
-              <Text
-                accessibilityRole="alert"
-                style={[attachmentStyles.sendError, { color: palette.sub, fontFamily: fonts.body }]}
-              >
-                {t("mobilePhotoSendFailed")}
+  const sheet = (
+    <Sheet
+      visible={photo !== null}
+      onClose={close}
+      dismissible={!sending}
+      bottomInset={bottomInset}
+      palette={palette}
+      title={t("mobilePhotoPreview")}
+    >
+      {photo && (
+        <ScrollView
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={attachmentStyles.photoSheet}
+        >
+          <Image
+            accessibilityLabel={t("imageAlt")}
+            resizeMode="contain"
+            source={{ uri: photo.uri }}
+            style={[attachmentStyles.pickedImage, { backgroundColor: palette.wash }]}
+          />
+          <View style={attachmentStyles.photoMeta}>
+            <Text
+              numberOfLines={1}
+              style={[attachmentStyles.photoName, { color: palette.ink, fontFamily: fonts.medium }]}
+            >
+              {photo.name}
+            </Text>
+            {sizeLabel(photo.size) && (
+              <Text style={{ color: palette.sub, fontFamily: fonts.body, fontSize: 12 }}>
+                {sizeLabel(photo.size)}
               </Text>
             )}
-            <Pressable
-              accessibilityRole="button"
-              disabled={sending}
-              onPress={() => void send()}
-              style={({ pressed }) => [
-                attachmentStyles.sendButton,
-                { backgroundColor: palette.blue, opacity: sending ? 0.5 : pressed ? 0.72 : 1 },
+          </View>
+          {sendFailed && (
+            <Text
+              accessibilityRole="alert"
+              style={[attachmentStyles.sendError, { color: palette.sub, fontFamily: fonts.body }]}
+            >
+              {t("mobilePhotoSendFailed")}
+            </Text>
+          )}
+          <Pressable
+            accessibilityRole="button"
+            disabled={sending}
+            onPress={() => void send()}
+            style={({ pressed }) => [
+              attachmentStyles.sendButton,
+              { backgroundColor: palette.blue, opacity: sending ? 0.5 : pressed ? 0.72 : 1 },
+            ]}
+          >
+            <Text
+              style={[
+                attachmentStyles.sendText,
+                { color: palette.onBlue, fontFamily: fonts.semibold },
               ]}
             >
-              <Text
-                style={[
-                  attachmentStyles.sendText,
-                  { color: palette.onBlue, fontFamily: fonts.semibold },
-                ]}
-              >
-                {sending
-                  ? t("mobileSendingPhoto")
-                  : sendFailed
-                    ? t("mobileRetryPhoto")
-                    : t("mobileSendPhoto")}
-              </Text>
-            </Pressable>
-          </ScrollView>
-        )}
-      </Sheet>
-    </>
+              {sending
+                ? t("mobileSendingPhoto")
+                : sendFailed
+                  ? t("mobileRetryPhoto")
+                  : t("mobileSendPhoto")}
+            </Text>
+          </Pressable>
+        </ScrollView>
+      )}
+    </Sheet>
   );
+  return { pick: () => void pick(), sheet };
 }
 
 type VisibleAttachment = Exclude<MessageAttachment, null>;
@@ -193,11 +192,13 @@ type VisibleAttachment = Exclude<MessageAttachment, null>;
 export function MessageAttachmentView({
   attachment,
   fromVisitor,
+  onLongPress,
   onReload,
   palette,
 }: {
   attachment: VisibleAttachment;
   fromVisitor: boolean;
+  onLongPress(): void;
   onReload(): void | Promise<void>;
   palette: Palette;
 }) {
@@ -222,6 +223,8 @@ export function MessageAttachmentView({
       <Pressable
         accessibilityLabel={t("mobileOpenFile", { name: attachment.name })}
         accessibilityRole="link"
+        delayLongPress={300}
+        onLongPress={onLongPress}
         onPress={() => void Linking.openURL(attachment.url).catch(() => onReload())}
         style={({ pressed }) => [
           attachmentStyles.attachmentBubble,
@@ -279,6 +282,8 @@ export function MessageAttachmentView({
       <Pressable
         accessibilityLabel={t("imageView")}
         accessibilityRole="imagebutton"
+        delayLongPress={300}
+        onLongPress={onLongPress}
         onPress={() => setViewing(true)}
         style={[attachmentStyles.imageButton, sideStyle, { backgroundColor: palette.wash }]}
       >

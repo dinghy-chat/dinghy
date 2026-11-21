@@ -11,6 +11,7 @@
       "entry": ["src/main.ts", "src/cli.ts", "scripts/*.ts", "load/*.ts"]
     },
     "apps/mobile": {
+      "entry": ["scripts/*.ts"],
       "ignoreDependencies": ["expo-updates"]
     },
     "apps/operator": {

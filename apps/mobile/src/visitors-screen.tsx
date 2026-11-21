@@ -8,14 +8,20 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View,
 } from "react-native";
 import type { components } from "../../../packages/sdk/src/openapi.ts";
+import { flag } from "../../operator/src/place.ts";
 import { t } from "../../operator/src/text.ts";
 import type { DinghyApi } from "./api";
 import { Avatar, readableError } from "./common";
+import { bare, countryName, pageName, pagePath, webLink } from "./contact-logic";
 import { fonts } from "./fonts";
 import { Icon } from "./icon";
+import { usePinnedHeaderLayout } from "./pinned-header";
+import { SceneHeader } from "./scene-header";
+import { useTabBarInset } from "./tab-bar-inset";
 import type { Palette } from "./theme";
 
 const REFRESH_MS = 15_000;
@@ -48,22 +54,6 @@ function visitorName(visitor: NonNullable<LiveVisitor["visitor"]>): string {
   );
 }
 
-function countryName(country: string): string {
-  try {
-    return new Intl.DisplayNames([], { type: "region" }).of(country) ?? country;
-  } catch {
-    return country;
-  }
-}
-
-function flag(country: string): string {
-  if (!/^[A-Z]{2}$/.test(country)) return "";
-  const regionalA = 0x1f1e6;
-  return String.fromCodePoint(
-    ...[...country].map((letter) => regionalA + letter.charCodeAt(0) - "A".charCodeAt(0)),
-  );
-}
-
 function localTime(timeZone: string, now: number): string | null {
   try {
     return new Intl.DateTimeFormat([], { hour: "numeric", minute: "2-digit", timeZone }).format(
@@ -83,28 +73,16 @@ function onSite(startedAt: string, now: number): string {
   });
 }
 
-function webLink(value: string): string | null {
-  try {
-    const url = new URL(value);
-    return url.protocol === "https:" || url.protocol === "http:" ? url.href : null;
-  } catch {
-    return null;
-  }
-}
-
-function bare(value: string): string {
-  return value.replace(/^https?:\/\//i, "");
-}
-
-function pagePath(page: string): string {
-  const link = webLink(page);
-  if (link === null) return bare(page);
-  const url = new URL(link);
-  return `${url.pathname}${url.search}${url.hash}` || "/";
-}
-
-function pageTitle(visitor: LiveVisitor): string {
-  return visitor.title?.trim() || pagePath(visitor.page);
+/** "5 on your site now", with the number in bold. */
+function LiveCount({ count, palette }: { count: number; palette: Palette }) {
+  const [before = "", after = ""] = t("liveCount", { count: "\u0000" }).split("\u0000");
+  return (
+    <>
+      {before}
+      <Text style={{ fontFamily: fonts.bold, color: palette.coverInk }}>{count}</Text>
+      {after}
+    </>
+  );
 }
 
 function personName(visitor: LiveVisitor): string {
@@ -119,10 +97,6 @@ function shows(visitor: LiveVisitor, show: Show): boolean {
   return true;
 }
 
-function countLine(count: number): string {
-  return count === 1 ? t("visitorsOne") : t("visitorsMany", { count });
-}
-
 function FilterTabs({
   palette,
   show,
@@ -134,6 +108,7 @@ function FilterTabs({
   visitors: LiveVisitor[];
   onShow(show: Show): void;
 }) {
+  const largeText = useWindowDimensions().fontScale > 1.35;
   const options: { value: Show; label: string; count: number }[] = [
     { value: "all", label: t("visitorsEveryone"), count: visitors.length },
     {
@@ -148,26 +123,29 @@ function FilterTabs({
     },
   ];
   return (
-    <View accessibilityRole="tablist" style={screen.filters}>
+    <View accessibilityRole="tablist" style={[screen.filters, largeText && screen.wrapped]}>
       {options.map((option) => {
         const selected = option.value === show;
         return (
           <Pressable
             accessibilityRole="tab"
+            accessibilityLabel={`${option.label}, ${option.count}`}
             accessibilityState={{ selected }}
             key={option.value}
             onPress={() => onShow(option.value)}
-            style={[
+            style={({ pressed }) => [
               screen.filter,
+              largeText && screen.naturalFilter,
               {
                 backgroundColor: selected ? palette.ink : palette.paper,
                 borderColor: selected ? palette.ink : palette.line,
+                opacity: pressed ? 0.7 : 1,
               },
             ]}
           >
             <Text
               numberOfLines={1}
-              style={[screen.filterText, { color: selected ? palette.paper : palette.sub }]}
+              style={[screen.filterText, { color: selected ? palette.paper : palette.ink }]}
             >
               {option.label}
             </Text>
@@ -184,18 +162,14 @@ function FilterTabs({
 function VisitorFace({ visitor, palette }: { visitor: LiveVisitor; palette: Palette }) {
   const country = visitor.country === null ? "" : flag(visitor.country);
   if (visitor.visitor !== null) {
-    const name = visitorName(visitor.visitor);
     return (
-      <View style={screen.faceWrap}>
-        <Avatar name={name} size={44} palette={palette} />
+      <View style={screen.face}>
+        <Avatar name={visitorName(visitor.visitor)} size={40} palette={palette} />
         {country !== "" && (
-          <View
-            style={[
-              screen.flagBadge,
-              { backgroundColor: palette.paper, borderColor: palette.paper },
-            ]}
-          >
-            <Text style={screen.flagText}>{country}</Text>
+          <View style={[screen.flagBadge, { backgroundColor: palette.paper }]}>
+            <Text allowFontScaling={false} style={screen.flagText}>
+              {country}
+            </Text>
           </View>
         )}
       </View>
@@ -203,16 +177,13 @@ function VisitorFace({ visitor, palette }: { visitor: LiveVisitor; palette: Pale
   }
   return (
     <View style={[screen.anonymousFace, { backgroundColor: palette.wash }]}>
-      <Text style={screen.anonymousFaceText}>{country || "•"}</Text>
-    </View>
-  );
-}
-
-function MetaItem({ children, palette }: { children: string; palette: Palette }) {
-  return (
-    <View style={screen.metaItem}>
-      <View style={[screen.metaDot, { backgroundColor: palette.sub }]} />
-      <Text style={[screen.metaText, { color: palette.sub }]}>{children}</Text>
+      {country === "" ? (
+        <Icon name="person" size={19} color={palette.sub} />
+      ) : (
+        <Text allowFontScaling={false} style={screen.anonymousFaceText}>
+          {country}
+        </Text>
+      )}
     </View>
   );
 }
@@ -230,17 +201,46 @@ function VisitorRow({
   onOpenConversation(id: string): void;
   onOpenError(error: unknown): void;
 }) {
-  const page = webLink(visitor.page);
+  const largeText = useWindowDimensions().fontScale > 1.35;
+  const link = webLink(visitor.page);
   const name = personName(visitor);
+  const title = pageName(visitor.title, visitor.page);
+  const path = pagePath(visitor.page);
   const time = visitor.timeZone === null ? null : localTime(visitor.timeZone, now);
   const conversationId = visitor.visitor?.conversationId ?? null;
-  const place = visitor.country === null ? null : countryName(visitor.country);
+  // An unknown visitor's country is already in the name, as in "Visitor from Spain".
+  const place =
+    visitor.visitor !== null && visitor.country !== null ? countryName(visitor.country) : null;
+  const meta = [
+    onSite(visitor.startedAt, now),
+    visitor.referrer === null ? null : t("cameFrom", { site: bare(visitor.referrer) }),
+    place,
+    time === null ? null : t("mobileVisitorTimeThere", { time }),
+  ].filter((part): part is string => part !== null);
+  const openButton = conversationId !== null && (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={`${t("openChat")}, ${name}`}
+      hitSlop={5}
+      onPress={() => onOpenConversation(conversationId)}
+      style={({ pressed }) => [
+        screen.openChat,
+        largeText && { alignSelf: "flex-start", marginTop: 6 },
+        { backgroundColor: palette.blue, opacity: pressed ? 0.72 : 1 },
+      ]}
+    >
+      <Text style={[screen.openChatText, { color: palette.onBlue }]}>{t("open")}</Text>
+    </Pressable>
+  );
   return (
-    <View style={[screen.row, { borderBottomColor: palette.line }]}>
+    <View style={screen.row}>
       <VisitorFace visitor={visitor} palette={palette} />
       <View style={screen.rowBody}>
-        <View style={screen.nameLine}>
-          <Text numberOfLines={1} style={[screen.name, { color: palette.ink }]}>
+        <View style={[screen.nameLine, largeText && screen.wrapped]}>
+          <Text
+            numberOfLines={largeText ? undefined : 1}
+            style={[screen.name, { color: palette.ink }]}
+          >
             {name}
           </Text>
           {conversationId !== null && (
@@ -250,44 +250,32 @@ function VisitorRow({
           )}
         </View>
         <Pressable
-          accessibilityRole={page === null ? undefined : "link"}
-          disabled={page === null}
+          accessibilityRole={link === null ? undefined : "link"}
+          accessibilityLabel={title === path ? path : `${title}, ${path}`}
+          disabled={link === null}
           onPress={() => {
-            if (page !== null) void Linking.openURL(page).catch(onOpenError);
+            if (link !== null) void Linking.openURL(link).catch(onOpenError);
           }}
           style={({ pressed }) => [screen.pageLine, pressed && { opacity: 0.6 }]}
         >
           <Text
-            numberOfLines={1}
-            style={[screen.pageTitle, { color: page === null ? palette.ink : palette.blue }]}
+            numberOfLines={largeText ? undefined : 1}
+            style={[screen.pageTitle, { color: palette.ink }]}
           >
-            {pageTitle(visitor)}
+            {title}
+            {title !== path && <Text style={{ color: palette.sub }}>{`  ${path}`}</Text>}
           </Text>
-          {page !== null && <Icon name="arrow" size={14} color={palette.blue} />}
         </Pressable>
-        <View style={screen.meta}>
-          {place !== null && <MetaItem palette={palette}>{place}</MetaItem>}
-          {time !== null && <MetaItem palette={palette}>{time}</MetaItem>}
-          <MetaItem palette={palette}>{onSite(visitor.startedAt, now)}</MetaItem>
-          {visitor.device !== null && <MetaItem palette={palette}>{visitor.device}</MetaItem>}
-          {visitor.referrer !== null && (
-            <MetaItem palette={palette}>{t("cameFrom", { site: bare(visitor.referrer) })}</MetaItem>
-          )}
-        </View>
-        {conversationId !== null && (
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => onOpenConversation(conversationId)}
-            style={({ pressed }) => [
-              screen.openChat,
-              { backgroundColor: palette.ink, opacity: pressed ? 0.72 : 1 },
-            ]}
-          >
-            <Icon name="chat" size={16} color={palette.paper} />
-            <Text style={[screen.openChatText, { color: palette.paper }]}>{t("openChat")}</Text>
-          </Pressable>
-        )}
+        <Text
+          numberOfLines={largeText ? undefined : 2}
+          style={[screen.metaText, { color: palette.sub }]}
+        >
+          {meta.join(" · ")}
+        </Text>
+        {largeText && openButton}
       </View>
+      {!largeText && openButton}
+      <View style={[screen.divider, { backgroundColor: palette.line }]} />
     </View>
   );
 }
@@ -322,15 +310,20 @@ export function VisitorsScreen({
   api,
   palette,
   topInset,
+  isCovered,
   onOpenConversation,
   onCount,
 }: {
   api: DinghyApi;
   palette: Palette;
   topInset: number;
+  /** A conversation is on top of the list, so the list stops polling until it shows again. */
+  isCovered: boolean;
   onOpenConversation(id: string): void;
   onCount?(count: number | null): void;
 }) {
+  const { hideScene } = usePinnedHeaderLayout();
+  const dockInset = useTabBarInset();
   const [list, setList] = useState<VisitorList>({ state: "loading" });
   const [show, setShow] = useState<Show>("all");
   const [now, setNow] = useState(Date.now);
@@ -361,7 +354,7 @@ export function VisitorsScreen({
       setOpenError(null);
       onCountRef.current?.(null);
     }
-    if (!isActive) {
+    if (!isActive || isCovered) {
       refreshRef.current = null;
       return;
     }
@@ -404,126 +397,144 @@ export function VisitorsScreen({
       refreshRef.current = null;
       clearInterval(timer);
     };
-  }, [api, isActive]);
+  }, [api, isActive, isCovered]);
 
   const visitors = list.state === "ready" ? list.visitors : [];
   const shown = useMemo(() => visitors.filter((visitor) => shows(visitor, show)), [show, visitors]);
   const retry = () => refreshRef.current?.();
 
   return (
-    <ScrollView
-      refreshControl={
-        <RefreshControl refreshing={refreshing} onRefresh={retry} tintColor={palette.blue} />
-      }
-      style={{ backgroundColor: palette.paper }}
-      contentContainerStyle={[screen.content, { paddingBottom: 16 }]}
-    >
-      <View style={[screen.header, { paddingTop: topInset + 18, backgroundColor: palette.cover }]}>
-        <Text style={[screen.title, { color: palette.coverInk }]}>{t("visitors")}</Text>
-        {list.state === "ready" && (
-          <View style={screen.liveLine}>
-            <View style={[screen.liveDot, { backgroundColor: palette.green }]} />
-            <Text style={[screen.liveText, { color: palette.coverSub }]}>
-              {countLine(list.visitors.length)}
-            </Text>
-          </View>
+    <View style={[screen.screen, { backgroundColor: palette.paper, paddingTop: topInset }]}>
+      <View>
+        {!hideScene && (
+          <SceneHeader
+            scene="visitors"
+            title={t("visitors")}
+            subtitle={
+              list.state === "ready" ? (
+                <LiveCount count={list.visitors.length} palette={palette} />
+              ) : null
+            }
+            palette={palette}
+          />
         )}
       </View>
-
-      {list.state === "ready" && (
-        <FilterTabs palette={palette} show={show} visitors={list.visitors} onShow={setShow} />
-      )}
-
-      {(list.state === "ready" && list.warning !== null) || openError !== null ? (
-        <View style={[screen.warning, { backgroundColor: palette.warm }]}>
-          <Text style={[screen.warningText, { color: palette.amber }]}>
-            {openError ?? (list.state === "ready" ? list.warning : null)}
-          </Text>
-          <Pressable
-            accessibilityRole="button"
-            onPress={() => {
-              if (openError !== null) setOpenError(null);
-              else retry();
-            }}
+      <View>
+        {list.state === "ready" && list.visitors.length > 0 && (
+          <FilterTabs palette={palette} show={show} visitors={list.visitors} onShow={setShow} />
+        )}
+      </View>
+      <ScrollView
+        alwaysBounceVertical
+        refreshControl={
+          <RefreshControl refreshing={refreshing} onRefresh={retry} tintColor={palette.blue} />
+        }
+        style={screen.list}
+        scrollIndicatorInsets={{ bottom: dockInset }}
+        contentContainerStyle={[screen.content, { paddingBottom: 16 + dockInset }]}
+      >
+        {(list.state === "ready" && list.warning !== null) || openError !== null ? (
+          <View
+            accessibilityRole="alert"
+            style={[screen.warning, { backgroundColor: palette.warm }]}
           >
-            <Text style={[screen.warningAction, { color: palette.amber }]}>
-              {openError !== null ? t("mobileDismiss") : t("mobileRetry")}
+            <Text style={[screen.warningText, { color: palette.amber }]}>
+              {openError ?? (list.state === "ready" ? list.warning : null)}
             </Text>
-          </Pressable>
-        </View>
-      ) : null}
-
-      {list.state === "loading" ? (
-        <View accessibilityLabel={t("loading")} style={screen.loading}>
-          <ActivityIndicator color={palette.blue} />
-        </View>
-      ) : list.state === "unknown" ? (
-        <RetryState message={t("visitorsUnknown")} palette={palette} onRetry={retry} />
-      ) : list.state === "error" ? (
-        <RetryState message={list.message} palette={palette} onRetry={retry} />
-      ) : list.visitors.length === 0 ? (
-        <View style={screen.state}>
-          <View style={[screen.emptyIcon, { backgroundColor: palette.wash }]}>
-            <Icon name="people" size={28} color={palette.sub} />
+            <Pressable
+              accessibilityRole="button"
+              hitSlop={10}
+              onPress={() => {
+                if (openError !== null) setOpenError(null);
+                else retry();
+              }}
+            >
+              <Text style={[screen.warningAction, { color: palette.amber }]}>
+                {openError !== null ? t("mobileDismiss") : t("mobileRetry")}
+              </Text>
+            </Pressable>
           </View>
-          <Text style={[screen.emptyTitle, { color: palette.ink }]}>{t("visitorsNone")}</Text>
-          <Text style={[screen.stateText, { color: palette.sub }]}>{t("visitorsNoneHint")}</Text>
-        </View>
-      ) : shown.length === 0 ? (
-        <View style={screen.state}>
-          <Text style={[screen.stateText, { color: palette.sub }]}>{t("visitorsNoneShown")}</Text>
-        </View>
-      ) : (
-        <View style={screen.list}>
-          {shown.map((visitor) => (
-            <VisitorRow
-              key={visitor.tab}
-              now={now}
-              onOpenConversation={onOpenConversation}
-              onOpenError={(error) => setOpenError(readableError(error))}
-              palette={palette}
-              visitor={visitor}
-            />
-          ))}
-          <Text style={[screen.credit, { color: palette.sub }]}>{t("geoCredit")}</Text>
-        </View>
-      )}
-    </ScrollView>
+        ) : null}
+
+        {list.state === "loading" ? (
+          <View accessibilityLabel={t("loading")} style={screen.loading}>
+            <ActivityIndicator color={palette.blue} />
+          </View>
+        ) : list.state === "unknown" ? (
+          <RetryState message={t("visitorsUnknown")} palette={palette} onRetry={retry} />
+        ) : list.state === "error" ? (
+          <RetryState message={list.message} palette={palette} onRetry={retry} />
+        ) : list.visitors.length === 0 ? (
+          <View style={screen.state}>
+            <View style={[screen.emptyIcon, { backgroundColor: palette.wash }]}>
+              <Icon name="people" size={28} color={palette.sub} />
+            </View>
+            <Text style={[screen.emptyTitle, { color: palette.ink }]}>{t("visitorsNone")}</Text>
+            <Text style={[screen.stateText, { color: palette.sub }]}>{t("visitorsNoneHint")}</Text>
+          </View>
+        ) : shown.length === 0 ? (
+          <View style={screen.state}>
+            <Text style={[screen.stateText, { color: palette.sub }]}>{t("visitorsNoneShown")}</Text>
+          </View>
+        ) : (
+          <View>
+            {shown.map((visitor) => (
+              <VisitorRow
+                key={visitor.tab}
+                now={now}
+                onOpenConversation={onOpenConversation}
+                onOpenError={(error) => setOpenError(readableError(error))}
+                palette={palette}
+                visitor={visitor}
+              />
+            ))}
+            <Text style={[screen.credit, { color: palette.sub }]}>{t("geoCredit")}</Text>
+          </View>
+        )}
+      </ScrollView>
+    </View>
   );
 }
 
 const screen = StyleSheet.create({
-  content: { flexGrow: 1 },
-  header: { paddingHorizontal: 20, paddingBottom: 20 },
-  title: { fontFamily: fonts.displayBold, fontSize: 32, letterSpacing: -0.8 },
-  liveLine: { alignItems: "center", flexDirection: "row", gap: 8, marginTop: 5 },
-  liveDot: { borderRadius: 4, height: 8, width: 8 },
-  liveText: { fontFamily: fonts.body, fontSize: 15 },
-  filters: { flexDirection: "row", gap: 8, paddingHorizontal: 16, paddingVertical: 14 },
+  screen: { flex: 1 },
+  list: { flex: 1 },
+  content: { flexGrow: 1, paddingBottom: 16 },
+  filters: {
+    flexDirection: "row",
+    gap: 8,
+    paddingHorizontal: 16,
+    paddingTop: 14,
+    paddingBottom: 6,
+  },
   filter: {
     alignItems: "center",
     borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
     flex: 1,
     flexDirection: "row",
+    gap: 6,
     justifyContent: "center",
+    minHeight: 38,
     minWidth: 0,
     paddingHorizontal: 9,
-    paddingVertical: 8,
   },
-  filterText: { flexShrink: 1, fontFamily: fonts.semibold, fontSize: 13 },
-  filterCount: { fontFamily: fonts.medium, fontSize: 12 },
+  wrapped: { flexWrap: "wrap" },
+  naturalFilter: { flex: 0, paddingVertical: 2, paddingHorizontal: 12 },
+  filterText: { flexShrink: 1, fontFamily: fonts.semibold, fontSize: 13.5, lineHeight: 18 },
+  filterCount: { fontFamily: fonts.medium, fontSize: 12.5, lineHeight: 17 },
   warning: {
     alignItems: "center",
+    borderRadius: 12,
     flexDirection: "row",
     gap: 12,
     marginHorizontal: 16,
-    marginBottom: 6,
+    marginTop: 8,
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
   warningText: { flex: 1, fontFamily: fonts.body, fontSize: 13, lineHeight: 18 },
-  warningAction: { fontFamily: fonts.bold, fontSize: 13 },
+  warningAction: { fontFamily: fonts.bold, fontSize: 13, lineHeight: 18 },
   loading: { alignItems: "center", flex: 1, justifyContent: "center", minHeight: 260 },
   state: {
     alignItems: "center",
@@ -536,11 +547,12 @@ const screen = StyleSheet.create({
   retry: {
     borderRadius: 999,
     borderWidth: StyleSheet.hairlineWidth,
+    justifyContent: "center",
     marginTop: 16,
+    minHeight: 44,
     paddingHorizontal: 18,
-    paddingVertical: 10,
   },
-  retryText: { fontFamily: fonts.semibold, fontSize: 14 },
+  retryText: { fontFamily: fonts.semibold, fontSize: 14, lineHeight: 19 },
   emptyIcon: {
     alignItems: "center",
     borderRadius: 30,
@@ -549,56 +561,71 @@ const screen = StyleSheet.create({
     marginBottom: 14,
     width: 60,
   },
-  emptyTitle: { fontFamily: fonts.semibold, fontSize: 18, marginBottom: 5, textAlign: "center" },
-  list: { paddingHorizontal: 16 },
+  emptyTitle: {
+    fontFamily: fonts.semibold,
+    fontSize: 18,
+    lineHeight: 24,
+    marginBottom: 5,
+    textAlign: "center",
+  },
   row: {
-    borderBottomWidth: StyleSheet.hairlineWidth,
+    alignItems: "center",
     flexDirection: "row",
     gap: 12,
-    paddingVertical: 17,
+    minHeight: 76,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
-  faceWrap: { height: 48, width: 48 },
+  divider: {
+    position: "absolute",
+    bottom: 0,
+    right: 0,
+    left: 68,
+    height: StyleSheet.hairlineWidth,
+  },
+  face: { height: 40, width: 40 },
   flagBadge: {
     alignItems: "center",
-    borderRadius: 10,
-    borderWidth: 2,
-    bottom: 0,
-    height: 21,
+    borderRadius: 9,
+    bottom: -3,
+    height: 18,
     justifyContent: "center",
     position: "absolute",
-    right: 0,
-    width: 25,
+    right: -5,
+    width: 22,
   },
-  flagText: { fontSize: 13 },
+  flagText: { fontSize: 12, lineHeight: 15 },
   anonymousFace: {
     alignItems: "center",
-    borderRadius: 22,
-    height: 44,
+    borderRadius: 20,
+    height: 40,
     justifyContent: "center",
-    width: 44,
+    width: 40,
   },
-  anonymousFaceText: { fontSize: 20 },
-  rowBody: { flex: 1, minWidth: 0 },
-  nameLine: { alignItems: "center", flexDirection: "row", gap: 8 },
-  name: { flexShrink: 1, fontFamily: fonts.semibold, fontSize: 18, letterSpacing: -0.25 },
-  chatting: { borderRadius: 999, paddingHorizontal: 8, paddingVertical: 3 },
-  chattingText: { fontFamily: fonts.semibold, fontSize: 11 },
-  pageLine: { alignItems: "center", flexDirection: "row", gap: 5, marginTop: 4 },
-  pageTitle: { flexShrink: 1, fontFamily: fonts.medium, fontSize: 15 },
-  meta: { flexDirection: "row", flexWrap: "wrap", marginTop: 7, rowGap: 4 },
-  metaItem: { alignItems: "center", flexDirection: "row", marginRight: 10 },
-  metaDot: { borderRadius: 2, height: 3, marginRight: 5, width: 3 },
-  metaText: { fontFamily: fonts.body, fontSize: 12, lineHeight: 17 },
+  anonymousFaceText: { fontSize: 19, lineHeight: 24 },
+  rowBody: { flex: 1, minWidth: 0, gap: 2 },
+  nameLine: { alignItems: "center", flexDirection: "row", gap: 7 },
+  name: { flexShrink: 1, fontFamily: fonts.semibold, fontSize: 16, lineHeight: 21 },
+  chatting: { borderRadius: 999, paddingHorizontal: 7, paddingVertical: 2 },
+  chattingText: { fontFamily: fonts.semibold, fontSize: 11, lineHeight: 15 },
+  pageLine: { minHeight: 22, justifyContent: "center" },
+  pageTitle: { fontFamily: fonts.medium, fontSize: 14, lineHeight: 19 },
+  metaText: { fontFamily: fonts.body, fontSize: 12.5, lineHeight: 17 },
   openChat: {
     alignItems: "center",
-    alignSelf: "flex-start",
-    borderRadius: 999,
-    flexDirection: "row",
-    gap: 6,
-    marginTop: 11,
-    paddingHorizontal: 13,
-    paddingVertical: 8,
+    borderRadius: 17,
+    minHeight: 34,
+    paddingVertical: 4,
+    justifyContent: "center",
+    minWidth: 64,
+    paddingHorizontal: 14,
   },
-  openChatText: { fontFamily: fonts.semibold, fontSize: 13 },
-  credit: { fontFamily: fonts.body, fontSize: 11, paddingVertical: 18, textAlign: "center" },
+  openChatText: { fontFamily: fonts.semibold, fontSize: 14, lineHeight: 19 },
+  credit: {
+    fontFamily: fonts.body,
+    fontSize: 11,
+    lineHeight: 15,
+    paddingVertical: 18,
+    textAlign: "center",
+  },
 });

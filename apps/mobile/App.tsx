@@ -1,14 +1,26 @@
 import { useFonts } from "expo-font";
 import * as SplashScreen from "expo-splash-screen";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, AppState, Linking, StatusBar, useColorScheme, View } from "react-native";
+import {
+  Alert,
+  AppState,
+  Keyboard,
+  KeyboardAvoidingView,
+  Linking,
+  Platform,
+  StatusBar,
+  StyleSheet,
+  useColorScheme,
+  View,
+} from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
+import { ScreenStack, ScreenStackItem } from "react-native-screens";
 import { t } from "../operator/src/text.ts";
 import { createOutbox, type PendingReply } from "./outbox";
 import { AnalyticsScreen } from "./src/analytics-screen";
 import { ApiError, DinghyApi } from "./src/api";
 import { clearSession, readSession, saveSession } from "./src/auth";
-import { BottomNav, ErrorBanner, type Page, readableError, type TabPage } from "./src/common";
+import { BottomNav, ErrorBanner, readableError, type TabPage } from "./src/common";
 import { ContactsScreen } from "./src/contacts-screen";
 import { fontFiles } from "./src/fonts";
 import { InboxScreen, SettingsScreen } from "./src/inbox-screens";
@@ -21,6 +33,7 @@ import {
   registerForPush,
 } from "./src/notifications";
 import { SignInScreen } from "./src/sign-in-screen";
+import { TabBarInsetContext } from "./src/tab-bar-inset";
 import {
   day,
   displayTheme,
@@ -31,11 +44,23 @@ import {
   styles,
   type ThemePreference,
 } from "./src/theme";
+import {
+  closeThreadRoute,
+  conversationBackEdge,
+  openThreadRoute,
+  type ThreadRoute,
+} from "./src/thread-route";
 import { ThreadScreen } from "./src/thread-screen";
 import type { Conversation, Me, Member, NotificationRoute, Session, Thread } from "./src/types";
+import { useReduceMotion } from "./src/use-reduce-motion";
 import { VisitorsScreen } from "./src/visitors-screen";
 
 const LIVE_COUNT_INTERVAL_MS = 30_000;
+// Each screen draws its own header, so the native bar stays hidden.
+const HIDDEN_HEADER = { hidden: true } as const;
+
+/** The conversation on top of the tabs, with the draft it opened with. */
+type OpenThread = ThreadRoute & { conversation: Conversation; initialDraft: string };
 
 void SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -53,6 +78,8 @@ function SignedInApp({
   onTheme(theme: ThemePreference): void;
 }) {
   const insets = useSafeAreaInsets();
+  const reduceMotion = useReduceMotion();
+  const iosThreadAnimation = reduceMotion ? "fade" : "simple_push";
   const [session, setSession] = useState(initialSession);
   const scopeKey = `${session.origin}\n${session.workspace.id}\n${session.operator.id}`;
   const scopeRef = useRef(scopeKey);
@@ -67,11 +94,15 @@ function SignedInApp({
       }),
     [session],
   );
-  const [page, setPage] = useState<Page>("inbox");
-  const [returnContactId, setReturnContactId] = useState<string | null>(null);
-  const threadOrigin = useRef<TabPage>("inbox");
+  const [page, setPage] = useState<TabPage>("inbox");
+  const [opened, setOpened] = useState<OpenThread | null>(null);
+  const openedRef = useRef(opened);
+  openedRef.current = opened;
+  const threadSerial = useRef(0);
+  const isThreadOpen = opened !== null;
+  const openedId = opened?.conversationId ?? null;
   const [liveCount, setLiveCount] = useState<number | null>(null);
-  const showLiveBadge = page !== "visitors" && page !== "thread";
+  const showLiveBadge = page !== "visitors" && !isThreadOpen;
   useEffect(() => {
     if (!showLiveBadge) return;
     let active = true;
@@ -99,12 +130,16 @@ function SignedInApp({
       subscription.remove();
     };
   }, [api, showLiveBadge]);
-  const [inboxSearchOpen, setInboxSearchOpen] = useState(false);
+  const [inboxQuery, setInboxQuery] = useState("");
+  const [contactsQuery, setContactsQuery] = useState("");
+  const [contactOpen, setContactOpen] = useState(false);
+  const [tabBarHeight, setTabBarHeight] = useState(0);
+  const overlaysList =
+    Platform.OS === "ios" && page !== "inbox" && !(page === "contacts" && contactOpen);
   const [members, setMembers] = useState<Member[]>([]);
   const [me, setMe] = useState<Me | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [waiting, setWaiting] = useState(0);
-  const [selected, setSelected] = useState<Conversation | null>(null);
   const [thread, setThread] = useState<Thread | null>(null);
   const [inboxLoading, setInboxLoading] = useState(false);
   const [threadLoading, setThreadLoading] = useState(false);
@@ -123,19 +158,6 @@ function SignedInApp({
   const routeRequest = useRef(0);
   const pushRequest = useRef(0);
   const threadTarget = useRef<{ scope: string; conversationId: string } | null>(null);
-  const draftSnapshot = useMemo(() => {
-    if (!selected) return { body: "", failure: null };
-    try {
-      return { body: outbox.getDraft(selected.id), failure: null };
-    } catch (failure) {
-      return { body: "", failure };
-    }
-  }, [outbox, selected]);
-
-  useEffect(() => {
-    if (!draftSnapshot.failure) return;
-    setError(t("mobileReplySaveFailed", { error: readableError(draftSnapshot.failure) }));
-  }, [draftSnapshot]);
 
   const handleFailure = useCallback(
     async (failure: unknown) => {
@@ -181,7 +203,7 @@ function SignedInApp({
           await handleFailure(failure);
         }
       } finally {
-        if (showLoading && scopeRef.current === requestScope && inboxRequest.current === request) {
+        if (scopeRef.current === requestScope && inboxRequest.current === request) {
           setInboxLoading(false);
         }
       }
@@ -206,7 +228,11 @@ function SignedInApp({
           return;
         }
         setThread(result);
-        setSelected(result.conversation);
+        setOpened((current) =>
+          current?.conversationId === conversationId
+            ? { ...current, conversation: result.conversation }
+            : current,
+        );
         const newest = result.messages.at(-1)?.seq;
         if (newest) {
           void api.markRead(conversationId, newest).catch(() => undefined);
@@ -233,7 +259,8 @@ function SignedInApp({
           await handleFailure(failure);
         }
       } finally {
-        if (showLoading && scopeRef.current === requestScope && threadRequest.current === request) {
+        // The newest request ends any load, also when a quiet refresh replaced the one that showed it.
+        if (scopeRef.current === requestScope && threadRequest.current === request) {
           setThreadLoading(false);
         }
       }
@@ -241,22 +268,50 @@ function SignedInApp({
     [api, handleFailure, outbox, scopeKey],
   );
 
+  // The tabs stay mounted under the conversation, so their search, scroll and open contact are
+  // still there after Back. A second open of the conversation on top refreshes it in place.
   const openConversation = useCallback(
-    (conversation: Conversation, origin: TabPage = "inbox") => {
-      threadOrigin.current = origin;
-      setInboxSearchOpen(false);
+    (conversation: Conversation) => {
+      Keyboard.dismiss();
+      const current = openedRef.current;
+      const route = openThreadRoute(current, conversation.id, threadSerial.current + 1);
       threadTarget.current = { scope: scopeKey, conversationId: conversation.id };
+      if (route === current) {
+        void loadThread(conversation.id, false);
+        return;
+      }
+      threadSerial.current += 1;
       threadRequest.current += 1;
-      setSelected(conversation);
+      let initialDraft = "";
+      try {
+        initialDraft = outbox.getDraft(conversation.id);
+      } catch (failure) {
+        setError(t("mobileReplySaveFailed", { error: readableError(failure) }));
+      }
+      const next = { ...route, conversation, initialDraft };
+      openedRef.current = next;
+      setOpened(next);
       setThread(null);
-      setPage("thread");
       void loadThread(conversation.id);
     },
-    [loadThread, scopeKey],
+    [loadThread, outbox, scopeKey],
   );
 
+  // Back, Android's back button and a finished edge swipe all end here. A swipe that the operator
+  // cancels never reports, so the conversation and its draft stay as they were.
+  const closeThread = useCallback((key: string) => {
+    if (closeThreadRoute(openedRef.current, key)) return;
+    Keyboard.dismiss();
+    threadTarget.current = null;
+    threadRequest.current += 1;
+    openedRef.current = null;
+    setThreadLoading(false);
+    setOpened(null);
+    setThread(null);
+  }, []);
+
   const openById = useCallback(
-    (conversationId: string, origin: TabPage | "outbox" = "inbox") => {
+    (conversationId: string, isSavedReply = false) => {
       const found = conversations.find((item) => item.id === conversationId);
       const stub: Conversation = found ?? {
         id: conversationId,
@@ -265,16 +320,16 @@ function SignedInApp({
         assigneeOperatorId: null,
         visitor: {
           id: "",
-          name: t(origin === "outbox" ? "mobileSavedReply" : "visitorAnonymous"),
+          name: t(isSavedReply ? "mobileSavedReply" : "visitorAnonymous"),
           email: null,
           pictureUrl: null,
         },
         lastMessage: null,
         handler: null,
-        unread: origin !== "outbox",
+        unread: !isSavedReply,
         snooze: null,
       };
-      openConversation(stub, origin === "outbox" ? "inbox" : origin);
+      openConversation(stub);
     },
     [conversations, openConversation],
   );
@@ -302,9 +357,10 @@ function SignedInApp({
           inboxRequest.current += 1;
           threadRequest.current += 1;
           threadTarget.current = null;
+          openedRef.current = null;
           setLiveCount(null);
           setPage("inbox");
-          setSelected(null);
+          setOpened(null);
           setThread(null);
           setInboxLoading(false);
           setThreadLoading(false);
@@ -332,16 +388,16 @@ function SignedInApp({
   }, [refreshInbox]);
 
   useEffect(() => {
-    if (page !== "inbox") return;
+    if (page !== "inbox" || isThreadOpen) return;
     const timer = setInterval(() => void refreshInbox(false), 30_000);
     return () => clearInterval(timer);
-  }, [page, refreshInbox]);
+  }, [isThreadOpen, page, refreshInbox]);
 
   useEffect(() => {
-    if (page !== "thread" || !selected) return;
-    const timer = setInterval(() => void loadThread(selected.id, false), 15_000);
+    if (!openedId) return;
+    const timer = setInterval(() => void loadThread(openedId, false), 15_000);
     return () => clearInterval(timer);
-  }, [loadThread, page, selected]);
+  }, [loadThread, openedId]);
 
   const syncPush = useCallback(
     async (requestPermission: boolean) => {
@@ -523,9 +579,10 @@ function SignedInApp({
 
   const changeStatus = async () => {
     const target = threadTarget.current;
-    if (!target || target.scope !== scopeKey || !selected) return;
+    if (!target || target.scope !== scopeKey || !opened) return;
     try {
-      const status = (thread?.conversation ?? selected).status === "open" ? "closed" : "open";
+      const status =
+        (thread?.conversation ?? opened.conversation).status === "open" ? "closed" : "open";
       await api.setStatus(target.conversationId, status);
       if (threadTarget.current === target) await loadThread(target.conversationId);
       if (scopeRef.current === scopeKey) await refreshInbox();
@@ -546,7 +603,8 @@ function SignedInApp({
   };
 
   const switchWorkspace = async (workspaceId: string) => {
-    setInboxSearchOpen(false);
+    setInboxQuery("");
+    setContactsQuery("");
     const workspace = me?.workspaces.find((item) => item.workspaceId === workspaceId);
     if (!workspace || workspace.workspaceId === session.workspace.id) return;
     const next = {
@@ -566,10 +624,10 @@ function SignedInApp({
     routeRequest.current += 1;
     threadTarget.current = null;
     pendingRoute.current = null;
-    setReturnContactId(null);
+    openedRef.current = null;
     setLiveCount(null);
     setPage("inbox");
-    setSelected(null);
+    setOpened(null);
     setThread(null);
     setMe(null);
     setMembers([]);
@@ -599,173 +657,230 @@ function SignedInApp({
     onSignedOut();
   };
 
+  const banner = error && (
+    <ErrorBanner message={error} onDismiss={() => setError(null)} palette={palette} />
+  );
+  const workspace =
+    me?.workspaces.find((item) => item.workspaceId === session.workspace.id) ?? null;
+
   return (
-    <View style={[styles.app, { paddingTop: insets.top, backgroundColor: palette.paper }]}>
-      {error && <ErrorBanner message={error} onDismiss={() => setError(null)} palette={palette} />}
-      {page === "thread" && selected ? (
-        <ThreadScreen
-          key={`${scopeKey}:${selected.id}`}
-          api={api}
-          bottomInset={insets.bottom}
-          conversation={selected}
-          loading={threadLoading}
-          initialDraft={draftSnapshot.body}
-          meId={session.operator.id}
-          members={members}
-          workspace={
-            me?.workspaces.find((workspace) => workspace.workspaceId === session.workspace.id) ??
-            null
-          }
-          onHandoff={assign}
-          onAssign={() => assign(session.operator.id).catch(() => undefined)}
-          onBack={() => {
-            threadTarget.current = null;
-            threadRequest.current += 1;
-            setThreadLoading(false);
-            setPage(threadOrigin.current);
-            setSelected(null);
-            setThread(null);
-          }}
-          onDiscard={discard}
-          onError={handleFailure}
-          onReload={() => {
-            if (threadTarget.current?.conversationId === selected.id) void loadThread(selected.id);
-          }}
-          onRetry={deliver}
-          onDraftChange={(body) => saveDraft(selected.id, body)}
-          onSend={(body, replyToMessageId) => send(selected.id, body, replyToMessageId)}
-          onStatus={changeStatus}
-          palette={palette}
-          pending={outbox.list(selected.id)}
-          pendingErrors={pendingErrors}
-          thread={thread}
-        />
-      ) : (
-        <>
-          <View style={styles.mainPage}>
-            {page === "inbox" && (
-              <InboxScreen
-                conversations={conversations}
-                loading={inboxLoading}
-                me={me}
-                onOpen={openConversation}
-                onOpenPending={(id) => openById(id, "outbox")}
-                onRefresh={() => void refreshInbox()}
+    <ScreenStack style={[styles.app, { backgroundColor: palette.paper }]}>
+      <ScreenStackItem
+        activityState={2}
+        contentStyle={{ backgroundColor: palette.paper }}
+        headerConfig={HIDDEN_HEADER}
+        // The tabs end editing as a conversation covers them. This also closes the keyboard of the
+        // native inbox search field, which Keyboard.dismiss does not reach.
+        hideKeyboardOnSwipe
+        screenId="tabs"
+        style={StyleSheet.absoluteFill}
+      >
+        <View style={[styles.app, { paddingTop: insets.top }]}>
+          {/* The tab's pixel sky continues behind the status bar. */}
+          {!(page === "contacts" && contactOpen) && (
+            <View
+              pointerEvents="none"
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                right: 0,
+                height: insets.top,
+                backgroundColor: page === "inbox" ? palette.cover : palette.analyticsSky,
+              }}
+            />
+          )}
+          {banner}
+          <KeyboardAvoidingView
+            style={styles.mainPage}
+            behavior={Platform.OS === "ios" && page === "inbox" ? "padding" : undefined}
+          >
+            <TabBarInsetContext.Provider value={overlaysList ? tabBarHeight : 0}>
+              <View style={styles.mainPage}>
+                {page === "inbox" && (
+                  <InboxScreen
+                    conversations={conversations}
+                    loading={inboxLoading}
+                    me={me}
+                    onOpen={openConversation}
+                    onOpenPending={(id) => openById(id, true)}
+                    onRefresh={() => refreshInbox(false)}
+                    palette={palette}
+                    pending={outbox.list()}
+                    session={session}
+                    meId={session.operator.id}
+                    onAccount={() => setPage("settings")}
+                    query={inboxQuery}
+                    onClearSearch={() => setInboxQuery("")}
+                    topInset={0}
+                    waiting={waiting}
+                  />
+                )}
+                {page === "contacts" && (
+                  <ContactsScreen
+                    api={api}
+                    palette={palette}
+                    topInset={0}
+                    onDetailChange={setContactOpen}
+                    query={contactsQuery}
+                    onQuery={setContactsQuery}
+                    readOnly={workspace?.readOnly ?? true}
+                    onOpenConversation={(id) => openById(id)}
+                  />
+                )}
+                {page === "visitors" && (
+                  <VisitorsScreen
+                    api={api}
+                    palette={palette}
+                    topInset={0}
+                    isCovered={isThreadOpen}
+                    onOpenConversation={(id) => openById(id)}
+                    onCount={setLiveCount}
+                  />
+                )}
+                {page === "analytics" && (
+                  <AnalyticsScreen api={api} palette={palette} topInset={0} />
+                )}
+                {page === "settings" && (
+                  <SettingsScreen
+                    api={api}
+                    session={session}
+                    topInset={0}
+                    me={me}
+                    members={members}
+                    onAway={changeAway}
+                    onEnablePush={() =>
+                      pushStatus === "denied" || pushStatus === "enabled"
+                        ? void Linking.openSettings()
+                        : void syncPush(true)
+                    }
+                    onProfileSaved={(account) => {
+                      setMe(account);
+                      setMembers((current) =>
+                        current.map((member) =>
+                          member.id === account.id
+                            ? {
+                                ...member,
+                                name: account.name,
+                                email: account.email,
+                                pictureUrl: account.pictureUrl,
+                              }
+                            : member,
+                        ),
+                      );
+                      const next = {
+                        ...session,
+                        operator: { ...session.operator, name: account.name },
+                      };
+                      setSession(next);
+                      void saveSession(next).catch(() => undefined);
+                    }}
+                    onSignOut={signOut}
+                    onWorkspace={(workspaceId) => void switchWorkspace(workspaceId)}
+                    onWorkspaceRenamed={(name) => {
+                      const next = { ...session, workspace: { ...session.workspace, name } };
+                      setSession(next);
+                      setMe((current) =>
+                        current === null
+                          ? current
+                          : {
+                              ...current,
+                              workspaces: current.workspaces.map((workspace) =>
+                                workspace.workspaceId === session.workspace.id
+                                  ? { ...workspace, name }
+                                  : workspace,
+                              ),
+                            },
+                      );
+                      void saveSession(next).catch(() => undefined);
+                    }}
+                    onTheme={onTheme}
+                    palette={palette}
+                    pushStatus={pushStatus}
+                    signingOut={signingOut}
+                    theme={theme}
+                  />
+                )}
+              </View>
+            </TabBarInsetContext.Provider>
+            <View
+              pointerEvents="box-none"
+              style={overlaysList ? [StyleSheet.absoluteFill, { top: undefined }] : undefined}
+              onLayout={
+                overlaysList
+                  ? (event) => setTabBarHeight(event.nativeEvent.layout.height)
+                  : undefined
+              }
+            >
+              <BottomNav
+                liveCount={liveCount}
+                onPage={(next) => {
+                  setInboxQuery("");
+                  setContactsQuery("");
+                  setPage(next);
+                }}
+                query={inboxQuery}
+                onQuery={setInboxQuery}
+                page={page}
                 palette={palette}
-                pending={outbox.list()}
-                session={session}
-                meId={session.operator.id}
-                onAccount={() => setPage("settings")}
-                bottomInset={insets.bottom}
-                searchOpen={inboxSearchOpen}
-                onCloseSearch={() => setInboxSearchOpen(false)}
-                topInset={0}
-                waiting={waiting}
               />
-            )}
-            {page === "contacts" && (
-              <ContactsScreen
-                api={api}
-                palette={palette}
-                topInset={0}
-                initialContactId={returnContactId}
-                readOnly={
-                  me?.workspaces.find((w) => w.workspaceId === session.workspace.id)?.readOnly ??
-                  true
+            </View>
+          </KeyboardAvoidingView>
+        </View>
+      </ScreenStackItem>
+      {opened && (
+        <ScreenStackItem
+          key={opened.key}
+          activityState={2}
+          contentStyle={{ backgroundColor: palette.paper }}
+          // Use the native pan transition only within the strip reserved for Back.
+          customAnimationOnSwipe={Platform.OS === "ios"}
+          fullScreenSwipeEnabled={Platform.OS === "ios"}
+          gestureResponseDistance={{ end: conversationBackEdge }}
+          stackAnimation={Platform.OS === "ios" ? iosThreadAnimation : "default"}
+          headerConfig={HIDDEN_HEADER}
+          hideKeyboardOnSwipe
+          onDismissed={() => closeThread(opened.key)}
+          replaceAnimation="push"
+          screenId={opened.key}
+          style={StyleSheet.absoluteFill}
+        >
+          <View style={[styles.app, { paddingTop: insets.top, backgroundColor: palette.paper }]}>
+            {banner}
+            <ThreadScreen
+              api={api}
+              bottomInset={insets.bottom}
+              conversation={opened.conversation}
+              loading={threadLoading}
+              initialDraft={opened.initialDraft}
+              meId={session.operator.id}
+              members={members}
+              workspace={workspace}
+              onHandoff={assign}
+              onAssign={() => assign(session.operator.id).catch(() => undefined)}
+              onBack={() => closeThread(opened.key)}
+              onDiscard={discard}
+              onError={handleFailure}
+              onReload={() => {
+                if (threadTarget.current?.conversationId === opened.conversationId) {
+                  void loadThread(opened.conversationId);
                 }
-                onOpenConversation={(id, contactId) => {
-                  setReturnContactId(contactId);
-                  openById(id, "contacts");
-                }}
-              />
-            )}
-            {page === "visitors" && (
-              <VisitorsScreen
-                api={api}
-                palette={palette}
-                topInset={0}
-                onOpenConversation={(id) => openById(id, "visitors")}
-                onCount={setLiveCount}
-              />
-            )}
-            {page === "analytics" && <AnalyticsScreen api={api} palette={palette} topInset={0} />}
-            {page === "settings" && (
-              <SettingsScreen
-                api={api}
-                bottomInset={insets.bottom}
-                session={session}
-                topInset={0}
-                me={me}
-                members={members}
-                onAway={changeAway}
-                onEnablePush={() =>
-                  pushStatus === "denied" || pushStatus === "enabled"
-                    ? void Linking.openSettings()
-                    : void syncPush(true)
-                }
-                onProfileSaved={(account) => {
-                  setMe(account);
-                  setMembers((current) =>
-                    current.map((member) =>
-                      member.id === account.id
-                        ? {
-                            ...member,
-                            name: account.name,
-                            email: account.email,
-                            pictureUrl: account.pictureUrl,
-                          }
-                        : member,
-                    ),
-                  );
-                  const next = {
-                    ...session,
-                    operator: { ...session.operator, name: account.name },
-                  };
-                  setSession(next);
-                  void saveSession(next).catch(() => undefined);
-                }}
-                onSignOut={signOut}
-                onWorkspace={(workspaceId) => void switchWorkspace(workspaceId)}
-                onWorkspaceRenamed={(name) => {
-                  const next = { ...session, workspace: { ...session.workspace, name } };
-                  setSession(next);
-                  setMe((current) =>
-                    current === null
-                      ? current
-                      : {
-                          ...current,
-                          workspaces: current.workspaces.map((workspace) =>
-                            workspace.workspaceId === session.workspace.id
-                              ? { ...workspace, name }
-                              : workspace,
-                          ),
-                        },
-                  );
-                  void saveSession(next).catch(() => undefined);
-                }}
-                onTheme={onTheme}
-                palette={palette}
-                pushStatus={pushStatus}
-                signingOut={signingOut}
-                theme={theme}
-              />
-            )}
+              }}
+              onRetry={deliver}
+              onDraftChange={(body) => saveDraft(opened.conversationId, body)}
+              onSend={(body, replyToMessageId) =>
+                send(opened.conversationId, body, replyToMessageId)
+              }
+              onStatus={changeStatus}
+              palette={palette}
+              pending={outbox.list(opened.conversationId)}
+              pendingErrors={pendingErrors}
+              thread={thread}
+            />
           </View>
-          <BottomNav
-            liveCount={liveCount}
-            onPage={(next) => {
-              setReturnContactId(null);
-              setInboxSearchOpen(false);
-              setPage(next);
-            }}
-            onSearch={() => setInboxSearchOpen(true)}
-            page={page}
-            palette={palette}
-            searching={page === "inbox" && inboxSearchOpen}
-          />
-        </>
+        </ScreenStackItem>
       )}
-    </View>
+    </ScreenStack>
   );
 }
 

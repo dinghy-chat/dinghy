@@ -10,6 +10,7 @@ import {
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   useWindowDimensions,
   View,
 } from "react-native";
@@ -17,13 +18,19 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { t } from "../../operator/src/text.ts";
 import { ApiError } from "./api";
 import { AvatarArt } from "./avatar-art";
+import { fonts } from "./fonts";
 import { Icon } from "./icon";
+import {
+  NativeSearchField,
+  NativeTabBar,
+  nativeSearchFieldAvailable,
+  nativeTabBarAvailable,
+} from "./native-tab-bar";
 import { night, type Palette, styles } from "./theme";
 import type { Conversation } from "./types";
 
 const tabs = ["inbox", "contacts", "visitors", "analytics", "settings"] as const;
 export type TabPage = (typeof tabs)[number];
-export type Page = TabPage | "thread";
 const tabIcons = {
   inbox: "inbox",
   contacts: "addressBook",
@@ -145,17 +152,18 @@ export function BottomNav({
   page,
   palette,
   onPage,
-  onSearch,
-  searching,
+  onQuery,
+  query,
   liveCount,
 }: {
-  page: Page;
+  page: TabPage;
   liveCount: number | null;
   palette: Palette;
-  onPage(page: Page): void;
-  onSearch(): void;
-  searching: boolean;
+  onPage(page: TabPage): void;
+  onQuery(value: string): void;
+  query: string;
 }) {
+  const search = page === "inbox";
   const { bottom } = useSafeAreaInsets();
   const [keyboardVisible, setKeyboardVisible] = useState(false);
   useEffect(() => {
@@ -163,16 +171,23 @@ export function BottomNav({
       Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
       () => setKeyboardVisible(true),
     );
-    const hide = Keyboard.addListener("keyboardDidHide", () => setKeyboardVisible(false));
+    const hide = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
+      () => setKeyboardVisible(false),
+    );
     return () => {
       show.remove();
       hide.remove();
     };
   }, []);
   const dark = palette === night;
-  const { width } = useWindowDimensions();
-  const tabWidth = Math.max(44, Math.min(56, Math.floor((width - 90) / tabs.length)));
-  const index = page === "thread" ? 0 : tabs.indexOf(page);
+  const { width, height } = useWindowDimensions();
+  const showClouds = page === "inbox" && !keyboardVisible;
+  const cloudTiles =
+    width > 900 ? ["left", "middle", "right"] : width > 540 ? ["left", "right"] : ["middle"];
+  const barWidth = Math.min(340, width - 32);
+  const tabWidth = (barWidth - 10) / tabs.length;
+  const index = tabs.indexOf(page);
   const position = useRef(new Animated.Value(index)).current;
   const settle = useCallback(
     (destination: number) => {
@@ -206,85 +221,150 @@ export function BottomNav({
       onPanResponderTerminate: () => settle(index),
     });
   }, [index, onPage, position, settle, tabWidth]);
-  if (searching || (page === "contacts" && keyboardVisible)) return null;
+  if (page === "contacts" && keyboardVisible) return null;
   const glass = isLiquidGlassAvailable();
-  const base = !glass && {
-    backgroundColor: palette.sheet,
-    borderColor: palette.line,
-    borderWidth: StyleSheet.hairlineWidth,
+
+  const surface = {
+    width: barWidth,
+    backgroundColor: dark ? "rgba(94, 126, 147, 0.15)" : "rgba(209, 223, 231, 0.24)",
+    borderColor: dark ? "rgba(222, 239, 250, 0.17)" : "rgba(55, 82, 101, 0.15)",
   };
   const material = glass && (
     <GlassView
       pointerEvents="none"
       colorScheme={dark ? "dark" : "light"}
-      glassEffectStyle="regular"
+      glassEffectStyle={showClouds ? "clear" : "regular"}
       style={dock.glass}
     />
   );
   return (
-    <View pointerEvents="box-none" style={[dock.anchor, { paddingBottom: bottom + 6 }]}>
-      <View {...swipe.panHandlers} accessibilityRole="tablist" style={[dock.bar, base]}>
-        {material}
-        <Animated.View
+    <View
+      pointerEvents="box-none"
+      style={[
+        dock.anchor,
+        showClouds && height > width && dock.cloudClearance,
+        { paddingBottom: keyboardVisible ? 6 : bottom + 6 },
+      ]}
+    >
+      {showClouds && (
+        <View
+          accessible={false}
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
           pointerEvents="none"
-          style={[
-            dock.selection,
-            {
-              width: tabWidth,
-              backgroundColor: dark ? "rgba(255,255,255,0.17)" : "rgba(49,83,104,0.13)",
-              transform: [
-                {
-                  translateX: position.interpolate({
-                    inputRange: [0, tabs.length - 1],
-                    outputRange: [0, (I18nManager.isRTL ? -1 : 1) * tabWidth * (tabs.length - 1)],
-                  }),
-                },
-              ],
-            },
-          ]}
-        />
-        {tabs.map((target) => {
-          const selected = page === target;
-          return (
-            <Pressable
-              key={target}
-              accessibilityRole="tab"
-              accessibilityLabel={
-                target === "visitors" && liveCount !== null
-                  ? `${t(target)}, ${t("liveCount", { count: liveCount })}`
-                  : t(target)
-              }
-              accessibilityState={{ selected }}
-              onPress={() => onPage(target)}
-              style={({ pressed }) => [dock.tab, { width: tabWidth, opacity: pressed ? 0.65 : 1 }]}
-            >
-              <Icon
-                name={tabIcons[target]}
-                color={selected ? palette.ink : palette.sub}
-                size={24}
-                filled={selected}
-              />
-              {target === "visitors" && liveCount !== null && liveCount > 0 && (
-                <View accessible={false} style={[dock.badge, { backgroundColor: palette.ink }]}>
-                  <Text allowFontScaling={false} style={[dock.count, { color: palette.paper }]}>
-                    {liveCount > 99 ? "99+" : liveCount}
-                  </Text>
-                </View>
-              )}
-            </Pressable>
-          );
-        })}
-      </View>
-      {page === "inbox" && (
-        <Pressable
-          onPress={onSearch}
-          accessibilityRole="button"
-          accessibilityLabel={t("searchLabel")}
-          style={({ pressed }) => [dock.search, base, { opacity: pressed ? 0.8 : 1 }]}
+          style={dock.cloudBackdrop}
         >
+          {cloudTiles.map((tile) => (
+            <Image
+              key={tile}
+              accessible={false}
+              fadeDuration={0}
+              resizeMode="stretch"
+              source={
+                dark
+                  ? require("../assets/inbox-clouds-dark.png")
+                  : require("../assets/inbox-clouds-light.png")
+              }
+              style={dock.cloudTile}
+            />
+          ))}
+        </View>
+      )}
+      {search && nativeSearchFieldAvailable && (
+        <NativeSearchField query={query} onQuery={onQuery} dark={dark} width={barWidth} />
+      )}
+      {search && !nativeSearchFieldAvailable && (
+        <View style={[dock.search, surface]}>
           {material}
-          <Icon name="search" size={23} color={palette.ink} />
-        </Pressable>
+          <Icon name="search" size={18} color={palette.sub} />
+          <TextInput
+            accessibilityLabel={t("searchLabel")}
+            placeholder={t("mobileHarborSearchInput")}
+            placeholderTextColor={palette.sub}
+            value={query}
+            onChangeText={onQuery}
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="search"
+            style={[dock.searchInput, { color: palette.ink }]}
+          />
+          {query.length > 0 && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={t("clearSearch")}
+              onPress={() => onQuery("")}
+              style={dock.clear}
+            >
+              <Icon name="x" size={16} color={palette.sub} />
+            </Pressable>
+          )}
+        </View>
+      )}
+      {!(search && keyboardVisible) && nativeTabBarAvailable && (
+        <NativeTabBar
+          page={page}
+          onPage={onPage}
+          liveCount={liveCount}
+          dark={dark}
+          width={barWidth}
+        />
+      )}
+      {!(search && keyboardVisible) && !nativeTabBarAvailable && (
+        <View {...swipe.panHandlers} accessibilityRole="tablist" style={[dock.bar, surface]}>
+          {material}
+          <Animated.View
+            pointerEvents="none"
+            style={[
+              dock.selection,
+              {
+                width: tabWidth,
+                backgroundColor: dark ? "rgba(255,255,255,0.17)" : "rgba(49,83,104,0.13)",
+                transform: [
+                  {
+                    translateX: position.interpolate({
+                      inputRange: [0, tabs.length - 1],
+                      outputRange: [0, (I18nManager.isRTL ? -1 : 1) * tabWidth * (tabs.length - 1)],
+                    }),
+                  },
+                ],
+              },
+            ]}
+          />
+          {tabs.map((target) => {
+            const selected = page === target;
+            return (
+              <Pressable
+                key={target}
+                accessibilityRole="tab"
+                accessibilityLabel={
+                  target === "visitors" && liveCount !== null
+                    ? `${t(target)}, ${t("liveCount", { count: liveCount })}`
+                    : t(target)
+                }
+                accessibilityState={{ selected }}
+                onPress={() => onPage(target)}
+                style={({ pressed }) => [
+                  dock.tab,
+                  { width: tabWidth, opacity: pressed ? 0.65 : 1 },
+                ]}
+              >
+                <Icon
+                  name={tabIcons[target]}
+                  color={selected ? palette.ink : palette.sub}
+                  size={24}
+                  filled={selected}
+                />
+                {target === "visitors" && liveCount !== null && liveCount > 0 && (
+                  <View accessible={false} style={[dock.badge, { backgroundColor: palette.ink }]}>
+                    <Text allowFontScaling={false} style={[dock.count, { color: palette.paper }]}>
+                      {liveCount > 99 ? "99+" : liveCount}
+                    </Text>
+                  </View>
+                )}
+              </Pressable>
+            );
+          })}
+        </View>
       )}
     </View>
   );
@@ -293,40 +373,49 @@ export function BottomNav({
 const dock = StyleSheet.create({
   anchor: {
     paddingTop: 6,
-    flexDirection: "row",
-    gap: 8,
+    gap: 12,
     justifyContent: "center",
     alignItems: "center",
   },
+  // Leave room for the few cloud pixels above search and keep the last conversation visible.
+  cloudClearance: { paddingTop: 48 },
+  cloudBackdrop: { ...StyleSheet.absoluteFill, flexDirection: "row" },
+  cloudTile: { flex: 1, width: 0, height: "100%" },
   bar: {
     height: 54,
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 5,
     borderRadius: 27,
-    boxShadow: "0 4px 18px rgba(8, 23, 38, 0.16)",
+    overflow: "hidden",
+    borderWidth: StyleSheet.hairlineWidth,
   },
   search: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+    height: 44,
+    borderRadius: 22,
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    boxShadow: "0 4px 18px rgba(8, 23, 38, 0.16)",
+    gap: 9,
+    paddingStart: 18,
+    paddingEnd: 5,
+    overflow: "hidden",
+    borderWidth: StyleSheet.hairlineWidth,
   },
+  searchInput: { flex: 1, height: "100%", minWidth: 0, fontFamily: fonts.body, fontSize: 16 },
+  clear: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
   glass: { ...StyleSheet.absoluteFill, borderRadius: 27 },
   badge: {
     position: "absolute",
-    top: 3,
-    end: 1,
-    minWidth: 16,
-    paddingHorizontal: 3,
-    height: 16,
-    borderRadius: 8,
+    top: 6,
+    start: "57%",
+    minWidth: 13,
+    paddingHorizontal: 2,
+    height: 13,
+    borderRadius: 7,
     alignItems: "center",
     justifyContent: "center",
   },
-  count: { fontSize: 10, fontWeight: "700" },
+  count: { fontSize: 9, lineHeight: 12, includeFontPadding: false, fontWeight: "700" },
   selection: {
     position: "absolute",
     start: 5,
