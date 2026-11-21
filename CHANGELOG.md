@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.50.0] - 2026-11-21
+
 ### Added
 
 - **Ask to change** under a bot's draft: an operator types what to change, such as "shorter" or "in Spanish", and the bot that wrote the draft answers with a new draft that takes its place. Dinghy runs no AI: an owner or admin turns on **This bot can rewrite drafts** for a key in **Settings > API & webhooks**, and the bot gets `draft.change_requested` by webhook, `GET /v1/events` or `wait_for_events`, and answers with `reply` and `changeRequestId`. See [Agents](docs/agents.md#ask-to-change).
@@ -757,7 +759,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.49.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.50.0...HEAD
+[0.50.0]: https://github.com/dinghy-chat/dinghy/compare/v0.49.0...v0.50.0
 [0.49.0]: https://github.com/dinghy-chat/dinghy/compare/v0.48.0...v0.49.0
 [0.48.0]: https://github.com/dinghy-chat/dinghy/compare/v0.47.0...v0.48.0
 [0.47.0]: https://github.com/dinghy-chat/dinghy/compare/v0.46.0...v0.47.0
