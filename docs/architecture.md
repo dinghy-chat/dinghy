@@ -113,7 +113,7 @@ App store reviewers sign in to the Dinghy app with one account that has a fixed 
 - `APP_REVIEW_EMAIL`: the review account's email.
 - `APP_REVIEW_CODE`: its six-digit code. A request for that account's code stores this one and sends no email. The code still expires after 10 minutes, works once and counts wrong guesses.
 
-The review account's delete answers that the account is deleted, with no email link, but it only ends the account's sessions and push devices. The account and its workspace stay, so each new version of the app is reviewed with the same account.
+The review account's delete answers that the account is deleted, with no email link and no rate limit. It only ends the account's sessions and push devices and turns off two-step sign-in, which the next reviewer could not pass. The account and its workspace stay, so each new version of the app is reviewed with the same account.
 
 ## Scaling
 

@@ -477,7 +477,7 @@ export function createApp({
     // Right after the session check, so every workspace route runs behind it, whatever its order.
     registerMemberCheck(app, db);
     registerAccountDelete(app, {
-      appReview,
+      appReviewEmail: appReview?.email,
       beforeDelete: cloud?.beforeDelete,
       db,
       keepsLastWorkspace: cloud === undefined,

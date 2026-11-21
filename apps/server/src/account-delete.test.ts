@@ -3,6 +3,7 @@ import { and, eq, isNull, like, ne, sql } from "drizzle-orm";
 import { Redis } from "iovalkey";
 import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { turnOnTwoFactor } from "../test/authenticator.ts";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
 import {
@@ -389,6 +390,13 @@ describe("the app review account", () => {
       checks: { postgres: ok, valkey: ok },
     });
     const second = { ...reviewer, cookie: await signIn(app, auth, reviewer.email) };
+    await owner.insert(pushSubscription).values({
+      operatorId: reviewer.id,
+      endpoint: `https://push.example.com/${reviewer.id}`,
+      p256dh: "key",
+      auth: "secret",
+    });
+    await turnOnTwoFactor(app, reviewer.cookie);
     const mailed = mail.countTo(reviewer.email);
 
     const done = await askDelete(reviewer, {}, review);
@@ -400,7 +408,14 @@ describe("the app review account", () => {
     expect(await operatorRow(reviewer.id)).toMatchObject({
       email: reviewer.email,
       deletedAt: null,
+      twoFactorOn: false,
     });
+    expect(
+      await owner
+        .select()
+        .from(pushSubscription)
+        .where(eq(pushSubscription.operatorId, reviewer.id)),
+    ).toEqual([]);
     expect(await workspaceRow(space.id)).toMatchObject({ deletedAt: null });
     expect(await roleOf(space.id, reviewer.id)).toBe("owner");
     expect(audits("account.review_signed_out", reviewer.id)).toHaveLength(1);
@@ -410,6 +425,28 @@ describe("the app review account", () => {
     expect((await me(again)).status).toBe(200);
     // Another account on the same server still confirms by email.
     expect(await (await askDelete(other, {}, review)).json()).toEqual({ deleted: false });
+  });
+
+  test("a delete link sent before the review settings only signs it out", async () => {
+    const space = await createWorkspace(db, "Review harbor link", []);
+    const reviewer = await person(space.id, "owner");
+    const link = await deleteLink(reviewer);
+    const review = createApp({
+      appReview: { email: reviewer.email, code: "024680" },
+      auth,
+      db,
+      logger,
+      live,
+      valkey,
+      mailer: mail,
+      checks: { postgres: ok, valkey: ok },
+    });
+    expect((await pressLinkButton(review, link)).status).toBe(200);
+    expect((await me(reviewer)).status).toBe(401);
+    expect(await operatorRow(reviewer.id)).toMatchObject({ deletedAt: null });
+    expect(await workspaceRow(space.id)).toMatchObject({ deletedAt: null });
+    // The link works once.
+    expect((await pressLinkButton(review, link)).status).toBe(400);
   });
 });
 
