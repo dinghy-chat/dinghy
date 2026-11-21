@@ -373,6 +373,46 @@ describe("a server with no mail server", () => {
   });
 });
 
+describe("the app review account", () => {
+  test("signs out everywhere and stays, with its workspace, for the next review", async () => {
+    const space = await createWorkspace(db, "Review harbor", []);
+    const reviewer = await person(space.id, "owner");
+    const other = await person(space.id, "member");
+    const review = createApp({
+      appReview: { email: reviewer.email, code: "024680" },
+      auth,
+      db,
+      logger,
+      live,
+      valkey,
+      mailer: mail,
+      checks: { postgres: ok, valkey: ok },
+    });
+    const second = { ...reviewer, cookie: await signIn(app, auth, reviewer.email) };
+    const mailed = mail.countTo(reviewer.email);
+
+    const done = await askDelete(reviewer, {}, review);
+    expect(done.status).toBe(200);
+    expect(await done.json()).toEqual({ deleted: true });
+    expect(mail.countTo(reviewer.email)).toBe(mailed);
+    expect((await me(reviewer)).status).toBe(401);
+    expect((await me(second)).status).toBe(401);
+    expect(await operatorRow(reviewer.id)).toMatchObject({
+      email: reviewer.email,
+      deletedAt: null,
+    });
+    expect(await workspaceRow(space.id)).toMatchObject({ deletedAt: null });
+    expect(await roleOf(space.id, reviewer.id)).toBe("owner");
+    expect(audits("account.review_signed_out", reviewer.id)).toHaveLength(1);
+    expect(audits("account.deleted", reviewer.id)).toHaveLength(0);
+
+    const again = { ...reviewer, cookie: await signIn(app, auth, reviewer.email) };
+    expect((await me(again)).status).toBe(200);
+    // Another account on the same server still confirms by email.
+    expect(await (await askDelete(other, {}, review)).json()).toEqual({ deleted: false });
+  });
+});
+
 describe("a request that passed the session check before the delete committed", () => {
   const send = (as: Person, method: string, path: string, body: unknown) =>
     app.request(path, {

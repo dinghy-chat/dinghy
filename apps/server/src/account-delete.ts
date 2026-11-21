@@ -39,6 +39,7 @@ import { sha256Hex } from "./identity.ts";
 import { deleteAccountMail } from "./letter.ts";
 import { type Live, OPERATORS } from "./live.ts";
 import { type Mailer, sendQuietly } from "./mailer.ts";
+import type { AppReview } from "./native-auth.ts";
 import { limitByIp, type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import { leaveWorkspace, type Role } from "./team.ts";
 import { MINUTE_MS } from "./time.ts";
@@ -366,6 +367,8 @@ async function keepsAccount(db: Database, operatorId: string): Promise<boolean> 
 }
 
 interface AccountDeleteOptions extends DeleteRules {
+  /** The app review account, whose delete only signs it out, so the next review can use it. */
+  appReview: AppReview | undefined;
   db: Database;
   live: Live;
   logger: Logger;
@@ -378,7 +381,7 @@ interface AccountDeleteOptions extends DeleteRules {
 /** An operator deletes their own account. Call this after the operator routes' session check. */
 export function registerAccountDelete(
   app: App,
-  { db, live, logger, mailer, publicUrl, rateLimit, ...rules }: AccountDeleteOptions,
+  { appReview, db, live, logger, mailer, publicUrl, rateLimit, ...rules }: AccountDeleteOptions,
 ) {
   const publicOrigin = new URL(publicUrl).origin;
 
@@ -403,10 +406,20 @@ export function registerAccountDelete(
     const operatorId = c.get("operatorId");
     const wait = await rateLimit.hit("account-delete", operatorId, REQUESTS_PER_HOUR, HOUR_SECONDS);
     if (wait !== null) return tooManyRequests(c, wait);
+    const email = c.get("operatorEmail");
+    if (email.toLowerCase() === appReview?.email) {
+      // The reviewer sees the delete finish at once, as the ending of their test. The account and
+      // its workspace stay for the next review, so the delete ends only its sessions and devices.
+      await db.transaction(async (tx) => {
+        await tx.delete(session).where(eq(session.userId, operatorId));
+        await tx.delete(pushSubscription).where(eq(pushSubscription.operatorId, operatorId));
+      });
+      audit(logger, "account.review_signed_out", { operatorId });
+      return c.json({ deleted: true }, 200);
+    }
     if (rules.keepsLastWorkspace && (await keepsAccount(db, operatorId))) {
       return c.json(LAST_WORKSPACE, 409);
     }
-    const email = c.get("operatorEmail");
     if (mailer === undefined) {
       // The operator is signed in, and a server with no mail server has no other channel.
       if (c.req.valid("json").email?.trim().toLowerCase() !== email.toLowerCase()) {
