@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.48.0] - 2026-11-21
+
 ### Added
 
 - `APP_REVIEW_EMAIL` and `APP_REVIEW_CODE` give one account a fixed sign-in code for the Dinghy app, so an app store's reviewer can sign in without its mailbox. Both are optional, and no code goes to that account's mailbox.
@@ -741,7 +743,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.47.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.48.0...HEAD
+[0.48.0]: https://github.com/dinghy-chat/dinghy/compare/v0.47.0...v0.48.0
 [0.47.0]: https://github.com/dinghy-chat/dinghy/compare/v0.46.0...v0.47.0
 [0.46.0]: https://github.com/dinghy-chat/dinghy/compare/v0.45.0...v0.46.0
 [0.45.0]: https://github.com/dinghy-chat/dinghy/compare/v0.44.0...v0.45.0
