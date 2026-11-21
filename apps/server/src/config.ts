@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { z } from "zod";
 import type { InboundEmail } from "./inbound-email.ts";
+import type { AppReview } from "./native-auth.ts";
 import type { NativePushConfig } from "./native-push.ts";
 import type { PushKeys } from "./push.ts";
 import type { ShipmailInbound } from "./shipmail-inbound.ts";
@@ -98,6 +99,16 @@ const schema = z.object({
     .email()
     .transform((email) => email.toLowerCase())
     .optional(),
+  // Optional, for an app store's review of the Dinghy app. This one account signs in to the app
+  // with this fixed six-digit code instead of an emailed one, and no email goes to it. Both or none.
+  APP_REVIEW_EMAIL: z
+    .email()
+    .transform((email) => email.toLowerCase())
+    .optional(),
+  APP_REVIEW_CODE: z
+    .string()
+    .regex(/^\d{6}$/)
+    .optional(),
   // Optional. Errors go to this Sentry project, which the owner of the install chooses. Unset, the
   // Sentry SDK is never loaded.
   SENTRY_DSN: z.url().optional(),
@@ -122,6 +133,7 @@ const FROM_FILES = [
   "INBOUND_EMAIL_SECRET",
   "SHIPMAIL_API_KEY",
   "SHIPMAIL_WEBHOOK_SECRET",
+  "APP_REVIEW_CODE",
 ] as const;
 
 export function loadConfig(env: NodeJS.ProcessEnv): Config {
@@ -218,6 +230,15 @@ export function nativePushFromConfig(config: Config): NativePushConfig {
     ...(apns === undefined ? {} : { apns }),
     ...(fcm === undefined ? {} : { fcm }),
   };
+}
+
+export function appReviewFromConfig(config: Config): AppReview | undefined {
+  const { APP_REVIEW_EMAIL: email, APP_REVIEW_CODE: code } = config;
+  if (email === undefined && code === undefined) return undefined;
+  if (email === undefined || code === undefined) {
+    throw new Error("Set APP_REVIEW_EMAIL and APP_REVIEW_CODE together.");
+  }
+  return { email, code };
 }
 
 export function inboundEmailFromConfig(config: Config): InboundEmail | undefined {

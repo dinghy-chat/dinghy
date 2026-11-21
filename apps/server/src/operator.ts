@@ -30,7 +30,7 @@ import { createLinkLimit, createNativeEmailCodeLimit, tooManyAttempts } from "./
 import type { Mailer } from "./mailer.ts";
 import { WORKSPACE_PREFIX } from "./member.ts";
 import { countWaiting } from "./messages.ts";
-import { registerNativeAuthRoutes } from "./native-auth.ts";
+import { type AppReview, registerNativeAuthRoutes } from "./native-auth.ts";
 import type { ImageUrls } from "./public-images.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import { type TwoFactorCodeChecker, type TwoFactorState, twoFactorStateOf } from "./two-factor.ts";
@@ -185,6 +185,7 @@ const BEFORE_SECOND_STEP = new Set([
 const PUBLIC_IMAGE_PATH = /\/(logo|picture)$/;
 
 interface OperatorOptions {
+  appReview?: AppReview | undefined;
   auth: Auth;
   db: Database;
   imageUrls: ImageUrls;
@@ -223,6 +224,7 @@ const AUTH_ROUTES = new Set([
 export function registerOperatorRoutes(
   app: App,
   {
+    appReview,
     auth,
     billing,
     contact,
@@ -414,6 +416,7 @@ export function registerOperatorRoutes(
   });
 
   registerNativeAuthRoutes(app, {
+    appReview,
     auth,
     db,
     logger,

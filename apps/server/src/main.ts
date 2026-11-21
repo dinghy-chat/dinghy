@@ -9,6 +9,7 @@ import serverPackage from "../package.json" with { type: "json" };
 import { createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
 import {
+  appReviewFromConfig,
   inboundEmailFromConfig,
   loadConfig,
   nativePushFromConfig,
@@ -108,6 +109,7 @@ if (role === "web" || role === "all") {
     process.exit(2);
   }
   const app = createApp({
+    appReview: appReviewFromConfig(config),
     trustedProxyHops: config.TRUSTED_PROXY_HOPS,
     limitScale: config.RATE_LIMIT_SCALE,
     ipSecret: config.AUTH_SECRET,

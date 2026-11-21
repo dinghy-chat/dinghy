@@ -231,7 +231,14 @@ const totpVerifyRoute = createRoute({
   },
 });
 
+/** The one account that an app store's reviewer signs in to the app with, by a fixed code. */
+export interface AppReview {
+  email: string;
+  code: string;
+}
+
 interface NativeAuthOptions {
+  appReview: AppReview | undefined;
   auth: Auth;
   db: Database;
   logger: Logger;
@@ -343,6 +350,7 @@ async function sendEmailCode(
   db: Database,
   mailer: Mailer,
   logger: Logger,
+  appReview: AppReview | undefined,
   email: string,
   ip: string,
 ): Promise<void> {
@@ -351,6 +359,13 @@ async function sendEmailCode(
     .from(operator)
     .where(and(eq(operator.email, email), isNull(operator.deletedAt)));
   if (account === undefined) return;
+  // The reviewer cannot read this account's mail, so its code is the fixed one, with the same
+  // expiry, single use and guess limit as an emailed code.
+  if (email === appReview?.email) {
+    await storeEmailCode(db, auth.options.secret, email, account.id, appReview.code);
+    audit(logger, "native_email_code.review", { operatorId: account.id, ip });
+    return;
+  }
   const code = randomInt(10 ** (EMAIL_CODE_DIGITS - 1), 10 ** EMAIL_CODE_DIGITS).toString();
   await storeEmailCode(db, auth.options.secret, email, account.id, code);
   const mail = nativeSignInCodeMail(code, EMAIL_CODE_MINUTES);
@@ -629,7 +644,16 @@ async function requestWait(
  */
 export function registerNativeAuthRoutes(
   app: App,
-  { auth, db, logger, mailer, nativeEmailCodes, rateLimit, twoFactorCodes }: NativeAuthOptions,
+  {
+    appReview,
+    auth,
+    db,
+    logger,
+    mailer,
+    nativeEmailCodes,
+    rateLimit,
+    twoFactorCodes,
+  }: NativeAuthOptions,
 ): void {
   const publicOrigin = new URL(String(auth.options.baseURL)).origin;
 
@@ -650,7 +674,7 @@ export function registerNativeAuthRoutes(
       return tooManyAttempts(c, { windowSeconds: wait });
     }
     // The known and unknown paths both continue after the same answer. Only a known account gets mail.
-    sendEmailCode(auth, db, mailer, logger, email, ip).catch((error: unknown) => {
+    sendEmailCode(auth, db, mailer, logger, appReview, email, ip).catch((error: unknown) => {
       logger.error(safeErrorFields(error), "could not send a native sign-in code");
     });
     return c.json(
