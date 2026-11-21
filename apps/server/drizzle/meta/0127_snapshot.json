@@ -2338,7 +2338,7 @@
           "tableTo": "draft_reply",
           "columnsTo": ["workspace_id", "id"],
           "onUpdate": "no action",
-          "onDelete": "no action"
+          "onDelete": "cascade"
         }
       },
       "compositePrimaryKeys": {

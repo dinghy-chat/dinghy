@@ -81,6 +81,7 @@ Then:
 | `bots_paused` | An owner or admin paused every bot | Stop replying. Reads, notes and handoffs still work |
 | `conversation_closed` | The conversation is closed | Do nothing, or reopen it if you must reply |
 | `change_request_closed` | A reply with `changeRequestId` came after the request ended | Do nothing: the operator cancelled it, sent or discarded the draft, or the visitor wrote again |
+| `client_id_reused` | A reply with `changeRequestId` used a `clientId` that made another draft | Answer again with a new `clientId` |
 
 ## Send outbound messages
 
@@ -175,7 +176,7 @@ When the drafts read well, an owner or admin changes the key or the connection t
 An operator can ask your bot to rewrite one of its drafts, such as "shorter", "answer in Spanish" or "offer a call". Dinghy has no AI of its own: it passes the instruction to the bot that wrote the draft, and your bot answers with a new draft, which replaces the old one under the conversation. The visitor never sees drafts or instructions.
 
 1. An owner or admin turns on **This bot can rewrite drafts** for the key or the connection, in **Settings > API & webhooks** (`rewritesDrafts: true` on the key). Turn it on only if your bot handles these requests: the operator app shows the **Ask to change** box only under the open drafts of such a key.
-2. Listen for `draft.change_requested`: on a webhook, on `GET /v1/events`, or from `wait_for_events`. The event's data is `{ changeRequest, draft }`: `changeRequest.instruction` says what to change, and `draft.body` is the text to change. `/v1/events` and `wait_for_events` give it only to the key that wrote the draft. A webhook gets every one in the workspace, so check `changeRequest.apiKeyId`. After a restart, `list_drafts` shows each waiting draft's `changeRequest`, or null.
+2. Listen for `draft.change_requested`: on a webhook, on `GET /v1/events`, or from `wait_for_events`. The event's data is `{ changeRequest, draft }`: `changeRequest.instruction` says what to change, and `draft.body` is the text to change. `/v1/events` and `wait_for_events` give it only to the key that wrote the draft. A webhook gets every one in the workspace, so check `changeRequest.apiKeyId`. After a restart, `list_drafts` shows `changeRequest` on each of your key's waiting drafts, or null. Other keys' drafts always show null.
 3. Answer with `reply`, or `POST .../messages`, with the draft's conversation, a new `clientId` and `changeRequestId`. The answer is always a draft, `status: "drafted"`, even when your key sends directly and while a person handles the conversation, because a person asked for it. It keeps the old draft's quote unless you pass `replyToMessageId`. Bots paused still refuses it with `bots_paused`.
 
 One request waits on a draft at a time. The old draft stays usable while it waits, and the request ends when an operator cancels it, sends or discards the draft, or when the visitor writes again. A reply after that gets `change_request_closed`. After 30 seconds the operator app offers **Ask again**, which cancels the request and asks once more, with a new request. If your bot does not handle these requests, turn the setting off, so operators do not wait for it.

@@ -128,6 +128,10 @@ const CHANGE_REQUEST_CLOSED = failure(
   "change_request_closed",
   "This change request no longer waits: it was answered or cancelled, or the visitor wrote again.",
 );
+const CLIENT_ID_REUSED = failure(
+  "client_id_reused",
+  "This clientId already made another draft. Answer the change request with a new clientId.",
+);
 const CHANGE_REQUEST_KEYS_ONLY = failure(
   "invalid_request",
   "Only an API key's reply answers a change request, and a note does not.",
@@ -140,7 +144,7 @@ export const KEY_REPLY_REFUSALS =
   "bots_paused: an owner or admin paused every bot. human_handling: a person handles the conversation, and the key sends directly";
 const REPLY_OR_NOTE_ANSWER = {
   409: errorAnswer(
-    `conversation_closed: reopen it to reply, though a note does not need it. ${KEY_REPLY_REFUSALS}. Neither refuses a note. change_request_closed: the change request was answered or cancelled, or the visitor wrote again`,
+    `conversation_closed: reopen it to reply, though a note does not need it. ${KEY_REPLY_REFUSALS}. Neither refuses a note. change_request_closed: the change request was answered or cancelled, or the visitor wrote again. client_id_reused: the clientId made another draft, not this change request's answer`,
   ),
 };
 const INVALID_REPLY_TO_ANSWER = {
@@ -816,7 +820,7 @@ const streamRoute = createRoute({
   summary: "Stream the workspace's changes after a cursor",
   description:
     "Server-sent events: `change` (its id is the new cursor), `ready` when caught up, `resync` to load everything again, `notice` for something live that is not stored, and `close` with a reason. With no cursor, the stream starts at the present, so load the lists after `ready`.\n\n" +
-    "A `change` event's data is `{ kind, conversationId }`, with `conversationId` null for a workspace change. A `message.created` change also has `fromVisitor`, true when the visitor wrote it. The kinds are `message.created`, `message.updated` (an operator edited a reply), `message.deleted`, `conversation.closed`, `conversation.reopened`, `conversation.assigned`, `conversation.snoozed` (snoozed or unsnoozed), `conversation.deleted`, `conversation.moderated`, `conversation.handled` (a person or a bot took it), `conversation.labeled` (a label was put on or taken off), `draft.changed`, `draft.change_requested` (an operator asked a key to rewrite its draft, which `draft.changed` also says), `transcript.requested`, `team.changed`, `billing.changed` and `workspace.changed`. A client reloads what the kind names, and ignores a kind it does not know.\n\n" +
+    "A `change` event's data is `{ kind, conversationId }`, with `conversationId` null for a workspace change. A `message.created` change also has `fromVisitor`, true when the visitor wrote it. The kinds are `message.created`, `message.updated` (an operator edited a reply), `message.deleted`, `conversation.closed`, `conversation.reopened`, `conversation.assigned`, `conversation.snoozed` (snoozed or unsnoozed), `conversation.deleted`, `conversation.moderated`, `conversation.handled` (a person or a bot took it), `conversation.labeled` (a label was put on or taken off), `draft.changed`, `draft.change_requested` (an operator asked a key to rewrite its draft, so its drafts changed too), `transcript.requested`, `team.changed`, `billing.changed` and `workspace.changed`. A client reloads what the kind names, and ignores a kind it does not know.\n\n" +
     'A `notice` has no id and may be lost. Its data is `{ kind: "typing", conversationId, visitorId, draft }`, a visitor\'s unsent text, empty when they stopped, `{ kind: "bot_typing", conversationId, name, typing }` when an API key types or stops, or `{ kind: "receipts", visitorId }` when a visitor read replies or a reply email went out, so load the conversation\'s messages again.\n\n' +
     CLOSE_REASONS_TEXT,
   request: {
@@ -1043,6 +1047,7 @@ export type ReplyOutcome =
   | { kind: "human_handling" }
   | { kind: "drafts_text_only" }
   | { kind: "change_request_closed" }
+  | { kind: "client_id_reused" }
   | { kind: "refused"; access: WorkspaceAccess };
 
 /** What a key's reply asks for: its text, or an upload's clientId with no text. */
@@ -1060,6 +1065,7 @@ type Written =
   | "human_handling"
   | "drafts_text_only"
   | "change_request_closed"
+  | "client_id_reused"
   | { drafted: { draft: DraftView; created: boolean } }
   | (Appended & { visitorId: string });
 
@@ -1396,6 +1402,7 @@ export function refusedReply(outcome: Exclude<ReplyOutcome, { kind: "sent" | "dr
   if (outcome.kind === "change_request_closed") {
     return { body: CHANGE_REQUEST_CLOSED, status: 409 as const };
   }
+  if (outcome.kind === "client_id_reused") return { body: CLIENT_ID_REUSED, status: 409 as const };
   return closedFailure(outcome.access);
 }
 

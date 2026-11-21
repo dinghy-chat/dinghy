@@ -77,6 +77,7 @@ export const ERROR_CODES = [
   "change_request_pending",
   "check_unavailable",
   "checkout_retry_later",
+  "client_id_reused",
   "conversation_closed",
   "draft_not_waiting",
   "drafts_text_only",

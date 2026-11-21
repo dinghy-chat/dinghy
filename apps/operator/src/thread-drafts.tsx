@@ -55,19 +55,15 @@ export function useSuggestedReplies({
       await api.discardDraft(conversationId, draft.id);
       drop(draft.id);
     });
-  const setRequest = (draftId: string, changeRequest: ChangeRequest | null) =>
-    loaded.setData(
-      (current) =>
-        current?.map((draft) => (draft.id === draftId ? { ...draft, changeRequest } : draft)) ??
-        null,
-    );
+  // Every write loads the drafts again rather than patch them, so a late answer cannot overwrite
+  // what the server holds now.
   const request = async (draft: SuggestedReply, instruction: string) => {
-    const asked = await api.askToChange(conversationId, draft.id, newClientId(), instruction);
-    setRequest(draft.id, asked.changeRequest);
+    await api.askToChange(conversationId, draft.id, newClientId(), instruction);
+    loaded.reload();
   };
   const cancel = async (draft: SuggestedReply, pending: ChangeRequest) => {
     await api.cancelChangeRequest(conversationId, draft.id, pending.id);
-    setRequest(draft.id, null);
+    loaded.reload();
   };
   /** The key's new draft replaces this one when it comes, as `version` loads it. */
   const askToChange = (draft: SuggestedReply, instruction: string) =>

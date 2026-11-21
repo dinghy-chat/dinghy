@@ -245,8 +245,12 @@ export function Thread({
   const mode: ComposeMode = closed || draft.isNote ? "note" : "reply";
   const uploadsOn = !readOnly && !suspended && mode === "reply";
   const [dropping, setDropping] = useState(false);
-  // The bot's draft whose text is in the composer: sending it sends the draft.
-  const [editingDraft, setEditingDraft] = useState<SuggestedReply | null>(null);
+  // The bot's draft whose text is in the composer: sending it sends the draft. Once it stops
+  // waiting, as when its bot replaced it, the operator's text stays and goes as a plain reply.
+  const [editedDraft, setEditingDraft] = useState<SuggestedReply | null>(null);
+  const editingDraft = suggestions.drafts.some((one) => one.id === editedDraft?.id)
+    ? editedDraft
+    : null;
   /** Puts the caret in the composer, as a reply or a note. A closed conversation takes notes only. */
   const write = (next: ComposeMode) => {
     if (repliesOffReason !== null) return;

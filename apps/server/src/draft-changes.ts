@@ -116,7 +116,6 @@ export async function askToChange(
     changeRequestId,
     apiKeyId: draft.apiKeyId,
   });
-  await recordConversationChange(tx, workspaceId, conversationId, "draft.changed");
   const [asked] = await changeRequestsWhere(tx, workspaceId, ofRequest(workspaceId, made.id));
   if (asked === undefined) throw new Error("The change request insert left no row");
   return { kind: "asked", changeRequest: asked, created: true };
@@ -150,7 +149,8 @@ export type ChangeAnswer =
   | { drafted: { draft: DraftView; created: boolean } }
   | "missing"
   | "bots_paused"
-  | "change_request_closed";
+  | "change_request_closed"
+  | "client_id_reused";
 
 interface AnswerInput {
   changeRequestId: string;
@@ -162,7 +162,8 @@ interface AnswerInput {
 /**
  * The key that wrote a draft answers an operator's change request with a new draft, which replaces
  * the old one. It always drafts, whatever the key's reply mode and even while a person handles the
- * conversation: an operator asked for it. A retry with the same clientId returns the first new draft.
+ * conversation: an operator asked for it. A retry with the same clientId returns the first new draft,
+ * and a clientId of another draft of the key's is refused, so it never stands in for this answer.
  */
 export async function answerChangeRequest(
   tx: Transaction,
@@ -172,9 +173,6 @@ export async function answerChangeRequest(
   input: AnswerInput,
 ): Promise<ChangeAnswer> {
   const { botsPaused } = await lockWorkspace(tx, workspaceId);
-  const earlier = await findDraft(tx, workspaceId, apiKeyId, input.clientId);
-  if (earlier !== undefined) return { drafted: { draft: earlier, created: false } };
-  if (botsPaused) return "bots_paused";
   const [request] = await changeRequestsWhere(
     tx,
     workspaceId,
@@ -183,6 +181,12 @@ export async function answerChangeRequest(
   if (request?.apiKeyId !== apiKeyId || request.conversationId !== conversationId) {
     return "missing";
   }
+  const earlier = await findDraft(tx, workspaceId, apiKeyId, input.clientId);
+  if (earlier !== undefined) {
+    if (request.replacementDraftId !== earlier.id) return "client_id_reused";
+    return { drafted: { draft: earlier, created: false } };
+  }
+  if (botsPaused) return "bots_paused";
   // Every cancel ends a request when its draft stops waiting, so a pending one has an open draft.
   const old = await lockDraft(tx, workspaceId, conversationId, request.draftId);
   if (request.status !== "pending" || old === undefined) return "change_request_closed";

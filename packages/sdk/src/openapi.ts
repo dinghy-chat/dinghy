@@ -444,7 +444,7 @@ export interface paths {
             "application/json": components["schemas"]["Error"];
           };
         };
-        /** @description conversation_closed: reopen it to reply, though a note does not need it. bots_paused: an owner or admin paused every bot. human_handling: a person handles the conversation, and the key sends directly. Neither refuses a note. change_request_closed: the change request was answered or cancelled, or the visitor wrote again */
+        /** @description conversation_closed: reopen it to reply, though a note does not need it. bots_paused: an owner or admin paused every bot. human_handling: a person handles the conversation, and the key sends directly. Neither refuses a note. change_request_closed: the change request was answered or cancelled, or the visitor wrote again. client_id_reused: the clientId made another draft, not this change request's answer */
         409: {
           headers: {
             [name: string]: unknown;
@@ -7711,6 +7711,7 @@ export interface components {
           | "change_request_pending"
           | "check_unavailable"
           | "checkout_retry_later"
+          | "client_id_reused"
           | "conversation_closed"
           | "draft_not_waiting"
           | "drafts_text_only"
@@ -8229,7 +8230,7 @@ export interface components {
       resolvedAt: string | null;
       sentMessageId: string | null;
       canAskToChange: boolean;
-      changeRequest: components["schemas"]["DraftChangeRequest"];
+      changeRequest: components["schemas"]["DraftChangeRequest"] | null;
     };
     DraftChangeRequest: {
       id: string;
@@ -8242,7 +8243,7 @@ export interface components {
       createdAt: string;
       resolvedAt: string | null;
       replacementDraftId: string | null;
-    } | null;
+    };
     MessageReceipt: {
       readAt: string | null;
       emailedAt: string | null;

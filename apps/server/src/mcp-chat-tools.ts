@@ -357,7 +357,7 @@ export function chatTools(options: ChatToolsOptions): Tool[] {
       name: "reply",
       title: "Reply to a visitor",
       description:
-        'Replies in an open conversation, as the API key\'s reply mode says. A key that sends directly answers `{ status: "sent", message }`: the visitor sees it, with the key\'s name as its author. A key in draft mode answers `{ status: "drafted", draft }`: nothing reached the visitor, and an operator sends, edits or discards it. Errors: `human_handling` when a person handles the conversation and the key sends directly (write a note, or wait for them to give it back), and `bots_paused` when an owner paused every bot. Pass the same `clientId` when you retry, so a retry cannot send it twice. Pass `replyToMessageId` to quote an earlier message. To answer an operator\'s "Ask to change" (a `draft.change_requested` event from wait_for_events), pass its `changeRequestId`: the reply always becomes a new draft that replaces the old one, even in send mode and while a person handles the conversation. It keeps the old draft\'s quote unless you pass one. Errors: `change_request_closed` when the request was answered or cancelled, or the visitor wrote again.',
+        'Replies in an open conversation, as the API key\'s reply mode says. A key that sends directly answers `{ status: "sent", message }`: the visitor sees it, with the key\'s name as its author. A key in draft mode answers `{ status: "drafted", draft }`: nothing reached the visitor, and an operator sends, edits or discards it. Errors: `human_handling` when a person handles the conversation and the key sends directly (write a note, or wait for them to give it back), and `bots_paused` when an owner paused every bot. Pass the same `clientId` when you retry, so a retry cannot send it twice. Pass `replyToMessageId` to quote an earlier message. To answer an operator\'s "Ask to change" (a `draft.change_requested` event from wait_for_events), pass its `changeRequestId`: the reply always becomes a new draft that replaces the old one, even in send mode and while a person handles the conversation. It keeps the old draft\'s quote unless you pass one. Errors: `change_request_closed` when the request was answered or cancelled, or the visitor wrote again, and `client_id_reused` when the clientId made another draft.',
       input: z.object({
         conversationId,
         body: Body,
@@ -406,16 +406,16 @@ export function chatTools(options: ChatToolsOptions): Tool[] {
       name: "list_drafts",
       title: "List draft replies",
       description:
-        "Lists the drafts that keys in draft mode wrote, newest first, at most 100: `open` ones wait for an operator, `stale` ones wait but the visitor wrote after them, `all` adds the ones sent, discarded or replaced. A sent draft names the message an operator sent from it. A draft's `changeRequest` is the operator's \"Ask to change\" that waits on it, or null: after a restart, answer each one of your key's with reply and its `changeRequestId`.",
+        "Lists the drafts that keys in draft mode wrote, newest first, at most 100: `open` ones wait for an operator, `stale` ones wait but the visitor wrote after them, `all` adds the ones sent, discarded or replaced. A sent draft names the message an operator sent from it. A draft of your key's has `changeRequest`, the operator's \"Ask to change\" that waits on it, or null; other keys' drafts always have null. After a restart, answer each one of your key's with reply and its `changeRequestId`.",
       input: z.object({
         conversationId: conversationId.optional(),
         status: z.enum(["open", "stale", "all"]).default("open"),
       }),
       readOnly: true,
-      run: async (input, { workspaceId }) => ({
+      run: async (input, { workspaceId, actor }) => ({
         data: {
           drafts: await withWorkspace(db, workspaceId, (tx) =>
-            listDrafts(tx, workspaceId, input.conversationId, input.status),
+            listDrafts(tx, workspaceId, actor, input.conversationId, input.status),
           ),
         },
       }),

@@ -1280,11 +1280,12 @@ export const draftChangeRequest = pgTable(
       columns: [table.workspaceId, table.operatorId],
       foreignColumns: [workspaceMember.workspaceId, workspaceMember.operatorId],
     }),
+    // Cascades too: a delete that takes both drafts at once must not trip on the order it takes them.
     foreignKey({
       name: "draft_change_request_replacement_fk",
       columns: [table.workspaceId, table.replacementDraftId],
       foreignColumns: [draftReply.workspaceId, draftReply.id],
-    }),
+    }).onDelete("cascade"),
     unique("draft_change_request_client_key").on(table.workspaceId, table.draftId, table.clientId),
     // One request waits on a draft at a time.
     uniqueIndex("draft_change_request_pending_key")

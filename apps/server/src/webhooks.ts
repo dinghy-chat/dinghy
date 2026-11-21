@@ -14,6 +14,7 @@ import type { HandledPayload } from "./bots.ts";
 import { campaignViews } from "./campaigns.ts";
 import {
   apiKey,
+  draftChangeRequest,
   event,
   type LabeledPayload,
   label,
@@ -732,6 +733,7 @@ export function createWebhooks({
           messageId,
           outboundMessageId,
           campaignId,
+          changeRequestId,
           labelId,
           labelAdded,
         } = found;
@@ -746,6 +748,7 @@ export function createWebhooks({
             messageId,
             outboundMessageId,
             campaignId,
+            changeRequestId,
             labelId,
             labelAdded,
             replayOf: deliveryId,
@@ -1028,11 +1031,13 @@ export function fanOutWebhooksOne(db: Database): Promise<boolean> {
       .where(and(eq(webhook.workspaceId, workspaceId), eq(webhook.enabled, true)));
     const rows: (typeof webhookDelivery.$inferInsert)[] = [];
     for (const type of webhookTypes(found.kind, found.payload)) {
+      const subscribed = hooks.filter((one) => one.events.includes(type));
+      if (subscribed.length === 0) continue;
       const subject = subjectOf(type, found.payload);
       // A conversation, message or outbound message deleted before this step has nothing to send.
       if (subject === null || !(await stillThere(tx, workspaceId, subject))) continue;
       const eventId = randomUUID();
-      for (const hook of hooks.filter((one) => one.events.includes(type))) {
+      for (const hook of subscribed) {
         rows.push({
           workspaceId,
           webhookId: hook.id,
@@ -1055,8 +1060,16 @@ export function fanOutWebhooksOne(db: Database): Promise<boolean> {
 /** Whether what a delivery names still exists, so its foreign keys hold. */
 async function stillThere(tx: Transaction, workspaceId: string, subject: WebhookSubject) {
   if ("changeRequestId" in subject) {
-    const found = await changeRequestBodies(tx, workspaceId, [subject.changeRequestId]);
-    return found.has(subject.changeRequestId);
+    const [found] = await tx
+      .select({ id: draftChangeRequest.id })
+      .from(draftChangeRequest)
+      .where(
+        and(
+          eq(draftChangeRequest.workspaceId, workspaceId),
+          eq(draftChangeRequest.id, subject.changeRequestId),
+        ),
+      );
+    return found !== undefined;
   }
   if ("campaignId" in subject) {
     return (await campaignViews(tx, workspaceId, [subject.campaignId])).has(subject.campaignId);

@@ -10,7 +10,11 @@ export type WebhookType = NonNullable<
 
 type MessageType = Extract<WebhookType, `message.${string}`>;
 type OutboundType = Extract<WebhookType, `outbound_message.${string}`>;
-type ConversationType = Exclude<WebhookType, MessageType | OutboundType | "conversation.labeled">;
+type CampaignType = Extract<WebhookType, `campaign.${string}`>;
+type ConversationType = Exclude<
+  WebhookType,
+  MessageType | OutboundType | CampaignType | "conversation.labeled" | "draft.change_requested"
+>;
 
 interface ConversationData {
   conversation: Schemas["Conversation"];
@@ -21,11 +25,15 @@ type DataOf<T extends WebhookType> = T extends MessageType
   ? ConversationData & { message: Schemas["InboxMessage"] }
   : T extends OutboundType
     ? { outboundMessage: Schemas["OutboundMessage"] }
-    : T extends "conversation.labeled"
-      ? ConversationData & { label: Schemas["Label"]; action: "added" | "removed" }
-      : T extends ConversationType
-        ? ConversationData
-        : never;
+    : T extends CampaignType
+      ? { campaign: Schemas["Campaign"] }
+      : T extends "draft.change_requested"
+        ? { changeRequest: Schemas["DraftChangeRequest"]; draft: Schemas["Draft"] }
+        : T extends "conversation.labeled"
+          ? ConversationData & { label: Schemas["Label"]; action: "added" | "removed" }
+          : T extends ConversationType
+            ? ConversationData
+            : never;
 
 /** One event, as the events stream yields it. */
 export type StreamEvent = {

@@ -150,8 +150,12 @@ test("an operator asks a bot to change its draft, and the new draft takes its pl
   await ask.fill("shorter");
   await ask.press("Enter");
   await expect(card).toContainText("Waiting for Rewrite bot…");
-  // The draft stays usable while the bot rewrites it.
+  // The draft stays usable while the bot rewrites it, and the operator edits it meanwhile.
   await expect(card.getByRole("button", { name: "Send" })).toBeEnabled();
+  await card.getByRole("button", { name: "Edit" }).click();
+  const box = alice.getByRole("textbox", { name: "Your reply" });
+  await box.fill("Yes, we ship to Spain.");
+  await expect(alice.locator(".quote-chip")).toContainText("Editing Rewrite bot's suggestion");
 
   // The bot reads the request, as list_drafts shows it, and answers with a new draft.
   const listed = (await (
@@ -167,6 +171,12 @@ test("an operator asks a bot to change its draft, and the new draft takes its pl
   await expect(card).toContainText("Yes, in 5 days.");
   await expect(card).toHaveCount(1);
   await expect(card).not.toContainText("Waiting for");
+
+  // The edited draft was replaced, so the operator's text stays and goes as a plain reply.
+  await expect(alice.locator(".quote-chip")).toHaveCount(0);
+  await expect(box).toHaveText("Yes, we ship to Spain.");
+  await box.press("Enter");
+  await expect(alice.locator(".bubble-row", { hasText: "Yes, we ship to Spain." })).toBeVisible();
 
   await alice.context().close();
 });

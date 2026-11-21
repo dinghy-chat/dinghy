@@ -317,7 +317,7 @@ export function registerHandlingRoutes(app: App, options: HandlingOptions): void
     const drafts = await withWorkspace(db, id, async (tx) =>
       (await conversationVisitor(tx, id, conversationId)) === undefined
         ? null
-        : listDrafts(tx, id, conversationId, "waiting"),
+        : listDrafts(tx, id, c.get("actor"), conversationId, "waiting"),
     );
     if (drafts === null) return c.json(NOT_FOUND, 404);
     return c.json({ drafts }, 200);

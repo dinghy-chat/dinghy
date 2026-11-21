@@ -22,6 +22,7 @@ import {
   withWorkspace,
   workspaceAccess,
 } from "./db/tenant.ts";
+import { recordKeyDraftsChanged } from "./drafts.ts";
 import {
   errorAnswer,
   FORBIDDEN,
@@ -32,6 +33,7 @@ import {
   ROLE_WRITE_ERRORS,
 } from "./errors.ts";
 import { sha256Hex } from "./identity.ts";
+import { type Live, OPERATORS } from "./live.ts";
 import { OPEN_WHILE_CLOSED, workspaceParams } from "./member.ts";
 import { clientOrigin } from "./oauth-client.ts";
 import {
@@ -384,7 +386,7 @@ async function readKeys(tx: Transaction, workspaceId: string, keyId?: string) {
   });
 }
 
-export function registerApiKeyRoutes(app: App, db: Database, logger: Logger): void {
+export function registerApiKeyRoutes(app: App, db: Database, live: Live, logger: Logger): void {
   app.openapi(listRoute, async (c) => {
     if (!allowed.settings(c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const id = c.get("memberWorkspaceId");
@@ -444,9 +446,13 @@ export function registerApiKeyRoutes(app: App, db: Database, logger: Logger): vo
         .set(change)
         .where(and(eq(apiKey.workspaceId, id), eq(apiKey.id, keyId), isNull(apiKey.revokedAt)))
         .returning({ id: apiKey.id });
-      return updated.length === 0 ? [] : readKeys(tx, id, keyId);
+      if (updated.length === 0) return [];
+      // A draft card offers "Ask to change" by this setting.
+      if (change.rewritesDrafts !== undefined) await recordKeyDraftsChanged(tx, id, keyId);
+      return readKeys(tx, id, keyId);
     });
     if (changed === undefined) return c.json(NOT_FOUND, 404);
+    if (change.rewritesDrafts !== undefined) live.wake(id, OPERATORS);
     audit(logger, "api_key.updated", {
       workspaceId: id,
       operatorId: c.get("operatorId"),

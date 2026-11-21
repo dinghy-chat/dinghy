@@ -2337,7 +2337,7 @@
           "tableTo": "draft_reply",
           "columnsFrom": ["workspace_id", "replacement_draft_id"],
           "columnsTo": ["workspace_id", "id"],
-          "onDelete": "no action",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },

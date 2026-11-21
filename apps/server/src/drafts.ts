@@ -1,5 +1,6 @@
 import { z } from "@hono/zod-openapi";
 import { and, desc, eq, inArray, isNotNull, isNull, type SQL } from "drizzle-orm";
+import type { Actor } from "./api-keys.ts";
 import {
   apiKey,
   CHANGE_REQUEST_STATUSES,
@@ -18,6 +19,7 @@ import {
   InvalidReplyToError,
   lockWorkspace,
   recordConversationChange,
+  recordConversationChanges,
   type StoredMessage,
   WorkspaceClosedError,
 } from "./messages.ts";
@@ -69,7 +71,7 @@ export const DraftSchema = z
     // An operator may ask its key to rewrite it: it is open, and its key rewrites drafts.
     canAskToChange: z.boolean(),
     // The change request that waits on it, or null.
-    changeRequest: ChangeRequestSchema.nullable(),
+    changeRequest: z.union([ChangeRequestSchema, z.null()]),
   })
   .openapi("Draft");
 export type DraftView = z.infer<typeof DraftSchema>;
@@ -267,10 +269,14 @@ const filterCondition = (filter: DraftFilter) => {
   return waiting;
 };
 
-/** Drafts, newest first, of one conversation or of the whole workspace. */
+/**
+ * Drafts, newest first, of one conversation or of the whole workspace. A key sees the change
+ * requests on its own drafts only: an operator's instruction is for the key that wrote the draft.
+ */
 export async function listDrafts(
   tx: Transaction,
   workspaceId: string,
+  actor: Actor,
   conversationId: string | undefined,
   filter: DraftFilter,
 ): Promise<DraftView[]> {
@@ -282,7 +288,34 @@ export async function listDrafts(
       filterCondition(filter),
     ),
   );
-  return rows.map(draftView);
+  const drafts = rows.map(draftView);
+  if (actor.kind === "operator") return drafts;
+  return drafts.map((draft) =>
+    draft.apiKeyId === actor.apiKeyId ? draft : { ...draft, changeRequest: null },
+  );
+}
+
+/**
+ * Tells the open operator apps to load a key's waiting drafts again, as when whether they take an
+ * "Ask to change" changed.
+ */
+export async function recordKeyDraftsChanged(
+  tx: Transaction,
+  workspaceId: string,
+  apiKeyId: string,
+) {
+  const waiting = await tx
+    .selectDistinct({ conversationId: draftReply.conversationId })
+    .from(draftReply)
+    .where(
+      and(
+        eq(draftReply.workspaceId, workspaceId),
+        eq(draftReply.apiKeyId, apiKeyId),
+        isNull(draftReply.resolved),
+      ),
+    );
+  const ids = waiting.map((one) => one.conversationId);
+  await recordConversationChanges(tx, workspaceId, ids, "draft.changed");
 }
 
 /** A draft of this conversation, whatever its status, locked until commit. */
