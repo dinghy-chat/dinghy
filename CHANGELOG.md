@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.49.0] - 2026-11-21
+
 ### Changed
 
 - The app review account set by `APP_REVIEW_EMAIL` deletes at once, with no email link. The delete signs it out on every device, turns off its two-step sign-in, and keeps the account and its workspace for the next review.
@@ -747,7 +749,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.48.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.49.0...HEAD
+[0.49.0]: https://github.com/dinghy-chat/dinghy/compare/v0.48.0...v0.49.0
 [0.48.0]: https://github.com/dinghy-chat/dinghy/compare/v0.47.0...v0.48.0
 [0.47.0]: https://github.com/dinghy-chat/dinghy/compare/v0.46.0...v0.47.0
 [0.46.0]: https://github.com/dinghy-chat/dinghy/compare/v0.45.0...v0.46.0
