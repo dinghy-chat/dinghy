@@ -419,6 +419,12 @@ export function registerAccountDelete(
    */
   const signOutReview = async (operatorId: string, link?: string): Promise<boolean> => {
     const done = await db.transaction(async (tx) => {
+      // The account's row first, then the link, in the order the full delete locks them.
+      await tx
+        .select({ id: operator.id })
+        .from(operator)
+        .where(eq(operator.id, operatorId))
+        .for("update");
       if (link !== undefined) {
         const used = await tx
           .delete(verification)
@@ -426,12 +432,6 @@ export function registerAccountDelete(
           .returning({ id: verification.id });
         if (used.length === 0) return false;
       }
-      // The account's row first, in the order a code's check locks them, as in the full delete.
-      await tx
-        .select({ id: operator.id })
-        .from(operator)
-        .where(eq(operator.id, operatorId))
-        .for("update");
       await tx.delete(operatorTwoFactor).where(eq(operatorTwoFactor.operatorId, operatorId));
       await tx.delete(twoFactorRemoval).where(eq(twoFactorRemoval.operatorId, operatorId));
       await tx.update(operator).set({ twoFactorOn: false }).where(eq(operator.id, operatorId));
