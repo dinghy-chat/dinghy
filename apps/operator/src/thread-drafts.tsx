@@ -2,7 +2,13 @@
 import { createElement, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { newClientId } from "../../../packages/widget/src/compose.ts";
 import { renderMarkdown } from "../../../packages/widget/src/markdown.ts";
-import type { ChangeRequest, Message, SuggestedReply, WorkspaceApi } from "./api.ts";
+import {
+  ApiError,
+  type ChangeRequest,
+  type Message,
+  type SuggestedReply,
+  type WorkspaceApi,
+} from "./api.ts";
 import { clockTime } from "./format.ts";
 import { Icon } from "./icons.tsx";
 import { useLoad } from "./load.ts";
@@ -13,6 +19,8 @@ import { plural, t } from "./text.ts";
 const INSTRUCTION_MAX_LENGTH = 500;
 /** How long an Ask shows "Waiting" before it offers to ask again. Display only: no server limit. */
 const STILL_WAITING_MS = 30_000;
+
+type SendOutcome = "sent" | "gone" | "failed";
 
 /**
  * The suggested replies that keys in draft mode wrote and that wait in a conversation, oldest first
@@ -44,12 +52,23 @@ export function useSuggestedReplies({
   );
   const drop = (id: string) =>
     loaded.setData((current) => current?.filter((draft) => draft.id !== id) ?? null);
-  /** Sends a draft as it is, or with the operator's edit. */
-  const send = (draft: SuggestedReply, body?: string) =>
-    act(async () => {
-      keep(await api.sendDraft(conversationId, draft.id, body));
+  /**
+   * Sends a draft as it is, or with the operator's edit. `gone` when it was replaced or discarded
+   * meanwhile. A draft another operator sent answers the message it sent, so it goes once.
+   */
+  const send = async (draft: SuggestedReply, body?: string): Promise<SendOutcome> => {
+    let isGone = false;
+    const done = await act(async () => {
+      try {
+        keep(await api.sendDraft(conversationId, draft.id, body));
+      } catch (error) {
+        isGone = error instanceof ApiError && error.status === 404;
+        throw error;
+      }
       drop(draft.id);
     });
+    return done ? "sent" : isGone ? "gone" : "failed";
+  };
   const discard = (draft: SuggestedReply) =>
     act(async () => {
       await api.discardDraft(conversationId, draft.id);

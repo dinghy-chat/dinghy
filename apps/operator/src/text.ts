@@ -1375,6 +1375,8 @@ Ask me before you change anything outside the install. Never ask for a secret or
   draftDiscard: "Discard",
   draftEditing: "Editing {name}'s suggestion",
   draftEditCancel: "Stop editing the suggestion",
+  draftGone:
+    "This suggestion was replaced or discarded. Your text is still here: send it as a reply.",
   draftAskLabel: "Ask {name} to change this suggestion",
   draftAskPlaceholder: "Ask to change: shorter, in Spanish, offer a call",
   draftAsk: "Ask",

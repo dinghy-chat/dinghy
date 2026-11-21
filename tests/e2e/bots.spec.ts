@@ -172,7 +172,10 @@ test("an operator asks a bot to change its draft, and the new draft takes its pl
   await expect(card).toHaveCount(1);
   await expect(card).not.toContainText("Waiting for");
 
-  // The edited draft was replaced, so the operator's text stays and goes as a plain reply.
+  // The edited draft was replaced: Send says so and keeps the text, and the next Send sends it as a
+  // plain reply.
+  await box.press("Enter");
+  await expect(alice.getByText("This suggestion was replaced or discarded.")).toBeVisible();
   await expect(alice.locator(".quote-chip")).toHaveCount(0);
   await expect(box).toHaveText("Yes, we ship to Spain.");
   await box.press("Enter");

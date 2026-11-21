@@ -366,12 +366,7 @@ export async function sendDraft(
   // The workspace row lock first, as every write takes it, then the draft's row.
   await lockWorkspace(tx, workspaceId);
   const draft = await lockDraft(tx, workspaceId, author.conversationId, draftId);
-  // An operator who edited a draft that its bot replaced meanwhile still sends their own words.
-  const editsReplaced = draft?.resolved === "replaced" && body !== undefined;
-  if (
-    draft === undefined ||
-    (draft.resolved !== null && draft.resolved !== "sent" && !editsReplaced)
-  ) {
+  if (draft === undefined || (draft.resolved !== null && draft.resolved !== "sent")) {
     return { kind: "missing" };
   }
   // Sent before, maybe by another operator: that message, so the visitor never gets it twice.
