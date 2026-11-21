@@ -56,7 +56,7 @@ export function useSuggestedReplies({
    * Sends a draft as it is, or with the operator's edit. `gone` when it was replaced or discarded
    * meanwhile. A draft another operator sent answers the message it sent, so it goes once.
    */
-  const send = async (draft: SuggestedReply, body?: string): Promise<SendOutcome> => {
+  const send = async (draft: Pick<SuggestedReply, "id">, body?: string): Promise<SendOutcome> => {
     let isGone = false;
     const done = await act(async () => {
       try {
@@ -394,7 +394,13 @@ export function staleBefore(drafts: SuggestedReply[]): string | null {
 }
 
 /** Above the message box while it holds a draft's text: sending it sends the draft. */
-export function DraftChip({ draft, onCancel }: { draft: SuggestedReply; onCancel(): void }) {
+export function DraftChip({
+  draft,
+  onCancel,
+}: {
+  draft: Pick<SuggestedReply, "authorName">;
+  onCancel(): void;
+}) {
   return (
     <div className="quote-chip">
       <Icon name="robot" size={16} />

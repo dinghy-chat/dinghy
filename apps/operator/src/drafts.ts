@@ -1,9 +1,20 @@
 import { useCallback, useEffect, useState } from "react";
 
-/** An unsent message, and whether it is a note, so a note never comes back as a reply. */
+/** A bot's suggestion whose text the operator edits in the composer. */
+interface EditedSuggestion {
+  id: string;
+  authorName: string;
+}
+
+/**
+ * An unsent message, and whether it is a note, so a note never comes back as a reply. With
+ * `suggestion` it edits a bot's suggestion: the link lives with the text, so leaving the
+ * conversation and coming back keeps both, and sending it still sends the suggestion once.
+ */
 export interface Draft {
   text: string;
   isNote: boolean;
+  suggestion?: EditedSuggestion;
 }
 
 export const NO_DRAFT: Draft = { text: "", isNote: false };
@@ -13,11 +24,19 @@ export type DraftUpdate = Draft | ((current: Draft) => Draft);
 
 type Drafts = Record<string, Draft>;
 
+const isSuggestion = (value: unknown): value is EditedSuggestion | undefined =>
+  value === undefined ||
+  (typeof value === "object" &&
+    value !== null &&
+    typeof (value as EditedSuggestion).id === "string" &&
+    typeof (value as EditedSuggestion).authorName === "string");
+
 const isDraft = (value: unknown): value is Draft =>
   typeof value === "object" &&
   value !== null &&
   typeof (value as Draft).text === "string" &&
-  typeof (value as Draft).isNote === "boolean";
+  typeof (value as Draft).isNote === "boolean" &&
+  isSuggestion((value as Draft).suggestion);
 
 // sessionStorage, so a reload of the tab keeps them and a closed tab drops them. It throws in some
 // private windows and with blocked site data, and then the drafts last until the page reloads.

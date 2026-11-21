@@ -245,23 +245,29 @@ export function Thread({
   const mode: ComposeMode = closed || draft.isNote ? "note" : "reply";
   const uploadsOn = !readOnly && !suspended && mode === "reply";
   const [dropping, setDropping] = useState(false);
-  // The bot's draft whose text is in the composer: sending a reply sends the draft, so the visitor
-  // gets one reply even when another operator sent it meanwhile. A note never sends it.
-  const [editedDraft, setEditingDraft] = useState<SuggestedReply | null>(null);
-  const editingDraft = mode === "reply" ? editedDraft : null;
+  // The bot's suggestion whose text is in the composer: sending a reply sends the suggestion, so the
+  // visitor gets it once even when another operator sent it meanwhile. A note never sends it.
+  const editingDraft = mode === "reply" ? (draft.suggestion ?? null) : null;
+  /** Lets go of the suggestion `id`, or of any, and keeps the text. */
+  const unlink = (id?: string) =>
+    setDraft((current) =>
+      current.suggestion === undefined || (id !== undefined && current.suggestion.id !== id)
+        ? current
+        : { text: current.text, isNote: current.isNote },
+    );
   // One draft send at a time, and no switch to Note while it waits, so its answer meets the text
   // and the mode that sent it.
   const isSendingDraft = useRef(false);
-  // A draft goes as it was written, so quoting a message makes the text the operator's own reply.
+  // A suggestion goes as it was written, so quoting a message makes the text the operator's own.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only a new quote lets go.
   useEffect(() => {
-    if (quoting !== null) setEditingDraft(null);
+    if (quoting !== null) unlink();
   }, [quoting]);
   /** Puts the caret in the composer, as a reply or a note. A closed conversation takes notes only. */
   const write = (next: ComposeMode) => {
     if (repliesOffReason !== null) return;
     if (!closed && next !== mode && !isSendingDraft.current) {
-      setEditingDraft(null);
-      setDraft({ ...draft, isNote: next === "note" });
+      setDraft({ text: draft.text, isNote: next === "note" });
     }
     focusComposer();
   };
@@ -300,25 +306,28 @@ export function Thread({
   /** Who wrote a line, as this thread names them. */
   const authorOf = (line: Line) => (line.fromVisitor ? visitorName : replyAuthor(line, meId));
   const send = (body: string, picked: ReadonlyMap<string, string>) => {
+    if (isSendingDraft.current) return;
     if (editingDraft !== null) {
       // The composer keeps the text until the server answers, so a failure loses nothing and a
-      // retry goes to the same draft. A draft replaced or discarded meanwhile lets go of the text,
-      // and the next Send sends it as the operator's own reply. A success empties the composer,
-      // even after the operator left this conversation, unless they typed on.
-      if (isSendingDraft.current) return;
+      // retry goes to the same suggestion. One replaced or discarded meanwhile lets go of the text,
+      // and the next Send sends it as the operator's own reply. A success empties the composer, even
+      // after the operator left this conversation, unless they typed on.
       isSendingDraft.current = true;
       const chosen = editingDraft;
       const sentText = draft.text;
       return void suggestions.send(chosen, body).then((outcome) => {
         isSendingDraft.current = false;
         if (outcome === "failed") return;
-        setEditingDraft((current) => (current?.id === chosen.id ? null : current));
-        if (outcome === "gone") return setProblem("draftGone");
+        if (outcome === "gone") {
+          unlink(chosen.id);
+          return setProblem("draftGone");
+        }
         setDraft((current) =>
           current.text === sentText || current.text.trim() === body
-            ? { ...current, text: "" }
+            ? { text: "", isNote: current.isNote }
             : current,
         );
+        unlink(chosen.id);
       });
     }
     setProblem(null);
@@ -332,8 +341,11 @@ export function Thread({
   };
   const editDraft = (chosen: SuggestedReply) => {
     setQuoting(null);
-    setEditingDraft(chosen);
-    setDraft({ text: chosen.body, isNote: false });
+    setDraft({
+      text: chosen.body,
+      isNote: false,
+      suggestion: { id: chosen.id, authorName: chosen.authorName },
+    });
   };
   const canReply = repliesOffReason === null && !closed;
   const draftHandlers = {
@@ -342,12 +354,20 @@ export function Thread({
     canSend: canReply,
     onSend: async (chosen: SuggestedReply) => {
       const isSent = (await suggestions.send(chosen)) === "sent";
-      if (isSent) setEditingDraft((current) => (current?.id === chosen.id ? null : current));
+      // Sent as it was: the composer's copy of it goes too, unless the operator changed it.
+      if (isSent) {
+        setDraft((current) =>
+          current.suggestion?.id === chosen.id && current.text.trim() === chosen.body.trim()
+            ? { text: "", isNote: current.isNote }
+            : current,
+        );
+        unlink(chosen.id);
+      }
       return isSent;
     },
     onEdit: editDraft,
     onDiscard: (chosen: SuggestedReply) => {
-      if (editingDraft?.id === chosen.id) setEditingDraft(null);
+      unlink(chosen.id);
       return suggestions.discard(chosen);
     },
     onAsk: suggestions.askToChange,
@@ -485,7 +505,9 @@ export function Thread({
             )}
             <Composer
               draft={draft.text}
-              setDraft={(text) => setDraft({ text, isNote: mode === "note" })}
+              setDraft={(text) =>
+                setDraft((current) => ({ ...current, text, isNote: mode === "note" }))
+              }
               onSend={send}
               holdsText={editingDraft !== null}
               onFiles={uploadsOn ? sendFiles : undefined}
@@ -497,8 +519,7 @@ export function Thread({
                       value: mode,
                       onChange: (next) => {
                         if (isSendingDraft.current) return;
-                        setEditingDraft(null);
-                        setDraft({ ...draft, isNote: next === "note" });
+                        setDraft({ text: draft.text, isNote: next === "note" });
                       },
                     }
               }
@@ -507,10 +528,7 @@ export function Thread({
                 editingDraft !== null ? (
                   <DraftChip
                     draft={editingDraft}
-                    onCancel={() => {
-                      setEditingDraft(null);
-                      setDraft({ text: "", isNote: false });
-                    }}
+                    onCancel={() => setDraft({ text: "", isNote: false })}
                   />
                 ) : quoting === null ? undefined : (
                   <QuoteChip
