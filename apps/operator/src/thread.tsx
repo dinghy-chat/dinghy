@@ -325,7 +325,7 @@ export function Thread({
     onSend: async (chosen: SuggestedReply) => (await suggestions.send(chosen)) === "sent",
     onEdit: editDraft,
     onDiscard: (chosen: SuggestedReply) => {
-      if (editingDraft?.id === chosen.id) setEditingDraft(null);
+      if (editedDraft?.id === chosen.id) setEditingDraft(null);
       return suggestions.discard(chosen);
     },
     onAsk: suggestions.askToChange,
