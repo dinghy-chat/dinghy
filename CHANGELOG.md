@@ -4,6 +4,14 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- **Ask to change** under a bot's draft: an operator types what to change, such as "shorter" or "in Spanish", and the bot that wrote the draft answers with a new draft that takes its place. Dinghy runs no AI: an owner or admin turns on **This bot can rewrite drafts** for a key in **Settings > API & webhooks**, and the bot gets `draft.change_requested` by webhook, `GET /v1/events` or `wait_for_events`, and answers with `reply` and `changeRequestId`. See [Agents](docs/agents.md#ask-to-change).
+
+### Changed
+
+- The MCP tool `wait_for_messages` is now `wait_for_events`. It answers `{ events, cursor }`, where each event has a `type`: `message.created`, with what each item of `messages` held, or `draft.change_requested` for the key's own drafts. Rename the tool in your bot.
+
 ## [0.49.0] - 2026-11-21
 
 ### Changed

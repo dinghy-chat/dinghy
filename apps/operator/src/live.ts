@@ -131,7 +131,8 @@ export function useChanges(
               if (kind === "message.created" && conversationId !== null) {
                 stopBotTyping(conversationId);
               }
-              if (kind === "draft.changed" && conversationId !== null) {
+              const isDraftChange = kind === "draft.changed" || kind === "draft.change_requested";
+              if (isDraftChange && conversationId !== null) {
                 setDraftChanges((current) => ({
                   ...current,
                   [conversationId]: (current[conversationId] ?? 0) + 1,

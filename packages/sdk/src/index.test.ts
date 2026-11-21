@@ -1,6 +1,6 @@
 import { createHmac, randomUUID } from "node:crypto";
-import { describe, expect, test } from "vitest";
-import { Dinghy, DinghyError } from "./index.ts";
+import { describe, expect, expectTypeOf, test } from "vitest";
+import { type components, Dinghy, DinghyError, type WebhookEvent } from "./index.ts";
 
 const WORKSPACE_ID = randomUUID();
 const API_KEY = `dk_${WORKSPACE_ID}.secret`;
@@ -266,6 +266,19 @@ describe("webhooks.verify", () => {
     const event = await dinghy.webhooks.verify(request);
     expect(event.type).toBe("outbound_message.read");
     if (event.type === "outbound_message.read") expect(event.data.outboundMessage.id).toBe("om_1");
+  });
+
+  test("types each event's data by its type", () => {
+    type DataOf<T extends WebhookEvent["type"]> = Extract<WebhookEvent, { type: T }>["data"];
+    type Schemas = components["schemas"];
+    expectTypeOf<DataOf<"draft.change_requested">>().toEqualTypeOf<{
+      changeRequest: Schemas["DraftChangeRequest"];
+      draft: Schemas["Draft"];
+    }>();
+    expectTypeOf<DataOf<"campaign.updated">>().toEqualTypeOf<{ campaign: Schemas["Campaign"] }>();
+    expectTypeOf<DataOf<"conversation.closed">>().toEqualTypeOf<{
+      conversation: Schemas["Conversation"];
+    }>();
   });
 
   test("takes a raw body and Node's headers", async () => {

@@ -5,8 +5,16 @@ import { BOT_TYPING_MS, MENTIONS_MAX } from "../../../packages/widget/src/shared
 import { AnalyticsQuery, analyticsFor, medianFirstReplySeconds } from "./analytics.ts";
 import { upsertContactAndRecheck } from "./contact-checks.ts";
 import { ContactListQuery, listContacts, readContact } from "./contacts.ts";
-import { conversation, message, visitor, workspace } from "./db/schema.ts";
-import { type Database, withWorkspace } from "./db/tenant.ts";
+import {
+  type ChangeRequestedPayload,
+  conversation,
+  type MessagePayload,
+  message,
+  visitor,
+  workspace,
+} from "./db/schema.ts";
+import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
+import { changeRequestBodies, isForKey } from "./draft-changes.ts";
 import { listDrafts } from "./drafts.ts";
 import { failure, NOT_FOUND } from "./errors.ts";
 import { handOff, setTyping } from "./handling.ts";
@@ -32,6 +40,7 @@ import {
   CURSOR_PATTERN,
   type Cursor,
   conversationVisitor,
+  type FeedEvent,
   formatCursor,
   joinVisitor,
   listWorkspaceEvents,
@@ -157,79 +166,126 @@ function localTime(timeZone: string | null): string | null {
   }).format(new Date());
 }
 
-/** New visitor messages in open conversations after a cursor, with what a bot needs to answer. */
-async function visitorMessagesAfter(
-  db: Database,
+/** A feed event that wait_for_events delivers to a key, by what it names. */
+type KeyEvent = { kind: "message"; messageId: string } | { kind: "change_request"; id: string };
+
+/** The feed events of a page that wait_for_events delivers to a key, in order. */
+function keyEvents(events: FeedEvent[], apiKeyId: string, only: string | undefined): KeyEvent[] {
+  return events.flatMap((one): KeyEvent[] => {
+    if (only !== undefined && one.conversationId !== only) return [];
+    if (one.kind === "message.created" && one.fromVisitor) {
+      return [{ kind: "message", messageId: (one.payload as MessagePayload).messageId }];
+    }
+    if (one.kind !== "draft.change_requested" || !isForKey(one.kind, one.payload, apiKeyId)) {
+      return [];
+    }
+    const { changeRequestId } = one.payload as ChangeRequestedPayload;
+    return [{ kind: "change_request", id: changeRequestId }];
+  });
+}
+
+/** Visitor messages in open conversations, by ID, with what a bot needs to answer. */
+async function visitorMessages(
+  tx: Transaction,
   uploads: Uploads | undefined,
   workspaceId: string,
+  ids: string[],
+) {
+  if (ids.length === 0) return new Map<string, never>();
+  const rows = await tx
+    .select({
+      ...messageColumns,
+      open: eq(conversation.status, "open"),
+      humanSince: conversation.humanSince,
+      visitorName: visitor.name,
+      visitorEmail: visitor.email,
+    })
+    .from(message)
+    .innerJoin(
+      conversation,
+      and(
+        eq(conversation.workspaceId, message.workspaceId),
+        eq(conversation.id, message.conversationId),
+      ),
+    )
+    .innerJoin(visitor, joinVisitor())
+    .where(and(eq(message.workspaceId, workspaceId), inArray(message.id, ids)));
+  const [place] = await tx
+    .select({ botsPausedAt: workspace.botsPausedAt })
+    .from(workspace)
+    .where(eq(workspace.id, workspaceId));
+  const botsPaused = place?.botsPausedAt !== null;
+  return new Map(
+    rows
+      .filter((row) => row.open && row.deletedAt === null)
+      .map(({ open: _open, humanSince, visitorName, visitorEmail, ...row }) => [
+        row.id,
+        {
+          type: "message.created" as const,
+          conversationId: row.conversationId,
+          message: messageView(uploads, workspaceId, new Map(), stored(row)),
+          visitor: { name: visitorName, email: visitorEmail },
+          humanHandling: humanSince !== null,
+          botsPaused,
+        },
+      ]),
+  );
+}
+
+/**
+ * The events for a key after a cursor, in order: new visitor messages in open conversations, and
+ * the change requests that operators addressed to this key's drafts.
+ */
+async function keyEventsAfter(
+  { db, uploads }: Pick<ChatToolsOptions, "db" | "uploads">,
+  workspaceId: string,
+  apiKeyId: string,
   after: Cursor,
   only: string | undefined,
 ) {
   return withWorkspace(db, workspaceId, async (tx) => {
     const page = await listWorkspaceEvents(tx, workspaceId, after, WAIT_PAGE);
-    const ids = page.events.flatMap((one) =>
-      one.kind === "message.created" &&
-      one.fromVisitor &&
-      (only === undefined || one.conversationId === only)
-        ? [(one.payload as { messageId: string }).messageId]
-        : [],
+    const wanted = keyEvents(page.events, apiKeyId, only);
+    const messages = await visitorMessages(
+      tx,
+      uploads,
+      workspaceId,
+      wanted.flatMap((one) => (one.kind === "message" ? [one.messageId] : [])),
     );
-    if (ids.length === 0) return { ...page, messages: [] };
-    const rows = await tx
-      .select({
-        ...messageColumns,
-        open: eq(conversation.status, "open"),
-        humanSince: conversation.humanSince,
-        visitorName: visitor.name,
-        visitorEmail: visitor.email,
-      })
-      .from(message)
-      .innerJoin(
-        conversation,
-        and(
-          eq(conversation.workspaceId, message.workspaceId),
-          eq(conversation.id, message.conversationId),
-        ),
-      )
-      .innerJoin(visitor, joinVisitor())
-      .where(and(eq(message.workspaceId, workspaceId), inArray(message.id, ids)))
-      .orderBy(message.seq);
-    const [place] = await tx
-      .select({ botsPausedAt: workspace.botsPausedAt })
-      .from(workspace)
-      .where(eq(workspace.id, workspaceId));
-    const botsPaused = place?.botsPausedAt !== null;
-    const messages = rows
-      .filter((row) => row.open && row.deletedAt === null)
-      .map(({ open: _open, humanSince, visitorName, visitorEmail, ...row }) => ({
-        conversationId: row.conversationId,
-        message: messageView(uploads, workspaceId, new Map(), stored(row)),
-        visitor: { name: visitorName, email: visitorEmail },
-        humanHandling: humanSince !== null,
-        botsPaused,
-      }));
-    return { ...page, messages };
+    const requests = await changeRequestBodies(
+      tx,
+      workspaceId,
+      wanted.flatMap((one) => (one.kind === "change_request" ? [one.id] : [])),
+    );
+    const eventOf = (one: KeyEvent) => {
+      if (one.kind === "message") return messages.get(one.messageId);
+      const found = requests.get(one.id);
+      return found && { type: "draft.change_requested" as const, ...found };
+    };
+    const events = wanted.flatMap((one) => eventOf(one) ?? []);
+    return { ...page, events };
   });
 }
 
 /**
- * A long poll: waits on the workspace's signal, reading Postgres again at each, until a visitor
- * writes or the time runs out. It holds a slot in the workspace's stream limit while it waits.
+ * A long poll: waits on the workspace's signal, reading Postgres again at each, until an event for
+ * the key comes or the time runs out. It holds a slot in the workspace's stream limit while it waits.
  */
-async function waitForMessages(
+async function waitForEvents(
   { db, uploads, limits, live }: ChatToolsOptions,
-  workspaceId: string,
+  context: { workspaceId: string; apiKeyId: string },
   input: {
     cursor?: string | undefined;
     timeoutSeconds: number;
     conversationId?: string | undefined;
   },
 ): Promise<Outcome> {
+  const { workspaceId, apiKeyId } = context;
   if (input.cursor === undefined) {
     const now = await withWorkspace(db, workspaceId, (tx) =>
       listWorkspaceEvents(tx, workspaceId, undefined, 1),
     );
-    return { data: { messages: [], cursor: formatCursor(now.cursor) } };
+    return { data: { events: [], cursor: formatCursor(now.cursor) } };
   }
   const slot = await limits.openStream(workspaceId, "operator", WAIT_LEASE_MS);
   if (slot === null) return { error: STREAM_LIMIT };
@@ -244,17 +300,17 @@ async function waitForMessages(
       const woken = new Promise<void>((resolve) => {
         signal = resolve;
       });
-      const page = await visitorMessagesAfter(
-        db,
-        uploads,
+      const page = await keyEventsAfter(
+        { db, uploads },
         workspaceId,
+        apiKeyId,
         cursor,
         input.conversationId,
       );
       cursor = page.cursor;
-      const answer = { messages: page.messages, cursor: formatCursor(cursor) };
+      const answer = { events: page.events, cursor: formatCursor(cursor) };
       if (page.resync) return { data: { ...answer, resync: true } };
-      if (page.messages.length > 0 || Date.now() >= deadline) return { data: answer };
+      if (page.events.length > 0 || Date.now() >= deadline) return { data: answer };
       if (!page.hasMore)
         await Promise.race([woken, delay(deadline - Date.now(), undefined, { ref: false })]);
     }
@@ -303,8 +359,17 @@ export function chatTools(options: ChatToolsOptions): Tool[] {
       name: "reply",
       title: "Reply to a visitor",
       description:
-        'Replies in an open conversation, as the API key\'s reply mode says. A key that sends directly answers `{ status: "sent", message }`: the visitor sees it, with the key\'s name as its author. A key in draft mode answers `{ status: "drafted", draft }`: nothing reached the visitor, and an operator sends, edits or discards it. Errors: `human_handling` when a person handles the conversation and the key sends directly (write a note, or wait for them to give it back), and `bots_paused` when an owner paused every bot. Pass the same `clientId` when you retry, so a retry cannot send it twice. Pass `replyToMessageId` to quote an earlier message.',
-      input: z.object({ conversationId, body: Body, clientId, replyToMessageId }),
+        'Replies in an open conversation, as the API key\'s reply mode says. A key that sends directly answers `{ status: "sent", message }`: the visitor sees it, with the key\'s name as its author. A key in draft mode answers `{ status: "drafted", draft }`: nothing reached the visitor, and an operator sends, edits or discards it. Errors: `human_handling` when a person handles the conversation and the key sends directly (write a note, or wait for them to give it back), and `bots_paused` when an owner paused every bot. Pass the same `clientId` when you retry, so a retry cannot send it twice. Pass `replyToMessageId` to quote an earlier message. To answer an operator\'s "Ask to change" (a `draft.change_requested` event from wait_for_events), pass its `changeRequestId`: the reply always becomes a new draft that replaces the old one, even in send mode and while a person handles the conversation. It keeps the old draft\'s quote unless you pass one. Errors: `change_request_closed` when the request was answered or cancelled, or the visitor wrote again, and `client_id_reused` when the clientId made another draft.',
+      input: z.object({
+        conversationId,
+        body: Body,
+        clientId,
+        replyToMessageId,
+        changeRequestId: z
+          .uuid()
+          .optional()
+          .describe("The change request this answers, from a draft.change_requested event"),
+      }),
       idempotent: true,
       run: async (input, { workspaceId, actor }) =>
         replyAnswer(
@@ -343,16 +408,16 @@ export function chatTools(options: ChatToolsOptions): Tool[] {
       name: "list_drafts",
       title: "List draft replies",
       description:
-        "Lists the drafts that keys in draft mode wrote, newest first, at most 100: `open` ones wait for an operator, `stale` ones wait but the visitor wrote after them, `all` adds the ones sent or discarded. A sent draft names the message an operator sent from it.",
+        "Lists the drafts that keys in draft mode wrote, newest first, at most 100: `open` ones wait for an operator, `stale` ones wait but the visitor wrote after them, `all` adds the ones sent, discarded or replaced. A sent draft names the message an operator sent from it. A draft of your key's has `changeRequest`, the operator's \"Ask to change\" that waits on it, or null; other keys' drafts always have null. After a restart, answer each one of your key's with reply and its `changeRequestId`.",
       input: z.object({
         conversationId: conversationId.optional(),
         status: z.enum(["open", "stale", "all"]).default("open"),
       }),
       readOnly: true,
-      run: async (input, { workspaceId }) => ({
+      run: async (input, { workspaceId, actor }) => ({
         data: {
           drafts: await withWorkspace(db, workspaceId, (tx) =>
-            listDrafts(tx, workspaceId, input.conversationId, input.status),
+            listDrafts(tx, workspaceId, actor, input.conversationId, input.status),
           ),
         },
       }),
@@ -440,9 +505,9 @@ export function chatTools(options: ChatToolsOptions): Tool[] {
       },
     }),
     tool({
-      name: "wait_for_messages",
-      title: "Wait for visitor messages",
-      description: `Waits up to \`timeoutSeconds\` for new visitor messages in open conversations, and answers them at once when they come: \`{ messages: [{ conversationId, message, visitor: { name, email }, humanHandling, botsPaused }], cursor }\`. Call it first with no cursor: it answers at once with no messages and the cursor for now. Messages from before then are in list_conversations and get_conversation. Then pass back the cursor of each answer. With \`humanHandling\` a person handles the conversation, and with \`botsPaused\` no bot may reply. \`resync: true\` means the cursor was too old: read the open conversations again. ${UNTRUSTED_TEXT}`,
+      name: "wait_for_events",
+      title: "Wait for visitor messages and change requests",
+      description: `Waits up to \`timeoutSeconds\` for events for this key, and answers them at once when they come: \`{ events, cursor }\`, in order. Each event has a \`type\`. \`message.created\` is a new visitor message in an open conversation: \`{ type, conversationId, message, visitor: { name, email }, humanHandling, botsPaused }\`. With \`humanHandling\` a person handles the conversation, and with \`botsPaused\` no bot may reply. \`draft.change_requested\` is an operator's "Ask to change" on one of this key's drafts: \`{ type, changeRequest, draft }\`. Rewrite \`draft.body\` as \`changeRequest.instruction\` says, and answer with reply and \`changeRequestId\`. Call it first with no cursor: it answers at once with no events and the cursor for now. Messages from before then are in list_conversations and get_conversation, and waiting change requests in list_drafts. Then pass back the cursor of each answer. \`resync: true\` means the cursor was too old: read the open conversations and list_drafts again. ${UNTRUSTED_TEXT}`,
       input: z.object({
         cursor: z
           .string()
@@ -450,10 +515,11 @@ export function chatTools(options: ChatToolsOptions): Tool[] {
           .optional()
           .describe("The cursor of the answer before"),
         timeoutSeconds: z.number().int().min(1).max(30).default(25),
-        conversationId: conversationId.optional().describe("Only this conversation's messages"),
+        conversationId: conversationId.optional().describe("Only this conversation's events"),
       }),
       readOnly: true,
-      run: (input, { workspaceId }) => waitForMessages(options, workspaceId, input),
+      run: (input, { workspaceId, actor }) =>
+        waitForEvents(options, { workspaceId, apiKeyId: actor.apiKeyId }, input),
     }),
     tool({
       name: "get_contact",
@@ -523,7 +589,7 @@ export function chatTools(options: ChatToolsOptions): Tool[] {
     tool({
       name: "send_outbound_message",
       title: "Send a message to a visitor",
-      description: `Sends a message to one visitor, who may have no conversation yet. \`visitor\` is \`{ userId, name?, email?, attributes? }\`, which creates or updates them, or \`{ id }\`. With \`startConversation: "on_reply"\` (the default) it waits on the contact and goes in a conversation only when they answer. With \`"now"\` it goes in one at once: the answer's \`conversationId\` is set, and wait_for_messages picks up their answer. \`dedupeKey\` is a key of your own, unique per visitor, such as \`order-1042-shipped\`: a repeat answers the first message, and cancel_outbound_message takes it. \`metadata\` holds up to 20 string keys and values of your own, which come back on the message and its events, and never reach the visitor. \`delay\` (such as \`"1h"\`) or \`sendAt\` holds it, and \`unless\`, a condition on the contact, cancels it when it matches then. \`expiresIn\` (such as \`"7d"\` after the send time) or \`expiresAt\` ends it unread. \`show\` is \`badge\`, \`preview\` or \`chat\`. \`ifConversationOpen\` says what happens while they have an open conversation: \`hold\` (wait), \`join\` or \`skip\`. \`sendEmail: true\` needs the key's permission May email visitors. Errors: \`send_mode_required\` when this key drafts, \`send_as_member_required\`, \`send_email_required\`, \`bots_paused\`, \`blocked\`, \`too_many_waiting\`. Pass the same \`clientId\` on a retry: it never expires, and a retry answers the first result.`,
+      description: `Sends a message to one visitor, who may have no conversation yet. \`visitor\` is \`{ userId, name?, email?, attributes? }\`, which creates or updates them, or \`{ id }\`. With \`startConversation: "on_reply"\` (the default) it waits on the contact and goes in a conversation only when they answer. With \`"now"\` it goes in one at once: the answer's \`conversationId\` is set, and wait_for_events picks up their answer. \`dedupeKey\` is a key of your own, unique per visitor, such as \`order-1042-shipped\`: a repeat answers the first message, and cancel_outbound_message takes it. \`metadata\` holds up to 20 string keys and values of your own, which come back on the message and its events, and never reach the visitor. \`delay\` (such as \`"1h"\`) or \`sendAt\` holds it, and \`unless\`, a condition on the contact, cancels it when it matches then. \`expiresIn\` (such as \`"7d"\` after the send time) or \`expiresAt\` ends it unread. \`show\` is \`badge\`, \`preview\` or \`chat\`. \`ifConversationOpen\` says what happens while they have an open conversation: \`hold\` (wait), \`join\` or \`skip\`. \`sendEmail: true\` needs the key's permission May email visitors. Errors: \`send_mode_required\` when this key drafts, \`send_as_member_required\`, \`send_email_required\`, \`bots_paused\`, \`blocked\`, \`too_many_waiting\`. Pass the same \`clientId\` on a retry: it never expires, and a retry answers the first result.`,
       input: SendSchema,
       idempotent: true,
       async run(input, { workspaceId, actor }) {

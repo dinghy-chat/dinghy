@@ -245,8 +245,10 @@ export function Thread({
   const mode: ComposeMode = closed || draft.isNote ? "note" : "reply";
   const uploadsOn = !readOnly && !suspended && mode === "reply";
   const [dropping, setDropping] = useState(false);
-  // The bot's draft whose text is in the composer: sending it sends the draft.
-  const [editingDraft, setEditingDraft] = useState<SuggestedReply | null>(null);
+  // The bot's draft whose text is in the composer: sending a reply sends the draft. A note never
+  // does, as in a conversation that closed meanwhile.
+  const [editedDraft, setEditingDraft] = useState<SuggestedReply | null>(null);
+  const editingDraft = mode === "reply" ? editedDraft : null;
   /** Puts the caret in the composer, as a reply or a note. A closed conversation takes notes only. */
   const write = (next: ComposeMode) => {
     if (repliesOffReason !== null) return;
@@ -292,12 +294,16 @@ export function Thread({
   const authorOf = (line: Line) => (line.fromVisitor ? visitorName : replyAuthor(line, meId));
   const send = (body: string, picked: ReadonlyMap<string, string>) => {
     if (editingDraft !== null) {
-      // The composer emptied itself, so a failure puts the text back.
-      return void suggestions.send(editingDraft, body).then((done) => {
-        if (done) setEditingDraft(null);
-        else setDraft({ text: body, isNote: false });
+      // The composer emptied itself, so a failure puts the text back. A draft replaced or discarded
+      // meanwhile lets go of it, and the next Send sends the text as the operator's own reply.
+      return void suggestions.send(editingDraft, body).then((outcome) => {
+        if (outcome !== "failed") setEditingDraft(null);
+        if (outcome === "sent") return;
+        setDraft({ text: body, isNote: false });
+        if (outcome === "gone") setProblem("draftGone");
       });
     }
+    setProblem(null);
     thread.sendText(
       body,
       quoting === null ? null : quoteOf(quoting, quoting.authorName ?? authorOf(quoting)),
@@ -316,12 +322,15 @@ export function Thread({
     // A suggestion says who can't see it yet: the visitor's first name, as a reply would greet them.
     visitor: conversation.visitor.name?.split(" ")[0] ?? visitorName,
     canSend: canReply,
-    onSend: (chosen: SuggestedReply) => suggestions.send(chosen),
+    onSend: async (chosen: SuggestedReply) => (await suggestions.send(chosen)) === "sent",
     onEdit: editDraft,
     onDiscard: (chosen: SuggestedReply) => {
-      if (editingDraft?.id === chosen.id) setEditingDraft(null);
+      if (editedDraft?.id === chosen.id) setEditingDraft(null);
       return suggestions.discard(chosen);
     },
+    onAsk: suggestions.askToChange,
+    onCancelAsk: suggestions.cancelAsk,
+    onAskAgain: suggestions.askAgain,
   };
   const assign = (operatorId: string | null) =>
     void change.assign(

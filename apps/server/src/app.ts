@@ -516,7 +516,7 @@ export function createApp({
       stream,
       visitorPresence,
     });
-    registerApiKeyRoutes(app, db, logger);
+    registerApiKeyRoutes(app, db, live, logger);
     // On https or a loopback address only, because OAuth 2.1 allows no other http issuer.
     const issuer = oauthIssuer(String(auth.options.baseURL));
     if (issuer !== null) {

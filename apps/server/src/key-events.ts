@@ -5,6 +5,7 @@ import { API_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { WEBHOOK_EVENTS, type WebhookEvent } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
+import { isForKey } from "./draft-changes.ts";
 import { errorAnswer, INVALID, KEY_LIMITED, WRONG_ORIGIN } from "./errors.ts";
 import { type Limits, STREAM_LIMIT, STREAM_RETRY_SECONDS } from "./limits.ts";
 import { type Live, OPERATORS, type OperatorNotice } from "./live.ts";
@@ -49,7 +50,7 @@ const eventsRoute = createRoute({
   summary: "Stream the workspace's events to an API key's bot, with no public server",
   description:
     "Server-sent events with the same `type` and `data` as webhook bodies, in the key's workspace. Each event's name is its type, and its data is `{ type, workspaceId, data }`. Its id is its position: reconnect with `Last-Event-ID` or `?after=` to resume after it. When one change makes several events, such as `conversation.created` then `message.created`, each has its own position, `generation.seq.part`, and the last has the change's cursor, `generation.seq`. With no cursor it starts now. `resync` means the cursor is too old: read the open conversations again. `ready` comes when caught up. Heartbeats come every 25 seconds, the stream ends after 15 minutes, and it takes a slot in the workspace's stream limit. A revoked key's stream ends within 25 seconds.\n\n" +
-    'A `notice` has no id and may be lost: `{ kind: "typing", conversationId, draft }`, a visitor\'s unsent text, only while the workspace shows typing previews. Messages from test visitors come with `conversation.visitor.isTest: true`.\n\n' +
+    'A `notice` has no id and may be lost: `{ kind: "typing", conversationId, draft }`, a visitor\'s unsent text, only while the workspace shows typing previews. Messages from test visitors come with `conversation.visitor.isTest: true`. `draft.change_requested` comes only to the key that wrote the draft.\n\n' +
     CLOSE_REASONS_TEXT,
   request: {
     query: z.object({
@@ -103,7 +104,7 @@ interface KeyEventsOptions {
  */
 const readPage = (
   { db, uploads }: Pick<KeyEventsOptions, "db" | "uploads">,
-  workspaceId: string,
+  { workspaceId, apiKeyId }: { workspaceId: string; apiKeyId: string },
   wanted: Set<WebhookEvent> | null,
   position: Cursor | undefined,
   partOf: Position["partOf"],
@@ -120,7 +121,12 @@ const readPage = (
       const cursor = formatCursor({ generation: page.cursor.generation, seq: one.seq });
       return [...types.entries()].flatMap(([part, type]) => {
         const subject = subjectOf(type, one.payload);
-        if (subject === null || (wanted !== null && !wanted.has(type)) || has(one.seq, part)) {
+        if (
+          subject === null ||
+          (wanted !== null && !wanted.has(type)) ||
+          !isForKey(type, one.payload, apiKeyId) ||
+          has(one.seq, part)
+        ) {
           return [];
         }
         const id = part === types.length - 1 ? cursor : `${cursor}.${part}`;
@@ -177,7 +183,14 @@ export function registerKeyEvents(app: App, options: KeyEventsOptions): void {
       expiresAt: undefined,
       after: position?.after,
       authorized: () => keyStillValid(db, actor),
-      read: (cursor) => readPage(options, workspaceId, wanted, cursor, position?.partOf ?? null),
+      read: (cursor) =>
+        readPage(
+          options,
+          { workspaceId, apiKeyId: actor.apiKeyId },
+          wanted,
+          cursor,
+          position?.partOf ?? null,
+        ),
     });
   });
 }

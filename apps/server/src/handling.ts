@@ -5,9 +5,11 @@ import { API_KEY, SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { giveBack, type HandoffInput, setBotsPaused, typingGate, writeHandoff } from "./bots.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
-import { DraftSchema, discardDraft, listDrafts, sendDraft } from "./drafts.ts";
+import { askToChange, cancelChangeRequest } from "./draft-changes.ts";
+import { ChangeRequestSchema, DraftSchema, discardDraft, listDrafts, sendDraft } from "./drafts.ts";
 import {
   CONVERSATION_CLOSED,
+  ErrorBody,
   errorAnswer,
   FORBIDDEN,
   failure,
@@ -21,7 +23,7 @@ import {
   ROLE_WRITE_ERRORS,
 } from "./errors.ts";
 import { InboxMessage, KEY_REPLY_REFUSALS, messageView, refusedReply } from "./inbox.ts";
-import { Body, ClientId, HandoffReason, HandoffSummary } from "./inputs.ts";
+import { Body, ChangeInstruction, ClientId, HandoffReason, HandoffSummary } from "./inputs.ts";
 import { type Live, OPERATORS, wakeConversation } from "./live.ts";
 import {
   closedFailure,
@@ -44,6 +46,18 @@ import type { Uploads } from "./uploads.ts";
 const draftParams = conversationParams.extend({ draftId: z.uuid() });
 
 const KEYS_ONLY = failure("forbidden", "Only an API key's bot does this.");
+const DRAFT_NOT_WAITING = failure(
+  "draft_not_waiting",
+  "This draft no longer waits, or the visitor wrote after it, so its bot cannot rewrite it.",
+);
+const REWRITES_OFF = failure(
+  "rewrites_off",
+  "The bot that wrote this draft does not rewrite drafts. An owner or admin can turn it on in Settings.",
+);
+const CHANGE_REQUEST_PENDING = failure(
+  "change_request_pending",
+  "This draft already waits for a change. Cancel it to ask again.",
+);
 
 const listDraftsRoute = createRoute({
   method: "get",
@@ -51,7 +65,7 @@ const listDraftsRoute = createRoute({
   security: SESSION,
   summary: "The drafts that wait in a conversation, newest first",
   description:
-    "Replies that API keys in draft mode wrote, which no visitor has seen. A `stale` draft is older than the visitor's newest message.",
+    "Replies that API keys in draft mode wrote, which no visitor has seen. A `stale` draft is older than the visitor's newest message. `changeRequest` is the change that waits on a draft, and `canAskToChange` says whether its key takes one.",
   request: { params: conversationParams },
   responses: {
     200: jsonAnswer("The drafts", z.object({ drafts: z.array(DraftSchema) })),
@@ -71,7 +85,7 @@ const sendDraftRoute = createRoute({
     200: jsonAnswer("It was sent before. This is that message", InboxMessage),
     201: jsonAnswer("The new message", InboxMessage),
     ...MEMBER_WRITE_ERRORS,
-    404: errorAnswer("not_found: no such draft here, or it was discarded"),
+    404: errorAnswer("not_found: no such draft here, or it was discarded or replaced"),
     409: errorAnswer("conversation_closed: reopen it to reply"),
   },
 });
@@ -85,7 +99,52 @@ const discardDraftRoute = createRoute({
   responses: {
     200: { description: "Discarded, or it already was", content: okContent },
     ...MEMBER_WRITE_ERRORS,
-    404: errorAnswer("not_found: no such draft here, or it was sent"),
+    404: errorAnswer("not_found: no such draft here, or it was sent or replaced"),
+  },
+});
+
+const ChangeRequestAnswer = z.object({ changeRequest: ChangeRequestSchema });
+
+const askToChangeRoute = createRoute({
+  method: "post",
+  path: `${PREFIX}/{workspaceId}/conversations/{conversationId}/drafts/{draftId}/change-requests`,
+  security: SESSION,
+  summary: "Ask the bot that wrote a draft to rewrite it",
+  description:
+    "Dinghy writes nothing itself: the key that wrote the draft gets `draft.change_requested`, by webhook, `GET /v1/events` and `wait_for_events`, and answers with a new draft that replaces this one. The draft must be open, and its key must rewrite drafts. The draft stays usable meanwhile. Sending, discarding or a new visitor message cancels the request. A retry with the same clientId returns the first request.",
+  request: {
+    params: draftParams,
+    body: jsonBody(z.object({ clientId: ClientId, instruction: ChangeInstruction })),
+  },
+  responses: {
+    200: jsonAnswer("A retry. This is the first request", ChangeRequestAnswer),
+    201: jsonAnswer("The request, which waits for the bot", ChangeRequestAnswer),
+    ...MEMBER_WRITE_ERRORS,
+    404: errorAnswer("not_found: no such draft here"),
+    409: {
+      description:
+        "draft_not_waiting: the draft was sent, discarded or replaced, or the visitor wrote after it. rewrites_off: its key does not rewrite drafts. conversation_closed: reopen it first. change_request_pending: another request waits, which `changeRequest` holds: cancel it to ask again",
+      content: {
+        "application/json": {
+          schema: ErrorBody.extend({ changeRequest: ChangeRequestSchema.optional() }),
+        },
+      },
+    },
+  },
+});
+
+const cancelChangeRoute = createRoute({
+  method: "post",
+  path: `${PREFIX}/{workspaceId}/conversations/{conversationId}/drafts/{draftId}/change-requests/{changeRequestId}/cancel`,
+  security: SESSION,
+  summary: "Cancel a change request that waits",
+  description:
+    "The bot's answer then gets `change_request_closed`. A request that was answered or cancelled stays as it is, and the answer shows it.",
+  request: { params: draftParams.extend({ changeRequestId: z.uuid() }) },
+  responses: {
+    200: jsonAnswer("The request as it is now", ChangeRequestAnswer),
+    ...MEMBER_WRITE_ERRORS,
+    404: errorAnswer("not_found: no such request on this draft"),
   },
 });
 
@@ -258,7 +317,7 @@ export function registerHandlingRoutes(app: App, options: HandlingOptions): void
     const drafts = await withWorkspace(db, id, async (tx) =>
       (await conversationVisitor(tx, id, conversationId)) === undefined
         ? null
-        : listDrafts(tx, id, conversationId, "waiting"),
+        : listDrafts(tx, id, c.get("actor"), conversationId, "waiting"),
     );
     if (drafts === null) return c.json(NOT_FOUND, 404);
     return c.json({ drafts }, 200);
@@ -304,6 +363,33 @@ export function registerHandlingRoutes(app: App, options: HandlingOptions): void
     if (!done) return c.json(NOT_FOUND, 404);
     live.wake(id, OPERATORS);
     return c.json({ ok: true as const }, 200);
+  });
+
+  app.openapi(askToChangeRoute, async (c) => {
+    const id = c.get("memberWorkspaceId");
+    const target = c.req.valid("param");
+    const outcome = await withWorkspace(db, id, (tx) =>
+      askToChange(tx, id, c.get("operatorId"), target, c.req.valid("json")),
+    );
+    if (outcome.kind === "missing") return c.json(NOT_FOUND, 404);
+    if (outcome.kind === "closed") return c.json(CONVERSATION_CLOSED, 409);
+    if (outcome.kind === "not_waiting") return c.json(DRAFT_NOT_WAITING, 409);
+    if (outcome.kind === "rewrites_off") return c.json(REWRITES_OFF, 409);
+    const { changeRequest } = outcome;
+    if (outcome.kind === "pending") {
+      return c.json({ ...CHANGE_REQUEST_PENDING, changeRequest }, 409);
+    }
+    if (outcome.created) live.wake(id, OPERATORS);
+    return c.json({ changeRequest }, outcome.created ? 201 : 200);
+  });
+
+  app.openapi(cancelChangeRoute, async (c) => {
+    const id = c.get("memberWorkspaceId");
+    const target = c.req.valid("param");
+    const changeRequest = await withWorkspace(db, id, (tx) => cancelChangeRequest(tx, id, target));
+    if (changeRequest === undefined) return c.json(NOT_FOUND, 404);
+    live.wake(id, OPERATORS);
+    return c.json({ changeRequest }, 200);
   });
 
   app.openapi(handoffRoute, async (c) => {
