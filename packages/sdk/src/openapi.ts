@@ -361,6 +361,11 @@ export interface paths {
              * @default []
              */
             mentions?: string[];
+            /**
+             * Format: uuid
+             * @description API keys only, not on a note: the operator's change request this answers, from a `draft.change_requested` event. The reply becomes a new draft that replaces the one the operator asked to change, whatever the key's reply mode and even while a person handles the conversation. Without its own `replyToMessageId` it keeps the old draft's quote.
+             */
+            changeRequestId?: string;
           };
         };
       };
@@ -439,7 +444,7 @@ export interface paths {
             "application/json": components["schemas"]["Error"];
           };
         };
-        /** @description conversation_closed: reopen it to reply, though a note does not need it. bots_paused: an owner or admin paused every bot. human_handling: a person handles the conversation, and the key sends directly. Neither refuses a note */
+        /** @description conversation_closed: reopen it to reply, though a note does not need it. bots_paused: an owner or admin paused every bot. human_handling: a person handles the conversation, and the key sends directly. Neither refuses a note. change_request_closed: the change request was answered or cancelled, or the visitor wrote again */
         409: {
           headers: {
             [name: string]: unknown;
@@ -1052,6 +1057,7 @@ export interface paths {
               | "conversation.handoff"
               | "conversation.given_back"
               | "conversation.labeled"
+              | "draft.change_requested"
               | "outbound_message.sent"
               | "outbound_message.delivered"
               | "outbound_message.read"
@@ -1305,6 +1311,7 @@ export interface paths {
               | "conversation.handoff"
               | "conversation.given_back"
               | "conversation.labeled"
+              | "draft.change_requested"
               | "outbound_message.sent"
               | "outbound_message.delivered"
               | "outbound_message.read"
@@ -2919,7 +2926,7 @@ export interface paths {
     put?: never;
     /**
      * MCP (Model Context Protocol) over Streamable HTTP, stateless, with JSON answers
-     * @description One JSON-RPC 2.0 message per request. Protocol 2026-07-28 is stateless: each request names its version in `params._meta["io.modelcontextprotocol/protocolVersion"]`, its `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` headers must match the body (400, -32020 otherwise), and its methods are `server/discover`, `ping`, `tools/list` and `tools/call`. The versions 2025-11-25, 2025-06-18 and 2025-03-26 use `initialize`, `notifications/initialized`, `ping`, `tools/list` and `tools/call`. An unknown version answers 400 with -32022 and the supported list. Every key gets `list_conversations`, `search_conversations`, `get_conversation`, `reply`, `close_conversation`, `reopen_conversation`, `snooze_conversation`, `unsnooze_conversation`, `assign_conversation`, `add_note`, `list_drafts`, `hand_off`, `list_members`, `list_saved_replies`, `set_typing`, `wait_for_messages`, `get_contact`, `list_contacts`, `search_contacts`, `get_live_visitors` and `get_analytics`, in the key's workspace. A Setup key also gets the webhook, install, allowed site, appearance and test visitor tools. A notification gets 202 with no body. A tool that fails answers with `isError: true` and the error's stable code. `GET` answers 405, because there is no event stream.
+     * @description One JSON-RPC 2.0 message per request. Protocol 2026-07-28 is stateless: each request names its version in `params._meta["io.modelcontextprotocol/protocolVersion"]`, its `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` headers must match the body (400, -32020 otherwise), and its methods are `server/discover`, `ping`, `tools/list` and `tools/call`. The versions 2025-11-25, 2025-06-18 and 2025-03-26 use `initialize`, `notifications/initialized`, `ping`, `tools/list` and `tools/call`. An unknown version answers 400 with -32022 and the supported list. Every key gets `list_conversations`, `search_conversations`, `get_conversation`, `reply`, `close_conversation`, `reopen_conversation`, `snooze_conversation`, `unsnooze_conversation`, `assign_conversation`, `add_note`, `list_drafts`, `hand_off`, `list_members`, `list_saved_replies`, `set_typing`, `wait_for_events`, `get_contact`, `list_contacts`, `search_contacts`, `get_live_visitors` and `get_analytics`, in the key's workspace. A Setup key also gets the webhook, install, allowed site, appearance and test visitor tools. A notification gets 202 with no body. A tool that fails answers with `isError: true` and the error's stable code. `GET` answers 405, because there is no event stream.
      */
     post: {
       parameters: {
@@ -3029,14 +3036,14 @@ export interface paths {
      * Stream the workspace's events to an API key's bot, with no public server
      * @description Server-sent events with the same `type` and `data` as webhook bodies, in the key's workspace. Each event's name is its type, and its data is `{ type, workspaceId, data }`. Its id is its position: reconnect with `Last-Event-ID` or `?after=` to resume after it. When one change makes several events, such as `conversation.created` then `message.created`, each has its own position, `generation.seq.part`, and the last has the change's cursor, `generation.seq`. With no cursor it starts now. `resync` means the cursor is too old: read the open conversations again. `ready` comes when caught up. Heartbeats come every 25 seconds, the stream ends after 15 minutes, and it takes a slot in the workspace's stream limit. A revoked key's stream ends within 25 seconds.
      *
-     *     A `notice` has no id and may be lost: `{ kind: "typing", conversationId, draft }`, a visitor's unsent text, only while the workspace shows typing previews. Messages from test visitors come with `conversation.visitor.isTest: true`.
+     *     A `notice` has no id and may be lost: `{ kind: "typing", conversationId, draft }`, a visitor's unsent text, only while the workspace shows typing previews. Messages from test visitors come with `conversation.visitor.isTest: true`. `draft.change_requested` comes only to the key that wrote the draft.
      *
      *     A `close` event's data is `{ reason }`: `lifetime` (the stream reached its 15-minute cap), `expired` (the host token expired), `revoked` (access was taken away, such as a block, a suspension or a removal), `unauthorized` (the token or session is no longer valid), `stopping` (the server is shutting down) or `error`. Reconnect from the last cursor, except after `unauthorized`, which needs a new token or sign-in.
      */
     get: {
       parameters: {
         query?: {
-          /** @description A comma list of conversation.created, message.created, message.updated, message.deleted, conversation.closed, conversation.reopened, conversation.assigned, conversation.handoff, conversation.given_back, conversation.labeled, outbound_message.sent, outbound_message.delivered, outbound_message.read, outbound_message.clicked, outbound_message.replied, outbound_message.dismissed, outbound_message.cancelled, outbound_message.expired, campaign.updated. All by default. */
+          /** @description A comma list of conversation.created, message.created, message.updated, message.deleted, conversation.closed, conversation.reopened, conversation.assigned, conversation.handoff, conversation.given_back, conversation.labeled, draft.change_requested, outbound_message.sent, outbound_message.delivered, outbound_message.read, outbound_message.clicked, outbound_message.replied, outbound_message.dismissed, outbound_message.cancelled, outbound_message.expired, campaign.updated. All by default. */
           types?: string;
           after?: string;
         };
@@ -7700,9 +7707,12 @@ export interface components {
           | "campaign_live"
           | "campaign_not_live"
           | "campaign_sent"
+          | "change_request_closed"
+          | "change_request_pending"
           | "check_unavailable"
           | "checkout_retry_later"
           | "conversation_closed"
+          | "draft_not_waiting"
           | "drafts_text_only"
           | "email_mismatch"
           | "email_rejected"
@@ -7745,6 +7755,7 @@ export interface components {
           | "read_only"
           | "removal_blocked"
           | "removal_not_needed"
+          | "rewrites_off"
           | "saved_reply_limit"
           | "saved_reply_shortcut_taken"
           | "send_as_member_required"
@@ -8212,12 +8223,26 @@ export interface components {
       body: string;
       replyToMessageId: string | null;
       /** @enum {string} */
-      status: "open" | "stale" | "sent" | "discarded";
+      status: "open" | "stale" | "sent" | "discarded" | "replaced";
       createdAt: string;
       staleAt: string | null;
       resolvedAt: string | null;
       sentMessageId: string | null;
+      canAskToChange: boolean;
+      changeRequest: components["schemas"]["DraftChangeRequest"];
     };
+    DraftChangeRequest: {
+      id: string;
+      draftId: string;
+      conversationId: string;
+      apiKeyId: string;
+      instruction: string;
+      /** @enum {string} */
+      status: "pending" | "fulfilled" | "cancelled";
+      createdAt: string;
+      resolvedAt: string | null;
+      replacementDraftId: string | null;
+    } | null;
     MessageReceipt: {
       readAt: string | null;
       emailedAt: string | null;
@@ -8231,6 +8256,7 @@ export interface components {
       source: "static" | "oauth";
       /** @enum {string} */
       replyMode: "send" | "draft";
+      rewritesDrafts: boolean;
       permissions: ("send_as_member" | "send_email")[];
       client: {
         /** @enum {string} */
@@ -8276,6 +8302,7 @@ export interface components {
         | "conversation.handoff"
         | "conversation.given_back"
         | "conversation.labeled"
+        | "draft.change_requested"
         | "outbound_message.sent"
         | "outbound_message.delivered"
         | "outbound_message.read"
@@ -8309,6 +8336,7 @@ export interface components {
         | "conversation.handoff"
         | "conversation.given_back"
         | "conversation.labeled"
+        | "draft.change_requested"
         | "outbound_message.sent"
         | "outbound_message.delivered"
         | "outbound_message.read"

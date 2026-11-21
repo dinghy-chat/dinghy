@@ -322,6 +322,9 @@ export function Thread({
       if (editingDraft?.id === chosen.id) setEditingDraft(null);
       return suggestions.discard(chosen);
     },
+    onAsk: suggestions.askToChange,
+    onCancelAsk: suggestions.cancelAsk,
+    onAskAgain: suggestions.askAgain,
   };
   const assign = (operatorId: string | null) =>
     void change.assign(

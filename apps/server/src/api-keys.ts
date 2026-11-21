@@ -217,6 +217,8 @@ const ApiKey = z
     source: z.enum(API_KEY_SOURCES),
     // `send` replies go to the visitor. `draft` replies wait for an operator.
     replyMode: z.enum(REPLY_MODES),
+    // Its bot answers an operator's "Ask to change" on its drafts with a new draft.
+    rewritesDrafts: z.boolean(),
     // What it may do beyond its level. `send_as_member`: send outbound messages with a member's
     // name and picture. `send_email`: send outbound messages that a reply email carries.
     permissions: z.array(z.enum(API_KEY_PERMISSIONS)),
@@ -278,6 +280,7 @@ const createKeyRoute = createRoute({
             name: KeyName,
             level: z.enum(API_KEY_LEVELS).default("conversations"),
             replyMode: z.enum(REPLY_MODES).default("draft"),
+            rewritesDrafts: z.boolean().default(false),
             permissions: Permissions.default([]),
           }),
         },
@@ -297,7 +300,8 @@ const updateKeyRoute = createRoute({
   method: "patch",
   path: `${PREFIX}/api-keys/{keyId}`,
   security: SESSION,
-  summary: "Change an API key's or a connected app's name, reply mode, level or permissions",
+  summary:
+    "Change an API key's or a connected app's name, reply mode, whether it rewrites drafts, level or permissions",
   request: {
     params: keyParams,
     body: {
@@ -308,6 +312,7 @@ const updateKeyRoute = createRoute({
             .object({
               name: KeyName.optional(),
               replyMode: z.enum(REPLY_MODES).optional(),
+              rewritesDrafts: z.boolean().optional(),
               level: z.enum(API_KEY_LEVELS).optional(),
               permissions: Permissions.optional(),
             })
@@ -352,6 +357,7 @@ async function readKeys(tx: Transaction, workspaceId: string, keyId?: string) {
       level: apiKey.level,
       source: apiKey.source,
       replyMode: apiKey.replyMode,
+      rewritesDrafts: apiKey.rewritesDrafts,
       permissions: apiKey.permissions,
       clientId: apiKey.clientId,
       createdByName: operator.name,
@@ -389,7 +395,7 @@ export function registerApiKeyRoutes(app: App, db: Database, logger: Logger): vo
     if (!allowed.settings(c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const id = c.get("memberWorkspaceId");
     const operatorId = c.get("operatorId");
-    const { name, level, replyMode, permissions } = c.req.valid("json");
+    const { name, level, replyMode, rewritesDrafts, permissions } = c.req.valid("json");
     const token = newToken(STATIC_KEY_PREFIX, id);
     const [row] = await withWorkspace(db, id, (tx) =>
       tx
@@ -399,6 +405,7 @@ export function registerApiKeyRoutes(app: App, db: Database, logger: Logger): vo
           name,
           level,
           replyMode,
+          rewritesDrafts,
           permissions,
           tokenHash: sha256Hex(token),
           createdBy: operatorId,
@@ -414,6 +421,7 @@ export function registerApiKeyRoutes(app: App, db: Database, logger: Logger): vo
         level,
         source: "static" as const,
         replyMode,
+        rewritesDrafts,
         permissions,
         client: null,
         createdByName: c.get("operatorName"),
@@ -445,6 +453,7 @@ export function registerApiKeyRoutes(app: App, db: Database, logger: Logger): vo
       apiKeyId: keyId,
       level: change.level,
       replyMode: change.replyMode,
+      rewritesDrafts: change.rewritesDrafts,
       permissions: change.permissions,
     });
     return c.json(changed, 200);

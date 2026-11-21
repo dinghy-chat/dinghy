@@ -1,11 +1,18 @@
 import { z } from "@hono/zod-openapi";
-import { and, desc, eq, isNotNull, isNull, type SQL } from "drizzle-orm";
-import { apiKey, conversation, draftReply } from "./db/schema.ts";
+import { and, desc, eq, inArray, isNotNull, isNull, type SQL } from "drizzle-orm";
+import {
+  apiKey,
+  CHANGE_REQUEST_STATUSES,
+  conversation,
+  draftChangeRequest,
+  draftReply,
+} from "./db/schema.ts";
 import { type Transaction, workspaceAccess, writable } from "./db/tenant.ts";
 import {
   type Author,
   appendMessage,
   ConversationClosedError,
+  cancelChangeRequests,
   checkQuote,
   findMessage,
   InvalidReplyToError,
@@ -18,7 +25,26 @@ import {
 /** At most this many drafts in one list. */
 const DRAFTS_LISTED = 100;
 
-const DRAFT_STATUSES = ["open", "stale", "sent", "discarded"] as const;
+const DRAFT_STATUSES = ["open", "stale", "sent", "discarded", "replaced"] as const;
+
+export const ChangeRequestSchema = z
+  .object({
+    id: z.string(),
+    draftId: z.string(),
+    conversationId: z.string(),
+    // The key that wrote the draft, which alone may answer.
+    apiKeyId: z.string(),
+    instruction: z.string(),
+    // `pending` waits for the key's new draft. `fulfilled` got it, which `replacementDraftId` names.
+    // `cancelled` ended without it: an operator cancelled it, or sent or discarded the draft, or the
+    // visitor wrote again.
+    status: z.enum(CHANGE_REQUEST_STATUSES),
+    createdAt: z.string(),
+    resolvedAt: z.string().nullable(),
+    replacementDraftId: z.string().nullable(),
+  })
+  .openapi("DraftChangeRequest");
+export type ChangeRequestView = z.infer<typeof ChangeRequestSchema>;
 
 export const DraftSchema = z
   .object({
@@ -32,22 +58,71 @@ export const DraftSchema = z
     body: z.string(),
     replyToMessageId: z.string().nullable(),
     // `open` waits for an operator. `stale` waits too, but the visitor wrote after it. `sent` and
-    // `discarded` are an operator's decision.
+    // `discarded` are an operator's decision. `replaced`: its key wrote a new draft for it, which an
+    // operator asked for.
     status: z.enum(DRAFT_STATUSES),
     createdAt: z.string(),
     staleAt: z.string().nullable(),
     resolvedAt: z.string().nullable(),
     // The message an operator sent from it.
     sentMessageId: z.string().nullable(),
+    // An operator may ask its key to rewrite it: it is open, and its key rewrites drafts.
+    canAskToChange: z.boolean(),
+    // The change request that waits on it, or null.
+    changeRequest: ChangeRequestSchema.nullable(),
   })
   .openapi("Draft");
 export type DraftView = z.infer<typeof DraftSchema>;
+
+const changeRequestColumns = {
+  id: draftChangeRequest.id,
+  draftId: draftChangeRequest.draftId,
+  conversationId: draftReply.conversationId,
+  apiKeyId: draftReply.apiKeyId,
+  instruction: draftChangeRequest.instruction,
+  status: draftChangeRequest.status,
+  createdAt: draftChangeRequest.createdAt,
+  resolvedAt: draftChangeRequest.resolvedAt,
+  replacementDraftId: draftChangeRequest.replacementDraftId,
+};
+type ChangeRequestRow = Awaited<ReturnType<typeof selectChangeRequests>>[number];
+
+const changeRequestView = (row: ChangeRequestRow): ChangeRequestView => ({
+  ...row,
+  createdAt: row.createdAt.toISOString(),
+  resolvedAt: row.resolvedAt?.toISOString() ?? null,
+});
+
+/** Change requests with their draft's conversation and key. */
+const selectChangeRequests = (tx: Transaction, workspaceId: string, condition: SQL | undefined) =>
+  tx
+    .select(changeRequestColumns)
+    .from(draftChangeRequest)
+    .innerJoin(
+      draftReply,
+      and(
+        eq(draftReply.workspaceId, draftChangeRequest.workspaceId),
+        eq(draftReply.id, draftChangeRequest.draftId),
+      ),
+    )
+    .where(and(eq(draftChangeRequest.workspaceId, workspaceId), condition));
+
+/** The change requests that match, with their draft's conversation and key. */
+export async function changeRequestsWhere(
+  tx: Transaction,
+  workspaceId: string,
+  condition: SQL | undefined,
+): Promise<ChangeRequestView[]> {
+  return (await selectChangeRequests(tx, workspaceId, condition)).map(changeRequestView);
+}
 
 const draftColumns = {
   id: draftReply.id,
   conversationId: draftReply.conversationId,
   apiKeyId: draftReply.apiKeyId,
   authorName: apiKey.name,
+  rewritesDrafts: apiKey.rewritesDrafts,
+  revokedAt: apiKey.revokedAt,
   clientId: draftReply.clientId,
   body: draftReply.body,
   replyToMessageId: draftReply.replyToMessageId,
@@ -56,13 +131,33 @@ const draftColumns = {
   resolved: draftReply.resolved,
   resolvedAt: draftReply.resolvedAt,
   sentMessageId: draftReply.sentMessageId,
+  pending: {
+    id: draftChangeRequest.id,
+    instruction: draftChangeRequest.instruction,
+    createdAt: draftChangeRequest.createdAt,
+  },
 };
 type DraftRow = Awaited<ReturnType<typeof selectDrafts>>[number];
 
 const statusOf = (row: DraftRow): DraftView["status"] =>
   row.resolved ?? (row.staleAt === null ? "open" : "stale");
 
+function pendingView(row: DraftRow): ChangeRequestView | null {
+  if (row.pending === null) return null;
+  return {
+    ...row.pending,
+    draftId: row.id,
+    conversationId: row.conversationId,
+    apiKeyId: row.apiKeyId,
+    status: "pending",
+    createdAt: row.pending.createdAt.toISOString(),
+    resolvedAt: null,
+    replacementDraftId: null,
+  };
+}
+
 function draftView(row: DraftRow): DraftView {
+  const status = statusOf(row);
   return {
     id: row.id,
     conversationId: row.conversationId,
@@ -71,11 +166,13 @@ function draftView(row: DraftRow): DraftView {
     clientId: row.clientId,
     body: row.body,
     replyToMessageId: row.replyToMessageId,
-    status: statusOf(row),
+    status,
     createdAt: row.createdAt.toISOString(),
     staleAt: row.staleAt?.toISOString() ?? null,
     resolvedAt: row.resolvedAt?.toISOString() ?? null,
     sentMessageId: row.sentMessageId,
+    canAskToChange: status === "open" && row.rewritesDrafts && row.revokedAt === null,
+    changeRequest: pendingView(row),
   };
 }
 
@@ -87,9 +184,28 @@ const selectDrafts = (tx: Transaction, workspaceId: string, condition: SQL | und
       apiKey,
       and(eq(apiKey.workspaceId, draftReply.workspaceId), eq(apiKey.id, draftReply.apiKeyId)),
     )
+    .leftJoin(
+      draftChangeRequest,
+      and(
+        eq(draftChangeRequest.workspaceId, draftReply.workspaceId),
+        eq(draftChangeRequest.draftId, draftReply.id),
+        eq(draftChangeRequest.status, "pending"),
+      ),
+    )
     .where(and(eq(draftReply.workspaceId, workspaceId), condition))
     .orderBy(desc(draftReply.createdAt), desc(draftReply.id))
     .limit(DRAFTS_LISTED);
+
+/** The drafts with these IDs, by ID. */
+export async function findDrafts(
+  tx: Transaction,
+  workspaceId: string,
+  ids: string[],
+): Promise<Map<string, DraftView>> {
+  if (ids.length === 0) return new Map();
+  const rows = await selectDrafts(tx, workspaceId, inArray(draftReply.id, ids));
+  return new Map(rows.map((row) => [row.id, draftView(row)]));
+}
 
 /**
  * A draft-mode key's reply, which waits for an operator. A retry with the same clientId returns the
@@ -170,7 +286,7 @@ export async function listDrafts(
 }
 
 /** A draft of this conversation, whatever its status, locked until commit. */
-async function lockDraft(
+export async function lockDraft(
   tx: Transaction,
   workspaceId: string,
   conversationId: string,
@@ -178,7 +294,9 @@ async function lockDraft(
 ) {
   const [row] = await tx
     .select({
+      apiKeyId: draftReply.apiKeyId,
       resolved: draftReply.resolved,
+      staleAt: draftReply.staleAt,
       body: draftReply.body,
       replyToMessageId: draftReply.replyToMessageId,
       sentMessageId: draftReply.sentMessageId,
@@ -195,7 +313,7 @@ async function lockDraft(
   return row;
 }
 
-const ofDraft = (workspaceId: string, draftId: string) =>
+export const ofDraft = (workspaceId: string, draftId: string) =>
   and(eq(draftReply.workspaceId, workspaceId), eq(draftReply.id, draftId));
 
 type SentDraft = { kind: "sent"; message: StoredMessage; created: boolean } | { kind: "missing" };
@@ -215,7 +333,9 @@ export async function sendDraft(
   // The workspace row lock first, as every write takes it, then the draft's row.
   await lockWorkspace(tx, workspaceId);
   const draft = await lockDraft(tx, workspaceId, author.conversationId, draftId);
-  if (draft === undefined || draft.resolved === "discarded") return { kind: "missing" };
+  if (draft === undefined || (draft.resolved !== null && draft.resolved !== "sent")) {
+    return { kind: "missing" };
+  }
   // Sent before, maybe by another operator: that message, so the visitor never gets it twice.
   if (draft.sentMessageId !== null) {
     const sent = await findMessage(tx, workspaceId, draft.sentMessageId);
@@ -245,11 +365,12 @@ export async function sendDraft(
       sentMessageId: appended.message.id,
     })
     .where(ofDraft(workspaceId, draftId));
+  await cancelChangeRequests(tx, workspaceId, [draftId]);
   await recordConversationChange(tx, workspaceId, author.conversationId, "draft.changed");
   return { kind: "sent", message: appended.message, created: appended.created };
 }
 
-/** Discards a draft that waits. False when there is no such draft, or it was sent. */
+/** Discards a draft that waits. False when there is no such draft, or it was sent or replaced. */
 export async function discardDraft(
   tx: Transaction,
   workspaceId: string,
@@ -259,12 +380,15 @@ export async function discardDraft(
 ): Promise<boolean> {
   await lockWorkspace(tx, workspaceId);
   const draft = await lockDraft(tx, workspaceId, conversationId, draftId);
-  if (draft === undefined || draft.resolved === "sent") return false;
+  if (draft === undefined || draft.resolved === "sent" || draft.resolved === "replaced") {
+    return false;
+  }
   if (draft.resolved === "discarded") return true;
   await tx
     .update(draftReply)
     .set({ resolved: "discarded", resolvedAt: new Date(), resolvedByOperatorId: operatorId })
     .where(ofDraft(workspaceId, draftId));
+  await cancelChangeRequests(tx, workspaceId, [draftId]);
   await recordConversationChange(tx, workspaceId, conversationId, "draft.changed");
   return true;
 }

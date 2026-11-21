@@ -154,6 +154,9 @@ const en = {
   apiKeyMaySendAsMember: "May send as a member",
   apiKeyMaySendAsMemberHint:
     "Its outbound messages may show a member's name and picture, as the API call asks.",
+  apiKeyRewritesDrafts: "This bot can rewrite drafts",
+  apiKeyRewritesDraftsHint:
+    'Your team can ask it to change a draft, such as "shorter". Turn it on only if your bot handles these requests.',
   apiKeyMaySendEmail: "May email visitors",
   apiKeyMaySendEmailHint:
     "Its outbound messages may also go in the reply email to the contact's address, as the API call asks.",
@@ -888,6 +891,7 @@ const en = {
   webhookEventHandoff: "A bot hands a conversation to a person",
   webhookEventGivenBack: "A conversation goes back to the bot",
   webhookEventLabeled: "A label is added to or removed from a conversation",
+  webhookEventChangeRequested: "Someone asks a bot to change its draft",
   webhookEventCount: "{count} events",
   webhookNew: "New webhook",
   webhookAdd: "Add webhook",
@@ -1371,6 +1375,12 @@ Ask me before you change anything outside the install. Never ask for a secret or
   draftDiscard: "Discard",
   draftEditing: "Editing {name}'s suggestion",
   draftEditCancel: "Stop editing the suggestion",
+  draftAskLabel: "Ask {name} to change this suggestion",
+  draftAskPlaceholder: "Ask to change: shorter, in Spanish, offer a call",
+  draftAsk: "Ask",
+  draftAskWaiting: "Waiting for {name}…",
+  draftAskStillWaiting: "Still waiting for {name}.",
+  draftAskAgain: "Ask again",
   handlerLabel: "Who answers",
   handlerGroupBot: "Bot",
   handlerGroupPeople: "People",

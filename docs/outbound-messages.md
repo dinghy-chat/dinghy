@@ -520,4 +520,4 @@ When a job ends, the agent tells the user in a conversation that starts now:
 }
 ```
 
-The answer's `outboundMessage.conversationId` is set, and `wait_for_messages` picks up the user's answer.
+The answer's `outboundMessage.conversationId` is set, and `wait_for_events` picks up the user's answer.

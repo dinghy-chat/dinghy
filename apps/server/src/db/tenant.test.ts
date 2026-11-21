@@ -12,6 +12,7 @@ import {
   campaignTrigger,
   contactEvent,
   conversation,
+  draftChangeRequest,
   draftReply,
   event,
   message,
@@ -50,6 +51,7 @@ const TENANT_TABLES = [
   webhookDelivery,
   apiKeyCredential,
   draftReply,
+  draftChangeRequest,
   widgetSiteSeen,
   outboundMessage,
   outboundDedupe,
@@ -114,12 +116,21 @@ async function seed(workspaceId: string): Promise<void> {
     tokenHash: `access-${workspaceId}`,
     expiresAt: new Date(Date.now() + 3_600_000),
   });
+  const draftId = uuidFor(workspaceId, 9);
   await owner.insert(draftReply).values({
     workspaceId,
+    id: draftId,
     conversationId,
     apiKeyId,
     clientId: "draft",
     body: `draft of ${workspaceId}`,
+  });
+  await owner.insert(draftChangeRequest).values({
+    workspaceId,
+    draftId,
+    operatorId: OPERATOR,
+    clientId: "ask",
+    instruction: "shorter",
   });
   await owner.insert(widgetSiteSeen).values({ workspaceId, origin: "https://app.example.com" });
   const outboundMessageId = uuidFor(workspaceId, 7);
@@ -246,6 +257,7 @@ describe("migrations", () => {
       webhook_created_by_operator_fk: "a member's removal, at most 5 webhooks per workspace",
       webhook_created_by_api_key_fk: "a key's delete, at most 5 webhooks per workspace",
       draft_reply_resolved_by_fk: "a member's removal, which only the purge does",
+      draft_change_request_operator_fk: "a member's removal, which only the purge does",
       outbound_message_sender_fk: "a member's removal, which only the purge does",
       campaign_author_operator_fk: "a member's removal, which only the purge does",
     };

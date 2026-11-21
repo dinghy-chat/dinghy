@@ -204,8 +204,21 @@ export interface SuggestedReply {
   /** The key's name. */
   authorName: string;
   body: string;
-  /** `stale`: the visitor wrote after it. */
-  status: "open" | "stale" | "sent" | "discarded";
+  /** `stale`: the visitor wrote after it. `replaced`: its key wrote a new one, as asked. */
+  status: "open" | "stale" | "sent" | "discarded" | "replaced";
+  createdAt: string;
+  /** It is open, and its key rewrites drafts. */
+  canAskToChange: boolean;
+  /** The change that waits on it, or null. */
+  changeRequest: ChangeRequest | null;
+}
+
+/** An operator's "Ask to change" on a draft, which the key that wrote it answers with a new one. */
+export interface ChangeRequest {
+  id: string;
+  draftId: string;
+  instruction: string;
+  status: "pending" | "fulfilled" | "cancelled";
   createdAt: string;
 }
 
@@ -561,6 +574,8 @@ export interface ApiKey {
   /** `static`, a key made in Settings, or `oauth`, an app that an owner or admin connected. */
   source: "static" | "oauth";
   replyMode: ReplyMode;
+  /** Its bot answers "Ask to change" on its drafts. */
+  rewritesDrafts: boolean;
   /** What it may do beyond its level, such as send as a member. */
   permissions: ApiKeyPermission[];
   /** A connected app's origin. Null for a static key. */
@@ -581,6 +596,7 @@ export const WEBHOOK_EVENTS = [
   "conversation.handoff",
   "conversation.given_back",
   "conversation.labeled",
+  "draft.change_requested",
   "outbound_message.sent",
   "outbound_message.delivered",
   "outbound_message.read",
@@ -595,6 +611,9 @@ export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 export type ApiKeyLevel = "conversations" | "setup";
 /** `send`: replies go to the visitor. `draft`: they wait for a person to send them. */
 export type ReplyMode = "send" | "draft";
+
+/** What a key may do, as Settings sets it. */
+export type KeyAccess = Pick<ApiKey, "level" | "replyMode" | "rewritesDrafts" | "permissions">;
 
 export interface Webhook {
   id: string;
@@ -993,27 +1012,14 @@ export function workspaceApi(workspaceId: string) {
         body: JSON.stringify(settings),
       }),
     apiKeys: () => call<{ apiKeys: ApiKey[] }>(`${base}/api-keys`),
-    createApiKey: (
-      name: string,
-      level: ApiKeyLevel,
-      replyMode: ReplyMode,
-      permissions: ApiKeyPermission[],
-    ) =>
-      post<ApiKey & { token: string }>(`${base}/api-keys`, {
-        name,
-        level,
-        replyMode,
-        permissions,
-      }),
-    /** Changes what a key may do: any of its level, reply mode and permissions, in one request. */
-    updateApiKey: (
-      id: string,
-      access: Partial<{
-        level: ApiKeyLevel;
-        replyMode: ReplyMode;
-        permissions: ApiKeyPermission[];
-      }>,
-    ) => call<ApiKey>(`${base}/api-keys/${id}`, { method: "PATCH", body: JSON.stringify(access) }),
+    createApiKey: (name: string, access: KeyAccess) =>
+      post<ApiKey & { token: string }>(`${base}/api-keys`, { name, ...access }),
+    /**
+     * Changes what a key may do: any of its level, reply mode, draft rewrites and permissions, in
+     * one request.
+     */
+    updateApiKey: (id: string, access: Partial<KeyAccess>) =>
+      call<ApiKey>(`${base}/api-keys/${id}`, { method: "PATCH", body: JSON.stringify(access) }),
     setBotsPaused: (paused: boolean) =>
       call<{ paused: boolean; pausedBy: string | null }>(`${base}/bots-paused`, {
         method: "PUT",
@@ -1217,6 +1223,20 @@ export function workspaceApi(workspaceId: string) {
       post<Message>(`${conversation(id)}/drafts/${draftId}/send`, { body }),
     discardDraft: (id: string, draftId: string) =>
       post<{ ok: true }>(`${conversation(id)}/drafts/${draftId}/discard`, {}),
+    /** Asks the key that wrote a draft for a new one. `clientId` makes a retry safe. */
+    askToChange: (id: string, draftId: string, clientId: string, instruction: string) =>
+      post<{ changeRequest: ChangeRequest }>(
+        `${conversation(id)}/drafts/${draftId}/change-requests`,
+        {
+          clientId,
+          instruction,
+        },
+      ),
+    cancelChangeRequest: (id: string, draftId: string, changeRequestId: string) =>
+      post<{ changeRequest: ChangeRequest }>(
+        `${conversation(id)}/drafts/${draftId}/change-requests/${changeRequestId}/cancel`,
+        {},
+      ),
     /** Lets bots that send directly answer this conversation again. */
     giveBack: (id: string) => post<{ ok: true }>(`${conversation(id)}/give-back`, {}),
     /** Moves this operator's read position in the conversation forward to a message's seq. */

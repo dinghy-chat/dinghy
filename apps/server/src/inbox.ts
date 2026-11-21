@@ -20,6 +20,7 @@ import {
   type WorkspaceAccess,
   withWorkspace,
 } from "./db/tenant.ts";
+import { answerChangeRequest } from "./draft-changes.ts";
 import { createDraft, DraftSchema, type DraftView } from "./drafts.ts";
 import {
   BOTS_PAUSED,
@@ -123,6 +124,14 @@ const DRAFTS_TEXT_ONLY = failure(
   "drafts_text_only",
   "This API key writes drafts, and a draft holds text only. Send the image or file as a person.",
 );
+const CHANGE_REQUEST_CLOSED = failure(
+  "change_request_closed",
+  "This change request no longer waits: it was answered or cancelled, or the visitor wrote again.",
+);
+const CHANGE_REQUEST_KEYS_ONLY = failure(
+  "invalid_request",
+  "Only an API key's reply answers a change request, and a note does not.",
+);
 const KEY_HAS_NO_ASSIGNMENTS = failure(
   "invalid_request",
   "An API key is assigned nothing. Pass assignee=none, or leave it out.",
@@ -131,7 +140,7 @@ export const KEY_REPLY_REFUSALS =
   "bots_paused: an owner or admin paused every bot. human_handling: a person handles the conversation, and the key sends directly";
 const REPLY_OR_NOTE_ANSWER = {
   409: errorAnswer(
-    `conversation_closed: reopen it to reply, though a note does not need it. ${KEY_REPLY_REFUSALS}. Neither refuses a note`,
+    `conversation_closed: reopen it to reply, though a note does not need it. ${KEY_REPLY_REFUSALS}. Neither refuses a note. change_request_closed: the change request was answered or cancelled, or the visitor wrote again`,
   ),
 };
 const INVALID_REPLY_TO_ANSWER = {
@@ -583,6 +592,10 @@ const replyRoute = createRoute({
               description: "True for a note that only the team sees. A note is text only.",
             }),
             mentions: NOTE_MENTIONS,
+            changeRequestId: z.uuid().optional().openapi({
+              description:
+                "API keys only, not on a note: the operator's change request this answers, from a `draft.change_requested` event. The reply becomes a new draft that replaces the one the operator asked to change, whatever the key's reply mode and even while a person handles the conversation. Without its own `replyToMessageId` it keeps the old draft's quote.",
+            }),
           }),
           example: { clientId: "r_81b3d0", body: "Yes, it is two months free." },
         },
@@ -803,7 +816,7 @@ const streamRoute = createRoute({
   summary: "Stream the workspace's changes after a cursor",
   description:
     "Server-sent events: `change` (its id is the new cursor), `ready` when caught up, `resync` to load everything again, `notice` for something live that is not stored, and `close` with a reason. With no cursor, the stream starts at the present, so load the lists after `ready`.\n\n" +
-    "A `change` event's data is `{ kind, conversationId }`, with `conversationId` null for a workspace change. A `message.created` change also has `fromVisitor`, true when the visitor wrote it. The kinds are `message.created`, `message.updated` (an operator edited a reply), `message.deleted`, `conversation.closed`, `conversation.reopened`, `conversation.assigned`, `conversation.snoozed` (snoozed or unsnoozed), `conversation.deleted`, `conversation.moderated`, `conversation.handled` (a person or a bot took it), `conversation.labeled` (a label was put on or taken off), `draft.changed`, `transcript.requested`, `team.changed`, `billing.changed` and `workspace.changed`. A client reloads what the kind names, and ignores a kind it does not know.\n\n" +
+    "A `change` event's data is `{ kind, conversationId }`, with `conversationId` null for a workspace change. A `message.created` change also has `fromVisitor`, true when the visitor wrote it. The kinds are `message.created`, `message.updated` (an operator edited a reply), `message.deleted`, `conversation.closed`, `conversation.reopened`, `conversation.assigned`, `conversation.snoozed` (snoozed or unsnoozed), `conversation.deleted`, `conversation.moderated`, `conversation.handled` (a person or a bot took it), `conversation.labeled` (a label was put on or taken off), `draft.changed`, `draft.change_requested` (an operator asked a key to rewrite its draft, which `draft.changed` also says), `transcript.requested`, `team.changed`, `billing.changed` and `workspace.changed`. A client reloads what the kind names, and ignores a kind it does not know.\n\n" +
     'A `notice` has no id and may be lost. Its data is `{ kind: "typing", conversationId, visitorId, draft }`, a visitor\'s unsent text, empty when they stopped, `{ kind: "bot_typing", conversationId, name, typing }` when an API key types or stops, or `{ kind: "receipts", visitorId }` when a visitor read replies or a reply email went out, so load the conversation\'s messages again.\n\n' +
     CLOSE_REASONS_TEXT,
   request: {
@@ -1029,6 +1042,7 @@ export type ReplyOutcome =
   | { kind: "bots_paused" }
   | { kind: "human_handling" }
   | { kind: "drafts_text_only" }
+  | { kind: "change_request_closed" }
   | { kind: "refused"; access: WorkspaceAccess };
 
 /** What a key's reply asks for: its text, or an upload's clientId with no text. */
@@ -1036,6 +1050,8 @@ interface KeyRequest {
   clientId: string;
   body?: string | undefined;
   replyToMessageId?: string | undefined;
+  /** The operator's change request that this reply answers with a new draft. */
+  changeRequestId?: string | undefined;
 }
 
 type Written =
@@ -1043,12 +1059,13 @@ type Written =
   | "bots_paused"
   | "human_handling"
   | "drafts_text_only"
+  | "change_request_closed"
   | { drafted: { draft: DraftView; created: boolean } }
   | (Appended & { visitorId: string });
 
 /**
  * A key's gate, under the workspace row lock: a refusal, a draft, or null to send. A draft holds
- * text only.
+ * text only, and a reply that answers a change request is always a draft.
  */
 async function keyTurn(
   tx: Transaction,
@@ -1057,11 +1074,18 @@ async function keyTurn(
   conversationId: string,
   request: KeyRequest,
 ): Promise<Exclude<Written, Appended & { visitorId: string }> | null> {
+  const { changeRequestId, body } = request;
+  if (changeRequestId !== undefined && body !== undefined) {
+    return answerChangeRequest(tx, workspaceId, actor.apiKeyId, conversationId, {
+      ...request,
+      changeRequestId,
+      body,
+    });
+  }
   const gate = await keyGate(tx, workspaceId, actor.apiKeyId, conversationId, request.clientId);
   if (gate === "send") return null;
   if (gate !== "draft") return gate;
-  if (request.body === undefined) return "drafts_text_only";
-  const body = request.body;
+  if (body === undefined) return "drafts_text_only";
   return {
     drafted: await createDraft(tx, workspaceId, actor.apiKeyId, conversationId, {
       ...request,
@@ -1280,6 +1304,7 @@ export function createInbox({
         clientId: string;
         body: string;
         replyToMessageId?: string | undefined;
+        changeRequestId?: string | undefined;
         source?: KeySource;
         note: boolean;
         /** Only a note's. */
@@ -1368,6 +1393,9 @@ export function refusedReply(outcome: Exclude<ReplyOutcome, { kind: "sent" | "dr
   if (outcome.kind === "bots_paused") return { body: BOTS_PAUSED, status: 409 as const };
   if (outcome.kind === "human_handling") return { body: HUMAN_HANDLING, status: 409 as const };
   if (outcome.kind === "drafts_text_only") return { body: DRAFTS_TEXT_ONLY, status: 409 as const };
+  if (outcome.kind === "change_request_closed") {
+    return { body: CHANGE_REQUEST_CLOSED, status: 409 as const };
+  }
   return closedFailure(outcome.access);
 }
 
@@ -1434,12 +1462,12 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
 
   app.openapi(replyRoute, async (c) => {
     const { conversationId } = c.req.valid("param");
-    const outcome = await inbox.reply(
-      c.get("memberWorkspaceId"),
-      c.get("actor"),
-      conversationId,
-      c.req.valid("json"),
-    );
+    const input = c.req.valid("json");
+    const actor = c.get("actor");
+    if (input.changeRequestId !== undefined && (input.note || actor.kind !== "key")) {
+      return c.json(CHANGE_REQUEST_KEYS_ONLY, 400);
+    }
+    const outcome = await inbox.reply(c.get("memberWorkspaceId"), actor, conversationId, input);
     if (outcome.kind === "sent") return c.json(outcome.message, outcome.created ? 201 : 200);
     if (outcome.kind === "drafted") return c.json({ draft: outcome.draft }, 202);
     const refused = refusedReply(outcome);

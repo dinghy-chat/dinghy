@@ -34,7 +34,7 @@ const withClientId = <T extends { clientId?: string }>(input: T) => ({
 });
 
 type Reply = Send<Omit<Body<typeof MESSAGES, "post">, "note" | "mentions">>;
-type Note = Send<Omit<Body<typeof MESSAGES, "post">, "note">>;
+type Note = Send<Omit<Body<typeof MESSAGES, "post">, "note" | "changeRequestId">>;
 type Upload = { file: Blob | Uint8Array<ArrayBuffer> } & Send<
   QueryOf<`${typeof CONVERSATION}/uploads`, "post">
 >;

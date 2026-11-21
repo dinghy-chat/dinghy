@@ -37,6 +37,7 @@ Branch on `code`, which is stable, and show `message` only to people. The OpenAP
 | 409 | `conversation_closed`, `webhook_limit`, `site_limit`, `grant_limit`, `message_seen` | Reopen the conversation to reply or to snooze it, the workspace has 5 webhooks, 20 allowed sites or 50 connected apps already, or the visitor has seen the reply you tried to edit |
 | 409 | `campaign_key_taken`, `campaign_ended`, `campaign_not_live`, `campaign_live`, `campaign_sent` | For a [campaign](#campaigns): another campaign has the key, the campaign ended, a send names a campaign that is not live, or a delete names one that is live or sent messages |
 | 409 | `human_handling`, `bots_paused`, `drafts_text_only` | For an API key: a person handles the conversation and the key sends directly, an owner or admin paused every bot, or a key in draft mode sent an image or a file. See [Bots](#bots-reply-modes-drafts-notes-and-handoff) |
+| 409 | `draft_not_waiting`, `rewrites_off`, `change_request_pending`, `change_request_closed` | For [Ask to change](#ask-to-change): the draft no longer waits or is stale, its key does not rewrite drafts, another request waits on it, or a key's answer came after the request ended |
 | 413 | `too_large` | The body is too large |
 | 429 | `too_many_requests`, `too_many_streams` | A rate limit. Wait for the `Retry-After` header's seconds |
 | 429 | `too_many_waiting` | The visitor has 5 [outbound messages](#outbound-messages-and-contacts) that wait. Cancel one, or wait for them to end |
@@ -165,7 +166,7 @@ A send can quote one earlier message of the same conversation: pass its ID as `r
 
 An edit adds a `message.updated` event and a delete a `message.deleted` event, in the same transaction. The widget's stream and message list send the message again at that event's position, with its `seq` unchanged, so a client replaces its copy by `id` and keeps sorting by `seq`.
 
-A message has `via`: `api` or `mcp` for a key's reply, `draft` for a draft an operator sent, `email` for a visitor's message that came as a [reply by email](#replies-by-email), and null otherwise. A message that an [outbound message](#outbound-messages-and-contacts) became keeps its `via` and has `outboundId`, the outbound message's ID, and `sender`: `"team"` or `{ operatorId, name }` when the visitor saw the workspace or a member rather than its author, and null otherwise. A visitor's answer with a button has `button: { value, label }`, and its `body` is the label. `outboundId`, `sender` and `button` are null on every other message, and `message.created` webhooks and `wait_for_messages` carry them too. Only a message with `via: "email"` has `fromAddress`: the address the email came from, lowercased, or null when it was the visitor's email. `readAt` is when the visitor's read position first passed a reply, null before that and for replies read before this field existed. `GET .../messages/{messageId}/receipt` answers `{ readAt, emailedAt }`, where `emailedAt` is when the first reply email or transcript after the reply went out.
+A message has `via`: `api` or `mcp` for a key's reply, `draft` for a draft an operator sent, `email` for a visitor's message that came as a [reply by email](#replies-by-email), and null otherwise. A message that an [outbound message](#outbound-messages-and-contacts) became keeps its `via` and has `outboundId`, the outbound message's ID, and `sender`: `"team"` or `{ operatorId, name }` when the visitor saw the workspace or a member rather than its author, and null otherwise. A visitor's answer with a button has `button: { value, label }`, and its `body` is the label. `outboundId`, `sender` and `button` are null on every other message, and `message.created` webhooks and `wait_for_events` carry them too. Only a message with `via: "email"` has `fromAddress`: the address the email came from, lowercased, or null when it was the visitor's email. `readAt` is when the visitor's read position first passed a reply, null before that and for replies read before this field existed. `GET .../messages/{messageId}/receipt` answers `{ readAt, emailedAt }`, where `emailedAt` is when the first reply email or transcript after the reply went out.
 
 ## Visitors
 
@@ -279,7 +280,7 @@ A key works in its own workspace only, at the access level chosen when it was ma
 
 A route that every key can call lists `apiKey` in its OpenAPI `security`, and a route that only a Full access key can call lists `setupKey`. A Chats key on such a route answers 403 `forbidden`. Every other route, such as members, keys, billing, export, deleting the workspace, sending or discarding a draft, giving a conversation back, pausing bots or `/v1/operator/me`, answers 403 `forbidden` to any key: no key can create, list or revoke keys, and no key reads the signing secret. Another workspace's routes answer 404. An unknown, expired or revoked key answers 401. Each key may send 300 requests a minute, across the API, MCP and the event stream, and over that it gets 429 with `Retry-After`.
 
-`POST .../api-keys` takes `name`, `level` (`conversations` or `setup`), `replyMode` (`send` or `draft`, by default `draft`) and `permissions`, a list, empty by default. The permissions are `send_as_member`, which the operator app calls **May send as a member**: the key may send outbound messages with a member's name and picture, and `send_email`, called **May email visitors**: the key may send outbound messages with `sendEmail: true`, which the reply email to the contact's address carries. `PATCH .../api-keys/{keyId}` changes `name`, `level`, `replyMode` or `permissions`, and `DELETE` revokes the key or disconnects the app. Only owners and admins call them, with a session. The key list answers each key's `level`, `replyMode`, `source` (`static` for a key made in Settings, `oauth` for a connected app), `client` (null for a key, else a connected app's `kind`, `host` and `local`: `cimd` names the host that published the app, `dcr` the host or scheme it returns to, and `local` is true when that is the user's own computer), `createdByName` (who made the key or approved the app), `permissions` and `lastUsedAt`.
+`POST .../api-keys` takes `name`, `level` (`conversations` or `setup`), `replyMode` (`send` or `draft`, by default `draft`), `rewritesDrafts` (whether its bot answers [Ask to change](#ask-to-change), by default false) and `permissions`, a list, empty by default. The permissions are `send_as_member`, which the operator app calls **May send as a member**: the key may send outbound messages with a member's name and picture, and `send_email`, called **May email visitors**: the key may send outbound messages with `sendEmail: true`, which the reply email to the contact's address carries. `PATCH .../api-keys/{keyId}` changes `name`, `level`, `replyMode`, `rewritesDrafts` or `permissions`, and `DELETE` revokes the key or disconnects the app. Only owners and admins call them, with a session. The key list answers each key's `level`, `replyMode`, `rewritesDrafts`, `source` (`static` for a key made in Settings, `oauth` for a connected app), `client` (null for a key, else a connected app's `kind`, `host` and `local`: `cimd` names the host that published the app, `dcr` the host or scheme it returns to, and `local` is true when that is the user's own computer), `createdByName` (who made the key or approved the app), `permissions` and `lastUsedAt`.
 
 A reply sent with a key has `authorApiKeyId` set and `authorOperatorId` null, and `authorName` is the key's name. Visitors see the key's name on it, with a bot icon. Revoking a key in Settings stops it at once, and its old replies keep its name. Settings shows when each key was last used.
 
@@ -341,13 +342,24 @@ These routes let an API key's bot answer chats while people stay in control. The
 
 Each key has a `replyMode`. With `send`, a reply goes to the visitor. With `draft`, `POST .../conversations/{conversationId}/messages` answers 202 with `{ draft }` and nothing reaches the visitor: the draft waits under the conversation's last message for an operator. A key in draft mode cannot send an image, which answers 409 `drafts_text_only`. A key made before reply modes existed sends; a new key or connected app drafts unless an owner or admin chooses otherwise.
 
-A draft has `id`, `conversationId`, `apiKeyId`, `authorName`, `clientId`, `body`, `replyToMessageId`, `status` and times. `status` is `open`, `stale` (the visitor or an operator wrote after it), `sent` or `discarded`. With a session:
+A draft has `id`, `conversationId`, `apiKeyId`, `authorName`, `clientId`, `body`, `replyToMessageId`, `status`, times, `canAskToChange` and `changeRequest`. `status` is `open`, `stale` (the visitor or an operator wrote after it), `sent`, `discarded` or `replaced` (its key wrote a new one for an [Ask to change](#ask-to-change)). With a session:
 
 - `GET .../conversations/{conversationId}/drafts` lists the open and stale drafts, newest first.
 - `POST .../drafts/{draftId}/send`, with an optional `{ "body" }` to edit it, sends it as the operator's own reply, with `via: "draft"`. It answers 201 with the message, and 200 with the same message when it was sent before, by any operator, so the visitor never gets it twice. Sending approves the bot's words, so the bot keeps the conversation. The other drafts that wait become stale.
 - `POST .../drafts/{draftId}/discard` discards it.
 
 Keys cannot send or discard drafts. The MCP `list_drafts` tool shows a key the drafts and what became of them.
+
+### Ask to change
+
+An operator can ask the key that wrote an open draft to rewrite it. Dinghy writes nothing itself: the key's bot answers with a new draft. [Agents](agents.md#ask-to-change) explains it for bot builders.
+
+- A key takes requests when its `rewritesDrafts` is true. A draft's `canAskToChange` is true while it is open and its key takes requests, and its `changeRequest` is the request that waits on it, or null.
+- `POST .../drafts/{draftId}/change-requests`, with a session, takes `{ "clientId", "instruction" }`, an instruction of 1 to 500 characters. It answers 201 with `{ changeRequest }`, and 200 with the first request on a retry with the same `clientId`. It answers 409 `draft_not_waiting` when the draft was sent, discarded or replaced, or is stale, `rewrites_off` when its key does not take requests, `conversation_closed`, and `change_request_pending`, with the waiting request as `changeRequest`, when one waits already.
+- `POST .../drafts/{draftId}/change-requests/{changeRequestId}/cancel` cancels a waiting request, and answers `{ changeRequest }` as it is now. The operator app's **Ask again** cancels the request and asks again, in two calls.
+- A request is `{ id, draftId, conversationId, apiKeyId, instruction, status, createdAt, resolvedAt, replacementDraftId }`, with `status` `pending`, `fulfilled` or `cancelled`. Sending or discarding the draft, or a message that makes it stale, cancels it in the same transaction.
+- The request writes a `draft.change_requested` event, with `data: { changeRequest, draft }`. Webhooks that ask for it get every one. `GET /v1/events` and `wait_for_events` give it only to the key that wrote the draft.
+- The key answers with `POST .../conversations/{conversationId}/messages`, or the MCP `reply`, with `changeRequestId`. It answers 202 with `{ draft }`, the new draft, whatever the key's reply mode and while a person handles the conversation, and the old draft becomes `replaced`. Without `replyToMessageId` the new draft keeps the old one's quote. Another key's request, or one in another conversation, answers 404, a request that ended answers 409 `change_request_closed`, and paused bots 409 `bots_paused`. A retry with the same `clientId` answers the same new draft. An operator's reply or a note with `changeRequestId` answers 400 `invalid_request`.
 
 ### Human handling
 
@@ -392,7 +404,7 @@ curl -N "https://chat.example.com/v1/events?types=message.created" \
   -H "Authorization: Bearer dk_..."
 ```
 
-With no position, it starts from now. Reconnect with `Last-Event-ID`, or `?after=` and the last `id`, and it sends what you missed. One change can make two events: a conversation's first message sends `conversation.created`, then `message.created`. The first has the position `generation.seq.0`, and the last has the change's cursor, `generation.seq`, so a stream that drops between them sends the second when it resumes. `ready` comes when it has caught up, and `resync` when the cursor is too old: read the open conversations again. It sends a heartbeat every 25 seconds, ends after 15 minutes with a `close` event, and takes a slot in the workspace's stream limit, so too many streams answer 429 `too_many_streams`. A revoked key's stream ends within 25 seconds. A `notice` has no `id` and may be lost: `{ "kind": "typing", conversationId, draft }` carries a visitor's unsent words, only while the workspace's typing preview is on. Messages from test visitors come with `conversation.visitor.isTest: true`.
+With no position, it starts from now. Reconnect with `Last-Event-ID`, or `?after=` and the last `id`, and it sends what you missed. One change can make two events: a conversation's first message sends `conversation.created`, then `message.created`. The first has the position `generation.seq.0`, and the last has the change's cursor, `generation.seq`, so a stream that drops between them sends the second when it resumes. `ready` comes when it has caught up, and `resync` when the cursor is too old: read the open conversations again. It sends a heartbeat every 25 seconds, ends after 15 minutes with a `close` event, and takes a slot in the workspace's stream limit, so too many streams answer 429 `too_many_streams`. A revoked key's stream ends within 25 seconds. A `notice` has no `id` and may be lost: `{ "kind": "typing", conversationId, draft }` carries a visitor's unsent words, only while the workspace's typing preview is on. Messages from test visitors come with `conversation.visitor.isTest: true`. A key gets `draft.change_requested` only for its own drafts.
 
 ## Outbound messages and contacts
 
@@ -484,7 +496,7 @@ These routes help a person or a Full access key put the widget on a site. They a
 | `POST /test-visitors/messages` | `{ "body", "name", "conversationId" }`, the last two optional, sends a message as a test visitor through the widget's own path, and answers `{ visitorId, conversationId, message }`. Without `conversationId`, a new test visitor starts a conversation. A workspace may send 10 a minute |
 | `DELETE /test-visitors` | Deletes every test visitor, with their conversations, messages and images, and answers `{ deleted }` |
 
-A test visitor has `isTest: true`, and the inbox shows a **Test** label. Webhooks, `/v1/events` and `wait_for_messages` see test visitors, so a bot can be tested from end to end. Analytics, contacts, live counts, push and email alerts and transcripts leave them out.
+A test visitor has `isTest: true`, and the inbox shows a **Test** label. Webhooks, `/v1/events` and `wait_for_events` see test visitors, so a bot can be tested from end to end. Analytics, contacts, live counts, push and email alerts and transcripts leave them out.
 
 ## Webhooks
 
@@ -502,6 +514,7 @@ A webhook sends a signed `POST` to your server when something changes in a works
 | `conversation.handoff` | An API key's bot handed the conversation to people |
 | `conversation.given_back` | An operator gave the conversation back to the bots |
 | `conversation.labeled` | A label was put on a conversation or taken off. `data` also has `label`, `{ id, name, color }`, and `action`, `added` or `removed`. If the label is deleted before the send, Dinghy sends nothing. |
+| `draft.change_requested` | An operator asked a key to rewrite its draft. `data` is `{ changeRequest, draft }`, with no conversation. See [Ask to change](#ask-to-change) |
 | `outbound_message.sent` | An [outbound message](#outbound-messages-and-contacts) reached its send time and waits for the widget |
 | `outbound_message.delivered` | The widget fetched an outbound message |
 | `outbound_message.read` | The visitor read an outbound message |
@@ -512,7 +525,7 @@ A webhook sends a signed `POST` to your server when something changes in a works
 | `outbound_message.expired` | An outbound message's `expiresAt` passed before the visitor read it |
 | `campaign.updated` | A [campaign](#campaigns) was created, saved, paused, resumed or ended |
 
-Drafts send no webhook. The body is JSON:
+Drafts send no webhook, except `draft.change_requested`. The body is JSON:
 
 ```json
 {
@@ -661,14 +674,14 @@ Every key and connected app gets the Chats tools. A Full access one also gets th
 | `list_conversations` | Chats | Lists open or closed conversations, newest activity first. `label`, a label's ID, keeps only the conversations with it, as the list route's `label` does. Pass `nextCursor` back as `cursor` for the next page |
 | `search_conversations` | Chats | Finds conversations by the visitor's name, email or user ID, or by message text |
 | `get_conversation` | Chats | Reads a conversation: its messages, notes among them with `kind: "note"`, the handler, the visitor, `pageContext`, the pages and `replySeconds`. `format: "markdown"` answers a short transcript with the assignee's name and `replySeconds` |
-| `reply` | Chats | Replies in an open conversation, as the key's reply mode says: `status: "sent"` or `status: "drafted"`. Quote an earlier message with `replyToMessageId`. Pass the same `clientId` on a retry |
+| `reply` | Chats | Replies in an open conversation, as the key's reply mode says: `status: "sent"` or `status: "drafted"`. Quote an earlier message with `replyToMessageId`. Pass the same `clientId` on a retry. With `changeRequestId` it answers an [Ask to change](#ask-to-change) with a new draft |
 | `add_note` | Chats | Adds a note that only the team sees, in an open or closed conversation, even while a person handles it or bots are paused. `mentions` takes member IDs from `list_members`, and each gets an alert. Quote any earlier message with `replyToMessageId`. Pass the same `clientId` on a retry |
-| `list_drafts` | Chats | Lists the drafts of keys in draft mode: `open`, `stale` or `all` |
+| `list_drafts` | Chats | Lists the drafts of keys in draft mode: `open`, `stale` or `all`, each with the `changeRequest` that waits on it |
 | `hand_off` | Chats | Hands a conversation to people, with a reason, a summary and an optional last message to the visitor |
 | `list_members` | Chats | Lists the members: `id`, `name`, `role` and whether they are `online`. The `id` is what `assign_conversation`, `hand_off` and the `mentions` of `add_note` take |
 | `list_saved_replies` | Chats | Lists the team's saved replies: `shortcut` and `body`, to answer in the team's words |
 | `set_typing` | Chats | Shows the visitor that the bot is typing, for 6 seconds |
-| `wait_for_messages` | Chats | Waits up to 30 seconds for new visitor messages, from a cursor. With no cursor it answers the cursor for now, and no earlier messages |
+| `wait_for_events` | Chats | Waits up to 30 seconds for events from a cursor: new visitor messages, and the `draft.change_requested` of the key's own drafts, each with its `type`. With no cursor it answers the cursor for now, and no earlier events |
 | `close_conversation` | Chats | Closes a conversation. Marked destructive |
 | `reopen_conversation` | Chats | Reopens a closed conversation |
 | `snooze_conversation`, `unsnooze_conversation` | Chats | Snoozes an open conversation until `until`, or with `until` null until the visitor writes, or ends its snooze |

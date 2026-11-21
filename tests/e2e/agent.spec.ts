@@ -125,7 +125,7 @@ test("an agent connects with OAuth, tests with a visitor, drafts a reply an oper
   expect(discovered.supportedVersions).toContain(STATELESS);
   const { tools } = (await mcp.request("tools/list")) as { tools: { name: string }[] };
   expect(tools.map((one) => one.name)).toEqual(
-    expect.arrayContaining(["verify_install", "wait_for_messages", "reply", "hand_off"]),
+    expect.arrayContaining(["verify_install", "wait_for_events", "reply", "hand_off"]),
   );
 
   const install = await mcp.call("verify_install");
@@ -133,7 +133,7 @@ test("an agent connects with OAuth, tests with a visitor, drafts a reply an oper
   expect(install.structuredContent.widgetSeenAt).toBeNull();
   expect(install.structuredContent.nextStep).toEqual(expect.any(String));
 
-  const start = await mcp.call("wait_for_messages");
+  const start = await mcp.call("wait_for_events");
   const cursor = start.structuredContent.cursor;
   expect(cursor).toEqual(expect.any(String));
   const sent = await mcp.call("send_test_message", {
@@ -142,9 +142,10 @@ test("an agent connects with OAuth, tests with a visitor, drafts a reply an oper
   });
   expect(sent.isError).toBe(false);
   const conversationId = sent.structuredContent.conversationId as string;
-  const waited = await mcp.call("wait_for_messages", { cursor, timeoutSeconds: 10 });
-  expect(waited.structuredContent.messages).toEqual([
+  const waited = await mcp.call("wait_for_events", { cursor, timeoutSeconds: 10 });
+  expect(waited.structuredContent.events).toEqual([
     expect.objectContaining({
+      type: "message.created",
       conversationId,
       message: expect.objectContaining({ body: "Can I change my plan?" }),
       humanHandling: false,

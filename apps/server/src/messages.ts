@@ -29,6 +29,7 @@ import {
   conversation,
   conversationLabel,
   conversationRead,
+  draftChangeRequest,
   draftReply,
   type EventKind,
   event,
@@ -810,7 +811,8 @@ export async function mentionable(
 
 /**
  * A visitor wrote again, or a person answered, so the drafts that wait may answer an older question.
- * They stay, marked stale, and a `draft.changed` event tells the operator apps. The draft that an
+ * They stay, marked stale, their change requests end, and a `draft.changed` event tells the operator
+ * apps. The draft that an
  * operator sends is not one of them.
  */
 async function markDraftsStale(
@@ -832,8 +834,34 @@ async function markDraftsStale(
       ),
     )
     .returning({ id: draftReply.id });
-  if (marked.length > 0)
-    await recordConversationChange(tx, workspaceId, conversationId, "draft.changed");
+  if (marked.length === 0) return;
+  await cancelChangeRequests(
+    tx,
+    workspaceId,
+    marked.map((one) => one.id),
+  );
+  await recordConversationChange(tx, workspaceId, conversationId, "draft.changed");
+}
+
+/**
+ * Ends the change requests that wait on these drafts, because the draft was sent, discarded or went
+ * stale: a new draft for it would answer an old question.
+ */
+export async function cancelChangeRequests(
+  tx: Transaction,
+  workspaceId: string,
+  draftIds: string[],
+): Promise<void> {
+  await tx
+    .update(draftChangeRequest)
+    .set({ status: "cancelled", resolvedAt: sql`now()` })
+    .where(
+      and(
+        eq(draftChangeRequest.workspaceId, workspaceId),
+        inArray(draftChangeRequest.draftId, draftIds),
+        eq(draftChangeRequest.status, "pending"),
+      ),
+    );
 }
 
 /** Whether an operator has replied in this conversation. */
@@ -1895,7 +1923,7 @@ export async function changeWorkspace<T extends object | null>(
   return outcome;
 }
 
-interface FeedEvent {
+export interface FeedEvent {
   seq: bigint;
   kind: EventKind;
   // Null for a team or billing change.

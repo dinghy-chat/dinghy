@@ -162,10 +162,10 @@ test("recipe 2: a message after an hour, cancelled when the domain verifies, or 
   await expect(page.locator(".msg.mine", { hasText: "Yes, please" })).toBeVisible();
 });
 
-test("recipe 4: an AI agent starts a conversation now, and wait_for_messages gets the answer", async ({
+test("recipe 4: an AI agent starts a conversation now, and wait_for_events gets the answer", async ({
   browser,
 }) => {
-  const now = await tool("wait_for_messages", {});
+  const now = await tool("wait_for_events", {});
   const sent = await tool("send_outbound_message", {
     clientId: randomUUID(),
     visitor: { userId: "shipmail-4" },
@@ -180,8 +180,8 @@ test("recipe 4: an AI agent starts a conversation now, and wait_for_messages get
   await page.getByRole("button", { name: /Open chat/ }).click();
   await expect(page.locator(".msg", { hasText: "Your import finished" })).toBeVisible();
   await say(page, "Yes, send me the list");
-  const waited = await tool("wait_for_messages", { cursor: now.cursor, timeoutSeconds: 10 });
-  const messages = waited.messages as { conversationId: string; message: { body: string } }[];
+  const waited = await tool("wait_for_events", { cursor: now.cursor, timeoutSeconds: 10 });
+  const messages = waited.events as { conversationId: string; message: { body: string } }[];
   expect(messages.map((one) => [one.conversationId, one.message.body])).toEqual([
     [conversationId, "Yes, send me the list"],
   ]);

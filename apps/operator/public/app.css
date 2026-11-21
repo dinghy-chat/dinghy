@@ -7603,6 +7603,33 @@ button.quote:hover {
 .sugg-discard:hover:not(:disabled) {
   background: var(--soft);
 }
+/* Ask to change: one line under the buttons, or what it waits for. */
+.sugg-ask {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  width: min(100%, 420px);
+}
+.sugg-ask input:not([type="checkbox"]) {
+  flex: 1 1 200px;
+  width: auto;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 13.5px;
+}
+.sugg-ask .pill.small {
+  min-height: 32px;
+  padding: 0 13px;
+  font-size: 13.5px;
+}
+.sugg-ask-wait {
+  color: var(--bot-ink);
+  font-size: 13px;
+  font-weight: 600;
+}
 .draft-more {
   margin-top: 4px;
   padding: 0;

@@ -1017,9 +1017,9 @@ describe("decide", () => {
 });
 
 describe("an AI agent through MCP", () => {
-  test("starts a conversation now, and wait_for_messages picks up the answer", async () => {
+  test("starts a conversation now, and wait_for_events picks up the answer", async () => {
     const user = userId();
-    const now = await callTool(app, bot.token, "wait_for_messages", {});
+    const now = await callTool(app, bot.token, "wait_for_events", {});
     const cursor = now.structuredContent.cursor as string;
     const sent = await callTool(app, bot.token, "send_outbound_message", {
       clientId: randomUUID(),
@@ -1039,11 +1039,11 @@ describe("an AI agent through MCP", () => {
     });
     expect((again.structuredContent.outboundMessage as View).id).toBe(made.id);
     await answer(await hostToken(space, user), "Yes please", []);
-    const waited = await callTool(app, bot.token, "wait_for_messages", {
+    const waited = await callTool(app, bot.token, "wait_for_events", {
       cursor,
       timeoutSeconds: 5,
     });
-    const messages = waited.structuredContent.messages as {
+    const messages = waited.structuredContent.events as {
       conversationId: string;
       message: { body: string };
     }[];
