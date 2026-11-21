@@ -305,7 +305,7 @@ function head(page: Page, title: string, description: string): string {
   <meta name="twitter:title" content="${escape(fullTitle)}">
   <meta name="twitter:description" content="${escape(description)}">
   <meta name="twitter:image" content="${SITE}/og.png">
-  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="preload" href="/fonts/gabarito-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/fonts/hanken-grotesk-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/css/site.css">
