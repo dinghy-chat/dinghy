@@ -505,6 +505,19 @@ export async function checkQuote(
   if (found === undefined) throw new InvalidReplyToError();
 }
 
+/** Whether the conversation exists and is open. */
+export async function conversationIsOpen(
+  tx: Transaction,
+  workspaceId: string,
+  conversationId: string,
+): Promise<boolean> {
+  const [found] = await tx
+    .select({ status: conversation.status })
+    .from(conversation)
+    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)));
+  return found?.status === "open";
+}
+
 export class ConversationClosedError extends Error {
   constructor() {
     super("This conversation is closed.");

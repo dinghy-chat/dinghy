@@ -3,8 +3,9 @@ import type { Logger } from "pino";
 import { authenticateRequest, keyStillValid } from "./api-keys.ts";
 import { API_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
-import { type ChangeRequestedPayload, WEBHOOK_EVENTS, type WebhookEvent } from "./db/schema.ts";
+import { WEBHOOK_EVENTS, type WebhookEvent } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
+import { isForKey } from "./draft-changes.ts";
 import { errorAnswer, INVALID, KEY_LIMITED, WRONG_ORIGIN } from "./errors.ts";
 import { type Limits, STREAM_LIMIT, STREAM_RETRY_SECONDS } from "./limits.ts";
 import { type Live, OPERATORS, type OperatorNotice } from "./live.ts";
@@ -101,10 +102,6 @@ interface KeyEventsOptions {
  * One page of events after a cursor, as webhook bodies of the wanted types, without the parts of
  * a row that the client has.
  */
-/** A change request goes only to the key that wrote its draft. Every other event goes to every key. */
-const isForKey = (type: WebhookEvent, payload: unknown, apiKeyId: string) =>
-  type !== "draft.change_requested" || (payload as ChangeRequestedPayload).apiKeyId === apiKeyId;
-
 const readPage = (
   { db, uploads }: Pick<KeyEventsOptions, "db" | "uploads">,
   { workspaceId, apiKeyId }: { workspaceId: string; apiKeyId: string },

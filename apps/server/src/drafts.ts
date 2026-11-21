@@ -1,13 +1,7 @@
 import { z } from "@hono/zod-openapi";
 import { and, desc, eq, inArray, isNotNull, isNull, type SQL } from "drizzle-orm";
 import type { Actor } from "./api-keys.ts";
-import {
-  apiKey,
-  CHANGE_REQUEST_STATUSES,
-  conversation,
-  draftChangeRequest,
-  draftReply,
-} from "./db/schema.ts";
+import { apiKey, CHANGE_REQUEST_STATUSES, draftChangeRequest, draftReply } from "./db/schema.ts";
 import { type Transaction, workspaceAccess, writable } from "./db/tenant.ts";
 import {
   type Author,
@@ -15,6 +9,7 @@ import {
   ConversationClosedError,
   cancelChangeRequests,
   checkQuote,
+  conversationIsOpen,
   findMessage,
   InvalidReplyToError,
   lockWorkspace,
@@ -75,48 +70,6 @@ export const DraftSchema = z
   })
   .openapi("Draft");
 export type DraftView = z.infer<typeof DraftSchema>;
-
-const changeRequestColumns = {
-  id: draftChangeRequest.id,
-  draftId: draftChangeRequest.draftId,
-  conversationId: draftReply.conversationId,
-  apiKeyId: draftReply.apiKeyId,
-  instruction: draftChangeRequest.instruction,
-  status: draftChangeRequest.status,
-  createdAt: draftChangeRequest.createdAt,
-  resolvedAt: draftChangeRequest.resolvedAt,
-  replacementDraftId: draftChangeRequest.replacementDraftId,
-};
-type ChangeRequestRow = Awaited<ReturnType<typeof selectChangeRequests>>[number];
-
-const changeRequestView = (row: ChangeRequestRow): ChangeRequestView => ({
-  ...row,
-  createdAt: row.createdAt.toISOString(),
-  resolvedAt: row.resolvedAt?.toISOString() ?? null,
-});
-
-/** Change requests with their draft's conversation and key. */
-const selectChangeRequests = (tx: Transaction, workspaceId: string, condition: SQL | undefined) =>
-  tx
-    .select(changeRequestColumns)
-    .from(draftChangeRequest)
-    .innerJoin(
-      draftReply,
-      and(
-        eq(draftReply.workspaceId, draftChangeRequest.workspaceId),
-        eq(draftReply.id, draftChangeRequest.draftId),
-      ),
-    )
-    .where(and(eq(draftChangeRequest.workspaceId, workspaceId), condition));
-
-/** The change requests that match, with their draft's conversation and key. */
-export async function changeRequestsWhere(
-  tx: Transaction,
-  workspaceId: string,
-  condition: SQL | undefined,
-): Promise<ChangeRequestView[]> {
-  return (await selectChangeRequests(tx, workspaceId, condition)).map(changeRequestView);
-}
 
 const draftColumns = {
   id: draftReply.id,
@@ -224,11 +177,9 @@ export async function createDraft(
   if (existing !== undefined) return { draft: existing, created: false };
   const access = await workspaceAccess(tx, workspaceId);
   if (!writable(access)) throw new WorkspaceClosedError(access);
-  const [target] = await tx
-    .select({ status: conversation.status })
-    .from(conversation)
-    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)));
-  if (target?.status !== "open") throw new ConversationClosedError();
+  if (!(await conversationIsOpen(tx, workspaceId, conversationId))) {
+    throw new ConversationClosedError();
+  }
   if (input.replyToMessageId !== undefined) {
     await checkQuote(tx, workspaceId, conversationId, input.replyToMessageId, false);
   }
@@ -327,9 +278,7 @@ export async function lockDraft(
 ) {
   const [row] = await tx
     .select({
-      apiKeyId: draftReply.apiKeyId,
       resolved: draftReply.resolved,
-      staleAt: draftReply.staleAt,
       body: draftReply.body,
       replyToMessageId: draftReply.replyToMessageId,
       sentMessageId: draftReply.sentMessageId,

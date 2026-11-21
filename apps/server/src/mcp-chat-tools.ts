@@ -14,7 +14,7 @@ import {
   workspace,
 } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
-import { changeRequestBodies } from "./draft-changes.ts";
+import { changeRequestBodies, isForKey } from "./draft-changes.ts";
 import { listDrafts } from "./drafts.ts";
 import { failure, NOT_FOUND } from "./errors.ts";
 import { handOff, setTyping } from "./handling.ts";
@@ -166,26 +166,23 @@ function localTime(timeZone: string | null): string | null {
   }).format(new Date());
 }
 
-/** The feed events after a cursor that wait_for_events delivers to a key. */
-const keyEventIds = (
-  page: Awaited<ReturnType<typeof listWorkspaceEvents>>,
-  apiKeyId: string,
-  only: string | undefined,
-) => {
-  const wanted = page.events.filter((one) => only === undefined || one.conversationId === only);
-  return {
-    messageIds: wanted.flatMap((one) =>
-      one.kind === "message.created" && one.fromVisitor
-        ? [(one.payload as MessagePayload).messageId]
-        : [],
-    ),
-    changeRequestIds: wanted.flatMap((one) => {
-      if (one.kind !== "draft.change_requested") return [];
-      const payload = one.payload as ChangeRequestedPayload;
-      return payload.apiKeyId === apiKeyId ? [payload.changeRequestId] : [];
-    }),
-  };
-};
+/** A feed event that wait_for_events delivers to a key, by what it names. */
+type KeyEvent = { kind: "message"; messageId: string } | { kind: "change_request"; id: string };
+
+/** The feed events of a page that wait_for_events delivers to a key, in order. */
+function keyEvents(events: FeedEvent[], apiKeyId: string, only: string | undefined): KeyEvent[] {
+  return events.flatMap((one): KeyEvent[] => {
+    if (only !== undefined && one.conversationId !== only) return [];
+    if (one.kind === "message.created" && one.fromVisitor) {
+      return [{ kind: "message", messageId: (one.payload as MessagePayload).messageId }];
+    }
+    if (one.kind !== "draft.change_requested" || !isForKey(one.kind, one.payload, apiKeyId)) {
+      return [];
+    }
+    const { changeRequestId } = one.payload as ChangeRequestedPayload;
+    return [{ kind: "change_request", id: changeRequestId }];
+  });
+}
 
 /** Visitor messages in open conversations, by ID, with what a bot needs to answer. */
 async function visitorMessages(
@@ -248,19 +245,24 @@ async function keyEventsAfter(
 ) {
   return withWorkspace(db, workspaceId, async (tx) => {
     const page = await listWorkspaceEvents(tx, workspaceId, after, WAIT_PAGE);
-    const { messageIds, changeRequestIds } = keyEventIds(page, apiKeyId, only);
-    const messages = await visitorMessages(tx, uploads, workspaceId, messageIds);
-    const requests = await changeRequestBodies(tx, workspaceId, changeRequestIds);
-    const eventOf = (one: FeedEvent) => {
-      const ids = one.payload as Partial<MessagePayload & ChangeRequestedPayload>;
-      if (one.kind === "message.created" && ids.messageId !== undefined) {
-        return messages.get(ids.messageId);
-      }
-      if (one.kind !== "draft.change_requested" || ids.changeRequestId === undefined) return;
-      const found = requests.get(ids.changeRequestId);
+    const wanted = keyEvents(page.events, apiKeyId, only);
+    const messages = await visitorMessages(
+      tx,
+      uploads,
+      workspaceId,
+      wanted.flatMap((one) => (one.kind === "message" ? [one.messageId] : [])),
+    );
+    const requests = await changeRequestBodies(
+      tx,
+      workspaceId,
+      wanted.flatMap((one) => (one.kind === "change_request" ? [one.id] : [])),
+    );
+    const eventOf = (one: KeyEvent) => {
+      if (one.kind === "message") return messages.get(one.messageId);
+      const found = requests.get(one.id);
       return found && { type: "draft.change_requested" as const, ...found };
     };
-    const events = page.events.flatMap((one) => eventOf(one) ?? []);
+    const events = wanted.flatMap((one) => eventOf(one) ?? []);
     return { ...page, events };
   });
 }

@@ -1,16 +1,8 @@
 import { and, eq, inArray, type SQL, sql } from "drizzle-orm";
-import {
-  apiKey,
-  type ChangeRequestedPayload,
-  conversation,
-  draftChangeRequest,
-  draftReply,
-  event,
-} from "./db/schema.ts";
+import { type ChangeRequestedPayload, draftChangeRequest, draftReply, event } from "./db/schema.ts";
 import type { Transaction } from "./db/tenant.ts";
 import {
   type ChangeRequestView,
-  changeRequestsWhere,
   createDraft,
   type DraftView,
   findDraft,
@@ -19,6 +11,7 @@ import {
   ofDraft,
 } from "./drafts.ts";
 import {
+  conversationIsOpen,
   InvalidReplyToError,
   lockWorkspace,
   nextSeq,
@@ -36,28 +29,57 @@ export type AskOutcome =
   | { kind: "not_waiting" }
   | { kind: "rewrites_off" };
 
+/** A change request's own columns. Its draft's conversation and key come from a join. */
+const requestColumns = {
+  id: draftChangeRequest.id,
+  draftId: draftChangeRequest.draftId,
+  instruction: draftChangeRequest.instruction,
+  status: draftChangeRequest.status,
+  createdAt: draftChangeRequest.createdAt,
+  resolvedAt: draftChangeRequest.resolvedAt,
+  replacementDraftId: draftChangeRequest.replacementDraftId,
+};
+type ChangeRequestRow = Awaited<ReturnType<typeof selectChangeRequests>>[number];
+
+const changeRequestView = (row: ChangeRequestRow): ChangeRequestView => ({
+  ...row,
+  createdAt: row.createdAt.toISOString(),
+  resolvedAt: row.resolvedAt?.toISOString() ?? null,
+});
+
+/** Change requests with their draft's conversation and key. */
+const selectChangeRequests = (tx: Transaction, workspaceId: string, condition: SQL | undefined) =>
+  tx
+    .select({
+      ...requestColumns,
+      conversationId: draftReply.conversationId,
+      apiKeyId: draftReply.apiKeyId,
+    })
+    .from(draftChangeRequest)
+    .innerJoin(
+      draftReply,
+      and(
+        eq(draftReply.workspaceId, draftChangeRequest.workspaceId),
+        eq(draftReply.id, draftChangeRequest.draftId),
+      ),
+    )
+    .where(and(eq(draftChangeRequest.workspaceId, workspaceId), condition));
+
+/** The change requests that match, with their draft's conversation and key. */
+async function changeRequestsWhere(
+  tx: Transaction,
+  workspaceId: string,
+  condition: SQL | undefined,
+): Promise<ChangeRequestView[]> {
+  return (await selectChangeRequests(tx, workspaceId, condition)).map(changeRequestView);
+}
+
 const ofRequest = (workspaceId: string, id: string) =>
   and(eq(draftChangeRequest.workspaceId, workspaceId), eq(draftChangeRequest.id, id));
 
-const onDraft = (draftId: string, condition: SQL) =>
-  and(eq(draftChangeRequest.draftId, draftId), condition);
-
-/** Whether a key answers change requests: it rewrites drafts and is not revoked. */
-async function rewritesDrafts(tx: Transaction, workspaceId: string, apiKeyId: string) {
-  const [key] = await tx
-    .select({ rewritesDrafts: apiKey.rewritesDrafts, revokedAt: apiKey.revokedAt })
-    .from(apiKey)
-    .where(and(eq(apiKey.workspaceId, workspaceId), eq(apiKey.id, apiKeyId)));
-  return key?.rewritesDrafts === true && key.revokedAt === null;
-}
-
-async function isOpen(tx: Transaction, workspaceId: string, conversationId: string) {
-  const [found] = await tx
-    .select({ status: conversation.status })
-    .from(conversation)
-    .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)));
-  return found?.status === "open";
-}
+/** A change request goes only to the key that wrote its draft. Every other event goes to every key. */
+export const isForKey = (kind: string, payload: unknown, apiKeyId: string) =>
+  kind !== "draft.change_requested" || (payload as ChangeRequestedPayload).apiKeyId === apiKeyId;
 
 /** Writes the event that webhooks, the key's event stream and wait_for_events deliver. */
 async function recordChangeRequested(
@@ -88,37 +110,34 @@ export async function askToChange(
 ): Promise<AskOutcome> {
   const { conversationId, draftId } = target;
   await lockWorkspace(tx, workspaceId);
-  const draft = await lockDraft(tx, workspaceId, conversationId, draftId);
-  if (draft === undefined) return { kind: "missing" };
+  if ((await lockDraft(tx, workspaceId, conversationId, draftId)) === undefined) {
+    return { kind: "missing" };
+  }
   const [same] = await changeRequestsWhere(
     tx,
     workspaceId,
-    onDraft(draftId, eq(draftChangeRequest.clientId, input.clientId)),
+    and(eq(draftChangeRequest.draftId, draftId), eq(draftChangeRequest.clientId, input.clientId)),
   );
   if (same !== undefined) return { kind: "asked", changeRequest: same, created: false };
-  if (draft.resolved !== null || draft.staleAt !== null) return { kind: "not_waiting" };
-  if (!(await isOpen(tx, workspaceId, conversationId))) return { kind: "closed" };
-  if (!(await rewritesDrafts(tx, workspaceId, draft.apiKeyId))) return { kind: "rewrites_off" };
-  const [pending] = await changeRequestsWhere(
-    tx,
-    workspaceId,
-    onDraft(draftId, eq(draftChangeRequest.status, "pending")),
-  );
-  if (pending !== undefined) return { kind: "pending", changeRequest: pending };
+  const draft = (await findDrafts(tx, workspaceId, [draftId])).get(draftId);
+  if (draft === undefined) throw new Error("A locked draft has no row");
+  if (draft.status !== "open") return { kind: "not_waiting" };
+  if (!(await conversationIsOpen(tx, workspaceId, conversationId))) return { kind: "closed" };
+  if (!draft.canAskToChange) return { kind: "rewrites_off" };
+  if (draft.changeRequest !== null) return { kind: "pending", changeRequest: draft.changeRequest };
+  const { apiKeyId } = draft;
   const [made] = await tx
     .insert(draftChangeRequest)
     .values({ workspaceId, draftId, operatorId, ...input })
-    .returning({ id: draftChangeRequest.id });
+    .returning(requestColumns);
   if (made === undefined) throw new Error("The change request insert returned no row");
-  const changeRequestId = made.id;
   await recordChangeRequested(tx, workspaceId, {
     conversationId,
-    changeRequestId,
-    apiKeyId: draft.apiKeyId,
+    changeRequestId: made.id,
+    apiKeyId,
   });
-  const [asked] = await changeRequestsWhere(tx, workspaceId, ofRequest(workspaceId, made.id));
-  if (asked === undefined) throw new Error("The change request insert left no row");
-  return { kind: "asked", changeRequest: asked, created: true };
+  const changeRequest = changeRequestView({ ...made, conversationId, apiKeyId });
+  return { kind: "asked", changeRequest, created: true };
 }
 
 /** Cancels a request that waits. Answers the request as it is now, or undefined when there is none. */
@@ -128,20 +147,25 @@ export async function cancelChangeRequest(
   target: { conversationId: string; draftId: string; changeRequestId: string },
 ): Promise<ChangeRequestView | undefined> {
   await lockWorkspace(tx, workspaceId);
-  const where = and(
-    ofRequest(workspaceId, target.changeRequestId),
-    eq(draftChangeRequest.draftId, target.draftId),
-    eq(draftReply.conversationId, target.conversationId),
+  const [found] = await changeRequestsWhere(
+    tx,
+    workspaceId,
+    and(
+      eq(draftChangeRequest.id, target.changeRequestId),
+      eq(draftChangeRequest.draftId, target.draftId),
+      eq(draftReply.conversationId, target.conversationId),
+    ),
   );
-  const [found] = await changeRequestsWhere(tx, workspaceId, where);
   if (found?.status !== "pending") return found;
-  await tx
+  const [cancelled] = await tx
     .update(draftChangeRequest)
     .set({ status: "cancelled", resolvedAt: sql`now()` })
-    .where(ofRequest(workspaceId, found.id));
+    .where(ofRequest(workspaceId, found.id))
+    .returning(requestColumns);
+  if (cancelled === undefined) throw new Error("The change request update returned no row");
   await recordConversationChange(tx, workspaceId, target.conversationId, "draft.changed");
-  const [cancelled] = await changeRequestsWhere(tx, workspaceId, where);
-  return cancelled;
+  const { conversationId, apiKeyId } = found;
+  return changeRequestView({ ...cancelled, conversationId, apiKeyId });
 }
 
 /** A key's answer to a change request: its new draft, or why there is none. */
@@ -176,7 +200,7 @@ export async function answerChangeRequest(
   const [request] = await changeRequestsWhere(
     tx,
     workspaceId,
-    ofRequest(workspaceId, input.changeRequestId),
+    eq(draftChangeRequest.id, input.changeRequestId),
   );
   if (request?.apiKeyId !== apiKeyId || request.conversationId !== conversationId) {
     return "missing";
@@ -193,7 +217,7 @@ export async function answerChangeRequest(
   const made = await newDraft(tx, workspaceId, { apiKeyId, conversationId }, input, old);
   await tx
     .update(draftReply)
-    .set({ resolved: "replaced", resolvedAt: new Date() })
+    .set({ resolved: "replaced", resolvedAt: sql`now()` })
     .where(ofDraft(workspaceId, request.draftId));
   await tx
     .update(draftChangeRequest)

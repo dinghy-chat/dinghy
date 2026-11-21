@@ -1116,7 +1116,7 @@ describe("the event stream and webhooks", () => {
     ]);
     const data = await withWorkspace(db, space.id, (tx) =>
       webhookData(tx, undefined, space.id, [
-        { outboundMessageId: deliveries[0]?.outboundMessageId ?? "" },
+        { kind: "outbound", outboundMessageId: deliveries[0]?.outboundMessageId ?? "" },
       ]),
     );
     expect(data[0]).toMatchObject({ outboundMessage: { body: "Hooked", status: "sent" } });

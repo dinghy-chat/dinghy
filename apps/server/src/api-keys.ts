@@ -441,9 +441,10 @@ export function registerApiKeyRoutes(app: App, db: Database, live: Live, logger:
     const id = c.get("memberWorkspaceId");
     const { keyId } = c.req.valid("param");
     const change = c.req.valid("json");
+    const isTogglingRewrites = change.rewritesDrafts !== undefined;
     const [changed] = await withWorkspace(db, id, async (tx) => {
       // Drafts are written under the workspace lock, so none can slip past the scan below.
-      if (change.rewritesDrafts !== undefined) await lockWorkspace(tx, id);
+      if (isTogglingRewrites) await lockWorkspace(tx, id);
       const updated = await tx
         .update(apiKey)
         .set(change)
@@ -451,11 +452,11 @@ export function registerApiKeyRoutes(app: App, db: Database, live: Live, logger:
         .returning({ id: apiKey.id });
       if (updated.length === 0) return [];
       // A draft card offers "Ask to change" by this setting.
-      if (change.rewritesDrafts !== undefined) await recordKeyDraftsChanged(tx, id, keyId);
+      if (isTogglingRewrites) await recordKeyDraftsChanged(tx, id, keyId);
       return readKeys(tx, id, keyId);
     });
     if (changed === undefined) return c.json(NOT_FOUND, 404);
-    if (change.rewritesDrafts !== undefined) live.wake(id, OPERATORS);
+    if (isTogglingRewrites) live.wake(id, OPERATORS);
     audit(logger, "api_key.updated", {
       workspaceId: id,
       operatorId: c.get("operatorId"),

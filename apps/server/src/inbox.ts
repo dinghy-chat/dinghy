@@ -1050,14 +1050,14 @@ export type ReplyOutcome =
   | { kind: "client_id_reused" }
   | { kind: "refused"; access: WorkspaceAccess };
 
-/** What a key's reply asks for: its text, or an upload's clientId with no text. */
-interface KeyRequest {
-  clientId: string;
-  body?: string | undefined;
-  replyToMessageId?: string | undefined;
-  /** The operator's change request that this reply answers with a new draft. */
-  changeRequestId?: string | undefined;
-}
+/**
+ * What a key's reply asks for: its text, or an upload's clientId with no text. A reply that answers
+ * an operator's change request with a new draft always has text.
+ */
+type KeyRequest = { clientId: string; replyToMessageId?: string | undefined } & (
+  | { body?: string | undefined; changeRequestId?: undefined }
+  | { body: string; changeRequestId: string }
+);
 
 type Written =
   | "missing"
@@ -1080,14 +1080,10 @@ async function keyTurn(
   conversationId: string,
   request: KeyRequest,
 ): Promise<Exclude<Written, Appended & { visitorId: string }> | null> {
-  const { changeRequestId, body } = request;
-  if (changeRequestId !== undefined && body !== undefined) {
-    return answerChangeRequest(tx, workspaceId, actor.apiKeyId, conversationId, {
-      ...request,
-      changeRequestId,
-      body,
-    });
+  if (request.changeRequestId !== undefined) {
+    return answerChangeRequest(tx, workspaceId, actor.apiKeyId, conversationId, request);
   }
+  const { body } = request;
   const gate = await keyGate(tx, workspaceId, actor.apiKeyId, conversationId, request.clientId);
   if (gate === "send") return null;
   if (gate !== "draft") return gate;
@@ -1317,9 +1313,10 @@ export function createInbox({
         mentions?: string[] | undefined;
       },
     ) {
-      const { note, mentions, ...text } = input;
+      const { note, mentions, changeRequestId, ...text } = input;
       const content = { attachment: undefined, isNote: note };
-      return reply(workspaceId, actor, conversationId, content, text, (tx, author) =>
+      const request = changeRequestId === undefined ? text : { ...text, changeRequestId };
+      return reply(workspaceId, actor, conversationId, content, request, (tx, author) =>
         appendMessage(tx, workspaceId, author, note ? { ...text, note, mentions } : text),
       );
     },
