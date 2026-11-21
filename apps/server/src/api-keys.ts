@@ -35,6 +35,7 @@ import {
 import { sha256Hex } from "./identity.ts";
 import { type Live, OPERATORS } from "./live.ts";
 import { OPEN_WHILE_CLOSED, workspaceParams } from "./member.ts";
+import { lockWorkspace } from "./messages.ts";
 import { clientOrigin } from "./oauth-client.ts";
 import {
   ACCESS_PREFIX,
@@ -441,6 +442,8 @@ export function registerApiKeyRoutes(app: App, db: Database, live: Live, logger:
     const { keyId } = c.req.valid("param");
     const change = c.req.valid("json");
     const [changed] = await withWorkspace(db, id, async (tx) => {
+      // Drafts are written under the workspace lock, so none can slip past the scan below.
+      if (change.rewritesDrafts !== undefined) await lockWorkspace(tx, id);
       const updated = await tx
         .update(apiKey)
         .set(change)

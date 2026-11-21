@@ -245,8 +245,8 @@ export function Thread({
   const mode: ComposeMode = closed || draft.isNote ? "note" : "reply";
   const uploadsOn = !readOnly && !suspended && mode === "reply";
   const [dropping, setDropping] = useState(false);
-  // The bot's draft whose text is in the composer: sending it sends the draft. Once it stops
-  // waiting, as when its bot replaced it, the operator's text stays and goes as a plain reply.
+  // The bot's draft whose text is in the composer: sending it sends the draft, so the visitor gets
+  // one reply even when another operator sent it meanwhile. The chip shows only while it waits.
   const [editedDraft, setEditingDraft] = useState<SuggestedReply | null>(null);
   const editingDraft = suggestions.drafts.some((one) => one.id === editedDraft?.id)
     ? editedDraft
@@ -295,9 +295,9 @@ export function Thread({
   /** Who wrote a line, as this thread names them. */
   const authorOf = (line: Line) => (line.fromVisitor ? visitorName : replyAuthor(line, meId));
   const send = (body: string, picked: ReadonlyMap<string, string>) => {
-    if (editingDraft !== null) {
+    if (editedDraft !== null) {
       // The composer emptied itself, so a failure puts the text back.
-      return void suggestions.send(editingDraft, body).then((done) => {
+      return void suggestions.send(editedDraft, body).then((done) => {
         if (done) setEditingDraft(null);
         else setDraft({ text: body, isNote: false });
       });

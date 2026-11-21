@@ -311,10 +311,22 @@ describe("the bot's answer", () => {
     );
     expect(retried.status).toBe(202);
     expect(((await retried.json()) as { draft: Draft }).draft.id).toBe(draft.id);
-    // A replaced draft can be neither sent nor discarded.
+    // A replaced draft can be neither sent as it is nor discarded.
     const base = inChat(chat.conversationId, `/drafts/${chat.draft.id}`);
     expect((await asOperator(app, boss.cookie, "POST", `${base}/send`, {})).status).toBe(404);
     expect((await asOperator(app, boss.cookie, "POST", `${base}/discard`)).status).toBe(404);
+  });
+
+  test("an operator's edit of a replaced draft still sends, once", async () => {
+    const chat = await fulfilled();
+    const send = inChat(chat.conversationId, `/drafts/${chat.draft.id}/send`);
+    const edit = { body: "My own words." };
+    const first = await asOperator(app, boss.cookie, "POST", send, edit);
+    expect(first.status).toBe(201);
+    const again = await asOperator(app, boss.cookie, "POST", send, edit);
+    expect(((await again.json()) as { id: string }).id).toBe(
+      ((await first.json()) as { id: string }).id,
+    );
   });
 
   test("through MCP, as reply with changeRequestId", async () => {
