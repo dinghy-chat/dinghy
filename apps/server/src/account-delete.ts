@@ -413,10 +413,19 @@ export function registerAccountDelete(
   /**
    * The app review account's delete. The reviewer sees it finish at once, as the end of their
    * test. The account and its workspace stay for the next review, so it ends the sessions and push
-   * devices, and turns off two-step sign-in, which the next reviewer could not pass.
+   * devices, and turns off two-step sign-in, which the next reviewer could not pass. With `link`,
+   * an emailed delete link's row, it uses the link up in the same transaction, and returns false
+   * when another request used it first.
    */
-  const signOutReview = async (operatorId: string) => {
-    await db.transaction(async (tx) => {
+  const signOutReview = async (operatorId: string, link?: string): Promise<boolean> => {
+    const done = await db.transaction(async (tx) => {
+      if (link !== undefined) {
+        const used = await tx
+          .delete(verification)
+          .where(eq(verification.identifier, link))
+          .returning({ id: verification.id });
+        if (used.length === 0) return false;
+      }
       // The account's row first, in the order a code's check locks them, as in the full delete.
       await tx
         .select({ id: operator.id })
@@ -428,12 +437,15 @@ export function registerAccountDelete(
       await tx.update(operator).set({ twoFactorOn: false }).where(eq(operator.id, operatorId));
       await tx.delete(session).where(eq(session.userId, operatorId));
       await tx.delete(pushSubscription).where(eq(pushSubscription.operatorId, operatorId));
+      return true;
     });
+    if (!done) return false;
     // Open inboxes check their session at the next drain, and end.
     for (const { workspaceId } of await operatorWorkspaces(db, operatorId)) {
       live.wake(workspaceId, OPERATORS);
     }
     audit(logger, "account.review_signed_out", { operatorId });
+    return true;
   };
 
   app.openapi(requestRoute, async (c) => {
@@ -489,8 +501,7 @@ export function registerAccountDelete(
     const { operatorId, email } = PendingDelete.parse(JSON.parse(row.value));
     // A link sent before the review settings were set still only signs the review account out.
     if (email.toLowerCase() === appReviewEmail) {
-      await db.delete(verification).where(eq(verification.identifier, identifier));
-      await signOutReview(operatorId);
+      if (!(await signOutReview(operatorId, identifier))) return c.json(LINK_INVALID, 400);
       return c.json({ ok: true as const }, 200);
     }
     // The link names the account's email, so the delete removes it with the other links: it works

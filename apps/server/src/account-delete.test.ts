@@ -420,11 +420,31 @@ describe("the app review account", () => {
     expect(await roleOf(space.id, reviewer.id)).toBe("owner");
     expect(audits("account.review_signed_out", reviewer.id)).toHaveLength(1);
     expect(audits("account.deleted", reviewer.id)).toHaveLength(0);
+    expect(wakes).toContain(space.id);
 
     const again = { ...reviewer, cookie: await signIn(app, auth, reviewer.email) };
     expect((await me(again)).status).toBe(200);
     // Another account on the same server still confirms by email.
     expect(await (await askDelete(other, {}, review)).json()).toEqual({ deleted: false });
+  });
+
+  test("each reviewer deletes the same account, with no limit", async () => {
+    const space = await createWorkspace(db, "Review harbor limit", []);
+    const reviewer = await person(space.id, "owner");
+    const review = createApp({
+      appReview: { email: reviewer.email, code: "024680" },
+      auth,
+      db,
+      logger,
+      live,
+      valkey,
+      mailer: mail,
+      checks: { postgres: ok, valkey: ok },
+    });
+    for (let round = 0; round < 7; round += 1) {
+      const signedIn = { ...reviewer, cookie: await signIn(app, auth, reviewer.email) };
+      expect((await askDelete(signedIn, {}, review)).status).toBe(200);
+    }
   });
 
   test("a delete link sent before the review settings only signs it out", async () => {
@@ -445,7 +465,16 @@ describe("the app review account", () => {
     expect((await me(reviewer)).status).toBe(401);
     expect(await operatorRow(reviewer.id)).toMatchObject({ deletedAt: null });
     expect(await workspaceRow(space.id)).toMatchObject({ deletedAt: null });
-    // The link works once.
+    // The link works once, even when two presses race.
+    const link2 = await deleteLink({
+      ...reviewer,
+      cookie: await signIn(app, auth, reviewer.email),
+    });
+    const presses = await Promise.all([
+      pressLinkButton(review, link2),
+      pressLinkButton(review, link2),
+    ]);
+    expect(presses.map((answer) => answer.status).sort()).toEqual([200, 400]);
     expect((await pressLinkButton(review, link)).status).toBe(400);
   });
 });
