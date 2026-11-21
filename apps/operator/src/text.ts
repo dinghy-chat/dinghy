@@ -169,6 +169,18 @@ const en = {
   mobileLabelsOf: "Out of the {count} chats that started. A chat can have more than one label.",
   mobileLabelDetail: "{count} of {total} chats from this period have the label {name} now.",
   mobileLabelsEmpty: "No chat had a label. Add labels in Settings, then Labels.",
+  // Native account delete. Keep this block unique so mobile worktrees can merge it.
+  mobileDeleteAccountChecking: "Checking how this server confirms a delete…",
+  mobileDeleteAccountCheckFailed:
+    "Dinghy could not reach the server. Retry when this phone is online.",
+  mobileDeleteAccountDeleted: "Your account is deleted.",
+  mobileDeleteAccountSentTitle: "Check your email",
+  mobileDeleteAccountLoses: "When your account is deleted, you lose:",
+  mobileDeleteAccountLosesAccess:
+    "Access to every workspace you are in. You are signed out on all your devices.",
+  mobileDeleteAccountLosesProfile: "Your name, email and profile photo. They are erased.",
+  mobileDeleteAccountKeepsReplies:
+    'Your replies stay in their conversations, shown as from "Former team member".',
   // Native profile and team, build 6. Keep this block unique so mobile worktrees can merge it.
   mobileEditProfile: "Edit profile",
   mobileChangePhoto: "Change photo",

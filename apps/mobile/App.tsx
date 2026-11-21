@@ -639,6 +639,15 @@ function SignedInApp({
     setSession(next);
   };
 
+  const accountDeleted = async () => {
+    push.current?.dispose();
+    push.current = null;
+    // The account is gone on the server, so the phone leaves it even if its storage fails.
+    await clearSession().catch(() => undefined);
+    Alert.alert(t("mobileDeleteAccountDeleted"));
+    onSignedOut();
+  };
+
   const signOut = async () => {
     if (signingOut) return;
     setSigningOut(true);
@@ -775,6 +784,8 @@ function SignedInApp({
                       setSession(next);
                       void saveSession(next).catch(() => undefined);
                     }}
+                    onAccountDeleted={() => void accountDeleted()}
+                    onSessionEnded={(failure) => void handleFailure(failure)}
                     onSignOut={signOut}
                     onWorkspace={(workspaceId) => void switchWorkspace(workspaceId)}
                     onWorkspaceRenamed={(name) => {

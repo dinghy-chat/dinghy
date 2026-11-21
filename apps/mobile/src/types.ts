@@ -13,6 +13,10 @@ export type Workspace = {
   active: boolean;
   readOnly: boolean;
   suspended: boolean;
+  /** This operator is the workspace's only owner. */
+  soleOwner: boolean;
+  /** For an only owner: who becomes the owner when they delete their account. Null when nobody. */
+  heir: string | null;
 };
 
 export type Quote = {

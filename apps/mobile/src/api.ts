@@ -141,6 +141,22 @@ export class DinghyApi {
     });
   }
 
+  /** Whether the server sends email, which decides how an account's delete is confirmed. */
+  async sendsEmail(): Promise<boolean> {
+    return (await this.call<{ email: boolean }>("/v1/meta")).email;
+  }
+
+  /**
+   * Deletes the account at once, or emails a link that does it. The operator types `email` to
+   * confirm. With no mail server, the server deletes only when it is the account's.
+   */
+  deleteAccount(email: string): Promise<{ deleted: boolean }> {
+    return this.call("/v1/operator/account/delete", {
+      method: "POST",
+      body: JSON.stringify({ email }),
+    });
+  }
+
   signOut(): Promise<unknown> {
     return this.call("/v1/auth/sign-out", { method: "POST", body: "{}" });
   }

@@ -26,6 +26,7 @@ const paths = {
   hand: "M3 7h15m-4-4 4 4-4 4 M21 17H6m4-4-4 4 4 4",
   bot: "M5 7h14v13H5z M12 7V3 M8 12h1m6 0h1 M9 16h6",
   lock: "M6 10h12v11H6z M8 10V7a4 4 0 0 1 8 0v3",
+  trash: "M4 7h16 M9 7V4h6v3 M6 7l1 13h10l1-13 M10 11v5 M14 11v5",
   pencil: "M4 20h4L19 9l-4-4L4 16z M13 7l4 4",
   send: "M12 20V5m-6 6 6-6 6 6",
   plus: "M5 12h14m-7-7v14",

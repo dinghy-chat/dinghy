@@ -17,8 +17,9 @@ import { t } from "../../operator/src/text.ts";
 import { Harbor } from "../Harbor";
 import type { PendingReply } from "../outbox";
 import { AdminTools } from "./AdminTools";
-import type { DinghyApi } from "./api";
+import type { ApiError, DinghyApi } from "./api";
 import { Avatar, elapsedLabel, readableError, visitorName } from "./common";
+import { DeleteAccountSheet } from "./delete-account-sheet";
 import { fonts } from "./fonts";
 import { Icon } from "./icon";
 import { inboxStyles as screen } from "./inbox-styles";
@@ -1368,8 +1369,10 @@ export function SettingsScreen({
   signingOut,
   theme,
   topInset,
+  onAccountDeleted,
   onAway,
   onEnablePush,
+  onSessionEnded,
   onSignOut,
   onProfileSaved,
   onTheme,
@@ -1385,8 +1388,10 @@ export function SettingsScreen({
   signingOut: boolean;
   theme: ThemePreference;
   topInset: number;
+  onAccountDeleted(): void;
   onAway(): void;
   onEnablePush(): void;
+  onSessionEnded(failure: ApiError): void;
   onSignOut(): void;
   onProfileSaved(me: Me): void;
   onTheme(theme: ThemePreference): void;
@@ -1396,6 +1401,7 @@ export function SettingsScreen({
   const dockInset = useTabBarInset();
   const [workspaceOpen, setWorkspaceOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [teamOpen, setTeamOpen] = useState(false);
   const [repliesOpen, setRepliesOpen] = useState(false);
   const [alerts, setAlerts] = useState<AlertSettings | null>(null);
@@ -1603,6 +1609,20 @@ export function SettingsScreen({
             </Text>
           </View>
         </Pressable>
+        {/* Small and far below Sign out, so nobody presses it by mistake. */}
+        {me !== null && (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ disabled: signingOut }}
+            disabled={signingOut}
+            onPress={() => setDeleteOpen(true)}
+            style={({ pressed }) => [screen.deleteAccountAction, { opacity: pressed ? 0.65 : 1 }]}
+          >
+            <Text style={[screen.deleteAccountTitle, { color: palette.danger }]}>
+              {t("deleteAccountOpen")}
+            </Text>
+          </Pressable>
+        )}
       </ScrollView>
       {me !== null && (
         <>
@@ -1629,6 +1649,21 @@ export function SettingsScreen({
             onClose={() => setRepliesOpen(false)}
             palette={palette}
             visible={repliesOpen}
+          />
+          <DeleteAccountSheet
+            api={api}
+            me={me}
+            onClose={() => setDeleteOpen(false)}
+            onDeleted={() => {
+              setDeleteOpen(false);
+              onAccountDeleted();
+            }}
+            onSessionEnded={(failure) => {
+              setDeleteOpen(false);
+              onSessionEnded(failure);
+            }}
+            palette={palette}
+            visible={deleteOpen}
           />
           <ProfileSheet
             api={api}
