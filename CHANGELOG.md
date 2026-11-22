@@ -12,7 +12,7 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ### Changed
 
-- **Close** opens the next conversation in the list, as Shift+E does, or no conversation when no other is left. It stays on the conversation while a reply is still sending.
+- **Close** opens the next conversation in the list, as Shift+E does, or no conversation when no other is left. It stays on the conversation while a reply is still sending or failed, so the reply can be retried.
 
 ## [0.50.0] - 2026-11-21
 
