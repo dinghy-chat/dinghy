@@ -6,6 +6,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ### Added
 
+- The Dinghy mobile app for iOS has the Inbox, conversations, Contacts, Visitors, Analytics and Settings. A reply written without a connection waits on the phone and sends when the connection returns, and an operator can delete their account from Settings.
+- Conversations in the operator inbox list and search results have `subject`, the first line of their first message, and `hasReadyDraft`, true when a bot's draft waits for review.
 - The website has install guides, use cases, comparisons and articles, including how to send proactive chat messages and read site analytics.
 
 ## [0.50.0] - 2026-11-21

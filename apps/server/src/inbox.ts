@@ -324,6 +324,9 @@ const Conversation = z
       // A test visitor that a bot's simulated message made.
       isTest: z.boolean(),
     }),
+    // First line of the earliest visible chat text, included in list and search results.
+    subject: z.string().nullable().optional(),
+    hasReadyDraft: z.boolean().optional(),
     lastMessage: z
       .object({
         // The text, or a file's name. Null for an image, and for a file that was removed.
@@ -964,6 +967,8 @@ export function conversationView(
 /** A conversation in a list, with whether the signed-in operator has read it. */
 const listedView = (row: ConversationSummary, pictureUrl: string | null) => ({
   ...conversationView(row, row.lastMessage, pictureUrl),
+  subject: row.subject,
+  hasReadyDraft: row.hasReadyDraft,
   unread: row.unread,
 });
 

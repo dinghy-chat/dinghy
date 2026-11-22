@@ -490,9 +490,18 @@ describe("drafts", () => {
 
   test("a new visitor message marks the waiting drafts stale", async () => {
     const chat = await drafted("Try restarting it.");
+    const summary = async () => {
+      const response = await asOperator(app, boss.cookie, "GET", inSpace("/conversations"));
+      const { conversations } = (await response.json()) as {
+        conversations: { id: string; hasReadyDraft: boolean }[];
+      };
+      return conversations.find((entry) => entry.id === chat.conversationId);
+    };
+    expect(await summary()).toMatchObject({ hasReadyDraft: true });
     expect((await listed(chat.conversationId)).map((one) => one.status)).toEqual(["open"]);
     await visitorSays(app, space.publicKey, chat.token, "Actually, it works now.");
     expect((await listed(chat.conversationId)).map((one) => one.status)).toEqual(["stale"]);
+    expect(await summary()).toMatchObject({ hasReadyDraft: false });
   });
 
   test("a visitor's message that reopens a closed conversation marks its drafts stale", async () => {

@@ -1,0 +1,12 @@
+{
+  "name": "expo-native-tab-bar",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Dinghy's native iOS tab bar and Inbox search field",
+  "license": "AGPL-3.0-only",
+  "peerDependencies": {
+    "expo": "*",
+    "react": "*",
+    "react-native": "*"
+  }
+}

@@ -16,7 +16,7 @@
         "type": "apiKey",
         "in": "cookie",
         "name": "better-auth.session_token",
-        "description": "The session cookie that POST /v1/auth/magic-link/verify sets when it uses a sign-in link (BetterAuth). The cookie is `__Secure-better-auth.session_token` on https. A write must also send the server's own Origin."
+        "description": "The BetterAuth session cookie. POST /v1/auth/magic-link/verify sets it for a browser. POST /v1/auth/native/exchange returns its complete Cookie pair to the native app. Its name is `__Secure-better-auth.session_token` on https. A write must also send the server's own Origin."
       },
       "apiKey": {
         "type": "http",
@@ -1141,6 +1141,12 @@
               "pictureUrl",
               "isTest"
             ]
+          },
+          "subject": {
+            "type": ["string", "null"]
+          },
+          "hasReadyDraft": {
+            "type": "boolean"
           },
           "lastMessage": {
             "type": ["object", "null"],

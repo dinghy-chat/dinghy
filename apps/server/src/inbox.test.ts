@@ -170,13 +170,20 @@ describe("membership", () => {
 
 describe("conversations", () => {
   test("a visitor's message appears with its context and last message", async () => {
-    const { conversationId } = await visitorStarts(app, a.publicKey, "The import stops");
+    const { conversationId } = await visitorStarts(
+      app,
+      a.publicKey,
+      "Import help\nThe import stops",
+    );
     const response = await get(inA("/conversations"));
     const { conversations } = (await response.json()) as {
       conversations: { id: string; lastMessage: { body: string; fromVisitor: boolean } }[];
     };
     const found = conversations.find((row) => row.id === conversationId);
-    expect(found?.lastMessage).toMatchObject({ body: "The import stops", fromVisitor: true });
+    expect(found).toMatchObject({
+      subject: "Import help",
+      lastMessage: { body: "Import help\nThe import stops", fromVisitor: true },
+    });
   });
 
   test("a signed-in visitor's context reaches the operator", async () => {

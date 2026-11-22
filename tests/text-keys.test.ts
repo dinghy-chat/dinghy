@@ -1,5 +1,13 @@
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  cpSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join, resolve } from "node:path";
 import { afterAll, expect, test } from "vitest";
@@ -22,8 +30,18 @@ afterAll(() => rmSync(copy, { recursive: true, force: true }));
 for (const name of ["apps", "ee", "packages", "tsconfig.json", "tsconfig.web.json"]) {
   cpSync(join(ROOT, name), join(copy, name), {
     recursive: true,
-    // The copy uses the real packages, which it does not need to copy.
+    // The copy uses the real packages, which it does not need to copy. The native folders hold
+    // generated projects, so only the mobile TypeScript sources and their config come along.
     filter: (source) => {
+      const relative = source.slice(ROOT.length + 1);
+      if (relative.startsWith("apps/mobile/")) {
+        if (["node_modules", "ios", "android"].includes(basename(source))) return false;
+        return (
+          statSync(source).isDirectory() ||
+          /\.(?:ts|tsx)$/.test(source) ||
+          basename(source) === "tsconfig.json"
+        );
+      }
       if (basename(source) !== "node_modules") return true;
       symlinkSync(source, join(copy, source.slice(ROOT.length)));
       return false;
@@ -38,22 +56,27 @@ function namedInErrors(file: string, source: string, wanted: Set<string>): Set<s
     wanted.has(key) ? `  ${key}${RENAMED}:` : line,
   );
   writeFileSync(join(copy, file), renamed);
-  const check = spawnSync(
-    join(ROOT, "node_modules/.bin/tsc"),
-    ["--noEmit", "--pretty", "false", "-p", join(copy, "tsconfig.web.json")],
-    { encoding: "utf8" },
-  );
+  const errors = ["tsconfig.web.json", "apps/mobile/tsconfig.json"]
+    .map(
+      (project) =>
+        spawnSync(
+          join(ROOT, "node_modules/.bin/tsc"),
+          ["--noEmit", "--pretty", "false", "-p", join(copy, project)],
+          { encoding: "utf8" },
+        ).stdout,
+    )
+    .join("\n");
   // A translation names every key, so its errors say nothing about where a key shows.
-  const errors = check.stdout
+  const relevant = errors
     .split("\n")
     .filter((line) => !line.startsWith(TRANSLATIONS))
     .join("\n");
-  const named = [...errors.matchAll(/"([A-Za-z0-9_]+)"/g)].map((match) => match[1] ?? "");
+  const named = [...relevant.matchAll(/"([A-Za-z0-9_]+)"/g)].map((match) => match[1] ?? "");
   return new Set(named.filter((key) => wanted.has(key)));
 }
 
 /**
- * The keys that code in the browser projects names as keys of `file`. A call reports only its first
+ * The keys that code in the client projects names as keys of `file`. A call reports only its first
  * wrong argument, so the keys found go back to their names and the check runs again, until it
  * finds no more.
  */
@@ -69,8 +92,8 @@ function usedKeys(file: string, keys: string[]): Set<string> {
   return used;
 }
 
-// It runs the type checker over the operator app, which takes seconds while the database tests
-// load the machine.
+// It runs the type checker over the browser and mobile apps, which takes seconds while the database
+// tests load the machine.
 const TYPE_CHECK_TIMEOUT_MS = 60_000;
 
 test.each(TEXTS)(
