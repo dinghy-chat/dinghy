@@ -65,7 +65,6 @@ Anywhere you can paste a script tag before `</body>`. You can use it with plain 
 - [Webflow](/guides/webflow)
 - [Next.js](/guides/nextjs)
 - [React](/guides/react)
-- [Google Tag Manager](/guides/google-tag-manager)
 - [All install guides](/guides/)
 
 A coding agent like Claude Code can also add the tag for you and check that it loads. See [the Claude Code guide](/guides/claude-code).
