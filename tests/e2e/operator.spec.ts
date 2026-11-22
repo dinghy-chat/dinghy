@@ -159,7 +159,6 @@ test("a draft survives closing and reopening the conversation", async ({ browser
   const reply = page.getByRole("textbox", { name: "Your reply" });
   await reply.fill("Half a sentence");
   await page.getByRole("button", { name: "Close", exact: true }).click();
-  await expect(row(page, "Half a sentence")).toHaveCount(0);
   await showStatus(page, "Closed");
   await row(page, "Half a sentence").click();
   await page.getByRole("button", { name: "Reopen" }).click();

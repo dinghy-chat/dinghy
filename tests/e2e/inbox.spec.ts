@@ -462,31 +462,41 @@ test("a close opens a row still in the list when a teammate closed the next one 
   for (const page of [...visitors, alice, bob]) await page.context().close();
 });
 
-test("a close stays on the conversation while a reply is still sending", async ({ browser }) => {
-  const alice = await signedIn(browser, server, "alice@example.com");
-  const { visitors, texts } = await threeOpen(browser, alice);
+for (const order of ["a reply, then a close", "a close, then a reply"]) {
+  test(`a close stays on the conversation while a reply is unsent: ${order}`, async ({
+    browser,
+  }) => {
+    const alice = await signedIn(browser, server, "alice@example.com");
+    const { visitors, texts } = await threeOpen(browser, alice);
 
-  // The reply reaches the server after the close, which refuses it.
-  let release = () => {};
-  const held = new Promise<void>((resolve) => {
-    release = resolve;
-  });
-  await alice.route(/\/messages$/, async (route) => {
-    if (route.request().method() === "POST") await held;
-    await route.continue();
-  });
-  await row(alice, texts[0] ?? "").click();
-  const reply = alice.getByRole("textbox", { name: "Your reply" });
-  await reply.fill("Sent just before the close");
-  await reply.press("Enter");
-  await alice.getByRole("button", { name: "Close", exact: true }).click();
-  await expect(alice.getByRole("button", { name: "Reopen" })).toBeVisible();
-  release();
+    // The reply reaches the server after the close, which refuses it.
+    const closing = order.startsWith("a close");
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await alice.route(closing ? /\/conversations\/[^/]+$/ : /\/messages$/, async (route) => {
+      const method = route.request().method();
+      if (method === (closing ? "PATCH" : "POST")) await held;
+      await route.continue();
+    });
+    await row(alice, texts[0] ?? "").click();
+    const reply = alice.getByRole("textbox", { name: "Your reply" });
+    const close = alice.getByRole("button", { name: "Close", exact: true });
+    if (closing) await close.click();
+    await reply.fill("Sent around the close");
+    await reply.press("Enter");
+    if (!closing) {
+      await close.click();
+      await expect(alice.getByRole("button", { name: "Reopen" })).toBeVisible();
+    }
+    release();
 
-  await expect(alice.locator(".retry")).toBeVisible();
-  await expect(alice.getByText("Sent just before the close")).toBeVisible();
-  for (const page of [...visitors, alice]) await page.context().close();
-});
+    await expect(alice.locator(".retry")).toBeVisible();
+    await expect(alice.getByText("Sent around the close")).toBeVisible();
+    for (const page of [...visitors, alice]) await page.context().close();
+  });
+}
 
 test("a close opens the next row after a long press there, on a touch screen", async ({
   browser,

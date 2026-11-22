@@ -249,15 +249,16 @@ export function Thread({
   // does, as in a conversation that closed meanwhile.
   const [editedDraft, setEditingDraft] = useState<SuggestedReply | null>(null);
   const editingDraft = mode === "reply" ? editedDraft : null;
+  const linesNow = useRef(thread.lines);
+  linesNow.current = thread.lines;
   /**
    * Closes or reopens the conversation. A close opens the next chat, or none if the list is empty.
-   * It stays while a reply is unsent, so a send the close refuses keeps its text and its Retry.
+   * It stays if a reply is unsent when it saves, so a send the close refuses keeps its Retry.
    */
   const setStatus = (status: "open" | "closed") => {
-    const unsent = thread.lines.some((line) => line.status !== "sent");
-    const next = status === "closed" && !unsent ? nextAfterClose(conversationId) : null;
+    const next = status === "closed" ? nextAfterClose(conversationId) : null;
     void change.setStatus(status).then((saved) => {
-      if (saved) next?.();
+      if (saved && linesNow.current.every((line) => line.status === "sent")) next?.();
     });
   };
   /** Puts the caret in the composer, as a reply or a note. A closed conversation takes notes only. */
