@@ -66,7 +66,7 @@ docker compose up -d --wait
 
 The nightly backup keeps the last 7, on the same disk as everything else. That covers a bad upgrade. It doesn't cover a dead disk. Fill in the `BACKUP_S3_*` settings in `.env` and each backup also goes, encrypted, to a bucket somewhere else.
 
-Keep a copy of `.env` and the backup key off the server too. A backup file plus `.env` brings everything back on a fresh server, except images and files in S3, which the bucket keeps.
+Keep a copy of `.env` and the backup key off the server too. Use the backup and `.env` to restore the server. If you use S3 for chat uploads, keep a separate backup of that bucket.
 
 Set `BACKUP_HEARTBEAT_URL` to a free [healthchecks.io](https://healthchecks.io) check, and you'll hear about it the first night one is missing.
 
@@ -82,4 +82,4 @@ docker compose up -d --wait
 
 If an upgrade changes how data is stored, it takes a backup first and prints where it put it. The [self-hosting guide](/docs/self-hosting#upgrading) explains how to go back.
 
-Already on Dinghy Cloud? Your workspace exports to one file that imports here. I wrote up [the whole move](/blog/move-to-your-own-server). And if you'd rather not run a server at all, [Dinghy Cloud](https://app.dinghy.chat/signup) is $9 a month for up to 5 people.
+[Move a Dinghy Cloud workspace to your server](/blog/move-to-your-own-server). If you’d rather have us run it, [Dinghy Cloud](https://app.dinghy.chat/signup) costs $9 a month for up to five people.

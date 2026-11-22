@@ -46,7 +46,7 @@ If your bot supports revisions, an operator can select **Ask to change** on its 
 
 ## Hand off to people
 
-When the agent can't or shouldn't answer, it calls `hand_off`. Good reasons: the visitor asks for a person, a question about money or an account, a complaint, or anything the agent isn't sure about. In one step, Dinghy can send a final message if the agent supplies one and its permissions allow it. It assigns the conversation to a member or the whole team, adds an internal note with the reason and a summary, and alerts the team.
+When the agent can't or shouldn't answer, it calls `hand_off`. Use it when someone asks for a person, wants a refund or raises an account issue. If the bot has permission to send directly, it can include a final message. It assigns the conversation to a member or the whole team, adds an internal note with the reason and a summary, and alerts the team.
 
 After that a person owns the conversation, and a bot that sends directly can't reply there. It can still write internal notes, which the visitor never sees. When the person is done, they pick the bot in the conversation's dropdown, or **Give back to bot**, and then it can answer again. A bot can't take a conversation back by itself.
 
@@ -68,7 +68,7 @@ Intercom's Fin charges $0.99 per outcome, on top of seats. At 500 outcomes a mon
 
 ## Self-host with your own model
 
-Self-hosted Dinghy has every feature for free, including the MCP server, the API, drafts and handoff. Dinghy never calls a model itself, so your agent can use any model you want, even one on your own server. Then no chat leaves your machines. OAuth in the browser needs your Dinghy address on `https`, and the install script sets that up. The install is in the [self-hosting guide](/docs/self-hosting).
+Self-hosted Dinghy has every feature for free, including the MCP server, the API, drafts and handoff. Dinghy never calls a model itself, so your agent can use any model you want, including a local model. With a local bot and model, you can keep that processing on your own machines. OAuth in the browser needs your Dinghy address on `https`, and the install script sets that up. The install is in the [self-hosting guide](/docs/self-hosting).
 
 ## When Dinghy isn't the right fit
 

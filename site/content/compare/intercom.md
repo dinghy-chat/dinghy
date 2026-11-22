@@ -14,7 +14,7 @@ stat: $19 to $29/seat
 
 Intercom puts an AI agent at the center of its customer service software. Dinghy is a small live chat with a shared inbox. If you're one to five people answering chats yourselves, use Dinghy.
 
-## The quick answer
+## Which one fits
 
 Use Dinghy for website chat, a shared inbox and alerts, at one price for the team. Use Intercom for its AI agent, product tours, help center, email and phone support.
 
@@ -48,6 +48,4 @@ Dinghy has no AI of its own. If you want a bot, connect your own agent through M
 
 ## Switching from Intercom
 
-There's no importer from Intercom. The Dinghy tag goes where the Intercom snippet was. The steps are in [Moving over from another chat](/compare/#moving-over-from-another-chat).
-
-If you used Intercom's identity verification to show signed-in users, Dinghy works the same way. Your server signs a short token, and operators see who they're talking to. It's in [Show who is chatting](/docs/add-to-your-site#show-who-is-chatting).
+Dinghy can’t import Intercom conversations. [Switch your site to Dinghy](/compare/#moving-over-from-another-chat). If you showed signed-in users in Intercom, [set up signed-in users in Dinghy](/docs/add-to-your-site#show-who-is-chatting) with a token your server signs.

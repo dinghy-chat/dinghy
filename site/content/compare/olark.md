@@ -14,7 +14,7 @@ stat: $29/agent
 
 Now its pricing page leads with an AI website agent, and plain human chat is a smaller plan, per agent. Dinghy is human chat at one flat price, with no AI of its own. Your own agent can draft replies for a person to send.
 
-## The quick answer
+## Which one fits
 
 Olark's AI plan answers visitors and qualifies leads. It's $400 a month, with account management and white glove support. Dinghy charges one price for the team. You can connect your own AI agent.
 
@@ -43,4 +43,4 @@ Dinghy has no AI of its own. Your team answers from a shared inbox, with push al
 
 ## Moving over
 
-There's no importer from Olark. The steps are in [Moving over from another chat](/compare/#moving-over-from-another-chat).
+Dinghy can’t import Olark conversations. [Switch your site to Dinghy](/compare/#moving-over-from-another-chat).

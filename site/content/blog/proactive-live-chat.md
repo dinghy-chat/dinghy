@@ -9,7 +9,7 @@ card: A pricing-page prompt, from the first test to the reply
 
 # Proactive live chat on your pricing page
 
-Someone has been on your pricing page for 20 seconds. They might have a question about moving from another tool. You can offer to help without opening a chat window over the price they came to read. In Dinghy, use a page campaign to show a short card above the chat button.
+Want to offer help on your pricing page? Show a little card above the chat button after 20 seconds. The visitor can keep reading or reply if they have a question.
 
 ## Set up the message
 
@@ -26,9 +26,9 @@ Open the published pricing page in a private window. Wait 20 seconds, then reply
 
 ## Read the results
 
-Open the campaign's **Results**. Compare how many messages people read, replied to or dismissed. Read a few of the conversations that started there. If people ask about importing their old conversations, answer that question on the pricing page itself.
+Open the campaign's **Results**. See how many people read, replied to or dismissed the card. If people ask about importing their old conversations, answer that question on the pricing page itself.
 
-To stop the prompt, pause the campaign. You can change the text or timing and resume it. **Pause all campaigns** holds every campaign in the workspace, so use it when you need to stop more than this one.
+To stop the prompt, pause the campaign. You can change the text or timing and resume it. **Pause all campaigns** stops sends from every campaign in the workspace.
 
 ## When a page is the wrong trigger
 

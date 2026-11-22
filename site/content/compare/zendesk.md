@@ -14,7 +14,7 @@ stat: $55 to $69/agent
 
 Zendesk does tickets, email, phone and website chat. Live chat and messaging on your site start with the Suite plans, priced per agent. Dinghy is a small website chat at one flat price.
 
-## The quick answer
+## Which one fits
 
 Use Zendesk if you need tickets, email, phone, a help center, AI agents and detailed reports. Use Dinghy for website chat with one to five people.
 
@@ -44,4 +44,4 @@ Dinghy Cloud is $9 a month for the workspace, up to 5 people. No per-agent price
 
 ## Moving over
 
-There's no importer from Zendesk. Remove the Zendesk web widget snippet and paste the Dinghy tag where it was. The steps are in [Moving over from another chat](/compare/#moving-over-from-another-chat).
+Dinghy can’t import Zendesk conversations. [Switch your site to Dinghy](/compare/#moving-over-from-another-chat).

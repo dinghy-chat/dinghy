@@ -14,7 +14,7 @@ stat: Free with badge
 
 tawk.to is free. It makes its money on add-ons: removing its branding, AI answers, and chat agents you hire by the hour. Dinghy charges one flat price and has no add-ons.
 
-## The quick answer
+## Which one fits
 
 If $0 matters most and you don't mind "Powered by tawk.to" on your site, use tawk.to. If you'd pay the $29 a month to remove the branding anyway, Dinghy Cloud is $9, or free on your own server.
 
@@ -43,4 +43,4 @@ The "Powered by Dinghy" line turns off for free, and there's no add-on menu. On 
 
 ## Moving over
 
-There's no importer from tawk.to. The Dinghy tag goes where the tawk.to snippet was, usually just before `</body>`. The steps are in [Moving over from another chat](/compare/#moving-over-from-another-chat).
+Dinghy can’t import tawk.to conversations. [Switch your site to Dinghy](/compare/#moving-over-from-another-chat).

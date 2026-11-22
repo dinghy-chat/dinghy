@@ -14,9 +14,9 @@ Dinghy is an open-source live chat. The tag loads a script under 4 KB. It runs u
 
 ## Why it fits a docs site
 
-**The script is small.** The tag loads a script under 4 KB with `async`. The full chat loads when a reader opens it or comes back to a chat. The full chat also loads if your site identifies the reader or they have an outbound message waiting.
+**What loads.** The loader downloads asynchronously. The full chat loads when a reader opens it or comes back to a chat. The full chat also loads if your site identifies the reader or they have an outbound message waiting.
 
-**It doesn't fight your theme.** The widget renders in its own Shadow DOM. Your docs theme's CSS can't break it, and its CSS can't leak into your pages. Pick your colors, the chat button and a light, dark or automatic theme in Settings > Appearance, or set `data-primary` and `data-accent` on the tag. `data-mascot="false"` hides the little boat.
+**It doesn't fight your theme.** The widget renders in its own Shadow DOM. The widget keeps its styles separate from your docs theme. Pick your colors, the chat button and a light, dark or automatic theme in Settings > Appearance, or set `data-primary` and `data-accent` on the tag. `data-mascot="false"` hides the little boat.
 
 **It works under a strict CSP.** Allow your Dinghy address in three directives:
 
@@ -44,7 +44,7 @@ If your product has accounts, your server can sign a token so the chat knows whi
 
 Self-hosting is free. You don't need a third-party account or an API key. Dinghy has no license check and sends no telemetry. It's one Docker image with Postgres and Valkey. One install script on a fresh Linux server sets up Docker, HTTPS and your login. Commands, backups and upgrades are in the [self-hosting guide](/docs/self-hosting).
 
-Every install has an HTTP API with an OpenAPI description at `/v1/openapi.json`, webhooks for 10 events, and an MCP server at `/v1/mcp`. The widget is on npm too, as `@dinghy-chat/widget`. See [the API page](/docs/api) and [Use Dinghy with AI agents](/docs/agents).
+Every install has an HTTP API with an OpenAPI description at `/v1/openapi.json`, webhooks for chat and campaign events, and an MCP server at `/v1/mcp`. The widget is on npm too, as `@dinghy-chat/widget`. See [the API page](/docs/api) and [Use Dinghy with AI agents](/docs/agents).
 
 Or skip the server and use Dinghy Cloud, $9 a month for up to 5 people. A workspace exports to one file that imports into a self-hosted Dinghy, so you can move later.
 

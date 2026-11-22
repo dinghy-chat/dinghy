@@ -5,14 +5,12 @@ description: A Dinghy Cloud workspace exports to one file that imports into a se
 date: 2026-11-09
 updated: 2026-11-22
 order: 5
-card: One export file, one import command, and you're out
+card: What moves with the export and what you need to reconnect
 ---
 
 # Leaving the cloud: move your chat to your own server
 
-Before you hand your customer chats to a small company, ask how you'd get them back. With Dinghy it's one file.
-
-Dinghy Cloud runs the same code you can run yourself. An owner downloads the workspace as one file, with conversations, contacts, outbound messages, team settings and chat attachments. That file imports into Dinghy on your own server. The [self-hosting guide](/docs/self-hosting#moving-a-workspace) has the short version.
+A workspace owner can export conversations, contacts, outbound messages, team settings and chat attachments from Dinghy Cloud. Import that file on your own server, then point your site at the new server. The [self-hosting guide](/docs/self-hosting#moving-a-workspace) has the short version.
 
 ## Set up the new server first
 
@@ -24,7 +22,7 @@ Sign up there with the same email you use on the cloud. When the workspace arriv
 
 ## Export, then import
 
-On Dinghy Cloud, an owner opens Settings > Workspace and clicks Download an export. Ask a workspace owner to export it.
+On Dinghy Cloud, an owner opens **Settings > Workspace** and selects **Download an export**.
 
 Copy the file to your server and run these from the folder with `compose.yaml`:
 
@@ -57,8 +55,8 @@ API keys arrive revoked, because their tokens never leave the old server. If a b
 
 ## Once it's working
 
-When new chats show up on your server, cancel Dinghy Cloud. You don't lose anything: every feature is in the self-hosted version, and the cloud's limits of 5 people and 1 GB of files don't apply on your own server.
+Send a test message from your site and reply from the new inbox. Check any bots and webhooks you reconnected before you cancel Dinghy Cloud.
 
-But the server is yours to look after now. Back up the server and install updates. The installer sets up a nightly backup if the server runs cron, but it lands on the same disk. Read [the backups section](/docs/self-hosting#backups) and send a copy somewhere else before you cancel.
+Set up backups and install updates on the new server. The installer sets up a nightly backup if the server runs cron, but it lands on the same disk. Read [the backups section](/docs/self-hosting#backups) and send a copy somewhere else before you cancel.
 
 The same file works between any two Dinghy servers. To move to a bigger machine or another host later, follow the same steps. Use `chat export` on the old server instead of the button.

@@ -49,7 +49,7 @@ Dinghy Cloud doesn't count conversations or contacts. December with three times 
 
 ## When Dinghy isn't the right fit
 
-- You want order lookups, product cards or cart details in the chat. Dinghy shows the pages a customer looked at, and facts your page sends with `Dinghy.setContext()`, like a cart total. That's it. No order lookups, nothing else from your store's backend.
+- You want order lookups, product cards or cart details in the chat. Dinghy shows the pages a customer looked at, and facts your page sends with `Dinghy.setContext()`, like a cart total. Your store has to supply those details.
 - You want a ready-made abandoned-cart integration. Dinghy can show a [proactive message](/blog/proactive-live-chat) on a store page, or send one when your backend reports an event. It doesn't read your cart on its own.
 - You want Instagram, WhatsApp or your support email in the same inbox. Dinghy is website chat, plus email replies to visitors who left.
 - You want a ready-made bot that answers "where's my order?" at 3 a.m. with no setup. Dinghy has no AI of its own. If you build or run your own bot, it can answer through MCP or the API, and by default its replies wait as drafts for you. See [Live chat for AI agents](/for/ai-agents).

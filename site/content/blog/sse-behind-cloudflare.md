@@ -10,7 +10,7 @@ card: A ping every 25 seconds, and cursors so nothing gets lost
 
 # How Dinghy keeps live chat open behind Cloudflare
 
-A visitor opens your chat, asks a question, then goes off to read your pricing page. Ten minutes later you answer. Your reply has to show up on their screen right away, even though nothing real has gone between their browser and your server in ten minutes.
+A visitor opens your chat, asks a question, then goes off to read your pricing page. Ten minutes later you answer. Your reply still needs to reach their browser, even after ten quiet minutes.
 
 Anything between the browser and your server can decide an idle connection is dead and close it.
 
@@ -18,7 +18,7 @@ Anything between the browser and your server can decide an idle connection is de
 
 The browser sends a message with a plain `POST`. It gets messages over server-sent events, or SSE. That's one long HTTP response the server keeps adding to.
 
-I picked that because every proxy already understands it. To Caddy, nginx or Cloudflare, an SSE stream is just a slow response. One thing to check is whether your proxy buffers the response instead of streaming it. So every stream sends `X-Accel-Buffering: no`, the header nginx looks at.
+Caddy, nginx and Cloudflare can proxy an SSE stream as a long HTTP response. If nginx buffers it, messages can arrive late. Dinghy sends `X-Accel-Buffering: no` to tell nginx to stream it.
 
 Each message gets an ID made by the browser, 32 random hex characters. If the network drops halfway through a send, the browser sends it again with the same ID, and the server hands back the first copy instead of saving a second one. Rate limits work like for any request, with a status code and a `Retry-After` header.
 

@@ -6,7 +6,7 @@ date: 2026-11-08
 updated: 2026-11-22
 priceChecked: 2026-11-22
 order: 6
-card: Both open source. Chatwoot does every channel, Dinghy does chat
+card: Website chat, self-hosting and other support channels
 stat: $19/agent
 ---
 
@@ -14,7 +14,7 @@ stat: $19/agent
 
 Chatwoot is an open-source Intercom alternative. Live chat, email, WhatsApp and more, plus a help center and AI. Dinghy is website chat and a team inbox, and it emails your reply to visitors who already left. No other channels.
 
-## The quick answer
+## Which one fits
 
 Use Chatwoot for multiple channels, a help center, automation rules or a built-in AI assistant. To self-host it, you'll run a Rails app with background workers. For website chat, Dinghy runs as one app with Postgres and Valkey on a small server.
 
@@ -51,10 +51,8 @@ See [Chatwoot’s pricing page](https://www.chatwoot.com/pricing/) or [all price
 
 ## What Dinghy does differently
 
-One app container, Postgres and Valkey. You get every feature when you self-host.
-
-No built-in AI, no extra channels. The inbox has saved replies, notes with @mentions, labels, files, business hours, analytics, and an API with webhooks. Connect your own agent through MCP or the API. Its replies wait as drafts until a person sends them, see [Bring your own AI agent](/blog/bring-your-own-ai-agent). The [widget loader](/live-chat-widget) is under 4 KB. You also get [campaigns](/blog/proactive-live-chat) and site analytics. If you don't want to run a server, Dinghy Cloud is $9 a month for up to 5 people.
+You get a shared inbox with saved replies, labels and [campaigns](/blog/proactive-live-chat), even when you self-host. If you want AI to help with replies, [connect your own agent](/blog/bring-your-own-ai-agent). It starts by drafting replies for your team.
 
 ## Moving over
 
-There's no importer from Chatwoot. To self-host, run the script in the [self-hosting guide](/docs/self-hosting). The steps are in [Moving over from another chat](/compare/#moving-over-from-another-chat).
+Dinghy can’t import Chatwoot conversations. [Switch your site to Dinghy](/compare/#moving-over-from-another-chat).

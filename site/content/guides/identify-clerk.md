@@ -58,7 +58,7 @@ Put the `data-key` from your tag in place of `wk_your_public_key`. The `sub` is 
 
 ## 2. Hand the token to the chat
 
-Put the queue helper in its own file. If you already added `DinghyIdentify` from the Next.js guide, delete it, because this replaces it. The helper works whether the chat script has loaded yet or not:
+Put this helper in its own file. If you used `DinghyIdentify` from the Next.js guide, replace it with the component below. The helper queues calls until the widget loads:
 
 ```ts
 // lib/dinghy.ts

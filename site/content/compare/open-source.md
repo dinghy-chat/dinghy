@@ -11,11 +11,9 @@ stat: 7 projects
 
 # Open-source live chat options in 2026
 
-I compared them for a small team that only needs website chat.
+I make Dinghy. I used each project’s deployment docs to compare what you’d need to run it yourself.
 
-I make Dinghy, so keep that in mind when you see where I put it. The table uses each project’s own deployment docs and shows where the products differ.
-
-## The quick answer
+## Which one fits
 
 If you only want website chat, look at Dinghy or Live Helper Chat. If you want one inbox for chat, email, WhatsApp and more, go with Chatwoot. If you already run Zammad or Rocket.Chat, their chat widget may be enough. Papercups is in maintenance mode.
 
@@ -41,7 +39,7 @@ It's not for you if you want a bot builder, a ready-made AI agent or other chann
 
 ## Live Helper Chat
 
-Live Helper Chat is a PHP project with commits and releases every week or so. It does website chat, bots that connect to AI services, voice, video, screen sharing, co-browsing, Telegram, Messenger and WhatsApp. Its site says unlimited operators and departments, and there's paid hosting too.
+Live Helper Chat runs on PHP. It does website chat, bots that connect to AI services, voice, video, screen sharing, co-browsing, Telegram, Messenger and WhatsApp. Its site says unlimited operators and departments, and there's paid hosting too.
 
 It needs PHP 8.2 or later with MySQL 5.7 or MariaDB 10.2.3, behind Apache or Nginx, and there's an official Docker setup. The [install guide](https://doc.livehelperchat.com/docs/install/) gives the software requirements.
 

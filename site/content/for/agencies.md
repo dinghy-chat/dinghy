@@ -14,7 +14,7 @@ Give each client their own chat and inbox. Use one login to switch between them.
 
 ## One workspace per client
 
-A workspace has its own inbox, team, widget tag, allowed sites and signing secret. Clients never see each other's chats.
+A workspace has its own inbox, team, widget tag, allowed sites and signing secret. Each team can open the workspaces it belongs to.
 
 1. Sign up on Dinghy Cloud and create the first client's workspace.
 2. For the next client, open the workspace menu at the top of the sidebar and select Create a workspace. Each one has its own $9 subscription.
@@ -29,7 +29,7 @@ You switch between clients with the workspace menu at the top of the sidebar. Sa
 
 **You own it.** You create the workspace, pay for it, and invite the client's staff as members or admins. That's good for a client who gets chat as part of a care plan you bill for.
 
-**The client owns it.** The client signs up, pays, and invites you as an admin. You set up the tag, the colors and the allowed sites. If you part ways, they keep the account. An owner can always download an export of the whole workspace.
+**The client owns it.** The client signs up, pays, and invites you as an admin. You set up the tag, the colors and the allowed sites. If you part ways, they keep the account. A workspace owner can download an export.
 
 Members answer, assign, close and block. Admins can also change settings and invite members. Owners can also invite admins, change roles and download exports. The full table is in the [operator guide](/docs/operator-guide#set-up-your-team).
 

@@ -11,7 +11,7 @@ logo: ghost
 
 # Add live chat to Ghost
 
-Paste the Dinghy tag in Code injection > Site footer and save. Ghost adds it before `</body>` on every page, with any theme.
+Use **Code injection > Site footer** to add Dinghy to your Ghost publication.
 
 ## Get your tag
 

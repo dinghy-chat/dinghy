@@ -11,9 +11,7 @@ logo: googletagmanager
 
 # Add live chat with Google Tag Manager
 
-If Google Tag Manager is already on your site, you can add Dinghy without touching the site's code. It's one Custom HTML tag that fires on all pages.
-
-But if you can paste the tag straight into your site, do that instead. The direct tag doesn't have to wait for Tag Manager.
+If your site already uses Google Tag Manager, add Dinghy as a Custom HTML tag on the All Pages trigger.
 
 ## Get your tag
 
@@ -62,7 +60,7 @@ If the tag fires but there's no button, open the browser's developer console. If
 
 If your consent banner holds back tags until a visitor accepts, it may hold back the chat too. Then people who haven't clicked the banner don't see the chat button. Check which consent category the Dinghy tag uses and whether that blocks the chat before consent.
 
-Dinghy keeps a visitor's chat in the browser so it's still there after a refresh. It sets no cookies and does no ad tracking. For the live visitor list, each open tab tells your Dinghy server which page it's on, and Dinghy also keeps hourly totals for [site analytics](/blog/live-chat-analytics-without-cookies). Ask whoever handles privacy for your site whether the chat needs consent.
+Dinghy keeps a visitor's chat in the browser so it's still there after a refresh. It sets no cookies and does no ad tracking. For the live visitor list, each open tab tells your Dinghy server which page it's on, and Dinghy also keeps hourly totals for [site analytics](/blog/live-chat-analytics-without-cookies). Check the tag in Preview mode with your consent settings.
 
 ## Content Security Policy
 

@@ -10,11 +10,7 @@ order: 0
 
 # What live chat costs for a small team
 
-I checked each company's pricing page for the cost of 1, 3 and 5 people.
-
-## The table
-
-Monthly prices in US dollars for the plans below.
+Here’s what the plans below cost each month for one, three or five people. Prices are in US dollars.
 
 | Product | 1 person | 3 people | 5 people | The catch |
 |---|---|---|---|---|

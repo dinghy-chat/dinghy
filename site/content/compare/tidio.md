@@ -6,15 +6,15 @@ date: 2026-11-08
 updated: 2026-11-22
 priceChecked: 2026-11-22
 order: 4
-card: Conversation caps and an AI upsell, or neither
+card: How Tidio counts chats and prices Lyro
 stat: $24 to $29
 ---
 
 # Dinghy vs Tidio
 
-Tidio has an AI agent called Lyro and e-commerce features. Dinghy offers website chat, a team inbox, and campaigns. You can connect your own AI agent.
+Tidio charges by conversation and offers Lyro, its own AI agent. Dinghy Cloud charges $9 a month per workspace, regardless of how many chats you answer.
 
-## The quick answer
+## Which one fits
 
 Use Tidio if your store needs an AI agent for common questions, flows and e-commerce tools. Use Dinghy if your team answers chats and you don't want a conversation cap. You can still connect your own AI agent, and its replies wait as drafts for a person to send.
 
@@ -52,4 +52,4 @@ If you don't want to pay at all, Dinghy is open source and free on your own serv
 
 ## Moving over
 
-There's no importer from Tidio. On Shopify it's one edit in your theme, see the [Shopify guide](/guides/shopify). On WordPress, see the [WordPress guide](/guides/wordpress). The steps are in [Moving over from another chat](/compare/#moving-over-from-another-chat).
+Dinghy can’t import Tidio conversations. Follow the [Shopify guide](/guides/shopify) or the [WordPress guide](/guides/wordpress) if you use either platform. [Switch your site to Dinghy](/compare/#moving-over-from-another-chat).

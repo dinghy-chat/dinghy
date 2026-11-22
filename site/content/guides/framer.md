@@ -38,7 +38,7 @@ Framer documents [where and when custom code runs](https://www.framer.com/help/a
 7. Paste the tag and save.
 8. Publish the site.
 
-Pick "Once", not "Run on every page visit". The tag only needs to run once per visit, and the chat stays on screen while people move between pages. Otherwise, each page visit adds the tag again.
+Running the script once keeps the same chat as people move between pages.
 
 ## Check that it works
 

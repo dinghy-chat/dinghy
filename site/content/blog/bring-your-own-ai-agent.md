@@ -10,25 +10,13 @@ card: Your agent drafts, your team sends, the price stays flat
 
 # Bring your own AI agent to your live chat
 
-Intercom bills per Fin outcome. Tidio counts human and Lyro conversations against the same plan limit when you enable Lyro. tawk.to sells AI Assist.
+Connect your own bot to Dinghy and it starts in **Drafts only**. It writes a reply, and your team can edit, send or discard it.
 
-Dinghy has no AI of its own, and I don't sell any. But if you want a bot to answer chats, your own agent can do it. And by default a person still approves what it says.
-
-## A person answers by default
-
-If you're a team of one to five, your support is probably your best feature. A customer writes, and the person who built the thing answers.
-
-A bot sits between your customer and you. Some customers don't mind. Some write to you exactly because they want a person. So in Dinghy, every answer comes from a person unless you connect a bot. And even then, a person approves its replies until you change that.
-
-## Per-answer AI pricing changes your bill
-
-An AI answer costs money every time, so the tools pass that on, per resolution or per bundle of conversations. But it means your bill depends on how busy your month was.
-
-Dinghy charges no AI fee. Dinghy Cloud is one flat price, $9 a month for up to 5 people. If you connect a bot, you pay your own model provider for what it uses, and nothing more to us.
+Dinghy Cloud is $9 a month per workspace for up to five people. We don't charge per AI reply. If your bot uses a paid model, you'll still pay that provider.
 
 ## Your agent connects through MCP or the API
 
-Dinghy has an MCP server at `/v1/mcp` and an HTTP API. Claude Code, Cursor or any MCP client connects with OAuth in the browser. You approve it on Dinghy's consent page, pick a workspace and an access level, and it never sees your password. A bot on a server uses an API key instead.
+Dinghy has an MCP server at `/v1/mcp` and an HTTP API. Claude Code, Cursor and other clients that support remote MCP can connect with OAuth. You approve it on Dinghy's consent page, pick a workspace and an access level, and it never sees your password. A bot on a server uses an API key instead.
 
 With that, an agent can:
 
@@ -47,7 +35,7 @@ Once its drafts are good, an owner or admin can switch it to **Send directly**. 
 
 ## Handoff, and one switch to stop every bot
 
-Some questions the agent can't or shouldn't answer, like money, an account or a complaint. Then it hands the conversation to a person. It gives a reason and a summary, Dinghy adds them as a note, and the team gets an alert. From then on a person handles that chat. A bot in Drafts only can still suggest replies there. A bot that sends directly stops.
+If someone asks for a refund or wants to talk to a person, have the bot hand over the chat. The bot supplies a reason and a summary. Dinghy adds them as a note and alerts the team. From then on a person handles that chat. A bot in Drafts only can still suggest replies there. A bot that sends directly stops.
 
 If a bot misbehaves, an owner or admin pauses every bot in the workspace with one switch. Replies and drafts stop right away. Reads, notes and handoffs still work, so a paused bot can still pass a chat to people.
 
@@ -57,8 +45,6 @@ On your own server, Dinghy still needs no outside account. Your bot can use a mo
 
 ## When to pick a tool with a hosted AI agent
 
-Some teams want a ready-made AI agent, trained on their help center, with no setup. If you get hundreds of the same three questions a day, or need answers at 3 a.m. with nobody around to approve them, that saves real hours.
+If you want a vendor to run the bot for you, look at [Intercom](/compare/intercom) or [Tidio](/compare/tidio).
 
-If that's you, look at [Intercom](/compare/intercom) or [Tidio](/compare/tidio).
-
-You can write your own bot or have Claude Code answer while you watch. [Use Dinghy with AI agents](/docs/agents) has every tool and the safety rules.
+[Connect an agent and set its reply mode](/docs/agents).

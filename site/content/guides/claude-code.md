@@ -34,7 +34,7 @@ On the consent page, choose:
 - **The access.** Pick **Full access**. It can install Dinghy on a site: the snippet, allowed sites, the widget's look, webhooks and test visitors. **Chats** can only read and answer chats.
 - **The reply mode.** Keep **Drafts only**.
 
-Claude Code never sees your password or a secret key. It gets an access token for 1 hour and a refresh token for 30 days, and renews them on its own. The connection shows up in Settings > API & webhooks, and **Disconnect** removes it right away.
+Claude Code gets an OAuth access token for one hour and a refresh token for 30 days. The connection shows up in Settings > API & webhooks, and **Disconnect** removes it right away.
 
 ## Ask it to add the chat
 
@@ -45,7 +45,7 @@ Tell Claude Code to add Dinghy to your site. It calls the tools in this order:
 3. You deploy the site.
 4. `verify_install` with the origin. It tells you if the origin is allowed, if the chat loaded there, which origins got refused in the last 24 hours, how many tabs have it open right now, and what to do next.
 
-After that, `send_test_message` sends a chat as a test visitor, and `delete_test_visitors` cleans up. Claude Code asks you before it calls `delete_test_visitors`, `remove_allowed_site` or any other tool marked destructive.
+After that, `send_test_message` sends a chat as a test visitor, and `delete_test_visitors` cleans up. Check the visitors selected for deletion before you confirm the cleanup.
 
 In the operator app, the Install page has a "Set up with an agent" row with a prompt to copy.
 
@@ -59,7 +59,7 @@ Give the agent that answers chats its own connection, with **Chats** access and 
 
 In **Drafts only**, every reply waits under the conversation as a suggestion with the bot's name on it. A person clicks **Send**, **Edit** or **Discard**. The visitor sees nothing until then. Once the drafts are good, an owner or admin can switch the connection to **Send directly** in Settings > API & webhooks. The agent can't change its own reply mode.
 
-On a laptop, Claude Code has no public address. So it hears about new messages with `wait_for_events`. Call it once without a cursor to get the current position, then pass the returned cursor each time. Look for `message.created` events. Then it reads the conversation with `get_conversation`, looks up the visitor with `get_contact`, checks your team's saved replies with `list_saved_replies`, and answers with `reply`.
+Use `wait_for_events` to get new messages without a webhook. Call it once without a cursor to get the current position, then pass the returned cursor each time. Look for `message.created` events. Then it reads the conversation with `get_conversation`, looks up the visitor with `get_contact`, checks your team's saved replies with `list_saved_replies`, and answers with `reply`.
 
 When it shouldn't answer, like a question about money, an account or a complaint, it calls `hand_off` with a reason and a summary. Dinghy adds them as a note and alerts the teammate it picked, or the whole team. From then on, a person handles it.
 

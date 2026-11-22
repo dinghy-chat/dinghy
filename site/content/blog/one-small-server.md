@@ -10,7 +10,7 @@ card: 5,000 open chats on one small server, in 539 MB
 
 # What one small server handled in our load test
 
-I say Dinghy runs on one small server. Before saying it in public I wanted proof. So we rented two small servers and tried to break one with the other.
+We ran Dinghy on a 4 GB server and used another server to open chats, send messages and upload photos. Here’s what the test measured.
 
 ## How we set it up
 
@@ -24,7 +24,7 @@ Every visitor message set off a push notification, which the server had to encry
 
 5,000 chats open at once, 20 messages a second, and one big photo every second. Memory peaked at 539 MB. Zero messages lost. Half arrived within 30 ms, 99% within 628 ms.
 
-20 messages a second is 1.7 million a day. Idle, the whole install uses about 185 MB.
+The install used about 185 MB at idle.
 
 ## What broke first
 
@@ -41,7 +41,5 @@ The day before, we tested open connections alone, no background jobs and no phot
 ## What this test doesn't tell you
 
 No HTTPS on the server under test, and in real life encryption costs some CPU. The push service was a stand-in, not Apple's or Google's. Email was off, and photos stayed on the server's disk instead of S3. And it was all one workspace. Separate workspaces don't share that database row, so they should handle more messages in total. We haven't measured it.
-
-When you self-host, you pay for the server. A chat that needs 8 GB and four cores costs you that every month. One that idles at 185 MB fits on a small server next to whatever else you run there.
 
 The [measurements page](/docs/measurements) has every number, plus the commands to run the test yourself. Getting different results? [Email us](mailto:hello@dinghy.chat), I'd like to know.

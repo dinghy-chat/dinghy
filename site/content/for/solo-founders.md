@@ -5,12 +5,12 @@ description: Live chat for a one-person business. Answer from your phone with pu
 date: 2026-11-09
 updated: 2026-11-22
 order: 3
-card: You answer everything. Your phone tells you when
+card: Get an alert on your phone when someone writes
 ---
 
 # Live chat for solo founders
 
-If you run the business alone, you're the support team. Dinghy gives you a chat on your site and an inbox on your phone, with a push alert when someone writes. There's no built-in bot, so every reply is yours. Unless you connect your own AI agent, and even then you approve its drafts by default. Dinghy Cloud costs $9 a month. Self-hosting is free.
+If you run the business alone, you're the support team. Dinghy gives you a chat on your site and an inbox on your phone, with a push alert when someone writes. If you connect a bot, it writes drafts for you to review by default. Dinghy Cloud costs $9 a month. Self-hosting is free.
 
 ## Your inbox is on your phone
 
@@ -39,7 +39,7 @@ If you want help, connect your own agent, like Claude Code, through MCP. Its rep
 
 Dinghy Cloud is $9 a month per workspace, flat. If you hire help later, up to 5 people fit in the same $9. You pay at signup and can cancel anytime. There's no free plan on the cloud.
 
-Self-host it if you want the data on your own machine or don't want to pay $9 a month. Same product, every feature, on one small Linux server. The [self-hosting guide](/docs/self-hosting) has the one install script.
+Self-host it if you want the data on your own machine or don't want to pay $9 a month. Run the widget and inbox on a small Linux server. The [self-hosting guide](/docs/self-hosting) has the one install script.
 
 ## When Dinghy isn't the right fit
 

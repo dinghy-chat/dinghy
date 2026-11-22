@@ -12,11 +12,11 @@ stat: Free, then $45
 
 # Dinghy vs Crisp
 
-Crisp is the closest tool to Dinghy. It charges per workspace, not per seat, and its free plan covers two people.
+Crisp and Dinghy Cloud charge per workspace. Crisp has a free plan for two people. Dinghy costs $9 a month for up to five.
 
-## The quick answer
+## Which one fits
 
-Stay on Crisp Free if you're one or two people, under 100 contacts, and fine with Crisp's branding. Pay for Crisp if you need email, a knowledge base, AI and integrations. Pick Dinghy if you want a paid chat without anyone's branding for a small team at $9 a month, or a chat on your own server.
+Stay on Crisp Free if you're one or two people, under 100 contacts, and fine with Crisp's branding. Pay for Crisp if you need email, a knowledge base, AI and integrations. Pick Dinghy if you want to host it yourself or remove the widget badge without an upgrade.
 
 ## Price for a small team
 
@@ -47,4 +47,4 @@ Dinghy has no AI of its own, so no AI fee either. If you want a bot, connect you
 
 ## Moving over
 
-There's no importer from Crisp. The Dinghy tag goes before `</body>`, where Crisp's snippet was. The steps are in [Moving over from another chat](/compare/#moving-over-from-another-chat).
+Dinghy can’t import Crisp conversations. [Switch your site to Dinghy](/compare/#moving-over-from-another-chat).

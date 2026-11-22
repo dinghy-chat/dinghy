@@ -1,7 +1,7 @@
 ---
 title: A live chat widget for your website, under 4 KB | Dinghy
 nav: Live chat widget
-description: Add a live chat widget to any website with one script tag. It loads under 4 KB up front, uses your colors, and your team answers from a shared inbox.
+description: Add live chat with one script tag. The loader is under 4 KB gzipped. Set your own colors and answer from a shared inbox.
 date: 2026-11-08
 updated: 2026-11-22
 order: 2
@@ -24,7 +24,7 @@ On a phone, the open chat fills the screen.
 
 ## What your team gets
 
-- One shared inbox for everyone. You see who has each chat and who's replying right now, so two people don't answer the same customer.
+- One shared inbox for everyone. You see who has each chat and who's replying right now, so you can see when a teammate already has the chat open.
 - A push notification on your phone or laptop when someone writes, or an email if your install has a mail server. You don't have to keep a tab open all day.
 - Who you're talking to. If they have the chat open right now or when they were last here, their browser and system, and the pages they looked at. If they're signed in to your app, you also see their name, their email and anything else you send, like their plan.
 - Search across open and closed conversations, by name, email or anything someone wrote.
@@ -40,7 +40,7 @@ On a phone, the open chat fills the screen.
 
 The tag loads a script under 4 KB. The full chat downloads when a visitor opens it, returns to a chat, is identified by your site or has an outbound message to show. The loader also fetches the widget's appearance and sends a small presence request.
 
-The widget lives in its own Shadow DOM. Your CSS can't break it, and its CSS can't break your site.
+The widget lives in its own Shadow DOM. The Shadow DOM keeps the widget's styles separate from your site's.
 
 ## It looks like your site
 
@@ -58,7 +58,7 @@ The same page sets the chat's title, the greeting in an empty chat, what it says
 
 ## Where it works
 
-Anywhere you can paste a script tag before `</body>`. Plain HTML, WordPress, Shopify, Webflow, Next.js, React, Astro, Hugo, whatever. There are step-by-step guides for the common ones:
+Anywhere you can paste a script tag before `</body>`. You can use it with plain HTML, a site builder or a web app. There are step-by-step guides for the common ones:
 
 - [WordPress](/guides/wordpress)
 - [Shopify](/guides/shopify)

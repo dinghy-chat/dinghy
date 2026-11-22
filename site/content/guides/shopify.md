@@ -31,7 +31,7 @@ In Dinghy, open Settings > Install and add your store's address under Allowed si
 2. Next to your current theme, click the three dots and pick Duplicate. That's your backup.
 3. Click the three dots again and pick Edit code.
 4. In the Layout folder, open `theme.liquid`.
-5. Find `</body>` near the bottom of the file. Paste your tag on the line just above it.
+5. Paste your tag before `</body>`.
 6. Click Save.
 
 ```liquid

@@ -1,18 +1,16 @@
 ---
 title: What a 3-person team pays for live chat in 2026
 nav: What 3 people pay for live chat
-description: One 3-person team's live chat bill for a year on tawk.to, Crisp, Tidio, Chatwoot, LiveChat, Intercom and Dinghy.
+description: What happens to a three-person team’s live chat bill after a new hire, a busy month and a request to remove the widget badge?
 date: 2026-11-09
 updated: 2026-11-22
 order: 4
-card: One small team's live chat bill, followed for a year
+card: What a new hire, more chats and a badge do to the bill
 ---
 
 # What a 3-person team pays for live chat in 2026
 
-A pricing page shows you the price on the day you sign up, for the team you are today. The bill a year later is often a different number.
-
-So we made up a team and followed its bill for twelve months. Three people, one website, about 80 chats a month to start. We checked the prices on November 22, 2026. The [comparison table](/compare/) links to the vendors. Where a price depends on billing or a promotion, we show a range.
+Say you’re three people with one website and about 80 chats a month. Then you hire a fourth person, get 300 chats in a month and decide to remove the badge from the widget. Here’s what each change does to the bill. We checked the prices on November 22, 2026. The [comparison table](/compare/) links to the vendors. Where a price depends on billing or a promotion, we show a range.
 
 ## Month one
 
@@ -27,13 +25,13 @@ So we made up a team and followed its bill for twelve months. Three people, one 
 | LiveChat Essential | $57 to $75 |
 | Intercom Essential | $57 to $87 |
 
-If it ended here, tawk.to wins. Crisp and Chatwoot have free plans too, but they stop at two people, and our team has three.
+tawk.to is free for all three people in this example. The free plans from Crisp and Chatwoot cover two.
 
 ## Month four, someone joins
 
 The team hires a fourth person for support.
 
-On the per-seat tools, the bill goes up the day that person gets a login. Chatwoot goes to $76. LiveChat to $76 to $100. Intercom to $76 to $116.
+With four seats, Chatwoot costs $76, LiveChat costs $76 to $100, and Intercom costs $76 to $116 per month.
 
 Crisp Mini already covers four people, so it stays at $45. Tidio Starter includes up to 10 seats, so it stays at $24 to $29. tawk.to is still free. Dinghy Cloud is still $9 per workspace for up to five people.
 
@@ -77,6 +75,6 @@ These are bills for two example months. They leave out taxes and any model bill 
 
 Dinghy Cloud is $9 a month for website chat and a shared inbox for up to five people. [Proactive campaigns](/blog/proactive-live-chat) and site analytics are included. Dinghy has no built-in AI bot, shared email inbox or help center.
 
-The plan stops at five people. You pay at signup. There's no free plan or trial, and you can cancel anytime. If you'd rather pay nothing, Dinghy is free on [your own server](/blog/self-host-live-chat).
+You pay when you create the workspace and can cancel anytime. There’s no cloud trial. The software is free to [run on your own server](/blog/self-host-live-chat).
 
 Count the seats and add-ons you'll need over the next year. The [comparison table](/compare/) has the same tools for teams of one and five.

@@ -18,7 +18,7 @@ Papercups was an open-source live chat written in Elixir. You could use the host
 
 The [Papercups README](https://github.com/papercups-io/papercups) says it is in maintenance mode. You can still run a copy under the MIT license. If you rely on it for customer support, check the project’s recent activity and decide who will maintain your install.
 
-## The quick answer
+## Which one fits
 
 If you used Papercups for its Slack and Mattermost replies, email or SMS, look at Chatwoot. Chatwoot is still maintained and has a free cloud plan. If you used Papercups only for website chat, Dinghy does that and needs less to run.
 

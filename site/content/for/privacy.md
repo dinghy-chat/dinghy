@@ -12,8 +12,6 @@ card: What the widget stores, and what the server keeps
 
 When you self-host Dinghy, you choose where to store chats, files and contact records. There's no telemetry and no license check. The widget loads only from your Dinghy address, sets no cookies, and stores nothing in the browser until a visitor uses the chat.
 
-It isn't legal advice, and it doesn't make your site compliant with any law. That depends on how you use it.
-
 ## What the widget loads
 
 The tag loads `loader.js` from your Dinghy address. When a visitor opens the chat, the rest of the chat loads from the same address. It talks only to that address, plus a separate address for images and files if you set one up. No fonts, scripts or pixels from anyone else.
@@ -74,4 +72,4 @@ On Dinghy Cloud, we run the server, so your chats are stored with us. The widget
 
 ## Get started
 
-[Host it yourself](/docs/self-hosting) for free and keep everything on your server, or [start on Dinghy Cloud](https://app.dinghy.chat/signup) for $9 a month.
+[Run Dinghy on your own server](/docs/self-hosting) or [start on Dinghy Cloud](https://app.dinghy.chat/signup) for $9 a month.

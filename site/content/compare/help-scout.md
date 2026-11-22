@@ -6,7 +6,7 @@ date: 2026-11-09
 updated: 2026-11-22
 priceChecked: 2026-11-22
 order: 8
-card: A help desk with chat, or just the chat
+card: Email support, help articles and website chat
 stat: $25/user
 ---
 
@@ -14,7 +14,7 @@ stat: $25/user
 
 Help Scout is an email help desk first. Shared inboxes, a knowledge base, and a widget called Beacon that can do live chat. Dinghy only does website chat.
 
-## The quick answer
+## Which one fits
 
 Use Help Scout if most of your support comes by email and you also need chat and docs. Dinghy is $9 a month for five people or fewer. Use it if you need chat on your site.
 
@@ -47,10 +47,10 @@ If your customers mostly email you, use Help Scout.
 
 A visitor clicks the chat button and your team answers from a shared inbox, with push alerts on their phones. If the visitor left and gave an email, your reply goes to their inbox, and their answer comes back into the same conversation. You get saved replies, notes, labels, files and business hours. You can connect your own AI agent too, and its replies wait as drafts for your team to send. The [widget loader](/live-chat-widget) is under 4 KB.
 
-Dinghy Cloud charges per workspace. Dinghy Cloud is $9 a month for up to 5 people. You pay at signup and can cancel anytime.
+Dinghy Cloud costs $9 a month per workspace for up to five people.
 
 Some teams keep Help Scout for email and use Dinghy for chat.
 
 ## Moving over
 
-There's no importer from Help Scout. If you only want to move chat, add the Dinghy tag and turn chat off in Beacon, or take Beacon off the site. The steps are in [Moving over from another chat](/compare/#moving-over-from-another-chat).
+Dinghy can’t import Help Scout conversations. You can turn off chat in Beacon and keep the rest of Beacon on your site. [Switch your site to Dinghy](/compare/#moving-over-from-another-chat).

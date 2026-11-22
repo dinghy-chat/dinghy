@@ -11,7 +11,7 @@ order: 0
 
 You get a chat button on your site and a shared inbox for up to 5 people. On Dinghy Cloud that's $9 a month. Or you run it yourself on one small server, for free.
 
-## Pick yours
+## Find your setup
 
 <!-- pages -->
 

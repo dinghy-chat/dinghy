@@ -14,7 +14,7 @@ stat: $19 to $25/seat
 
 LiveChat.com now lists these plans under the Text brand. But it's per seat, so the bill goes up every time someone joins support. Dinghy is a smaller chat with one flat price.
 
-## The quick answer
+## Which one fits
 
 Use LiveChat if you need its integrations, reports, routing and AI, and can pay per seat. Dinghy has website chat and a shared inbox for up to five people at $9 a month. Or run it free on your own server.
 
@@ -51,4 +51,4 @@ Dinghy has no AI of its own. Every answer comes from someone on your team, unles
 
 ## Moving over
 
-There's no importer from LiveChat. The steps are in [Moving over from another chat](/compare/#moving-over-from-another-chat).
+Dinghy can’t import LiveChat conversations. [Switch your site to Dinghy](/compare/#moving-over-from-another-chat).

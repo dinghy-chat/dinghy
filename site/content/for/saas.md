@@ -21,7 +21,7 @@ With no setup, a visitor is anonymous, and their chat lives in that browser. Ins
 3. On the page, call `Dinghy.identify()` with a function that fetches that token. The widget calls it again when the token expires.
 4. Call `Dinghy.reset()` when the user signs out.
 
-Now the chat follows the user to every device they sign in on. A `name` claim becomes the conversation's title in the inbox, so you see "Ana at Acme" and not a random visitor. The [Next.js guide](/guides/nextjs#show-who-is-chatting) has a full route handler and client component, and [Show who is chatting](/docs/add-to-your-site#show-who-is-chatting) lists every field the token takes. Any JWT library works, in any language.
+Now the chat follows the user to every device they sign in on. A `name` claim becomes the conversation's title in the inbox, so you see a name like "Ana at Acme" in the inbox. The [Next.js guide](/guides/nextjs#show-who-is-chatting) has a full route handler and client component, and [Show who is chatting](/docs/add-to-your-site#show-who-is-chatting) lists every field the token takes. Any JWT library works, in any language.
 
 ## Open it from your Help menu
 

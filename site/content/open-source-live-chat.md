@@ -16,7 +16,7 @@ Dinghy is open-source live chat for your website. Run it on your own server for 
 
 - A chat button on your site, and a shared inbox where your team answers.
 - The self-hosted server is AGPL 3.0 and the widget you embed is MIT. The cloud billing and signup code has a [separate source-available license](https://github.com/dinghy-chat/dinghy/blob/main/ee/LICENSE).
-- One Docker image, plus Postgres and Valkey. That's the whole stack.
+- One Docker image, plus Postgres and Valkey. The installer sets up all three.
 - One install script on a fresh Linux server. It sets up Docker, HTTPS and your login.
 - No license check, no telemetry. You don't need a third-party account or an API key.
 - An HTTP API, webhooks and an MCP server, so your own scripts and AI agents can work with it.
@@ -26,7 +26,7 @@ The code is on [GitHub](https://github.com/dinghy-chat/dinghy).
 
 ## Why I made another one
 
-Most open-source chat tools grew into full help desks. Email, WhatsApp, help centers, bots, automation rules. Fine if you need all that. But it's a lot to run if you just want people on your site to reach you.
+I wanted people to reach me from my website without setting up a separate help desk.
 
 You get the chat, a shared inbox with saved replies, notes and labels, [site and support analytics](/blog/live-chat-analytics-without-cookies), and [campaigns](/blog/proactive-live-chat) that can send a message before a visitor writes.
 

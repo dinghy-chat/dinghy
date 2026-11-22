@@ -11,7 +11,7 @@ logo: wordpress
 
 # Add live chat to WordPress
 
-You don't need a chat plugin. Dinghy is one script tag, and WordPress just has to print it at the bottom of every page.
+Add the Dinghy tag with a header and footer plugin or your child theme.
 
 ## Get your tag
 
