@@ -1,4 +1,4 @@
-import { expect, type Page, test } from "@playwright/test";
+import { type Browser, expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
 import { answer, say, visitor } from "./chat.ts";
 import { inboxFilter, showStatus } from "./filters.ts";
@@ -153,9 +153,10 @@ test("the Inbox item, the tab title and the favicon count the conversations that
   await say(first, "Thanks, and one more thing");
   await expect(openCount(operator)).toHaveText("2");
 
-  // Closing one takes it off the count.
+  // Closing one takes it off the count, and opens the one left.
   await operator.getByRole("button", { name: "Close", exact: true }).click();
   await expect(openCount(operator)).toHaveText("1");
+  await expect(row(operator, "Second question")).toHaveAttribute("aria-current", "true");
   await expect(operator).toHaveTitle("(1) Dinghy");
   await expect(favicon(operator)).toHaveAttribute("href", /^data:image\/png/);
 
@@ -413,4 +414,99 @@ test("each operator sees the conversations they have not read, with a dot", asyn
   await expect(dot(alice, "Hello again")).toBeVisible();
 
   for (const page of [customer, other, alice, bob]) await page.context().close();
+});
+
+/** The row of the conversation on screen. */
+const current = (page: Page) => page.locator('.row[aria-current="true"]');
+
+/** Three open conversations, and the texts of their rows from the top. */
+async function threeOpen(browser: Browser, page: Page) {
+  const visitors = [];
+  for (const text of ["Close test one", "Close test two", "Close test three"]) {
+    visitors.push(await visitor(browser, server, PRICING, text));
+  }
+  const rows = page.locator(".list .rows .row");
+  await expect(rows).toHaveCount(3);
+  const texts = [];
+  for (const one of await rows.all()) {
+    texts.push(((await one.textContent()) ?? "").match(/Close test \w+/)?.[0] ?? "");
+  }
+  return { visitors, texts };
+}
+
+test("a close opens a row still in the list when a teammate closed the next one meanwhile", async ({
+  browser,
+}) => {
+  const alice = await signedIn(browser, server, "alice@example.com");
+  const bob = await signedIn(browser, server, "bob@example.com");
+  const { visitors, texts } = await threeOpen(browser, alice);
+  const [first, next, last] = texts as [string, string, string];
+
+  // Alice's close waits until Bob has closed the row it would open.
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await alice.route(/\/conversations\/[^/]+$/, async (route) => {
+    if (route.request().method() === "PATCH") await held;
+    await route.continue();
+  });
+  await row(alice, first).click();
+  await alice.getByRole("button", { name: "Close", exact: true }).click();
+  await row(bob, next).click();
+  await bob.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(row(alice, next)).toHaveCount(0);
+  release();
+
+  await expect(current(alice)).toContainText(last);
+  for (const page of [...visitors, alice, bob]) await page.context().close();
+});
+
+test("a close stays on the conversation while a reply is still sending", async ({ browser }) => {
+  const alice = await signedIn(browser, server, "alice@example.com");
+  const { visitors, texts } = await threeOpen(browser, alice);
+
+  // The reply reaches the server after the close, which refuses it.
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await alice.route(/\/messages$/, async (route) => {
+    if (route.request().method() === "POST") await held;
+    await route.continue();
+  });
+  await row(alice, texts[0] ?? "").click();
+  const reply = alice.getByRole("textbox", { name: "Your reply" });
+  await reply.fill("Sent just before the close");
+  await reply.press("Enter");
+  await alice.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(alice.getByRole("button", { name: "Reopen" })).toBeVisible();
+  release();
+
+  await expect(alice.locator(".retry")).toBeVisible();
+  await expect(alice.getByText("Sent just before the close")).toBeVisible();
+  for (const page of [...visitors, alice]) await page.context().close();
+});
+
+test("a close opens the next row after a long press there, on a touch screen", async ({
+  browser,
+}) => {
+  const alice = await signedIn(browser, server, "alice@example.com");
+  const { visitors, texts } = await threeOpen(browser, alice);
+  const [first, next] = texts as [string, string];
+
+  // A long press chooses the next row, and its box clears the choice again.
+  const target = row(alice, next);
+  await target.dispatchEvent("pointerdown", { pointerType: "touch", isPrimary: true });
+  await alice.waitForTimeout(700);
+  await target.dispatchEvent("pointerup", { pointerType: "touch", isPrimary: true });
+  const box = alice.locator("li", { has: target }).getByRole("checkbox");
+  await expect(box).toBeChecked();
+  await box.click();
+  await expect(box).not.toBeChecked();
+
+  await row(alice, first).click();
+  await alice.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(current(alice)).toContainText(next);
+  for (const page of [...visitors, alice]) await page.context().close();
 });

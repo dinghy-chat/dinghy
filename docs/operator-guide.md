@@ -45,7 +45,7 @@ Under the visitor's name, the header shows their email and user ID, when the nam
 | Control | What it does |
 |---|---|
 | Who answers | A list that gives the conversation to one person on your team or to the whole team, which takes it from a bot, or back to the bot that took part last |
-| **Close** | Moves it under **Closed** in the Inbox. **Reopen** brings it back. If the visitor writes after a close, their message reopens it, with its assignee |
+| **Close** | Moves it under **Closed** in the Inbox and opens the next conversation in the list, or none when no other is left. **Reopen** brings it back. If the visitor writes after a close, their message reopens it, with its assignee |
 | **…** then **Snooze** | Keeps it open, but out of the people waiting for you: **until they reply**, **until tomorrow** (9:00 your time) or **until next week** (Monday 9:00). The list shows **Snoozed** in place of **Waiting for a reply**. A message from the visitor ends it, and your own replies do not. **Unsnooze** in the same place ends it now, and so does a close |
 | **…** then **Block** | Stops this visitor from sending messages. **Unblock** in the same place undoes it, and so does **Blocked visitors** in **Settings > Workspace** |
 | **…** then **Delete** | Deletes the conversation and its images and files for good, after you confirm. Owners and admins only |

@@ -149,8 +149,8 @@ export function Thread({
   botTyping: string | null;
   onBack(): void;
   /**
-   * Picks the conversation to open after this one closes from the keyboard, and returns what opens
-   * it once the close saved.
+   * Picks the conversation to open after this one closes, and returns what opens it once the close
+   * saved.
    */
   nextAfterClose(conversationId: string): () => void;
   onChanged(): void;
@@ -249,9 +249,13 @@ export function Thread({
   // does, as in a conversation that closed meanwhile.
   const [editedDraft, setEditingDraft] = useState<SuggestedReply | null>(null);
   const editingDraft = mode === "reply" ? editedDraft : null;
-  /** Closes or reopens the conversation. A close opens the next chat, or none if the list is empty. */
+  /**
+   * Closes or reopens the conversation. A close opens the next chat, or none if the list is empty.
+   * It stays while a reply is unsent, so a send the close refuses keeps its text and its Retry.
+   */
   const setStatus = (status: "open" | "closed") => {
-    const next = status === "closed" ? nextAfterClose(conversationId) : null;
+    const unsent = thread.lines.some((line) => line.status !== "sent");
+    const next = status === "closed" && !unsent ? nextAfterClose(conversationId) : null;
     void change.setStatus(status).then((saved) => {
       if (saved) next?.();
     });

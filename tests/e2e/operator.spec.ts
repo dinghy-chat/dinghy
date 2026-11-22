@@ -66,8 +66,8 @@ test("a full conversation between the widget and the operator app @smoke", async
 
   // Closing the last open conversation leaves no conversation on screen. Then reopen it.
   await operator.getByRole("button", { name: "Close", exact: true }).click();
-  await expect(operator.getByRole("button", { name: "Reopen" })).toHaveCount(0);
-  await expect(reply(operator)).toHaveCount(0);
+  await expect(row(operator, "Tuesday")).toHaveCount(0);
+  await expect(operator.locator(".thread .msg")).toHaveCount(0);
   await showStatus(operator, "Closed");
   await row(operator, "Tuesday").click();
   await expect(operator.getByText("This conversation is closed.")).toBeVisible();
@@ -159,7 +159,7 @@ test("a draft survives closing and reopening the conversation", async ({ browser
   const reply = page.getByRole("textbox", { name: "Your reply" });
   await reply.fill("Half a sentence");
   await page.getByRole("button", { name: "Close", exact: true }).click();
-  await expect(reply).toHaveCount(0);
+  await expect(row(page, "Half a sentence")).toHaveCount(0);
   await showStatus(page, "Closed");
   await row(page, "Half a sentence").click();
   await page.getByRole("button", { name: "Reopen" }).click();
