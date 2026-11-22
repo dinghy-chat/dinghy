@@ -1,7 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
 import { answer, say, visitor } from "./chat.ts";
-import { inboxFilter } from "./filters.ts";
+import { inboxFilter, showStatus } from "./filters.ts";
 import { signedIn } from "./links.ts";
 
 const SNIPPET = '<script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" async></script>';
@@ -66,6 +66,8 @@ test("a snoozed conversation leaves the count until the visitor writes again", a
 
   // A close ends the snooze, so a reopen offers to snooze it again.
   await operator.getByRole("button", { name: "Close", exact: true }).click();
+  await showStatus(operator, "Closed");
+  await row(operator, "Snooze me").click();
   await operator.getByRole("button", { name: "Reopen" }).click();
   await operator.getByRole("button", { name: "More actions" }).click();
   await expect(operator.getByRole("menuitem", { name: "Unsnooze" })).toHaveCount(0);
@@ -75,6 +77,7 @@ test("a snoozed conversation leaves the count until the visitor writes again", a
   // The visitor writes again, so it waits again.
   await say(customer, "Any news?");
   await expect(openCount(operator)).toHaveText("1");
+  await showStatus(operator, "Open");
   await expect(row(operator, "Any news?").locator(".chip.warn")).toHaveText("Waiting for a reply");
 
   for (const page of [customer, operator]) await page.context().close();
