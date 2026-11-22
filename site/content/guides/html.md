@@ -3,7 +3,7 @@ title: How to add live chat to any website | Dinghy
 nav: Any website
 description: Add the Dinghy live chat to a plain HTML site, or any site where you can edit the page. It's one script tag before the closing body tag.
 date: 2026-11-09
-updated: 2026-11-14
+updated: 2026-11-22
 order: 12
 card: One line before the closing body tag
 logo: html
@@ -48,7 +48,7 @@ Put it just above `</body>`:
 
 Do it on every page. If you have a shared footer or layout file, paste it there once. In Hugo, Jekyll or Eleventy that's the base template or the footer partial.
 
-The script is under 4 KB. The rest of the chat loads when a visitor opens it, or comes back to a chat they started.
+The script is under 4 KB. The full chat loads when a visitor opens it, returns to a chat, is identified by your site or has an outbound message to show.
 
 ## Check that it works
 

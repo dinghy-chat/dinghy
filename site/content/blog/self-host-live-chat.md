@@ -3,7 +3,7 @@ title: Self-host a live chat on one small server
 nav: Self-host on a small server
 description: How to run Dinghy, an open-source live chat, on one small Linux server with one install script. No third-party account, no license key.
 date: 2026-11-09
-updated: 2026-11-14
+updated: 2026-11-22
 order: 6
 card: One install script, a domain and a small server
 ---
@@ -82,4 +82,4 @@ docker compose up -d --wait
 
 If an upgrade changes how data is stored, it takes a backup first and prints where it put it. The [self-hosting guide](/docs/self-hosting#upgrading) explains how to go back.
 
-Already on Dinghy Cloud? Your workspace exports to one file that imports here. I wrote up [the whole move](/blog/move-to-your-own-server). And if you'd rather not run a server at all, [Dinghy Cloud](https://app.dinghy.chat/signup) is $7 a month for up to 5 people.
+Already on Dinghy Cloud? Your workspace exports to one file that imports here. I wrote up [the whole move](/blog/move-to-your-own-server). And if you'd rather not run a server at all, [Dinghy Cloud](https://app.dinghy.chat/signup) is $9 a month for up to 5 people.

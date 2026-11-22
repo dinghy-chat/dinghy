@@ -3,7 +3,7 @@ title: How to add live chat to a Webflow site | Dinghy
 nav: Webflow
 description: Add the Dinghy live chat to Webflow by pasting one tag in your site's footer code, then publish.
 date: 2026-11-08
-updated: 2026-11-14
+updated: 2026-11-22
 order: 3
 card: Paste it in the footer code
 logo: webflow
@@ -33,7 +33,7 @@ In Dinghy, open Settings > Install and add your domain under Allowed sites, like
 4. Save.
 5. Publish the site.
 
-Webflow's custom code fields need a paid Site plan. On a free site, you can't add the code.
+Webflow requires an active Site plan or a Core, Growth, Agency or Freelancer Workspace plan for [custom code](https://help.webflow.com/hc/en-us/articles/33961357265299-Custom-code-in-head-and-body-tags).
 
 ## Check that it works
 

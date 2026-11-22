@@ -3,7 +3,7 @@ title: How to add a live chat widget to a Next.js app | Dinghy
 nav: Next.js
 description: Add the Dinghy live chat to a Next.js app with next/script in the root layout. And how to show which signed-in user is chatting.
 date: 2026-11-08
-updated: 2026-11-14
+updated: 2026-11-22
 order: 4
 card: next/script in the root layout
 logo: nextdotjs
@@ -111,7 +111,11 @@ declare global {
 
 export function DinghyIdentify() {
   useEffect(() => {
-    const getToken = async () => (await fetch("/api/dinghy-token", { method: "POST" })).text();
+    const getToken = async () => {
+      const response = await fetch("/api/dinghy-token", { method: "POST" });
+      if (!response.ok) throw new Error("Could not get a Dinghy token");
+      return response.text();
+    };
     if (window.Dinghy?.identify) window.Dinghy.identify(getToken);
     else (window.Dinghy ??= { q: [] }).q?.push(["identify", getToken]);
   }, []);

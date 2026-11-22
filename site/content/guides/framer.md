@@ -3,7 +3,7 @@ title: How to add live chat to a Framer site | Dinghy
 nav: Framer
 description: Add the Dinghy live chat to a Framer site with one script in Custom Code, at the end of the body, set to run once. Then publish and test it live.
 date: 2026-11-09
-updated: 2026-11-14
+updated: 2026-11-22
 order: 5
 card: Paste it in Custom Code
 logo: framer
@@ -25,7 +25,7 @@ It's in the Dinghy operator app, under Settings > Install:
 
 In Dinghy, open Settings > Install and add your domain under Allowed sites, like `https://www.example.com`. If people also reach you at your Framer address, add that one too. The chat only works on sites on the list. Anywhere else the button still shows, but messages don't send.
 
-You need a paid Framer plan to connect your own domain.
+Framer documents [where and when custom code runs](https://www.framer.com/help/articles/how-to-add-custom-code/). You can use your published Framer address. Framer [requires a paid plan](https://www.framer.com/pricing) to connect a custom domain.
 
 ## Paste the tag
 

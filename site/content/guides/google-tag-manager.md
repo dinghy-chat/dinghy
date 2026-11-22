@@ -3,7 +3,7 @@ title: How to add live chat with Google Tag Manager | Dinghy
 nav: Google Tag Manager
 description: Add the Dinghy live chat through Google Tag Manager with a Custom HTML tag on the All Pages trigger. And what to check for consent tools and CSP.
 date: 2026-11-09
-updated: 2026-11-14
+updated: 2026-11-22
 order: 9
 card: A Custom HTML tag on all pages
 logo: googletagmanager
@@ -25,9 +25,9 @@ It's in the Dinghy operator app, under Settings > Install. You need two values f
 
 Then open Settings > Install in Dinghy and add your site under Allowed sites, like `https://www.example.com`.
 
-## Why you can't paste the tag as is
+## Build the loader script in the tag
 
-Tag Manager [strips custom attributes](https://www.simoahava.com/analytics/add-html-elements-page-programmatically/) like `data-key` from elements in a Custom HTML tag. So the tag below builds the script element in JavaScript and sets the key on it before adding it to the page:
+Use a [Custom HTML tag](https://support.google.com/tagmanager/answer/6107167) with this script. It sets the public key on the loader element before it adds the element to the page:
 
 ```html
 <script>
@@ -62,7 +62,7 @@ If the tag fires but there's no button, open the browser's developer console. If
 
 If your consent banner holds back tags until a visitor accepts, it may hold back the chat too. Then people who haven't clicked the banner don't see the chat button. Check which consent category the Dinghy tag uses and whether that blocks the chat before consent.
 
-Dinghy keeps a visitor's chat in the browser so it's still there after a refresh. It sets no cookies and does no ad tracking. For the live visitor list, each open tab tells your Dinghy server which page it's on, and the server keeps that only for visitors who chatted. Ask whoever handles privacy for your site whether the chat needs consent.
+Dinghy keeps a visitor's chat in the browser so it's still there after a refresh. It sets no cookies and does no ad tracking. For the live visitor list, each open tab tells your Dinghy server which page it's on, and Dinghy also keeps hourly totals for [site analytics](/blog/live-chat-analytics-without-cookies). Ask whoever handles privacy for your site whether the chat needs consent.
 
 ## Content Security Policy
 

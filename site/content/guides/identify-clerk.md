@@ -3,7 +3,7 @@ title: Show signed-in Clerk users in your live chat | Dinghy
 nav: Signed-in users: Clerk
 description: Tell Dinghy which Clerk user is chatting in a Next.js app. One route signs a token with currentUser(), a small client component hands it over.
 date: 2026-11-09
-updated: 2026-11-14
+updated: 2026-11-22
 order: 20
 card: Show who's chatting with Clerk
 logo: clerk
@@ -72,8 +72,11 @@ declare global {
   }
 }
 
-export const getDinghyToken = async () =>
-  (await fetch("/api/dinghy-token", { method: "POST" })).text();
+export const getDinghyToken = async () => {
+  const response = await fetch("/api/dinghy-token", { method: "POST" });
+  if (!response.ok) throw new Error("Could not get a Dinghy token");
+  return response.text();
+};
 
 export function dinghy(...call: ["identify", () => Promise<string>] | ["reset"]) {
   const api = (window.Dinghy ??= { q: [] });

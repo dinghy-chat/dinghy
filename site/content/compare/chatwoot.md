@@ -1,9 +1,10 @@
 ---
 title: Chatwoot alternative, lighter to self-host: Dinghy vs Chatwoot | Dinghy
 nav: Dinghy vs Chatwoot
-description: Both are open-source live chats you can self-host. Chatwoot does every channel and wants 4 GB of RAM. Dinghy does website chat and nothing else.
+description: Compare Dinghy and Chatwoot for self-hosted chat: server requirements, channels, campaigns, AI and the cost for a small team.
 date: 2026-11-08
-updated: 2026-11-14
+updated: 2026-11-22
+priceChecked: 2026-11-22
 order: 6
 card: Both open source. Chatwoot does every channel, Dinghy does chat
 stat: $19/agent
@@ -11,7 +12,7 @@ stat: $19/agent
 
 # Dinghy vs Chatwoot
 
-Chatwoot is an open-source Intercom alternative. Live chat, email, WhatsApp and more, plus a help center and AI. It's website chat and a team inbox, and it emails your reply to visitors who already left. No other channels.
+Chatwoot is an open-source Intercom alternative. Live chat, email, WhatsApp and more, plus a help center and AI. Dinghy is website chat and a team inbox, and it emails your reply to visitors who already left. No other channels.
 
 ## The quick answer
 
@@ -27,32 +28,32 @@ Use Chatwoot for multiple channels, a help center, automation rules or a built-i
 | License | AGPL 3.0, widget MIT, cloud billing in `ee/` under a source-available license | MIT, with an `enterprise/` folder under its own license |
 | Paid features when self-hosted | None | Some |
 
-I took the Chatwoot details from its self-hosting docs and its GitHub license on November 8, 2026. The Dinghy number is from [our load test](/docs/measurements): one Hetzner CX23 ran the full install with 5,000 open chat connections in under 600 MB.
+Chatwoot publishes its [server requirements](https://www.chatwoot.com/docs/self-hosted/deployment/requirements/) and [license](https://github.com/chatwoot/chatwoot/blob/develop/LICENSE). The Dinghy number is from [our load test](/docs/measurements): one Hetzner CX23 ran the full install with 5,000 open chat connections in under 600 MB.
 
 ## Hosted plans
 
 | | Dinghy Cloud | Chatwoot Cloud |
 |---|---|---|
 | Free plan | No | Hacker, 2 agents, 500 conversations a month, 30 days of history |
-| 3 people | $7 a month | $57 a month on Startups |
-| 5 people | $7 a month | $95 a month on Startups |
+| 3 people | $9 a month | $57 a month on Startups |
+| 5 people | $9 a month | $95 a month on Startups |
 | Channels | Website chat, and replies by email to visitors who left | Website chat, email, WhatsApp and more |
 | AI | None built in. Your own agent connects through MCP or the API, and its replies wait as drafts | Captain, its AI assistant |
 
-[All the prices side by side](/compare/).
+See [Chatwoot’s pricing page](https://www.chatwoot.com/pricing/) or [all prices side by side](/compare/).
 
 ## What Chatwoot does that Dinghy doesn't
 
 - Lots of channels in one inbox: email, WhatsApp, Facebook, Telegram.
 - A help center and automation rules.
 - Captain, a built-in AI assistant.
-- Native mobile apps. Dinghy's operator app is a web app you install on your phone, with push alerts.
+- Native mobile apps. You can install Dinghy's web app on your phone and turn on [browser notifications](/docs/operator-guide#get-alerts).
 
 ## What Dinghy does differently
 
 One app container, Postgres and Valkey. You get every feature when you self-host.
 
-No built-in AI, no extra channels. The inbox has saved replies, notes with @mentions, labels, files, business hours, analytics, and an API with webhooks. Connect your own agent through MCP or the API. Its replies wait as drafts until a person sends them, see [Bring your own AI agent](/blog/bring-your-own-ai-agent). The widget loader is under 4 KB, and the rest only loads when someone opens the chat. If you don't want to run a server, Dinghy Cloud is $7 a month for up to 5 people.
+No built-in AI, no extra channels. The inbox has saved replies, notes with @mentions, labels, files, business hours, analytics, and an API with webhooks. Connect your own agent through MCP or the API. Its replies wait as drafts until a person sends them, see [Bring your own AI agent](/blog/bring-your-own-ai-agent). The [widget loader](/live-chat-widget) is under 4 KB. You also get [campaigns](/blog/proactive-live-chat) and site analytics. If you don't want to run a server, Dinghy Cloud is $9 a month for up to 5 people.
 
 ## Moving over
 

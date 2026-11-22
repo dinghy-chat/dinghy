@@ -3,14 +3,14 @@ title: Live chat for your own AI agent, with a person in the loop | Dinghy
 nav: AI agents
 description: Let Claude Code, Cursor or your own bot answer website chats through MCP or the API. Replies wait as drafts for a person by default. No AI fee.
 date: 2026-11-14
-updated: 2026-11-14
+updated: 2026-11-22
 order: 7
 card: Your agent drafts, a person sends
 ---
 
 # Live chat for your own AI agent
 
-Dinghy doesn't have or sell its own AI. Your agent does the answering: Claude Code, Cursor, any MCP client, or a bot you wrote. It connects to Dinghy's MCP server at `/v1/mcp` or to the HTTP API. A new connection starts in **Drafts only**, so every reply waits for a person to send, edit or discard it. Dinghy Cloud is $7 a month for up to 5 people. No fee per AI answer.
+Dinghy doesn't have or sell its own AI. Your agent does the answering: Claude Code, Cursor, any MCP client, or a bot you wrote. It connects to Dinghy's MCP server at `/v1/mcp` or to the HTTP API. A new connection starts in **Drafts only**, so every reply waits for a person to send, edit or discard it. Dinghy Cloud is $9 a month for up to 5 people. No fee per AI answer.
 
 ## Connect your agent
 
@@ -30,7 +30,7 @@ Both ways, the connection shows up in **Settings > API & webhooks**, with who ap
 
 Pick how your agent hears about new messages, depending on where it runs:
 
-- `wait_for_messages`, for an agent on a laptop with no public address.
+- `wait_for_events`, for an agent on a laptop with no public address.
 - `GET /v1/events`, a stream of events for a bot that runs all day. When the bot reconnects, it replays what it missed.
 - Webhooks, for a bot with a public `https` address.
 
@@ -42,9 +42,11 @@ Every new key and connected app starts in **Drafts only**. The agent's reply sho
 
 When you trust the drafts, an owner or admin switches the key or app to **Send directly** in **Settings > API & webhooks**. The bot can't change its own reply mode.
 
+If your bot supports revisions, an operator can select **Ask to change** on its draft. The same bot receives the instruction and replaces the draft. An owner or admin enables this per API key. See [Ask to change](/docs/agents#ask-to-change).
+
 ## Hand off to people
 
-When the agent can't or shouldn't answer, it calls `hand_off`. Good reasons: the visitor asks for a person, a question about money or an account, a complaint, or anything the agent isn't sure about. In one step, Dinghy sends the agent's last message to the visitor, assigns the conversation to a member or the whole team, adds an internal note with the reason and a summary, and alerts the team.
+When the agent can't or shouldn't answer, it calls `hand_off`. Good reasons: the visitor asks for a person, a question about money or an account, a complaint, or anything the agent isn't sure about. In one step, Dinghy can send a final message if the agent supplies one and its permissions allow it. It assigns the conversation to a member or the whole team, adds an internal note with the reason and a summary, and alerts the team.
 
 After that a person owns the conversation, and a bot that sends directly can't reply there. It can still write internal notes, which the visitor never sees. When the person is done, they pick the bot in the conversation's dropdown, or **Give back to bot**, and then it can answer again. A bot can't take a conversation back by itself.
 
@@ -56,11 +58,11 @@ If a bot goes wrong, an owner or admin pauses every bot in the workspace from **
 
 Anyone on the internet can type into your chat, including "ignore your instructions". Dinghy's tool descriptions tell the agent that visitor text is data. Your bot's own prompt should say that too.
 
-Give the agent that answers chats a **Chats** connection. Give the coding agent that installs the chat on your site a separate **Full access** connection. Then text from a visitor can't reach your webhooks or allowed sites. No key or app can manage keys or members, read the signing secret, export or delete the workspace, send its own drafts, or pause bots. A key only writes to the visitor of the conversation it's answering.
+Give the agent that answers chats a **Chats** connection. Give the coding agent that installs the chat on your site a separate **Full access** connection. Then text from a visitor can't reach your webhooks or allowed sites. No key or app can manage keys or members, read the signing secret, export or delete the workspace, send its own drafts, or pause bots. Keep the bot in reply mode. An API key can also initiate messages to contacts through the outbound tools.
 
 ## No fee per answer
 
-Dinghy charges nothing for AI. If you use a model provider, you pay them for your agent's tokens. Dinghy Cloud stays $7 a month per workspace for up to 5 people.
+Dinghy charges nothing for AI. If you use a model provider, you pay them for your agent's tokens. Dinghy Cloud stays $9 a month per workspace for up to 5 people.
 
 Intercom's Fin charges $0.99 per outcome, on top of seats. At 500 outcomes a month that's $495, before the first seat. With Dinghy, 500 bot answers cost whatever your model provider charges. Full comparison in [Dinghy vs Intercom](/compare/intercom).
 
@@ -77,4 +79,4 @@ Self-hosted Dinghy has every feature for free, including the MCP server, the API
 
 ## Get started
 
-[Start on Dinghy Cloud](https://app.dinghy.chat/signup) for $7 a month, or [host it yourself](/docs/self-hosting) for free. Then follow the [Claude Code guide](/guides/claude-code) or [Use Dinghy with AI agents](/docs/agents). I wrote about that choice in [Bring your own AI agent](/blog/bring-your-own-ai-agent).
+[Start on Dinghy Cloud](https://app.dinghy.chat/signup) for $9 a month, or [host it yourself](/docs/self-hosting) for free. Then follow the [Claude Code guide](/guides/claude-code) or [Use Dinghy with AI agents](/docs/agents). I wrote about that choice in [Bring your own AI agent](/blog/bring-your-own-ai-agent).

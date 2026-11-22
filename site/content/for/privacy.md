@@ -3,14 +3,14 @@ title: Privacy-friendly live chat you can self-host | Dinghy
 nav: Privacy
 description: What Dinghy's chat widget loads and stores, what the server keeps, and what stays on your server when you self-host. Facts, not legal advice.
 date: 2026-11-09
-updated: 2026-11-14
+updated: 2026-11-22
 order: 6
 card: What the widget stores, and what the server keeps
 ---
 
 # Privacy-friendly live chat
 
-If you host Dinghy yourself, every chat, image, file and visitor record stays on your server. Nothing comes back to us. There's no telemetry and no license check. The widget loads only from your Dinghy address, sets no cookies, and stores nothing in the browser until a visitor uses the chat.
+When you self-host Dinghy, you choose where to store chats, files and contact records. There's no telemetry and no license check. The widget loads only from your Dinghy address, sets no cookies, and stores nothing in the browser until a visitor uses the chat.
 
 It isn't legal advice, and it doesn't make your site compliant with any law. That depends on how you use it.
 
@@ -18,9 +18,13 @@ It isn't legal advice, and it doesn't make your site compliant with any law. Tha
 
 The tag loads `loader.js` from your Dinghy address. When a visitor opens the chat, the rest of the chat loads from the same address. It talks only to that address, plus a separate address for images and files if you set one up. No fonts, scripts or pixels from anyone else.
 
-The operator app has a live list of visitors. For that, each open tab sends a small beat to your Dinghy address when the page loads, and once a minute while it's visible. A beat holds a random ID that lives only in the page's memory, the page's address without the query string, its title, the referring site on the first beat, and the browser's time zone. Your server looks up the country of the request's address in a database inside the server, then drops the address. If a visitor never chats, their beats stay in Valkey for 90 seconds and never reach Postgres.
+The operator app has a live list of visitors. For that, each open tab sends a small beat to your Dinghy address when the page loads, and once a minute while it's visible. A beat holds a random ID that lives only in the page's memory, the page's address without the query string, its title, the referring site on the first beat, and the browser's time zone. Your server looks up the country of the request's address in a database inside the server, then drops the address. A tab leaves the live list 90 seconds after its last beat. A beat does not create a contact. Your server can create one by identifying a user, upserting a contact or sending an outbound message.
 
 Under a Content Security Policy, the widget needs only your Dinghy address in `script-src`, `connect-src` and `img-src`. [The CSP section](/docs/add-to-your-site#if-your-site-has-a-content-security-policy) has the lines.
+
+## What site analytics counts
+
+Dinghy saves hourly totals for visits and page views, with breakdowns for pages and referring sites. Analytics combines those totals with counts from conversations visitors started. It keeps these totals for 182 days, without cookies or a stored visitor ID in the totals. See [live chat analytics without cookies](/blog/live-chat-analytics-without-cookies).
 
 ## What the widget stores in the browser
 
@@ -35,14 +39,14 @@ For each visitor, the server keeps:
 - The messages, images and files they send.
 - The pages they visit once they've started a chat, with each page's title, so your team sees what they were looking at. Only the address and path, never the query string or the part after `#`. A visitor who never chats leaves no page history. The server keeps the newest 100 pages per visitor and deletes them after 90 days.
 - A short device line, like "Chrome on macOS", and when they were last seen. Not the full User-Agent.
-- Their country and time zone, once they've chatted. Not the IP address it used to find the country.
+- Country and time zone for contacts stored by Dinghy. Not the IP address it used to find the country.
 - An email, only if they type one in, or if your site sends it for a signed-in user.
 - Your user ID, name, email and any attributes your server signs, for signed-in users.
 - A hash of their browser token, never the token itself.
 - The address an email reply came from, if they answer one of your replies from their mail app.
 - For signed-out visitors, a keyed hash of their latest IP address, so a block still works after they clear their browser.
 
-While a visitor with an open conversation types, the widget passes their unsent words to your team's open inbox. The server stores none of them. An owner or admin can turn this off in Settings > Workspace, and then the widget sends nothing before a message.
+While a visitor with an open conversation types, the widget passes their unsent words to your team's open inbox. The server stores none of them. An owner or admin can turn this off in Settings > Workspace, and then the widget stops sending unsent text.
 
 Owners and admins can delete a conversation and its images and files for good, or a contact with all their conversations. An owner can delete the whole workspace. The worker then deletes its conversations, visitors, settings, images and files within minutes. But if you self-host, your nightly backups still hold that data until newer backups replace them.
 
@@ -60,7 +64,7 @@ The [self-hosting guide](/docs/self-hosting) has the install. The [architecture 
 
 ## Dinghy Cloud
 
-On Dinghy Cloud, we run the server, so your chats are stored with us. The widget is the same: no cookies, no trackers. If you later want the data on your own machine, an owner downloads an export from Settings > Workspace. It has the conversations, visitors, team, settings, images and files, and it imports into a self-hosted Dinghy. [Moving a workspace](/docs/self-hosting#moving-a-workspace) has the steps.
+On Dinghy Cloud, we run the server, so your chats are stored with us. The widget is the same: no cookies or ad tracking. If you later want the data on your own machine, an owner downloads an export from Settings > Workspace. It has the conversations, contacts, outbound messages, team, settings and chat attachments, and it imports into a self-hosted Dinghy. [Moving a workspace](/docs/self-hosting#moving-a-workspace) has the steps.
 
 ## When Dinghy isn't the right fit
 
@@ -70,4 +74,4 @@ On Dinghy Cloud, we run the server, so your chats are stored with us. The widget
 
 ## Get started
 
-[Host it yourself](/docs/self-hosting) for free and keep everything on your server, or [start on Dinghy Cloud](https://app.dinghy.chat/signup) for $7 a month.
+[Host it yourself](/docs/self-hosting) for free and keep everything on your server, or [start on Dinghy Cloud](https://app.dinghy.chat/signup) for $9 a month.

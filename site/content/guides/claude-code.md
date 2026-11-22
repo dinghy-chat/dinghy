@@ -3,7 +3,7 @@ title: Install Dinghy and answer chats with Claude Code | Dinghy
 nav: Claude Code
 description: Connect Claude Code to Dinghy's MCP server. It adds the chat to your site, checks the install, then drafts replies that your team sends.
 date: 2026-11-14
-updated: 2026-11-14
+updated: 2026-11-22
 order: 13
 card: One MCP server to install and to answer
 ---
@@ -59,11 +59,15 @@ Give the agent that answers chats its own connection, with **Chats** access and 
 
 In **Drafts only**, every reply waits under the conversation as a suggestion with the bot's name on it. A person clicks **Send**, **Edit** or **Discard**. The visitor sees nothing until then. Once the drafts are good, an owner or admin can switch the connection to **Send directly** in Settings > API & webhooks. The agent can't change its own reply mode.
 
-On a laptop, Claude Code has no public address. So it hears about new messages with `wait_for_messages`, called in a loop with the last answer's cursor. Then it reads the conversation with `get_conversation`, looks up the visitor with `get_contact`, checks your team's saved replies with `list_saved_replies`, and answers with `reply`.
+On a laptop, Claude Code has no public address. So it hears about new messages with `wait_for_events`. Call it once without a cursor to get the current position, then pass the returned cursor each time. Look for `message.created` events. Then it reads the conversation with `get_conversation`, looks up the visitor with `get_contact`, checks your team's saved replies with `list_saved_replies`, and answers with `reply`.
 
 When it shouldn't answer, like a question about money, an account or a complaint, it calls `hand_off` with a reason and a summary. Dinghy adds them as a note and alerts the teammate it picked, or the whole team. From then on, a person handles it.
 
 An owner or admin can pause every bot with one switch, in Settings > API & webhooks or the workspace menu. Reads, notes and handoffs still work while bots are paused.
+
+## Ask a bot to revise its draft
+
+If you run your own bot with an API key, enable **This bot can rewrite drafts** in **Settings > API & webhooks**. The bot must handle `draft.change_requested` and reply with the request ID. See [Ask to change](/docs/agents#ask-to-change) for the event and reply fields.
 
 ## Cursor and other MCP clients
 

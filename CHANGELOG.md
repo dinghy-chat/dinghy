@@ -4,6 +4,10 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- The website has install guides, use cases, comparisons and articles, including how to send proactive chat messages and read site analytics.
+
 ## [0.50.0] - 2026-11-21
 
 ### Added

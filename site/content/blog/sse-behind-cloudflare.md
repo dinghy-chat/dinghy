@@ -3,7 +3,7 @@ title: How Dinghy keeps live chat open behind Cloudflare
 nav: SSE behind Cloudflare
 description: Dinghy sends with POST and receives with server-sent events. How a 25-second ping keeps chats open behind Cloudflare, and how clients catch up.
 date: 2026-11-09
-updated: 2026-11-14
+updated: 2026-11-22
 order: 3
 card: A ping every 25 seconds, and cursors so nothing gets lost
 ---
@@ -18,7 +18,7 @@ Anything between the browser and your server can decide an idle connection is de
 
 The browser sends a message with a plain `POST`. It gets messages over server-sent events, or SSE. That's one long HTTP response the server keeps adding to.
 
-I picked that because every proxy already understands it. To Caddy, nginx or Cloudflare, an SSE stream is just a slow response. The only thing that breaks it is a proxy that holds the response back until it's done. So every stream sends `X-Accel-Buffering: no`, the header nginx looks at.
+I picked that because every proxy already understands it. To Caddy, nginx or Cloudflare, an SSE stream is just a slow response. One thing to check is whether your proxy buffers the response instead of streaming it. So every stream sends `X-Accel-Buffering: no`, the header nginx looks at.
 
 Each message gets an ID made by the browser, 32 random hex characters. If the network drops halfway through a send, the browser sends it again with the same ID, and the server hands back the first copy instead of saving a second one. Rate limits work like for any request, with a status code and a `Retry-After` header.
 
@@ -28,7 +28,7 @@ A stream holds no database connection while nothing happens. When something new 
 
 ## The timeout, and the ping
 
-Cloudflare closes a proxied request when your server sends nothing for too long, and the visitor gets a 524 error. Cloudflare calls it the Proxy Read Timeout. Its [connection limits page](https://developers.cloudflare.com/fundamentals/reference/connection-limits/) said 125 seconds when we checked on November 9, 2026. Only Enterprise plans can change it.
+A Cloudflare 524 can occur when the origin takes too long to respond. Cloudflare calls it the Proxy Read Timeout. Its [connection limits page](https://developers.cloudflare.com/fundamentals/reference/connection-limits/) lists a 125-second default. Only Enterprise plans can change it.
 
 So every 25 seconds, each Dinghy stream writes one line:
 

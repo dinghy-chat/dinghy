@@ -3,9 +3,9 @@ title: A live chat widget for your website, under 4 KB | Dinghy
 nav: Live chat widget
 description: Add a live chat widget to any website with one script tag. It loads under 4 KB up front, uses your colors, and your team answers from a shared inbox.
 date: 2026-11-08
-updated: 2026-11-14
+updated: 2026-11-22
 order: 2
-card: Under 4 KB until someone opens it
+card: A loader under 4 KB
 ---
 
 # A live chat widget under 4 KB
@@ -31,13 +31,14 @@ On a phone, the open chat fills the screen.
 - Saved replies you insert with **/**, internal notes that @mention a teammate, labels, and keyboard shortcuts.
 - What a visitor types before they send it, and if they read your reply. You can turn the typing preview off.
 - A live list and world map of who's on your site now.
-- An analytics page with conversations per day, how fast you reply and your busiest hours. It's made from the chats you already have, so it tracks nobody.
+- [Analytics](/blog/live-chat-analytics-without-cookies) for conversations, reply times, visits, page views and chat rate.
+- [Proactive messages](/blog/proactive-live-chat) from your team, your app or a campaign.
 - A soft sound when someone writes in a conversation you don't have open.
 - Dinghy has no AI of its own. But your bot can connect through MCP or the API, and its replies wait as drafts until a person sends them. See [Live chat for AI agents](/for/ai-agents).
 
 ## It's small
 
-The tag loads a script under 4 KB. The full chat only downloads when a visitor opens it or comes back to a chat, or when your site tells Dinghy who's signed in. A new visitor who never opens it only downloads the loader.
+The tag loads a script under 4 KB. The full chat downloads when a visitor opens it, returns to a chat, is identified by your site or has an outbound message to show. The loader also fetches the widget's appearance and sends a small presence request.
 
 The widget lives in its own Shadow DOM. Your CSS can't break it, and its CSS can't break your site.
 
@@ -71,4 +72,4 @@ A coding agent like Claude Code can also add the tag for you and check that it l
 
 ## What it costs
 
-Free if you [run it on your own server](/open-source-live-chat). Or we run it for you on Dinghy Cloud, $7 a month for up to 5 people. [See how that compares](/compare/) with Intercom, Crisp, Tidio and others.
+Free if you [run it on your own server](/open-source-live-chat). Or we run it for you on Dinghy Cloud, $9 a month for up to 5 people. [See how that compares](/compare/) with Intercom, Crisp, Tidio and others.

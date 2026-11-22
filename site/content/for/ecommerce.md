@@ -1,16 +1,16 @@
 ---
 title: Live chat for small online stores | Dinghy
 nav: Online stores
-description: Live chat for small Shopify and WooCommerce stores. Answer pre-sale questions from your phone, send photos both ways, and pay $7 a month flat.
+description: Live chat for small Shopify and WooCommerce stores. Answer pre-sale questions from your phone, send photos both ways, and pay $9 a month flat.
 date: 2026-11-09
-updated: 2026-11-14
+updated: 2026-11-22
 order: 2
 card: Answer pre-sale questions from your phone
 ---
 
 # Live chat for small online stores
 
-On a small store, most chats are pre-sale questions. Does it fit? When does it ship? Dinghy adds a chat button to your store, you and your customers can send photos and files, and your phone buzzes when someone writes. Dinghy Cloud is $7 a month for up to 5 people.
+On a small store, most chats are pre-sale questions. Does it fit? When does it ship? Dinghy adds a chat button to your store, you and your customers can send photos and files, and your phone buzzes when someone writes. Dinghy Cloud is $9 a month for up to 5 people.
 
 ## Answer before they leave
 
@@ -45,16 +45,16 @@ Add your store's address under Allowed sites in Settings > Install. Add your `my
 
 ## Busy season costs the same
 
-Dinghy Cloud doesn't count conversations or contacts. December with three times the chats costs the same $7 as a quiet February. The limits are 5 people and 1 GB of files. [What other tools cost](/compare/).
+Dinghy Cloud doesn't count conversations or contacts. December with three times the chats costs the same $9 as a quiet February. The limits are 5 people and 1 GB of files. [What other tools cost](/compare/).
 
 ## When Dinghy isn't the right fit
 
 - You want order lookups, product cards or cart details in the chat. Dinghy shows the pages a customer looked at, and facts your page sends with `Dinghy.setContext()`, like a cart total. That's it. No order lookups, nothing else from your store's backend.
-- You want abandoned-cart messages, pop-ups or campaigns. Dinghy doesn't send messages a customer didn't ask for.
+- You want a ready-made abandoned-cart integration. Dinghy can show a [proactive message](/blog/proactive-live-chat) on a store page, or send one when your backend reports an event. It doesn't read your cart on its own.
 - You want Instagram, WhatsApp or your support email in the same inbox. Dinghy is website chat, plus email replies to visitors who left.
 - You want a ready-made bot that answers "where's my order?" at 3 a.m. with no setup. Dinghy has no AI of its own. If you build or run your own bot, it can answer through MCP or the API, and by default its replies wait as drafts for you. See [Live chat for AI agents](/for/ai-agents).
 - You can't reply for hours at a time. Use a contact form.
 
 ## Get started
 
-[Start on Dinghy Cloud](https://app.dinghy.chat/signup) for $7 a month, or [host it yourself](/docs/self-hosting) for free. Then follow the [Shopify guide](/guides/shopify) or the [WordPress guide](/guides/wordpress).
+[Start on Dinghy Cloud](https://app.dinghy.chat/signup) for $9 a month, or [host it yourself](/docs/self-hosting) for free. Then follow the [Shopify guide](/guides/shopify) or the [WordPress guide](/guides/wordpress).

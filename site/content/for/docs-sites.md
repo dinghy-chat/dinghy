@@ -3,7 +3,7 @@ title: Live chat for developer tools and docs sites | Dinghy
 nav: Docs and dev tools
 description: Open-source live chat for dev tools, open-source projects and docs sites. Self-host it, a script under 4 KB, and it runs under a strict CSP.
 date: 2026-11-09
-updated: 2026-11-14
+updated: 2026-11-22
 order: 5
 card: Open source, light, and fine with a strict CSP
 ---
@@ -14,7 +14,7 @@ Dinghy is an open-source live chat. The tag loads a script under 4 KB. It runs u
 
 ## Why it fits a docs site
 
-**The script is small.** The tag loads a script under 4 KB with `async`. The full chat loads when a reader opens it or comes back to a chat. A reader who never uses it never downloads it.
+**The script is small.** The tag loads a script under 4 KB with `async`. The full chat loads when a reader opens it or comes back to a chat. The full chat also loads if your site identifies the reader or they have an outbound message waiting.
 
 **It doesn't fight your theme.** The widget renders in its own Shadow DOM. Your docs theme's CSS can't break it, and its CSS can't leak into your pages. Pick your colors, the chat button and a light, dark or automatic theme in Settings > Appearance, or set `data-primary` and `data-accent` on the tag. `data-mascot="false"` hides the little boat.
 
@@ -46,7 +46,7 @@ Self-hosting is free. You don't need a third-party account or an API key. Dinghy
 
 Every install has an HTTP API with an OpenAPI description at `/v1/openapi.json`, webhooks for 10 events, and an MCP server at `/v1/mcp`. The widget is on npm too, as `@dinghy-chat/widget`. See [the API page](/docs/api) and [Use Dinghy with AI agents](/docs/agents).
 
-Or skip the server and use Dinghy Cloud, $7 a month for up to 5 people. A workspace exports to one file that imports into a self-hosted Dinghy, so you can move later.
+Or skip the server and use Dinghy Cloud, $9 a month for up to 5 people. A workspace exports to one file that imports into a self-hosted Dinghy, so you can move later.
 
 ## When Dinghy isn't the right fit
 
@@ -57,4 +57,4 @@ Or skip the server and use Dinghy Cloud, $7 a month for up to 5 people. A worksp
 
 ## Get started
 
-[Start on Dinghy Cloud](https://app.dinghy.chat/signup) for $7 a month, or [host it yourself](/docs/self-hosting) for free. More on the stack and the license in [Open-source live chat](/open-source-live-chat).
+[Start on Dinghy Cloud](https://app.dinghy.chat/signup) for $9 a month, or [host it yourself](/docs/self-hosting) for free. More on the stack and the license in [Open-source live chat](/open-source-live-chat).

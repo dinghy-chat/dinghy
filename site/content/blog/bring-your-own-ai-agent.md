@@ -3,14 +3,14 @@ title: Bring your own AI agent to your live chat | Dinghy
 nav: Bring your own AI agent
 description: Dinghy has no AI of its own and no AI fee. Your own agent connects through MCP or the API, writes drafts first, and hands chats to your team.
 date: 2026-11-08
-updated: 2026-11-14
+updated: 2026-11-22
 order: 2
 card: Your agent drafts, your team sends, the price stays flat
 ---
 
 # Bring your own AI agent to your live chat
 
-Intercom bills per Fin outcome. Tidio sells Lyro conversations. tawk.to has AI Assist. Crisp puts its AI agent in its Plus plan.
+Intercom bills per Fin outcome. Tidio counts human and Lyro conversations against the same plan limit when you enable Lyro. tawk.to sells AI Assist.
 
 Dinghy has no AI of its own, and I don't sell any. But if you want a bot to answer chats, your own agent can do it. And by default a person still approves what it says.
 
@@ -24,7 +24,7 @@ A bot sits between your customer and you. Some customers don't mind. Some write 
 
 An AI answer costs money every time, so the tools pass that on, per resolution or per bundle of conversations. But it means your bill depends on how busy your month was.
 
-Dinghy charges no AI fee. Dinghy Cloud is one flat price, $7 a month for up to 5 people. If you connect a bot, you pay your own model provider for what it uses, and nothing more to us.
+Dinghy charges no AI fee. Dinghy Cloud is one flat price, $9 a month for up to 5 people. If you connect a bot, you pay your own model provider for what it uses, and nothing more to us.
 
 ## Your agent connects through MCP or the API
 
@@ -41,6 +41,8 @@ With that, an agent can:
 
 A new key or connection starts in **Drafts only**. The agent's reply waits under the conversation as a suggestion, marked with the bot's name. The visitor sees nothing yet. A person clicks **Send**, **Edit** or **Discard**.
 
+You can also ask a bot to try again. Select **Ask to change** and tell it what to fix, such as “shorter” or “in Spanish.” A bot that supports revisions replaces its own draft for you to review. Enable it for the bot’s API key in **Settings > API & webhooks**. See [Ask to change](/docs/agents#ask-to-change).
+
 Once its drafts are good, an owner or admin can switch it to **Send directly**. The bot can't flip that itself.
 
 ## Handoff, and one switch to stop every bot
@@ -51,7 +53,7 @@ If a bot misbehaves, an owner or admin pauses every bot in the workspace with on
 
 ## A bot on a self-hosted install
 
-On your own server, Dinghy still needs no outside account. It needs a model provider you pick, an API key with them, and a bill from them. It also means your customer messages go to that provider, so pick one whose privacy terms you're OK with.
+On your own server, Dinghy still needs no outside account. Your bot can use a model you run locally or a model provider you choose. With a hosted model, check what customer data your bot sends to that provider.
 
 ## When to pick a tool with a hosted AI agent
 

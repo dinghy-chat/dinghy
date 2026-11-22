@@ -3,7 +3,7 @@ title: How to add live chat to a WordPress site | Dinghy
 nav: WordPress
 description: Add the Dinghy live chat to WordPress with a header and footer plugin or a few lines in your child theme. You don't need a chat plugin.
 date: 2026-11-08
-updated: 2026-11-14
+updated: 2026-11-22
 order: 1
 card: With a header and footer plugin, or your child theme
 logo: wordpress
@@ -47,13 +47,13 @@ Use a child theme, not your main theme. A theme update replaces the main theme's
 
 ## WordPress.com
 
-On WordPress.com, adding plugins or custom code needs a plan that allows plugins. If yours doesn't, you can't add the chat. Self-hosted WordPress, the one from wordpress.org, doesn't have that limit.
+On WordPress.com, the Dinghy tag needs [a plugin-enabled plan with hosting features activated](https://wordpress.com/support/code/). Self-hosted WordPress lets you add the tag with a plugin or child theme.
 
 ## Check that it works
 
 1. Open your site in a private window.
 2. Click the chat button and send a test message.
-3. It should show up in the Dinghy inbox within a second or two.
+3. Check that the message appears in your Dinghy inbox.
 
 No button? A caching plugin may be serving the old page, so clear its cache. Still missing? Open the browser's developer console. If `loader.js` failed, the address in the tag is wrong or a Content Security Policy blocks it. If the button shows but every message says "Not sent", add the exact address you're on to Allowed sites, `www` included. [Troubleshooting](/docs/troubleshooting) has more.
 

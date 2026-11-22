@@ -1,8 +1,5 @@
-# Search engines and AI assistants may read and quote every page here.
-# Cloudflare adds its own content-signal notes above this file.
-
 User-agent: *
-Content-Signal: search=yes, ai-input=yes, ai-train=yes
+Content-Signal: search=yes, ai-input=yes
 Allow: /
 
 Sitemap: https://dinghy.chat/sitemap.xml

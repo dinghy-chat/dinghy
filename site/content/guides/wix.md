@@ -3,7 +3,7 @@ title: How to add live chat to a Wix site | Dinghy
 nav: Wix
 description: Add the Dinghy live chat to Wix with Custom Code in your site settings, on all pages at the end of the body. You need a connected domain.
 date: 2026-11-09
-updated: 2026-11-14
+updated: 2026-11-22
 order: 7
 card: Paste it in Custom Code
 logo: wix
@@ -15,7 +15,7 @@ Wix runs your own scripts through Custom Code in the site settings. Add the Ding
 
 ## Before you start
 
-Wix only runs custom code on a published site with a connected domain. Connecting a domain needs a Wix Premium plan. So a free `wixsite.com` site can't have the chat.
+Wix [requires a published site with a connected domain](https://support.wix.com/en/article/wix-editor-embedding-custom-code-on-your-site) to run custom code. Connecting a domain needs a Wix Premium plan. So a free `wixsite.com` site can't have the chat.
 
 ## Get your tag
 

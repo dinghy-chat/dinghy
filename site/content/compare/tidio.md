@@ -1,17 +1,18 @@
 ---
 title: Tidio alternative with no conversation cap: Dinghy vs Tidio | Dinghy
 nav: Dinghy vs Tidio
-description: Tidio's paid plans count conversations and sell an AI bot on top. Dinghy has no conversation count and no AI fee: free to self-host, or $7 a month.
+description: Tidio plans have a conversation quota. Compare its human-only and Lyro plans with Dinghy Cloud at $9 a month, or free self-hosting.
 date: 2026-11-08
-updated: 2026-11-14
+updated: 2026-11-22
+priceChecked: 2026-11-22
 order: 4
 card: Conversation caps and an AI upsell, or neither
-stat: $24, 100 chats
+stat: $24 to $29
 ---
 
 # Dinghy vs Tidio
 
-Tidio has an AI agent called Lyro and e-commerce features. Dinghy is just the chat and the inbox.
+Tidio has an AI agent called Lyro and e-commerce features. Dinghy offers website chat, a team inbox, and campaigns. You can connect your own AI agent.
 
 ## The quick answer
 
@@ -22,30 +23,30 @@ Use Tidio if your store needs an AI agent for common questions, flows and e-comm
 | | Dinghy Cloud | Tidio |
 |---|---|---|
 | Free plan | No. Self-hosting is free | Yes, 50 conversations a month |
-| First paid plan | $7 a month | $24.17 a month on Starter |
-| Conversations included | No limit | 100 a month on Starter, from 250 on Growth |
-| Remove the branding | Free, one switch in Settings | Paid add-on from Growth, $16.67 a month |
-| AI agent | None built in. Bring your own, no AI fee | Lyro, from $32.50 a month for 50 conversations |
+| First paid plan | $9 a month | $24 per month on annual billing or $29 on monthly billing on Human only Starter |
+| Conversations included | No limit | 100 a month on Human only Starter at the listed price |
+| Remove the branding | Free, one switch in Settings | Paid branding add-on |
+| AI agent | None built in. Bring your own, no AI fee | With Lyro AI Starter starts at $390 a year for 50 AI and human conversations a month |
 | Self-hosting | Free, open source | Not possible |
 
-Tidio prices are from tidio.com/pricing on November 8, 2026. The page has a yearly billing option, so the monthly rate may be higher. [All the prices side by side](/compare/).
+Sources: [Tidio’s pricing page](https://www.tidio.com/pricing/), [its Human only price table](https://www.tidio.com/blog/chatbot-pricing/) and [the November 16 plan change](https://help.tidio.com/articles/which-upgrades/). Older subscriptions can keep their old terms. [All the prices side by side](/compare/).
 
 ## The conversation count
 
-Tidio's plans include a set number of "billable conversations" a month. On Starter it's 100. If a launch or shipping delay uses up the allowance, you'll need an upgrade.
+Tidio's plans include a set number of "billable conversations" a month. The Human only Starter price above includes 100 a month. Tidio charges more for higher quotas. On With Lyro AI, bot and human conversations draw from the same quota.
 
-Dinghy doesn't count conversations. On Dinghy Cloud a busy month costs the same $7 as a quiet one.
+Dinghy has no conversation quota for billing. On Dinghy Cloud a busy month costs the same $9 as a quiet one.
 
 ## What Tidio does that Dinghy doesn't
 
 - Lyro, a hosted AI agent that answers by itself.
-- Flows: automated messages and chatbots you build.
+- Flows: a visual builder for automated messages and chatbots. Dinghy has [triggered chat campaigns](/blog/proactive-live-chat).
 - E-commerce tools and integrations, including store platforms. Dinghy has an API and webhooks instead.
 - Other channels, like an email inbox and social messengers. Dinghy only emails your reply to a visitor who left.
 
 ## What Dinghy does differently
 
-Dinghy doesn't sell a bot. Someone on your team writes every reply, unless you connect your own agent through MCP or the API. Even then, by default its replies wait as drafts. See [Bring your own AI agent](/blog/bring-your-own-ai-agent). And there's no count of conversations, contacts or visitors.
+Dinghy doesn't sell a bot. Someone on your team writes every reply, unless you connect your own agent through MCP or the API. Even then, by default its replies wait as drafts. See [Bring your own AI agent](/blog/bring-your-own-ai-agent). Dinghy Cloud has no billing quotas for conversations, contacts or visitors.
 
 If you don't want to pay at all, Dinghy is open source and free on your own server.
 

@@ -3,7 +3,7 @@ title: How to add live chat to an Astro site | Dinghy
 nav: Astro
 description: Add the Dinghy live chat to an Astro site with one is:inline script in your base layout. And the fix that keeps it on screen with view transitions.
 date: 2026-11-09
-updated: 2026-11-14
+updated: 2026-11-22
 order: 11
 card: Base layout, plus a view transitions fix
 logo: astro
@@ -11,7 +11,7 @@ logo: astro
 
 # Add live chat to Astro
 
-In Astro, the chat tag goes in the layout every page uses. With view transitions, add the swap listeners below to keep the chat on screen.
+In Astro, the chat tag goes in the layout every page uses. If you use Astro’s ClientRouter, add the swap listeners below to keep the chat on screen.
 
 ## Get your tag
 
@@ -34,11 +34,11 @@ Open your base layout, usually `src/layouts/Layout.astro`, and paste the tag jus
   </body>
 ```
 
-If some pages use a different layout, add the tag there too. Without view transitions, you're done. Each page load brings back the chat and its conversation.
+If some pages use a different layout, add the tag there too. Without ClientRouter, one tag in the layout is enough. Each page load brings back the chat and its conversation.
 
-## If you use view transitions
+## If you use ClientRouter
 
-With Astro's `<ClientRouter />`, page changes don't reload the page. Astro swaps in the new page's `<body>` instead. The chat lives in the body, so the swap removes it. And Astro won't run the same script twice to bring it back.
+With [Astro's `<ClientRouter />`](https://docs.astro.build/en/guides/view-transitions/), page changes don't reload the page. Astro swaps in the new page's `<body>` instead. The chat lives in the body, so the swap removes it. And Astro won't run the same script twice to bring it back.
 
 Add this after the tag. It moves the chat into the new body after each swap:
 
@@ -78,7 +78,7 @@ If someone clicks before the chat script has loaded, the call waits in a queue a
 
 ## Check that it works
 
-Run your site, open it in a private window, click the chat button and send a test message. It shows up in your Dinghy inbox. With view transitions on, click to another page and check the button's still there.
+Run your site, open it in a private window, click the chat button and send a test message. It shows up in your Dinghy inbox. With ClientRouter on, open the chat, follow a link and check that the chat stays open.
 
 ## If you use a Content Security Policy
 

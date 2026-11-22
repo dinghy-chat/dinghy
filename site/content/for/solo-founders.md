@@ -1,16 +1,16 @@
 ---
 title: Live chat for solo founders | Dinghy
 nav: Solo founders
-description: Live chat for a one-person business. Answer from your phone with push alerts. No bot replies in your name unless you connect one. $7 a month, or self-host free.
+description: Live chat for a one-person business. Answer from your phone with push alerts. No bot replies in your name unless you connect one. $9 a month, or self-host free.
 date: 2026-11-09
-updated: 2026-11-14
+updated: 2026-11-22
 order: 3
 card: You answer everything. Your phone tells you when
 ---
 
 # Live chat for solo founders
 
-If you run the business alone, you're the support team. Dinghy gives you a chat on your site and an inbox on your phone, with a push alert when someone writes. There's no built-in bot, so every reply is yours. Unless you connect your own AI agent, and even then you approve its drafts by default. Dinghy Cloud costs $7 a month. Self-hosting is free.
+If you run the business alone, you're the support team. Dinghy gives you a chat on your site and an inbox on your phone, with a push alert when someone writes. There's no built-in bot, so every reply is yours. Unless you connect your own AI agent, and even then you approve its drafts by default. Dinghy Cloud costs $9 a month. Self-hosting is free.
 
 ## Your inbox is on your phone
 
@@ -37,9 +37,9 @@ If you want help, connect your own agent, like Claude Code, through MCP. Its rep
 
 ## What it costs
 
-Dinghy Cloud is $7 a month per workspace, flat. If you hire help later, up to 5 people fit in the same $7. You pay at signup and can cancel anytime. There's no free plan on the cloud.
+Dinghy Cloud is $9 a month per workspace, flat. If you hire help later, up to 5 people fit in the same $9. You pay at signup and can cancel anytime. There's no free plan on the cloud.
 
-Self-host it if you want the data on your own machine or don't want to pay $7 a month. Same product, every feature, on one small Linux server. The [self-hosting guide](/docs/self-hosting) has the one install script.
+Self-host it if you want the data on your own machine or don't want to pay $9 a month. Same product, every feature, on one small Linux server. The [self-hosting guide](/docs/self-hosting) has the one install script.
 
 ## When Dinghy isn't the right fit
 
@@ -49,4 +49,4 @@ Self-host it if you want the data on your own machine or don't want to pay $7 a 
 
 ## Get started
 
-[Start on Dinghy Cloud](https://app.dinghy.chat/signup) for $7 a month, or [host it yourself](/docs/self-hosting) for free.
+[Start on Dinghy Cloud](https://app.dinghy.chat/signup) for $9 a month, or [host it yourself](/docs/self-hosting) for free.

@@ -3,7 +3,7 @@ title: Show signed-in Supabase users in your live chat | Dinghy
 nav: Signed-in users: Supabase
 description: Tell Dinghy which Supabase Auth user is chatting in a Next.js app. A route signs a token after getUser(), a client component hands it over.
 date: 2026-11-09
-updated: 2026-11-14
+updated: 2026-11-22
 order: 21
 card: Show who's chatting with Supabase Auth
 logo: supabase
@@ -104,8 +104,11 @@ declare global {
   }
 }
 
-export const getDinghyToken = async () =>
-  (await fetch("/api/dinghy-token", { method: "POST" })).text();
+export const getDinghyToken = async () => {
+  const response = await fetch("/api/dinghy-token", { method: "POST" });
+  if (!response.ok) throw new Error("Could not get a Dinghy token");
+  return response.text();
+};
 
 export function dinghy(...call: ["identify", () => Promise<string>] | ["reset"]) {
   const api = (window.Dinghy ??= { q: [] });

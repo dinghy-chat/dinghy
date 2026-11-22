@@ -3,7 +3,7 @@ title: How to add live chat to a Squarespace site | Dinghy
 nav: Squarespace
 description: Add the Dinghy live chat to Squarespace by pasting one tag in the footer field of Code Injection. Works on the Core, Plus and Advanced plans.
 date: 2026-11-09
-updated: 2026-11-14
+updated: 2026-11-22
 order: 6
 card: Paste it in Code Injection
 logo: squarespace
@@ -31,7 +31,7 @@ In Dinghy, open Settings > Install and add your domain under Allowed sites, like
 2. Paste the tag in the Footer field.
 3. Click Save.
 
-Code injection comes with the Core, Plus and Advanced plans, and some older billing plans. If you don't see the panel, your plan doesn't have it.
+Squarespace includes [Code Injection](https://support.squarespace.com/hc/en-us/articles/205815908-Customize-parts-of-your-site-with-code-injection) on Core, Plus and Advanced and some older billing plans. If you don't see the panel, your plan doesn't have it.
 
 ## Check that it works
 

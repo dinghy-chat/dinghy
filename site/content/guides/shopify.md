@@ -3,7 +3,7 @@ title: How to add live chat to a Shopify store | Dinghy
 nav: Shopify
 description: Add the Dinghy live chat to your Shopify store by pasting one tag in theme.liquid. There's no app to install.
 date: 2026-11-08
-updated: 2026-11-14
+updated: 2026-11-22
 order: 2
 card: One paste in theme.liquid
 logo: shopify
@@ -50,7 +50,7 @@ The chat won't show on Shopify's checkout pages. Shopify builds those itself and
 
 - If you switch themes later, paste the tag into the new theme's `theme.liquid` too.
 - A theme update can drop code edits that clash with the new version. After an update, check the chat's still there.
-- You can't edit the code of a paid theme while you're on a free trial of it. Buy it first.
+- Shopify requires you to [purchase a paid theme before editing its code](https://help.shopify.com/en/manual/online-store/themes/customizing-themes/edit-code/edit-theme-code).
 
 ## Make it fit your store
 

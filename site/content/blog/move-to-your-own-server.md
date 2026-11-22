@@ -3,7 +3,7 @@ title: Leaving the cloud: move your chat to your own server
 nav: Move to your own server
 description: A Dinghy Cloud workspace exports to one file that imports into a self-hosted Dinghy. The whole move, step by step, and what changes on your site.
 date: 2026-11-09
-updated: 2026-11-14
+updated: 2026-11-22
 order: 5
 card: One export file, one import command, and you're out
 ---
@@ -12,11 +12,11 @@ card: One export file, one import command, and you're out
 
 Before you hand your customer chats to a small company, ask how you'd get them back. With Dinghy it's one file.
 
-Dinghy Cloud runs the same code you can run yourself. An owner downloads the workspace as one file, with every conversation, visitor, teammate, setting and image in it. That file imports into Dinghy on your own server. The [self-hosting guide](/docs/self-hosting#moving-a-workspace) has the short version.
+Dinghy Cloud runs the same code you can run yourself. An owner downloads the workspace as one file, with conversations, contacts, outbound messages, team settings and chat attachments. That file imports into Dinghy on your own server. The [self-hosting guide](/docs/self-hosting#moving-a-workspace) has the short version.
 
 ## Set up the new server first
 
-Do this before you export anything. The export is a snapshot, so chats that come in after you download it stay on the cloud. Import it as soon as you export it.
+Do this before you export anything. Keep both installs on the same Dinghy version for the move. The export is a snapshot, so chats that come in after you download it stay on the cloud. Import it as soon as you export it.
 
 Install Dinghy on a Linux server with the install script. It asks for your domain and email, gets an HTTPS certificate and prints a sign-in link. [The self-hosting walkthrough](/blog/self-host-live-chat) goes through it.
 

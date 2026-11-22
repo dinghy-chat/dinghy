@@ -3,7 +3,7 @@ title: Show signed-in Better Auth users in your live chat | Dinghy
 nav: Signed-in users: Better Auth
 description: Tell Dinghy which Better Auth user is chatting in a Next.js app. A route signs a token from auth.api.getSession(), a client component passes it on.
 date: 2026-11-09
-updated: 2026-11-14
+updated: 2026-11-22
 order: 22
 card: Show who's chatting with Better Auth
 logo: betterauth
@@ -68,8 +68,11 @@ declare global {
   }
 }
 
-export const getDinghyToken = async () =>
-  (await fetch("/api/dinghy-token", { method: "POST" })).text();
+export const getDinghyToken = async () => {
+  const response = await fetch("/api/dinghy-token", { method: "POST" });
+  if (!response.ok) throw new Error("Could not get a Dinghy token");
+  return response.text();
+};
 
 export function dinghy(...call: ["identify", () => Promise<string>] | ["reset"]) {
   const api = (window.Dinghy ??= { q: [] });

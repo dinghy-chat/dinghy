@@ -1,21 +1,21 @@
 ---
 title: Open-source live chat you can host yourself | Dinghy
 nav: Open-source live chat
-description: Dinghy is an open-source live chat for your website. Run it free on one small server with one script, or we host it for $7 a month.
+description: Dinghy is an open-source live chat for your website. Run it free on one small server with one script, or we host it for $9 a month.
 date: 2026-11-08
-updated: 2026-11-14
+updated: 2026-11-22
 order: 1
-card: Free on your server, or $7 on ours
+card: Free on your server, or $9 on ours
 ---
 
 # Open-source live chat you can host yourself
 
-Dinghy is a live chat for your website, and the whole product is open source. Run it on your own server for free, or pay us $7 a month to run it for you on Dinghy Cloud. Same code either way.
+Dinghy is open-source live chat for your website. Run it on your own server for free, or pay us $9 a month to run it for you on Dinghy Cloud. Same code either way.
 
 ## The short version
 
 - A chat button on your site, and a shared inbox where your team answers.
-- The server is AGPL 3.0. The widget you embed is MIT, so it's fine on any site, commercial or not.
+- The self-hosted server is AGPL 3.0 and the widget you embed is MIT. The cloud billing and signup code has a [separate source-available license](https://github.com/dinghy-chat/dinghy/blob/main/ee/LICENSE).
 - One Docker image, plus Postgres and Valkey. That's the whole stack.
 - One install script on a fresh Linux server. It sets up Docker, HTTPS and your login.
 - No license check, no telemetry. You don't need a third-party account or an API key.
@@ -28,7 +28,7 @@ The code is on [GitHub](https://github.com/dinghy-chat/dinghy).
 
 Most open-source chat tools grew into full help desks. Email, WhatsApp, help centers, bots, automation rules. Fine if you need all that. But it's a lot to run if you just want people on your site to reach you.
 
-It's the chat, a shared inbox with saved replies, notes, labels and analytics, alerts so you don't miss anything, and an API for the rest.
+You get the chat, a shared inbox with saved replies, notes and labels, [site and support analytics](/blog/live-chat-analytics-without-cookies), and [campaigns](/blog/proactive-live-chat) that can send a message before a visitor writes.
 
 ## Installing it
 
@@ -48,7 +48,7 @@ Above about 50 messages a second inside one workspace, delivery starts to lag. W
 
 | | Self-hosted | Dinghy Cloud |
 |---|---|---|
-| Price | Free | $7 a month per workspace |
+| Price | Free | $9 a month per workspace |
 | Who runs it | You | Us |
 | Updates and backups | You do | We do |
 | Operators | As many as you want | Up to 5 |
@@ -57,13 +57,13 @@ Above about 50 messages a second inside one workspace, delivery starts to lag. W
 
 ## What it doesn't do
 
-Dinghy has no AI of its own, no marketing campaigns, no help center, and no other channels like a shared email inbox or WhatsApp. If you need those, look at [Chatwoot](/compare/chatwoot). It's open source.
+Dinghy has no AI of its own, no built-in help center, and no other channels like a shared email inbox or WhatsApp. If you need those, look at [Chatwoot](/compare/chatwoot). It's open source.
 
 You can still bring your own AI agent. It connects through the MCP server or the API, and its replies wait as drafts for a person to send, unless you let it send directly. Self-host Dinghy, run the bot with a model on your own server, and no chat leaves your machines. See [Live chat for AI agents](/for/ai-agents).
 
 ## How it compares
 
-- [Dinghy vs Chatwoot](/compare/chatwoot), the other open-source option
+- [Dinghy vs Chatwoot](/compare/chatwoot), another self-hosted option
 - [Dinghy vs Intercom](/compare/intercom)
 - [Dinghy vs Crisp](/compare/crisp)
 - [Live chat prices for 1, 3 and 5 people](/compare/)

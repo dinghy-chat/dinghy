@@ -36,9 +36,10 @@ interface Page {
   description?: string | undefined;
   /** The browser title of a content page. A docs page's comes from its nav label. */
   title?: string | undefined;
-  /** For content pages: when it was first published and last checked, as YYYY-MM-DD. */
+  /** Content dates as YYYY-MM-DD. */
   date?: string | undefined;
   updated?: string | undefined;
+  priceChecked?: string | undefined;
   /** For content pages: the short line and the optional chip on the cards that link here. */
   card?: string | undefined;
   stat?: string | undefined;
@@ -202,6 +203,7 @@ function contentPages(): Page[] {
         title: meta.title,
         date: meta.date,
         updated: meta.updated ?? meta.date,
+        priceChecked: meta.priceChecked,
         card: meta.card,
         stat: meta.stat,
         logo: meta.logo,
@@ -591,7 +593,7 @@ function cards(pages: Page[], from?: Page): string {
         : "";
       const top = `${logo}${kicker ? `\n          <span class="card-kicker">${escape(kicker)}</span>` : ""}`;
       const stat = page.stat
-        ? `<span class="card-stat"><span>${escape(page.stat)}</span>${/^(\$|Free)/.test(page.stat) ? '<span class="card-stat-us">Dinghy $7</span>' : ""}</span>`
+        ? `<span class="card-stat"><span>${escape(page.stat)}</span>${/^(\$|Free)/.test(page.stat) ? '<span class="card-stat-us">Dinghy $9</span>' : ""}</span>`
         : "";
       return `<a class="card" href="${page.path}">
 ${top}
@@ -625,7 +627,7 @@ const SITE_FOOTER = (() => {
 const CTA = `      <aside class="story-cta" aria-label="Try Dinghy">
         <div>
           <p class="story-cta-title">Try Dinghy on your site</p>
-          <p>$7 a month for up to 5 people on Dinghy Cloud, or free on your own server.</p>
+          <p>$9 a month for up to 5 people on Dinghy Cloud, or free on your own server.</p>
         </div>
         <div class="story-cta-actions">
           <a class="btn btn-navy" href="https://app.dinghy.chat/signup">Get started</a>
@@ -651,8 +653,7 @@ function buildStory(page: Page): { html: string; images: string[] } {
   let meta = "";
   if (page.group === "Blog" && !index && page.date)
     meta = `${longDate(page.date)} · ${minutesToRead(page)} min read`;
-  // A comparison's date is the day its prices were checked. Its updated date can be later, for a change to Dinghy's side.
-  else if (page.group === "Compare" && !index && page.date) meta = `Prices checked ${longDate(page.date)}`;
+  else if (page.priceChecked) meta = `Prices checked ${longDate(page.priceChecked)}`;
   const metaLine = meta ? `\n          <p class="doc-meta">${meta}</p>` : "";
   let body = doc.html.trim();
   body = body.replace(/<!-- pages(?: (\d+)-(\d+))? -->/g, (_, from?: string, to?: string) =>

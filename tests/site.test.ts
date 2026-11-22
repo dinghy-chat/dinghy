@@ -181,3 +181,20 @@ test("the sitemap lists every page, and robots.txt points to it", () => {
     "Sitemap: https://dinghy.chat/sitemap.xml",
   );
 });
+
+test("llms.txt links to each content page at its canonical address", () => {
+  const index = readFileSync(join(PUBLIC, "llms.txt"), "utf8");
+  const staticPages = new Set(["index.html", "404.html", "privacy.html", "terms.html"]);
+  for (const page of pages.filter((file) => !staticPages.has(file) && !file.startsWith("docs/"))) {
+    const canonical = readPage(page).match(/<link rel="canonical" href="([^"]+)">/)?.[1];
+    expect(index, page).toContain(`](${canonical})`);
+  }
+});
+
+test("the Cloud price in the comparison and structured data matches the home page", () => {
+  const home = readPage("index.html");
+  const price = home.match(/class="price">\$(\d+) <small>a month/)?.[1];
+  expect(price).toBeDefined();
+  expect(home).toContain(`"name":"Dinghy Cloud","price":"${price}","priceCurrency":"USD"`);
+  expect(readPage("compare/index.html")).toContain(`$${price} a month for up to 5 people`);
+});

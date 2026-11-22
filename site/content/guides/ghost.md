@@ -3,7 +3,7 @@ title: How to add live chat to a Ghost site | Dinghy
 nav: Ghost
 description: Add the Dinghy live chat to a Ghost publication by pasting one tag in Code injection's Site footer. No theme edits, works with any theme.
 date: 2026-11-09
-updated: 2026-11-14
+updated: 2026-11-22
 order: 8
 card: Paste it in Code injection
 logo: ghost
@@ -32,7 +32,7 @@ In Dinghy, open Settings > Install and add your publication's address under Allo
 3. Paste the tag in the Site footer box.
 4. Save.
 
-Use Site footer, not Site header. Ghost recommends the footer for scripts. And the tag is `async` anyway, so it never holds up your posts.
+Ghost places [Site footer code](https://ghost.org/help/code-injection-styles/) before the closing body tag. The Dinghy script downloads asynchronously.
 
 ## Check that it works
 
