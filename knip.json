@@ -4,7 +4,7 @@
   "ignoreDependencies": ["preact"],
   "workspaces": {
     ".": {
-      "entry": ["site/public/js/{main,lost,docs}.js", "tests/**/*.{test,spec}.ts"],
+      "entry": ["site/public/js/{main,lost,docs,page}.js", "tests/**/*.{test,spec}.ts"],
       "project": ["site/**/*.{ts,js}", "tests/**/*.ts"]
     },
     "apps/server": {
