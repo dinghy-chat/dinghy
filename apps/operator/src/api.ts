@@ -204,8 +204,21 @@ export interface SuggestedReply {
   /** The key's name. */
   authorName: string;
   body: string;
-  /** `stale`: the visitor wrote after it. */
-  status: "open" | "stale" | "sent" | "discarded";
+  /** `stale`: the visitor wrote after it. `replaced`: its key wrote a new one, as asked. */
+  status: "open" | "stale" | "sent" | "discarded" | "replaced";
+  createdAt: string;
+  /** It is open, and its key rewrites drafts. */
+  canAskToChange: boolean;
+  /** The change that waits on it, or null. */
+  changeRequest: ChangeRequest | null;
+}
+
+/** An operator's "Ask to change" on a draft, which the key that wrote it answers with a new one. */
+export interface ChangeRequest {
+  id: string;
+  draftId: string;
+  instruction: string;
+  status: "pending" | "fulfilled" | "cancelled";
   createdAt: string;
 }
 
@@ -306,7 +319,27 @@ export interface LiveVisitor {
   device: string | null;
   startedAt: string;
   /** Only for a visitor who has used the chat. */
-  visitor: (VisitorIdentity & { conversationId: string | null }) | null;
+  visitor:
+    | (VisitorIdentity & {
+        conversationId: string | null;
+        /** When their open conversation's newest message is theirs, and not snoozed: its time. */
+        waitingSince: string | null;
+      })
+    | null;
+}
+
+/** The site's numbers for a period, kept by the hour. */
+export interface VisitorStats {
+  visits: number;
+  pageViews: number;
+  chats: number;
+  /** The period just before, or null when Dinghy has not counted the site for that long. */
+  previous: { visits: number; pageViews: number; chats: number } | null;
+  peak: { count: number; at: string } | null;
+  /** Visits per day, oldest first. */
+  series: number[];
+  pages: { page: string; title: string | null; count: number }[];
+  referrers: { referrer: string | null; count: number }[];
 }
 
 export type ContactSort = "lastSeen" | "firstSeen";
@@ -387,7 +420,6 @@ export type OutboundStatusReason =
   | "unless_matched"
   | "cancelled_by_request"
   | "conversation_deleted"
-  | "opted_out"
   | "audience_unmatched"
   | "frequency_capped"
   | "goal_reached"
@@ -542,6 +574,8 @@ export interface ApiKey {
   /** `static`, a key made in Settings, or `oauth`, an app that an owner or admin connected. */
   source: "static" | "oauth";
   replyMode: ReplyMode;
+  /** Its bot answers "Ask to change" on its drafts. */
+  rewritesDrafts: boolean;
   /** What it may do beyond its level, such as send as a member. */
   permissions: ApiKeyPermission[];
   /** A connected app's origin. Null for a static key. */
@@ -562,6 +596,7 @@ export const WEBHOOK_EVENTS = [
   "conversation.handoff",
   "conversation.given_back",
   "conversation.labeled",
+  "draft.change_requested",
   "outbound_message.sent",
   "outbound_message.delivered",
   "outbound_message.read",
@@ -576,6 +611,9 @@ export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number];
 export type ApiKeyLevel = "conversations" | "setup";
 /** `send`: replies go to the visitor. `draft`: they wait for a person to send them. */
 export type ReplyMode = "send" | "draft";
+
+/** What a key may do, as Settings sets it. */
+export type KeyAccess = Pick<ApiKey, "level" | "replyMode" | "rewritesDrafts" | "permissions">;
 
 export interface Webhook {
   id: string;
@@ -891,7 +929,11 @@ export function workspaceApi(workspaceId: string) {
       post<{ visitorId: string; conversationId: string }>(`${base}/test-visitors/messages`, {
         body,
       }),
-    liveVisitors: () => call<{ visitors: LiveVisitor[] | null }>(`${base}/visitors/live`),
+    /** `lastHour`: the most tabs open at once in each of the last 60 minutes, oldest first. */
+    liveVisitors: () =>
+      call<{ visitors: LiveVisitor[] | null; lastHour: number[] | null }>(`${base}/visitors/live`),
+    visitorStats: (days: AnalyticsDays, timeZone: string) =>
+      call<VisitorStats>(`${base}/visitors/stats?days=${days}&tz=${encodeURIComponent(timeZone)}`),
     liveCount: () => call<{ count: number | null }>(`${base}/visitors/live/count`),
     contacts: (query: {
       q: string;
@@ -970,27 +1012,14 @@ export function workspaceApi(workspaceId: string) {
         body: JSON.stringify(settings),
       }),
     apiKeys: () => call<{ apiKeys: ApiKey[] }>(`${base}/api-keys`),
-    createApiKey: (
-      name: string,
-      level: ApiKeyLevel,
-      replyMode: ReplyMode,
-      permissions: ApiKeyPermission[],
-    ) =>
-      post<ApiKey & { token: string }>(`${base}/api-keys`, {
-        name,
-        level,
-        replyMode,
-        permissions,
-      }),
-    /** Changes what a key may do: any of its level, reply mode and permissions, in one request. */
-    updateApiKey: (
-      id: string,
-      access: Partial<{
-        level: ApiKeyLevel;
-        replyMode: ReplyMode;
-        permissions: ApiKeyPermission[];
-      }>,
-    ) => call<ApiKey>(`${base}/api-keys/${id}`, { method: "PATCH", body: JSON.stringify(access) }),
+    createApiKey: (name: string, access: KeyAccess) =>
+      post<ApiKey & { token: string }>(`${base}/api-keys`, { name, ...access }),
+    /**
+     * Changes what a key may do: any of its level, reply mode, draft rewrites and permissions, in
+     * one request.
+     */
+    updateApiKey: (id: string, access: Partial<KeyAccess>) =>
+      call<ApiKey>(`${base}/api-keys/${id}`, { method: "PATCH", body: JSON.stringify(access) }),
     setBotsPaused: (paused: boolean) =>
       call<{ paused: boolean; pausedBy: string | null }>(`${base}/bots-paused`, {
         method: "PUT",
@@ -1194,6 +1223,20 @@ export function workspaceApi(workspaceId: string) {
       post<Message>(`${conversation(id)}/drafts/${draftId}/send`, { body }),
     discardDraft: (id: string, draftId: string) =>
       post<{ ok: true }>(`${conversation(id)}/drafts/${draftId}/discard`, {}),
+    /** Asks the key that wrote a draft for a new one. `clientId` makes a retry safe. */
+    askToChange: (id: string, draftId: string, clientId: string, instruction: string) =>
+      post<{ changeRequest: ChangeRequest }>(
+        `${conversation(id)}/drafts/${draftId}/change-requests`,
+        {
+          clientId,
+          instruction,
+        },
+      ),
+    cancelChangeRequest: (id: string, draftId: string, changeRequestId: string) =>
+      post<{ changeRequest: ChangeRequest }>(
+        `${conversation(id)}/drafts/${draftId}/change-requests/${changeRequestId}/cancel`,
+        {},
+      ),
     /** Lets bots that send directly answer this conversation again. */
     giveBack: (id: string) => post<{ ok: true }>(`${conversation(id)}/give-back`, {}),
     /** Moves this operator's read position in the conversation forward to a message's seq. */

@@ -14,6 +14,7 @@ import type { HandledPayload } from "./bots.ts";
 import { campaignViews } from "./campaigns.ts";
 import {
   apiKey,
+  draftChangeRequest,
   event,
   type LabeledPayload,
   label,
@@ -33,6 +34,7 @@ import {
   type Transaction,
   withWorkspace,
 } from "./db/tenant.ts";
+import { changeRequestBodies } from "./draft-changes.ts";
 import {
   errorAnswer,
   failure,
@@ -731,6 +733,7 @@ export function createWebhooks({
           messageId,
           outboundMessageId,
           campaignId,
+          changeRequestId,
           labelId,
           labelAdded,
         } = found;
@@ -745,6 +748,7 @@ export function createWebhooks({
             messageId,
             outboundMessageId,
             campaignId,
+            changeRequestId,
             labelId,
             labelAdded,
             replayOf: deliveryId,
@@ -862,11 +866,23 @@ export const isWebhookEvent = (name: string): name is WebhookEvent =>
 
 /**
  * What one webhook event names: its conversation, its message and the label it changed, or an
- * outbound message, which may be in no conversation, or a campaign.
+ * outbound message, which may be in no conversation, or a campaign, or a draft's change request.
  */
-type WebhookSubject = ConversationSubject | { outboundMessageId: string } | { campaignId: string };
+type WebhookSubject =
+  | ConversationSubject
+  | { kind: "outbound"; outboundMessageId: string }
+  | { kind: "campaign"; campaignId: string }
+  | ChangeRequestSubject;
+
+/** A `draft.change_requested` event's request, and the conversation its draft is in. */
+interface ChangeRequestSubject {
+  kind: "change_request";
+  changeRequestId: string;
+  conversationId: string;
+}
 
 interface ConversationSubject {
+  kind: "conversation";
   conversationId: string;
   messageId: string | null;
   label: { labelId: string; added: boolean } | null;
@@ -882,11 +898,19 @@ export function subjectOf(type: WebhookEvent, payload: unknown): WebhookSubject 
     messageId?: string;
     outboundMessageId?: string;
     campaignId?: string;
+    changeRequestId?: string;
   };
-  if (ids.outboundMessageId !== undefined) return { outboundMessageId: ids.outboundMessageId };
-  if (ids.campaignId !== undefined) return { campaignId: ids.campaignId };
+  if (ids.outboundMessageId !== undefined) {
+    return { kind: "outbound", outboundMessageId: ids.outboundMessageId };
+  }
+  if (ids.changeRequestId !== undefined && ids.conversationId !== undefined) {
+    const { changeRequestId, conversationId } = ids;
+    return { kind: "change_request", changeRequestId, conversationId };
+  }
+  if (ids.campaignId !== undefined) return { kind: "campaign", campaignId: ids.campaignId };
   if (ids.conversationId === undefined) return null;
   return {
+    kind: "conversation",
     conversationId: ids.conversationId,
     messageId: type.startsWith("message.") ? (ids.messageId ?? null) : null,
     label: labelChange(type, payload),
@@ -927,7 +951,9 @@ export async function webhookData(
   workspaceId: string,
   subjects: WebhookSubject[],
 ): Promise<(Record<string, unknown> | string)[]> {
-  const inConversations = subjects.filter((one) => "conversationId" in one);
+  const ofKind = <Kind extends WebhookSubject["kind"]>(kind: Kind) =>
+    subjects.filter((one): one is Extract<WebhookSubject, { kind: Kind }> => one.kind === kind);
+  const inConversations = ofKind("conversation");
   const conversations = await findConversations(
     tx,
     workspaceId,
@@ -943,21 +969,30 @@ export async function webhookData(
   const outbound = await outboundViews(
     tx,
     workspaceId,
-    subjects.flatMap((one) => ("outboundMessageId" in one ? [one.outboundMessageId] : [])),
+    ofKind("outbound").map((one) => one.outboundMessageId),
   );
   const campaigns = await campaignViews(
     tx,
     workspaceId,
-    subjects.flatMap((one) => ("campaignId" in one ? [one.campaignId] : [])),
+    ofKind("campaign").map((one) => one.campaignId),
+  );
+  const changeRequests = await changeRequestBodies(
+    tx,
+    workspaceId,
+    ofKind("change_request").map((one) => one.changeRequestId),
   );
   return subjects.map((subject) => {
-    if ("outboundMessageId" in subject) {
-      const sent = outbound.get(subject.outboundMessageId);
-      return sent === undefined ? "The outbound message was deleted." : { outboundMessage: sent };
-    }
-    if ("campaignId" in subject) {
-      const found = campaigns.get(subject.campaignId);
-      return found === undefined ? "The campaign was deleted." : { campaign: found };
+    switch (subject.kind) {
+      case "change_request":
+        return changeRequests.get(subject.changeRequestId) ?? "The change request was deleted.";
+      case "outbound": {
+        const sent = outbound.get(subject.outboundMessageId);
+        return sent === undefined ? "The outbound message was deleted." : { outboundMessage: sent };
+      }
+      case "campaign": {
+        const found = campaigns.get(subject.campaignId);
+        return found === undefined ? "The campaign was deleted." : { campaign: found };
+      }
     }
     const found = conversations.get(subject.conversationId);
     if (found === undefined) return "The conversation was deleted.";
@@ -1003,11 +1038,13 @@ export function fanOutWebhooksOne(db: Database): Promise<boolean> {
       .where(and(eq(webhook.workspaceId, workspaceId), eq(webhook.enabled, true)));
     const rows: (typeof webhookDelivery.$inferInsert)[] = [];
     for (const type of webhookTypes(found.kind, found.payload)) {
+      const subscribed = hooks.filter((one) => one.events.includes(type));
+      if (subscribed.length === 0) continue;
       const subject = subjectOf(type, found.payload);
       // A conversation, message or outbound message deleted before this step has nothing to send.
       if (subject === null || !(await stillThere(tx, workspaceId, subject))) continue;
       const eventId = randomUUID();
-      for (const hook of hooks.filter((one) => one.events.includes(type))) {
+      for (const hook of subscribed) {
         rows.push({
           workspaceId,
           webhookId: hook.id,
@@ -1029,10 +1066,22 @@ export function fanOutWebhooksOne(db: Database): Promise<boolean> {
 
 /** Whether what a delivery names still exists, so its foreign keys hold. */
 async function stillThere(tx: Transaction, workspaceId: string, subject: WebhookSubject) {
-  if ("campaignId" in subject) {
+  if (subject.kind === "change_request") {
+    const [found] = await tx
+      .select({ id: draftChangeRequest.id })
+      .from(draftChangeRequest)
+      .where(
+        and(
+          eq(draftChangeRequest.workspaceId, workspaceId),
+          eq(draftChangeRequest.id, subject.changeRequestId),
+        ),
+      );
+    return found !== undefined;
+  }
+  if (subject.kind === "campaign") {
     return (await campaignViews(tx, workspaceId, [subject.campaignId])).has(subject.campaignId);
   }
-  if ("outboundMessageId" in subject) {
+  if (subject.kind === "outbound") {
     const [found] = await tx
       .select({ id: outboundMessage.id })
       .from(outboundMessage)
@@ -1051,17 +1100,49 @@ async function stillThere(tx: Transaction, workspaceId: string, subject: Webhook
 }
 
 /** A delivery's columns for what it names. */
-const deliverySubject = (subject: WebhookSubject) =>
-  "outboundMessageId" in subject
-    ? { outboundMessageId: subject.outboundMessageId }
-    : "campaignId" in subject
-      ? { campaignId: subject.campaignId }
-      : {
-          conversationId: subject.conversationId,
-          messageId: subject.messageId,
-          labelId: subject.label?.labelId ?? null,
-          labelAdded: subject.label?.added ?? null,
-        };
+function deliverySubject(subject: WebhookSubject) {
+  switch (subject.kind) {
+    case "outbound":
+      return { outboundMessageId: subject.outboundMessageId };
+    case "campaign":
+      return { campaignId: subject.campaignId };
+    case "change_request":
+      return { changeRequestId: subject.changeRequestId, conversationId: subject.conversationId };
+  }
+  return {
+    conversationId: subject.conversationId,
+    messageId: subject.messageId,
+    labelId: subject.label?.labelId ?? null,
+    labelAdded: subject.label?.added ?? null,
+  };
+}
+
+/** What a stored delivery names, from its columns. */
+function storedSubject(
+  delivery: Pick<
+    DeliveryRow,
+    | "conversationId"
+    | "messageId"
+    | "outboundMessageId"
+    | "campaignId"
+    | "changeRequestId"
+    | "labelId"
+    | "labelAdded"
+  >,
+): WebhookSubject {
+  const { labelId, labelAdded, conversationId, campaignId, changeRequestId } = delivery;
+  if (campaignId !== null) return { kind: "campaign", campaignId };
+  if (conversationId === null) {
+    return { kind: "outbound", outboundMessageId: delivery.outboundMessageId ?? "" };
+  }
+  if (changeRequestId !== null) return { kind: "change_request", changeRequestId, conversationId };
+  return {
+    kind: "conversation",
+    conversationId,
+    messageId: delivery.messageId,
+    label: labelId === null || labelAdded === null ? null : { labelId, added: labelAdded },
+  };
+}
 
 interface ClaimedWebhook {
   workspaceId: string;
@@ -1124,6 +1205,7 @@ async function planWebhook(
         messageId: webhookDelivery.messageId,
         outboundMessageId: webhookDelivery.outboundMessageId,
         campaignId: webhookDelivery.campaignId,
+        changeRequestId: webhookDelivery.changeRequestId,
         labelId: webhookDelivery.labelId,
         labelAdded: webhookDelivery.labelAdded,
         createdAt: webhookDelivery.createdAt,
@@ -1145,19 +1227,7 @@ async function planWebhook(
     if (!delivery.enabled) {
       return "Dinghy stopped this delivery because the webhook is off. Turn it on to receive future events.";
     }
-    const { labelId, labelAdded, conversationId, outboundMessageId, campaignId } = delivery;
-    const subject: WebhookSubject =
-      campaignId !== null
-        ? { campaignId }
-        : conversationId === null
-          ? { outboundMessageId: outboundMessageId ?? "" }
-          : {
-              conversationId,
-              messageId: delivery.messageId,
-              label:
-                labelId === null || labelAdded === null ? null : { labelId, added: labelAdded },
-            };
-    const [data] = await webhookData(tx, uploads, row.workspaceId, [subject]);
+    const [data] = await webhookData(tx, uploads, row.workspaceId, [storedSubject(delivery)]);
     // One subject has one answer.
     if (typeof data !== "object") return data ?? "The conversation was deleted.";
     return {

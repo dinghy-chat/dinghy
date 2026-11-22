@@ -6,6 +6,7 @@ import { workspaceMember } from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
 import { MEMBER_ERRORS, MEMBER_WRITE_ERRORS, okContent } from "./errors.ts";
 import { OPEN_WHILE_CLOSED, WORKSPACE_PREFIX as PREFIX, workspaceParams } from "./member.ts";
+import { countedConversation } from "./messages.ts";
 
 const GetStartedSchema = z
   .object({
@@ -72,12 +73,13 @@ export function registerGetStartedRoutes(app: App, db: Database): void {
           (exists (select 1 from push_subscription where operator_id = ${operatorId})
            or exists (select 1 from native_push_device d join session s
              on s.id = d.session_id and s.user_id = d.operator_id
-             where d.operator_id = ${operatorId} and s.expires_at > now())
+             join operator o on o.id = s.user_id
+             where d.operator_id = ${operatorId} and s.expires_at > now()
+               and (not o.two_factor_on or s.two_factor_at is not null))
            or coalesce((select alert_email from workspace_member
              where workspace_id = ${id} and operator_id = ${operatorId}), false)) as notifications,
-          exists (select 1 from conversation c join visitor v
-            on v.workspace_id = c.workspace_id and v.id = c.visitor_id
-            where c.workspace_id = ${id} and not c.welcome and not v.is_test) as chat,
+          exists (select 1 from conversation c
+            where c.workspace_id = ${id} and ${countedConversation(sql`c`)}) as chat,
           coalesce((select get_started_dismissed_at is not null from workspace_member
             where workspace_id = ${id} and operator_id = ${operatorId}), false) as dismissed`),
     );

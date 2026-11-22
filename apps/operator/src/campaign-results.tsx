@@ -5,11 +5,12 @@ import {
   type CampaignCount,
   emptyCounts,
 } from "../../server/src/campaign-parts.ts";
-import { Card, dayName, percent, ShareList, Stat, shareOf, Tipped } from "./analytics.tsx";
+import { Card, dayName, ShareList } from "./analytics.tsx";
 import type { Campaign, CampaignCounts, WorkspaceApi } from "./api.ts";
 import { useLoad } from "./load.ts";
 import { Pond } from "./scene.tsx";
 import { AnalyticsSkeleton } from "./skeleton.tsx";
+import { percent, Stat, shareOf, Tipped } from "./stat.tsx";
 import { plural, type TextId, t } from "./text.ts";
 import { Loading } from "./ui.tsx";
 

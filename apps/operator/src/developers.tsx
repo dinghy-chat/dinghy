@@ -3,6 +3,7 @@ import { type ReactNode, useState } from "react";
 import {
   type ApiKey,
   type ApiKeyPermission,
+  type KeyAccess,
   WEBHOOK_EVENTS,
   type Webhook,
   type WebhookDelivery,
@@ -48,6 +49,7 @@ const EVENT_TEXT: Record<WebhookEvent, TextId> = {
   "conversation.handoff": "webhookEventHandoff",
   "conversation.given_back": "webhookEventGivenBack",
   "conversation.labeled": "webhookEventLabeled",
+  "draft.change_requested": "webhookEventChangeRequested",
   "outbound_message.sent": "webhookEventOutboundSent",
   "outbound_message.delivered": "webhookEventOutboundDelivered",
   "outbound_message.read": "webhookEventOutboundRead",
@@ -172,13 +174,15 @@ const PERMISSIONS: { permission: ApiKeyPermission; label: TextId; hint: TextId }
   { permission: "send_email", label: "apiKeyMaySendEmail", hint: "apiKeyMaySendEmailHint" },
 ];
 
-/** What a key may do: its level, how its replies go, and its permissions. */
-type Access = Pick<ApiKey, "level" | "replyMode" | "permissions">;
-
-const NEW_KEY_ACCESS: Access = { level: "conversations", replyMode: "draft", permissions: [] };
+const NEW_KEY_ACCESS: KeyAccess = {
+  level: "conversations",
+  replyMode: "draft",
+  rewritesDrafts: false,
+  permissions: [],
+};
 
 /** How a key replies, then the permissions it has, for its row. */
-function accessLine({ replyMode, permissions }: Access): string {
+function accessLine({ replyMode, permissions }: KeyAccess): string {
   const mode = REPLY_MODES.find((one) => one.value === replyMode);
   return [
     ...(mode === undefined ? [] : [t(mode.label)]),
@@ -195,9 +199,9 @@ function AccessFields({
   hasLevel,
   onChange,
 }: {
-  access: Access;
+  access: KeyAccess;
   hasLevel: boolean;
-  onChange(access: Access): void;
+  onChange(access: KeyAccess): void;
 }) {
   return (
     <>
@@ -212,6 +216,12 @@ function AccessFields({
         className="key-level"
         value={access.replyMode}
         onChange={(replyMode) => onChange({ ...access, replyMode })}
+      />
+      <Switch
+        label={t("apiKeyRewritesDrafts")}
+        hint={t("apiKeyRewritesDraftsHint")}
+        checked={access.rewritesDrafts}
+        onChange={(rewritesDrafts) => onChange({ ...access, rewritesDrafts })}
       />
       {PERMISSIONS.map(({ permission, label, hint }) => (
         <Switch
@@ -247,7 +257,7 @@ function PermissionsDialog({
   onClose(): void;
 }) {
   const app = apiKey.source === "oauth";
-  const [access, setAccess] = useState<Access>(apiKey);
+  const [access, setAccess] = useState<KeyAccess>(apiKey);
   const { busy, failure, run } = useAction(async () => {});
   return (
     <FormDialog
@@ -258,11 +268,12 @@ function PermissionsDialog({
       submitDisabled={busy}
       onSubmit={(close) =>
         void run(async () => {
-          const { level, replyMode, permissions } = access;
+          const { level, replyMode, rewritesDrafts, permissions } = access;
           onSaved(
             await api.updateApiKey(apiKey.id, {
               ...(!app && { level }),
               replyMode,
+              rewritesDrafts,
               permissions,
             }),
           );
@@ -327,7 +338,7 @@ function KeysSection({
 }) {
   const app = source === "oauth";
   const [name, setName] = useState("");
-  const [access, setAccess] = useState<Access>(NEW_KEY_ACCESS);
+  const [access, setAccess] = useState<KeyAccess>(NEW_KEY_ACCESS);
   // The new key's token, shown once in the key's own row.
   const [made, setMade] = useState<{ id: string; name: string; token: string } | null>(null);
   const { busy, failure, setFailure, run: act } = useAction(keys.reload);
@@ -343,8 +354,7 @@ function KeysSection({
   };
   const create = () =>
     act(async () => {
-      const { level, replyMode, permissions } = access;
-      const { token, ...key } = await api.createApiKey(name.trim(), level, replyMode, permissions);
+      const { token, ...key } = await api.createApiKey(name.trim(), access);
       setMade({ id: key.id, name: key.name, token });
       resetForm();
     });

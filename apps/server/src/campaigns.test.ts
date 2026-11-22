@@ -481,55 +481,6 @@ describe("a send from code", () => {
   });
 });
 
-describe("the visitor's opt-out", () => {
-  test("refuses sends from keys and campaigns, and cancels what waits", async () => {
-    const key = keyOf("opt-out");
-    await live(key);
-    const { token, visitorId } = await newVisitor(app, space.publicKey);
-    const waiting = await withKey(app, server.token, "POST", inSpace("/outbound-messages"), {
-      clientId: randomUUID(),
-      visitor: { id: visitorId },
-      body: "A message from a key",
-      delay: "1h",
-    });
-    const { outboundMessage: held } = await json<{ outboundMessage: Message }>(waiting);
-    const off = await app.request(`/v1/widget/${space.publicKey}/opt-out`, {
-      method: "POST",
-      headers: {
-        origin: SITE,
-        authorization: `Bearer ${token}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ optedOut: true }),
-    });
-    expect(off.status).toBe(200);
-    expect(await rowOf(held.id)).toMatchObject({ status: "cancelled", statusReason: "opted_out" });
-    const refused = await sendCampaign(key, { visitor: { id: visitorId } });
-    expect(refused.error?.code).toBe("opted_out");
-    const fromKey = await withKey(app, server.token, "POST", inSpace("/outbound-messages"), {
-      clientId: randomUUID(),
-      visitor: { id: visitorId },
-      body: "Another",
-    });
-    expect((await json(fromKey)).error?.code).toBe("opted_out");
-    const byHand = await asOperator(app, boss.cookie, "POST", inSpace("/outbound-messages"), {
-      clientId: randomUUID(),
-      visitor: { id: visitorId },
-      body: "A member writes by hand",
-    });
-    expect(byHand.status).toBe(201);
-    const filtered = await asOperator(
-      app,
-      boss.cookie,
-      "GET",
-      inSpace(
-        `/contacts?hasChatted=false&filter=${encodeURIComponent(JSON.stringify({ field: "optedOut", op: "eq", value: true }))}`,
-      ),
-    );
-    expect(await filtered.text()).toContain(visitorId);
-  });
-});
-
 describe("server events", () => {
   test("count per contact and name, dedupe by ID, and fire an event campaign", async () => {
     const key = keyOf("export");
@@ -984,7 +935,7 @@ describe("a page campaign", () => {
     ]);
   });
 
-  test("an audience, an opt-out or a pause of every campaign keeps it from a visitor", async () => {
+  test("an audience or a pause of every campaign keeps it from a visitor", async () => {
     const key = keyOf("pricing-pro");
     const made = await live(key, {
       audience: { field: "attributes.plan", op: "eq", value: "pro" },
@@ -1009,9 +960,6 @@ describe("a page campaign", () => {
       .update(workspace)
       .set({ campaignsPausedAt: null })
       .where(eq(workspace.id, space.id));
-    await widget("opt-out", { optedOut: true }, token);
-    expect(await listed(token)).toBe(false);
-    expect((await widget(`campaigns/${made.id}/show`, {}, token)).status).toBe(404);
   });
   test("the beat lists what lets them in, and the show runs the send's rules", async () => {
     const pricing = {

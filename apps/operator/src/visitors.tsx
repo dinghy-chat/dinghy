@@ -8,20 +8,24 @@ import {
 } from "react";
 import type { LiveVisitor, WorkspaceApi } from "./api.ts";
 import { COUNTRY_POINTS } from "./countries.ts";
-import { MINUTE_MS } from "./format.ts";
+import { clockTime, MINUTE_MS } from "./format.ts";
 import { Icon } from "./icons.tsx";
 import { useTabVisible } from "./live.ts";
-import { useLatestLoad } from "./load.ts";
+import { useLatestLoad, usePolling } from "./load.ts";
 import { MessageButton } from "./outbound.tsx";
-import { countryName, flag, localTime } from "./place.ts";
+import { countryName, flag, localHour, localTime } from "./place.ts";
 import { EmptyArt } from "./scene.tsx";
 import { VisitorsSkeleton } from "./skeleton.tsx";
+import { Sparkline, Tipped } from "./stat.tsx";
 import { plural, type TextId, t } from "./text.ts";
 import { Choices, FlagBadge, initials, type Option, Page } from "./ui.tsx";
-import { bare, pageName, visitorName, webLink } from "./visitor.ts";
+import { bare, pageName, sourceName, visitorName, webLink } from "./visitor.ts";
 
 /** The live list loads again this often while the page shows. */
 const REFRESH_MS = 15_000;
+/** Daytime where the visitor is: from 07:00 to 20:59. */
+const DAY_STARTS_HOUR = 7;
+const NIGHT_STARTS_HOUR = 21;
 const HOUR_MINUTES = 60;
 const DB_IP_URL = "https://db-ip.com";
 /** How many rows each tile shows. */
@@ -38,13 +42,13 @@ const CARD_HALF_PX = 140;
 /** The sea above the land, as a share of the map's height: `.live-world` starts 4% down. */
 const WORLD_TOP = 0.04;
 
-type Show = "all" | "chatting" | "known";
+type Show = "all" | "chatting" | "waiting" | "known";
 
 /** The live list: not loaded yet, unknown as Valkey cannot answer, or loaded. */
 type VisitorList =
   | { state: "loading" }
   | { state: "unknown" }
-  | { state: "ready"; visitors: LiveVisitor[] };
+  | { state: "ready"; visitors: LiveVisitor[]; lastHour: number[] | null };
 
 /** Zoom, and the land's offset as a share of the map's size, so a resize keeps the same view. */
 type View = { scale: number; x: number; y: number };
@@ -78,22 +82,60 @@ function centerOn(point: [number, number]): View {
   return clampView({ scale: COUNTRY_ZOOM, x: 0.5 - x * COUNTRY_ZOOM, y: 0.5 - y * COUNTRY_ZOOM });
 }
 
-/** "12 min on site", from when the tab's first beat came. */
-function onSite(startedAt: string, now: number): string {
-  const minutes = Math.max(0, Math.floor((now - new Date(startedAt).getTime()) / MINUTE_MS));
-  if (minutes < HOUR_MINUTES) return t("onSiteMinutes", { count: minutes });
-  return t("onSiteHours", {
+/** Whole minutes since a moment, never below 0. */
+const minutesSince = (at: string, now: number) =>
+  Math.max(0, Math.floor((now - new Date(at).getTime()) / MINUTE_MS));
+
+/** "12 min" or "1 h 5 min". */
+function minutesText(minutes: number): string {
+  if (minutes < HOUR_MINUTES) return t("timeMinutes", { count: minutes });
+  return t("timeHours", {
     hours: Math.floor(minutes / HOUR_MINUTES),
     minutes: minutes % HOUR_MINUTES,
   });
 }
 
+/** "12 min on site", from when the tab's first beat came. */
+const onSite = (startedAt: string, now: number) =>
+  t("onSite", { time: minutesText(minutesSince(startedAt, now)) });
+
 const isChatting = (one: LiveVisitor) => one.visitor?.conversationId != null;
 
-function shows(one: LiveVisitor, show: Show): boolean {
-  if (show === "chatting") return isChatting(one);
-  return show === "all" || one.visitor !== null;
-}
+/** Each filter: its words, its list's titles, and who it keeps. */
+const FILTERS: Record<
+  Show,
+  {
+    label: TextId;
+    anywhere: TextId;
+    inPlace: TextId;
+    keeps(one: LiveVisitor): boolean;
+  }
+> = {
+  all: {
+    label: "visitorsEveryone",
+    anywhere: "visitorsEveryone",
+    inPlace: "visitorsInPlace",
+    keeps: () => true,
+  },
+  chatting: {
+    label: "chatting",
+    anywhere: "visitorsChattingTitle",
+    inPlace: "visitorsChattingInPlace",
+    keeps: isChatting,
+  },
+  waiting: {
+    label: "visitorsWaiting",
+    anywhere: "visitorsWaitingTitle",
+    inPlace: "visitorsWaitingInPlace",
+    keeps: (one) => one.visitor?.waitingSince != null,
+  },
+  known: {
+    label: "visitorsKnown",
+    anywhere: "visitorsKnownTitle",
+    inPlace: "visitorsKnownInPlace",
+    keeps: (one) => one.visitor !== null,
+  },
+};
 
 /** "France: 2 people", for a dot and its card. */
 function countryLine(country: string, count: number): string {
@@ -385,6 +427,7 @@ function PersonRow({
   const time = one.timeZone === null ? null : localTime(one.timeZone, new Date(now));
   const person = one.visitor;
   const conversationId = person?.conversationId ?? null;
+  const waitingSince = person?.waitingSince;
   const country = one.country;
   return (
     <li
@@ -396,7 +439,13 @@ function PersonRow({
       <div className="live-text">
         <div className="live-who">
           <b>{personName(one)}</b>
-          {conversationId !== null && <span className="chip live-chatting">{t("chatting")}</span>}
+          {waitingSince != null ? (
+            <span className="chip warn live-waiting">
+              {t("waitingFor", { time: minutesText(minutesSince(waitingSince, now)) })}
+            </span>
+          ) : (
+            conversationId !== null && <span className="chip live-chatting">{t("chatting")}</span>
+          )}
         </div>
         {page !== null && (
           <div className="live-page">
@@ -454,6 +503,7 @@ function Bars({ title, rows }: { title: string; rows: Tally[] }) {
   return (
     <section className="live-tile" aria-label={title}>
       <h3>{title}</h3>
+      {rows.length === 0 && <p className="hint">{t("visitorsTileNothing")}</p>}
       <ol className="live-bars">
         {rows.map(({ key, label, count }) => (
           <li key={key} className="live-bars-row">
@@ -470,14 +520,63 @@ function Bars({ title, rows }: { title: string; rows: Tally[] }) {
   );
 }
 
-const LIST_TITLES = {
-  all: { anywhere: "visitorsEveryone", inPlace: "visitorsInPlace" },
-  chatting: { anywhere: "visitorsChattingTitle", inPlace: "visitorsChattingInPlace" },
-  known: { anywhere: "visitorsKnownTitle", inPlace: "visitorsKnownInPlace" },
-} as const satisfies Record<Show, { anywhere: TextId; inPlace: TextId }>;
+/** The middle of the numbers, which must not be empty. */
+function median(numbers: number[]): number {
+  const sorted = [...numbers].sort((one, other) => one - other);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1
+    ? (sorted[middle] ?? 0)
+    : Math.round(((sorted[middle - 1] ?? 0) + (sorted[middle] ?? 0)) / 2);
+}
+
+/** The listed people's time on site and local daytime, in one line, without what is unknown. */
+function PeopleSummary({ listed, now }: { listed: LiveVisitor[]; now: number }) {
+  const minutes = listed.map((one) => minutesSince(one.startedAt, now));
+  const hours = listed.flatMap((one) => {
+    const hour = one.timeZone === null ? null : localHour(one.timeZone, new Date(now));
+    return hour === null ? [] : [hour];
+  });
+  const daytime = hours.filter((hour) => hour >= DAY_STARTS_HOUR && hour < NIGHT_STARTS_HOUR);
+  const parts = [
+    minutes.length > 0 &&
+      t("visitorsTimeLine", {
+        median: minutesText(median(minutes)),
+        longest: minutesText(Math.max(...minutes)),
+      }),
+    hours.length > 0 &&
+      t("visitorsDayLine", { day: daytime.length, night: hours.length - daytime.length }),
+  ].filter((part) => part !== false);
+  if (parts.length === 0) return null;
+  return <p className="live-summary">{parts.join(" ")}</p>;
+}
+
+/** Where and on what the listed people are now. */
+function LiveTiles({ listed }: { listed: LiveVisitor[] }) {
+  return (
+    <div className="live-tiles">
+      <Bars title={t("visitorsPages")} rows={tally(listed, (one) => one.page, pageTitle)} />
+      <Bars title={t("visitorsSources")} rows={tally(listed, (one) => sourceName(one.referrer))} />
+      <Bars
+        title={t("visitorsCountries")}
+        rows={tally(
+          listed,
+          (one) => one.country ?? "",
+          (one) =>
+            one.country === null
+              ? t("visitorsUnknownPlace")
+              : `${flag(one.country)} ${countryName(one.country)}`,
+        )}
+      />
+      <Bars
+        title={t("visitorsDevices")}
+        rows={tally(listed, (one) => one.device ?? t("visitorsUnknownDevice"))}
+      />
+    </div>
+  );
+}
 
 function listTitle(show: Show, country: string | null): string {
-  const titles = LIST_TITLES[show];
+  const titles = FILTERS[show];
   return country === null
     ? t(titles.anywhere)
     : t(titles.inPlace, { country: countryName(country) });
@@ -501,7 +600,7 @@ function LiveVisitors({
 }) {
   const [country, setCountry] = useState<string | null>(null);
   const [lit, setLit] = useState<Lit>(null);
-  const shown = visitors.filter((one) => shows(one, show));
+  const shown = visitors.filter(FILTERS[show].keeps);
   const listed = country === null ? shown : shown.filter((one) => one.country === country);
   return (
     <div className="live-layout">
@@ -513,20 +612,11 @@ function LiveVisitors({
           onLight={setLit}
           onCountry={setCountry}
         />
-        {listed.length > 0 && (
-          <div className="live-tiles">
-            <Bars title={t("visitorsPages")} rows={tally(listed, (one) => one.page, pageTitle)} />
-            <Bars
-              title={t("visitorsSources")}
-              rows={tally(listed, (one) =>
-                one.referrer === null ? t("visitorsNoReferrer") : bare(one.referrer),
-              )}
-            />
-          </div>
-        )}
+        <LiveTiles listed={listed} />
       </div>
       <section className="live-people" aria-labelledby="live-people-title">
         <h3 id="live-people-title">{listTitle(show, country)}</h3>
+        <PeopleSummary listed={listed} now={now} />
         {visitors.length === 0 ? (
           <div className="nothing">
             <EmptyArt />
@@ -562,15 +652,46 @@ function LiveVisitors({
 }
 
 function showOptions(visitors: LiveVisitor[]): Option<Show>[] {
-  return [
-    { value: "all", label: "visitorsEveryone", count: visitors.length },
-    { value: "chatting", label: "chatting", count: visitors.filter(isChatting).length },
-    {
-      value: "known",
-      label: "visitorsKnown",
-      count: visitors.filter((one) => one.visitor !== null).length,
-    },
-  ];
+  return Object.entries(FILTERS).map(([value, { label, keeps }]) => ({
+    value: value as Show,
+    label,
+    count: visitors.filter(keeps).length,
+  }));
+}
+
+/**
+ * "7 people on your site now.", and the last hour as a small line that ends at the count now. The
+ * pointer on a minute shows its count and time.
+ */
+function LiveCount({
+  count,
+  lastHour,
+  now,
+}: {
+  count: number;
+  lastHour: number[] | null;
+  /** When the server sent the counts, the last minute's time. */
+  now: number;
+}) {
+  // The current minute holds its most tabs so far, so the line ends at the count now instead.
+  const values = lastHour === null ? null : [...lastHour.slice(0, -1), count];
+  return (
+    <Tipped className="live-count" inline>
+      <span className="live-pulse" aria-hidden="true" />
+      {plural(count, "visitorsOne", "visitorsMany")}
+      {values !== null && (
+        <Sparkline
+          values={values}
+          className="live-spark"
+          label={t("visitorsLastHourChart", { count })}
+          tips={values.map((minute, index) => ({
+            value: plural(minute, "peopleOne", "peopleMany"),
+            label: clockTime(new Date(now - (values.length - 1 - index) * MINUTE_MS)),
+          }))}
+        />
+      )}
+    </Tipped>
+  );
 }
 
 export function VisitorsPage({
@@ -587,16 +708,11 @@ export function VisitorsPage({
   const [show, setShow] = useState<Show>("all");
   const visible = useTabVisible();
   const load = useLatestLoad(async () => {
-    const { visitors } = await api.liveVisitors();
-    setList(visitors === null ? { state: "unknown" } : { state: "ready", visitors });
+    const { visitors, lastHour } = await api.liveVisitors();
+    setList(visitors === null ? { state: "unknown" } : { state: "ready", visitors, lastHour });
     setNow(Date.now());
   });
-  useEffect(() => {
-    if (!visible) return;
-    load();
-    const timer = setInterval(load, REFRESH_MS);
-    return () => clearInterval(timer);
-  }, [load, visible]);
+  usePolling(load, REFRESH_MS, visible);
 
   const count = list.state === "ready" ? list.visitors.length : 0;
   return (
@@ -604,10 +720,7 @@ export function VisitorsPage({
       title={t("visitors")}
       context={
         list.state === "ready" ? (
-          <span className="live-count">
-            <span className="live-pulse" aria-hidden="true" />
-            {plural(count, "visitorsOne", "visitorsMany")}
-          </span>
+          <LiveCount count={count} lastHour={list.lastHour} now={now} />
         ) : undefined
       }
       actions={

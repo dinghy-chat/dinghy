@@ -26,6 +26,7 @@ import {
   conversation,
   conversationLabel,
   conversationRead,
+  draftChangeRequest,
   draftReply,
   emailStop,
   event,
@@ -480,18 +481,6 @@ const CAMPAIGN_ATTACKS: Record<string, Attack> = {
       },
     ]),
   ),
-  "POST /v1/widget/:key/opt-out": async ({ widget, a, b, one, two }) => {
-    const twoBefore = (await owner.select().from(visitor).where(eq(visitor.id, two.id)))[0];
-    const own = await widget(a.publicKey, "POST", "opt-out", one.token, SITE_A, {
-      optedOut: false,
-    });
-    expect(own.status).toBe(200);
-    expect(
-      (await widget(b.publicKey, "POST", "opt-out", one.token, SITE_B, { optedOut: true })).status,
-    ).toBe(401);
-    const twoAfter = (await owner.select().from(visitor).where(eq(visitor.id, two.id)))[0];
-    expect(twoAfter?.optedOutAt).toEqual(twoBefore?.optedOutAt);
-  },
 };
 
 /** Runs against a route as the one caller that must be refused or see only its own data. */
@@ -1430,6 +1419,9 @@ const ATTACKS: Record<string, Attack> = {
   }) => {
     expect((await as(anna, "GET", inWorkspace(b.id, "/visitors/live/count"))).status).toBe(404);
   },
+  "GET /v1/operator/workspaces/:workspaceId/visitors/stats": async ({ operator: as, anna, b }) => {
+    expect((await as(anna, "GET", inWorkspace(b.id, "/visitors/stats"))).status).toBe(404);
+  },
   "POST /v1/widget/:key/typing": async ({ widget, a, b, one, other }) => {
     const draft = { draft: "half a message" };
     expect((await widget(b.publicKey, "POST", "typing", one.token, SITE_B, draft)).status).toBe(
@@ -2247,6 +2239,52 @@ const ATTACKS: Record<string, Attack> = {
       const [row] = await owner.select().from(draftReply).where(eq(draftReply.id, draft));
       expect(row?.resolved).toBeNull();
     },
+  "POST /v1/operator/workspaces/:workspaceId/conversations/:conversationId/drafts/:draftId/change-requests":
+    async ({ operator: as, anna, a, b, one, other, keyB }) => {
+      const draft = await draftIn(b.id, other.conversationId, keyB.id);
+      const ask = { clientId: randomUUID(), instruction: "shorter" };
+      for (const path of [
+        inWorkspace(a.id, `/conversations/${other.conversationId}/drafts/${draft}/change-requests`),
+        inWorkspace(b.id, `/conversations/${other.conversationId}/drafts/${draft}/change-requests`),
+        inWorkspace(a.id, `/conversations/${one.conversationId}/drafts/${draft}/change-requests`),
+      ]) {
+        expect((await as(anna, "POST", path, ask)).status).toBe(404);
+      }
+      const asked = await owner
+        .select()
+        .from(draftChangeRequest)
+        .where(eq(draftChangeRequest.draftId, draft));
+      expect(asked).toEqual([]);
+    },
+  "POST /v1/operator/workspaces/:workspaceId/conversations/:conversationId/drafts/:draftId/change-requests/:changeRequestId/cancel":
+    async ({ operator: as, anna, bea, a, b, one, other, keyB }) => {
+      const draft = await draftIn(b.id, other.conversationId, keyB.id);
+      const [asked] = await owner
+        .insert(draftChangeRequest)
+        .values({
+          workspaceId: b.id,
+          draftId: draft,
+          operatorId: bea.id,
+          clientId: randomUUID(),
+          instruction: "shorter",
+        })
+        .returning({ id: draftChangeRequest.id });
+      const request = asked?.id ?? "";
+      const cancel = (conversationId: string) =>
+        `/conversations/${conversationId}/drafts/${draft}/change-requests/${request}/cancel`;
+      for (const path of [
+        inWorkspace(a.id, cancel(other.conversationId)),
+        inWorkspace(b.id, cancel(other.conversationId)),
+        inWorkspace(a.id, cancel(one.conversationId)),
+      ]) {
+        expect((await as(anna, "POST", path)).status).toBe(404);
+      }
+      const [row] = await owner
+        .select()
+        .from(draftChangeRequest)
+        .where(eq(draftChangeRequest.id, request));
+      expect(row?.status).toBe("pending");
+    },
   "POST /v1/operator/workspaces/:workspaceId/conversations/:conversationId/handoff": async ({
     withKey,
     a,
@@ -2381,7 +2419,7 @@ const ATTACKS: Record<string, Attack> = {
     }
     for (const [name, args] of [
       ["list_drafts", { status: "all" }],
-      ["wait_for_messages", { cursor: "1.0", timeoutSeconds: 1 }],
+      ["wait_for_events", { cursor: "1.0", timeoutSeconds: 1 }],
       ["list_contacts", {}],
       ["search_contacts", { q: "written" }],
       ["get_live_visitors", {}],

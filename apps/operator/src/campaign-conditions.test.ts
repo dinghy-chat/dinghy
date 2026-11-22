@@ -28,7 +28,7 @@ describe("the condition builder's model", () => {
           },
         ],
       },
-      { not: { field: "optedOut", op: "eq", value: true } },
+      { not: { field: "hasChatted", op: "eq", value: true } },
       {
         not: {
           any: [

@@ -43,6 +43,7 @@ import type { Mailer } from "./mailer.ts";
 import { registerMcp } from "./mcp.ts";
 import { registerMemberCheck } from "./member.ts";
 import { registerModerationRoutes } from "./moderation.ts";
+import type { AppReview } from "./native-auth.ts";
 import type { NativePush } from "./native-push.ts";
 import { oauthIssuer, registerOAuth, resourceMetadataUrl } from "./oauth.ts";
 import { type FetchClientDocument, fetchClientDocument } from "./oauth-client.ts";
@@ -68,7 +69,11 @@ import { createTestVisitors, registerTestVisitorRoutes } from "./test-visitors.t
 import { MINUTE_MS } from "./time.ts";
 import { createTracking, registerTrackRoute } from "./track.ts";
 import { registerExportRoute } from "./transfer.ts";
-import { registerTwoFactorRoutes, type TwoFactorState } from "./two-factor.ts";
+import {
+  createTwoFactorCodeChecker,
+  registerTwoFactorRoutes,
+  type TwoFactorState,
+} from "./two-factor.ts";
 import { registerRemovalRoutes } from "./two-factor-removal.ts";
 import { registerUploadFiles, type Uploads } from "./uploads.ts";
 import {
@@ -96,6 +101,8 @@ interface Checks {
 }
 
 export interface AppOptions {
+  /** The account an app store's reviewer signs in to the app with. Unset on most servers. */
+  appReview?: AppReview | undefined;
   auth?: Auth | undefined;
   /** Dinghy Cloud's settings, read by `ee/`. A self-hosted install leaves them unset. */
   cloud?: CloudSettings | undefined;
@@ -235,6 +242,7 @@ function isBusy(error: unknown): boolean {
 
 export function createApp({
   alerts,
+  appReview,
   auth,
   checks,
   cloud: cloudSettings,
@@ -435,7 +443,16 @@ export function createApp({
     }
   }
   if (auth !== undefined) {
+    const twoFactorCodes = createTwoFactorCodeChecker({
+      db,
+      live,
+      logger,
+      authSecret: auth.options.secret,
+      valkey,
+      mailer,
+    });
     registerOperatorRoutes(app, {
+      appReview,
       auth,
       billing: cloud?.billing ?? false,
       contact: cloud?.contact ?? null,
@@ -445,6 +462,7 @@ export function createApp({
       mailer,
       rateLimit,
       signup: cloud !== undefined,
+      twoFactorCodes,
       valkey,
     });
     registerTwoFactorRoutes(app, {
@@ -453,12 +471,13 @@ export function createApp({
       logger,
       // AUTH_SECRET itself. A fallback to a random secret would change the keys at each restart.
       authSecret: auth.options.secret,
-      valkey,
+      codeChecker: twoFactorCodes,
       mailer,
     });
     // Right after the session check, so every workspace route runs behind it, whatever its order.
     registerMemberCheck(app, db);
     registerAccountDelete(app, {
+      appReviewEmail: appReview?.email,
       beforeDelete: cloud?.beforeDelete,
       db,
       keepsLastWorkspace: cloud === undefined,
@@ -497,7 +516,7 @@ export function createApp({
       stream,
       visitorPresence,
     });
-    registerApiKeyRoutes(app, db, logger);
+    registerApiKeyRoutes(app, db, live, logger);
     // On https or a loopback address only, because OAuth 2.1 allows no other http issuer.
     const issuer = oauthIssuer(String(auth.options.baseURL));
     if (issuer !== null) {

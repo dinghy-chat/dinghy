@@ -1,12 +1,25 @@
 /** @jsxImportSource react */
-import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { Analytics, AnalyticsDays, WorkspaceApi } from "./api.ts";
-import { browserTimeZone, duration, weekdayNames } from "./format.ts";
+import { type ReactNode, useEffect, useState } from "react";
+import type { Analytics, AnalyticsDays, VisitorStats, WorkspaceApi } from "./api.ts";
+import { browserTimeZone, dayAndTime, duration, weekdayNames } from "./format.ts";
 import { LabelDot } from "./labels.tsx";
 import { Pond } from "./scene.tsx";
-import { AnalyticsSkeleton } from "./skeleton.tsx";
+import { AnalyticsSkeleton, SiteSkeleton } from "./skeleton.tsx";
+import {
+  Change,
+  CountChange,
+  percent,
+  Ring,
+  rateOf,
+  ShareChange,
+  Sparkline,
+  Stat,
+  shareOf,
+  Tipped,
+} from "./stat.tsx";
 import { plural, type TextId, t } from "./text.ts";
 import { Avatar, Choices, DocLink, failureText, Loading, type Option, Page } from "./ui.tsx";
+import { pageName, sourceName } from "./visitor.ts";
 
 type Period = `${AnalyticsDays}`;
 
@@ -15,12 +28,6 @@ const PERIODS: readonly Option<Period>[] = [
   { value: "30", label: "period30" },
   { value: "90", label: "period90" },
 ];
-
-export const percent = (share: number) =>
-  new Intl.NumberFormat([], { style: "percent", maximumFractionDigits: 0 }).format(share);
-
-/** A part of a total, from 0 to 1; 0 when the total is 0. */
-export const shareOf = (count: number, total: number) => (total === 0 ? 0 : count / total);
 
 /** A date of the period, "2026-11-08", as "Nov 8". */
 export function dayName(
@@ -31,6 +38,9 @@ export function dayName(
   return new Date(year ?? 0, (month ?? 1) - 1, day ?? 1).toLocaleDateString([], options);
 }
 
+/** A day of the period in full, "Sunday, Nov 8", as a chart's card names it. */
+const FULL_DAY: Intl.DateTimeFormatOptions = { weekday: "long", month: "short", day: "numeric" };
+
 const DAY_NAMES_SHORT = weekdayNames("short");
 const DAY_NAMES = weekdayNames("long");
 const hourName = (hour: number) =>
@@ -39,236 +49,41 @@ const HOURS = Array.from({ length: 24 }, (_, hour) => hourName(hour));
 
 const conversations = (count: number) => plural(count, "chartOne", "chartMany");
 
-/** A number with its label, or the words behind an "i" button. */
-type TipContent = { value: string; label: string } | { text: string };
-
-type Tip = TipContent & { x: number; y: number };
-
-/** The card for the part of `area` at `target`, placed above it, or null off every part. */
-function tipAt(area: HTMLElement | null, target: EventTarget | null): Tip | null {
-  const part =
-    target instanceof Element ? target.closest<HTMLElement>("[data-value], [data-tip]") : null;
-  if (part === null || area === null) return null;
-  const outer = area.getBoundingClientRect();
-  const inner = part.getBoundingClientRect();
-  const { tip, value, label } = part.dataset;
-  return {
-    ...(tip === undefined ? { value: value ?? "", label: label ?? "" } : { text: tip }),
-    x: inner.left + inner.width / 2 - outer.left,
-    y: inner.top - outer.top,
-  };
-}
-
-/**
- * An area whose parts carry data-value and data-label, or data-tip. The pointer over a part, or
- * the focus on it, shows them in a card above it, kept inside the area. Escape hides the card.
- * The words for screen readers are in each figure's caption, or in each button's label.
- */
-export function Tipped({ className, children }: { className: string; children: ReactNode }) {
-  const [tip, setTip] = useState<Tip | null>(null);
-  const card = useRef<HTMLDivElement>(null);
-  const box = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const element = card.current;
-    const width = box.current?.clientWidth ?? 0;
-    if (tip === null || element === null) return;
-    const half = element.offsetWidth / 2;
-    element.style.left = `${Math.min(Math.max(tip.x, half), width - half)}px`;
-  }, [tip]);
-  // Focus and Escape, for the keys. Listened to here, as the area itself takes no focus.
-  useEffect(() => {
-    const area = box.current;
-    if (area === null) return;
-    const focus = (event: FocusEvent) => setTip(tipAt(area, event.target));
-    const hide = () => setTip(null);
-    const hideOnEscape = (event: KeyboardEvent) => {
-      if (event.key === "Escape") hide();
-    };
-    area.addEventListener("focusin", focus);
-    area.addEventListener("focusout", hide);
-    document.addEventListener("keydown", hideOnEscape);
-    return () => {
-      area.removeEventListener("focusin", focus);
-      area.removeEventListener("focusout", hide);
-      document.removeEventListener("keydown", hideOnEscape);
-    };
-  }, []);
-  return (
-    <div
-      ref={box}
-      className={`tipped ${className}`}
-      onPointerOver={(event) => setTip(tipAt(box.current, event.target))}
-      onPointerLeave={() => setTip(null)}
-    >
-      {children}
-      {tip !== null && (
-        <div
-          ref={card}
-          className={"text" in tip ? "chart-tip words" : "chart-tip"}
-          style={{ top: tip.y }}
-          aria-hidden="true"
-        >
-          {"text" in tip ? (
-            tip.text
-          ) : (
-            <>
-              <b>{tip.value}</b>
-              <span>{tip.label}</span>
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** A small "i" whose words show in the Tipped card. Screen readers read them as its label. */
-function Info({ text }: { text: TextId }) {
-  return (
-    <button type="button" className="info-tip" aria-label={t(text)} data-tip={t(text)}>
-      i
-    </button>
-  );
-}
-
-/** Better, worse, or neither, as the change's color says. */
-type Direction = "better" | "worse" | "neutral";
-
-/** A change against the previous period, and which period that is. */
-function Change({ words, direction, days }: { words: string; direction: Direction; days: Period }) {
-  return (
-    <p className={`stat-change ${direction}`}>
-      {words} <span>{t("vsPrevious", { days })}</span>
-    </p>
-  );
-}
-
-function StartedChange({ numbers, days }: { numbers: Analytics; days: Period }) {
-  const before = numbers.previous.started;
-  if (before === 0) return null;
-  const change = numbers.started / before - 1;
-  // A change that rounds to 0% reads as none, not as "↑ 0%".
-  const words =
-    percent(Math.abs(change)) === percent(0)
-      ? t("changeSame")
-      : t(change > 0 ? "changeUp" : "changeDown", { change: percent(Math.abs(change)) });
-  return <Change words={words} direction="neutral" days={days} />;
-}
-
-function MedianChange({ numbers, days }: { numbers: Analytics; days: Period }) {
+function MedianChange({ numbers, compared }: { numbers: Analytics; compared: string }) {
   const now = numbers.firstReply.medianSeconds;
   const before = numbers.previous.firstReply.medianSeconds;
   if (now === null || before === null) return null;
   const words = duration(Math.abs(before - now));
   if (Math.round(now) === Math.round(before)) {
-    return <Change words={t("changeSame")} direction="neutral" days={days} />;
+    return <Change words={t("changeSame")} direction="neutral" compared={compared} />;
   }
   return now < before ? (
-    <Change words={t("replyFaster", { time: words })} direction="better" days={days} />
+    <Change words={t("replyFaster", { time: words })} direction="better" compared={compared} />
   ) : (
-    <Change words={t("replySlower", { time: words })} direction="worse" days={days} />
-  );
-}
-
-function FastChange({ numbers, days }: { numbers: Analytics; days: Period }) {
-  const { started, previous } = numbers;
-  if (started === 0 || previous.started === 0) return null;
-  const now = shareOf(numbers.firstReply.fast, started);
-  const before = shareOf(previous.firstReply.fast, previous.started);
-  const points = Math.round((now - before) * 100);
-  if (points === 0) return <Change words={t("changeSame")} direction="neutral" days={days} />;
-  return (
-    <Change
-      words={t(points > 0 ? "pointsUp" : "pointsDown", { points: Math.abs(points) })}
-      direction={points > 0 ? "better" : "worse"}
-      days={days}
-    />
-  );
-}
-
-const SPARK_WIDTH = 120;
-const SPARK_HEIGHT = 32;
-
-/** The days of the period as a small line, under its own area. */
-function Sparkline({ days }: { days: Analytics["perDay"] }) {
-  const most = Math.max(1, ...days.map((day) => day.conversations));
-  const last = Math.max(1, days.length - 1);
-  const line = `M${days
-    .map((day, index) => {
-      const x = (index / last) * SPARK_WIDTH;
-      const y = SPARK_HEIGHT - (day.conversations / most) * (SPARK_HEIGHT - 2);
-      return `${x},${y}`;
-    })
-    .join("L")}`;
-  return (
-    <svg
-      className="spark"
-      viewBox={`0 0 ${SPARK_WIDTH} ${SPARK_HEIGHT}`}
-      preserveAspectRatio="none"
-      aria-hidden="true"
-    >
-      <path
-        className="spark-area"
-        d={`${line}L${SPARK_WIDTH},${SPARK_HEIGHT}L0,${SPARK_HEIGHT}Z`}
-      />
-      <path className="spark-line" d={line} />
-    </svg>
-  );
-}
-
-const RING_RADIUS = 18;
-const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
-
-function Ring({ share }: { share: number }) {
-  return (
-    <svg className="ring" viewBox="0 0 44 44" aria-hidden="true">
-      <circle cx="22" cy="22" r={RING_RADIUS} className="ring-back" />
-      {share > 0 && (
-        <circle
-          cx="22"
-          cy="22"
-          r={RING_RADIUS}
-          className="ring-front"
-          strokeDasharray={`${share * RING_LENGTH} ${RING_LENGTH}`}
-        />
-      )}
-    </svg>
-  );
-}
-
-export function Stat({
-  title,
-  help,
-  children,
-}: {
-  title: TextId;
-  help?: TextId;
-  children: ReactNode;
-}) {
-  return (
-    <article className="stat">
-      <h3>
-        {t(title)}
-        {help !== undefined && <Info text={help} />}
-      </h3>
-      {children}
-    </article>
+    <Change words={t("replySlower", { time: words })} direction="worse" compared={compared} />
   );
 }
 
 function Stats({ numbers, days }: { numbers: Analytics; days: Period }) {
-  const { started, answered, firstReply } = numbers;
+  const { started, answered, firstReply, previous } = numbers;
+  const compared = t("vsPrevious", { days });
   const fast = shareOf(firstReply.fast, started);
   const answeredShare = shareOf(answered, started);
   return (
     <section className="stats" aria-label={t("statsTitle")}>
       <Stat title="statStarted">
         <p className="stat-value">{started}</p>
-        <StartedChange numbers={numbers} days={days} />
+        <CountChange count={started} before={previous.started} compared={compared} />
         {numbers.startedByTeam > 0 && (
           <p className="stat-note">{t("statStartedByTeam", { count: numbers.startedByTeam })}</p>
         )}
-        <Sparkline days={numbers.perDay} />
+        <Sparkline
+          values={numbers.perDay.map((day) => day.conversations)}
+          tips={numbers.perDay.map((day) => ({
+            value: conversations(day.conversations),
+            label: dayName(day.date, FULL_DAY),
+          }))}
+        />
       </Stat>
       <Stat title="statMedian" help="statMedianHelp">
         {firstReply.medianSeconds === null ? (
@@ -276,7 +91,7 @@ function Stats({ numbers, days }: { numbers: Analytics; days: Period }) {
         ) : (
           <p className="stat-value">{duration(firstReply.medianSeconds)}</p>
         )}
-        <MedianChange numbers={numbers} days={days} />
+        <MedianChange numbers={numbers} compared={compared} />
         {firstReply.p90Seconds !== null && (
           <p className="stat-note">{t("statP90", { time: duration(firstReply.p90Seconds) })}</p>
         )}
@@ -286,7 +101,11 @@ function Stats({ numbers, days }: { numbers: Analytics; days: Period }) {
           <Ring share={fast} />
           <p className="stat-value">{percent(fast)}</p>
         </div>
-        <FastChange numbers={numbers} days={days} />
+        <ShareChange
+          share={rateOf(firstReply.fast, started)}
+          before={rateOf(previous.firstReply.fast, previous.started)}
+          compared={compared}
+        />
       </Stat>
       <Stat title="statAnswered">
         <p className="stat-value">{percent(answeredShare)}</p>
@@ -355,7 +174,7 @@ function PerDay({ days }: { days: Analytics["perDay"] }) {
               key={day.date}
               className="day-bar"
               data-value={conversations(day.conversations)}
-              data-label={dayName(day.date, { weekday: "long", month: "short", day: "numeric" })}
+              data-label={dayName(day.date, FULL_DAY)}
             >
               {day.conversations > 0 && (
                 <i style={{ height: `${(day.conversations / top) * 100}%` }} />
@@ -571,30 +390,181 @@ function Labels({ numbers }: { numbers: Analytics }) {
   );
 }
 
-export function AnalyticsPage({ api }: { api: WorkspaceApi }) {
-  const [days, setDays] = useState<Period>("30");
-  const [numbers, setNumbers] = useState<Analytics | null>(null);
-  const [failure, setFailure] = useState<TextId | null>(null);
-  // The server checks the zone, and days and hours read in it.
-  const zone = browserTimeZone();
+/** The conversations' key numbers, then the charts. */
+function Support({ numbers, days }: { numbers: Analytics; days: Period }) {
+  return (
+    <>
+      <Stats numbers={numbers} days={days} />
+      <div className="charts">
+        <PerDay days={numbers.perDay} />
+        <Outcomes numbers={numbers} />
+        <Hours hours={numbers.hours} />
+        <Repliers numbers={numbers} />
+        <Labels numbers={numbers} />
+      </div>
+    </>
+  );
+}
 
+/**
+ * The site's key numbers, each against the period before. A period before Dinghy started counting
+ * the site has no numbers, so no change shows.
+ */
+function SiteStats({
+  site,
+  dates,
+  compared,
+}: {
+  site: VisitorStats;
+  /** The period's days, which the support numbers name; the line has no card until they load. */
+  dates: string[] | null;
+  compared: string;
+}) {
+  const { visits, pageViews, chats, peak, previous } = site;
+  const rate = rateOf(chats, visits);
+  const rateBefore = previous === null ? null : rateOf(previous.chats, previous.visits);
+  return (
+    <div className="stats">
+      <Stat title="statsVisits">
+        <p className="stat-value">{visits.toLocaleString()}</p>
+        <CountChange count={visits} before={previous?.visits ?? 0} compared={compared} />
+        <Sparkline
+          values={site.series}
+          tips={dates?.map((date, index) => ({
+            value: plural(site.series[index] ?? 0, "statsVisitsOne", "statsVisitsMany"),
+            label: dayName(date, FULL_DAY),
+          }))}
+        />
+      </Stat>
+      <Stat title="statsPageViews">
+        <p className="stat-value">{pageViews.toLocaleString()}</p>
+        <CountChange count={pageViews} before={previous?.pageViews ?? 0} compared={compared} />
+      </Stat>
+      <Stat title="statsChatRate" help="statsChatRateHelp">
+        {rate === null ? (
+          <p className="stat-value none">{t("statsNoneYet")}</p>
+        ) : (
+          <div className="stat-ring">
+            <Ring share={Math.min(1, rate)} />
+            <p className="stat-value">{percent(rate)}</p>
+          </div>
+        )}
+        <ShareChange share={rate} before={rateBefore} compared={compared} />
+        {rate !== null && (
+          <p className="stat-note">
+            {t("statsChatsFrom", {
+              chats: plural(chats, "statsChatsOne", "statsChats"),
+              visits: plural(visits, "statsVisitsOne", "statsVisitsMany"),
+            })}
+          </p>
+        )}
+      </Stat>
+      <Stat title="statsPeak" help="statsPeakHelp">
+        {peak === null ? (
+          <p className="stat-value none">{t("statsNoneYet")}</p>
+        ) : (
+          <>
+            <p className="stat-value">{peak.count}</p>
+            <p className="stat-note">{dayAndTime(peak.at)}</p>
+          </>
+        )}
+      </Stat>
+    </div>
+  );
+}
+
+/** The site's key numbers, then the pages people saw and where they came from. */
+function Site({
+  site,
+  dates,
+  failure,
+  days,
+}: {
+  site: VisitorStats | null;
+  dates: string[] | null;
+  failure: TextId | null;
+  days: Period;
+}) {
+  return (
+    <>
+      {site === null ? (
+        <Loading failure={failure}>
+          <SiteSkeleton />
+        </Loading>
+      ) : (
+        <>
+          <SiteStats site={site} dates={dates} compared={t("vsPrevious", { days })} />
+          <div className="charts">
+            <ShareList
+              title="siteTopPages"
+              empty="siteNothing"
+              total={site.pageViews}
+              rows={site.pages.map(({ page, title, count }) => ({
+                key: page,
+                name: pageName(title, page),
+                count,
+              }))}
+            />
+            <ShareList
+              title="siteTopSources"
+              empty="siteNothing"
+              total={site.visits}
+              rows={site.referrers.map(({ referrer, count }) => ({
+                key: referrer ?? "",
+                name: sourceName(referrer),
+                count,
+              }))}
+            />
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+/** The period's support numbers and site numbers, loaded together, each with its own failure. */
+function usePeriodNumbers(api: WorkspaceApi, days: Period, zone: string) {
+  const [numbers, setNumbers] = useState<Analytics | null>(null);
+  const [site, setSite] = useState<VisitorStats | null>(null);
+  const [numbersFailure, setNumbersFailure] = useState<TextId | null>(null);
+  const [siteFailure, setSiteFailure] = useState<TextId | null>(null);
   useEffect(() => {
     // An answer for another period or workspace must not land here.
     let current = true;
     setNumbers(null);
-    setFailure(null);
-    api.analytics(Number(days) as AnalyticsDays, zone).then(
-      (next) => {
-        if (current) setNumbers(next);
-      },
-      (error: unknown) => {
-        if (current) setFailure(failureText(error, {}, "actionFailed"));
-      },
-    );
+    setSite(null);
+    setNumbersFailure(null);
+    setSiteFailure(null);
+    const fail = (set: (failure: TextId) => void) => (error: unknown) => {
+      if (current) set(failureText(error, {}, "actionFailed"));
+    };
+    const period = Number(days) as AnalyticsDays;
+    api.analytics(period, zone).then((next) => {
+      if (current) setNumbers(next);
+    }, fail(setNumbersFailure));
+    api.visitorStats(period, zone).then((next) => {
+      if (current) setSite(next);
+    }, fail(setSiteFailure));
     return () => {
       current = false;
     };
   }, [api, days, zone]);
+  return { numbers, site, numbersFailure, siteFailure };
+}
+
+type Tab = "support" | "site";
+
+const TABS: readonly Option<Tab>[] = [
+  { value: "support", label: "analyticsSupportTab" },
+  { value: "site", label: "siteTitle" },
+];
+
+export function AnalyticsPage({ api }: { api: WorkspaceApi }) {
+  const [days, setDays] = useState<Period>("30");
+  const [tab, setTab] = useState<Tab>("support");
+  // The server checks the zone, and days and hours read in it.
+  const zone = browserTimeZone();
+  const { numbers, site, numbersFailure, siteFailure } = usePeriodNumbers(api, days, zone);
 
   return (
     <Page
@@ -610,8 +580,25 @@ export function AnalyticsPage({ api }: { api: WorkspaceApi }) {
         />
       }
     >
-      {numbers === null ? (
-        <Loading failure={failure}>
+      <Choices<Tab>
+        label={t("analytics")}
+        variant="tabs"
+        value={tab}
+        options={TABS}
+        onChange={setTab}
+      />
+      {tab === "site" ? (
+        <Tipped className="analytics">
+          <Site
+            site={site}
+            dates={numbers?.perDay.map((day) => day.date) ?? null}
+            failure={siteFailure}
+            days={days}
+          />
+          <DocLink path="operator-guide#see-how-support-is-going" text="analyticsDocsLink" />
+        </Tipped>
+      ) : numbers === null ? (
+        <Loading failure={numbersFailure}>
           <AnalyticsSkeleton />
         </Loading>
       ) : numbers.started === 0 ? (
@@ -622,14 +609,7 @@ export function AnalyticsPage({ api }: { api: WorkspaceApi }) {
         </div>
       ) : (
         <Tipped className="analytics">
-          <Stats numbers={numbers} days={days} />
-          <div className="charts">
-            <PerDay days={numbers.perDay} />
-            <Outcomes numbers={numbers} />
-            <Hours hours={numbers.hours} />
-            <Repliers numbers={numbers} />
-            <Labels numbers={numbers} />
-          </div>
+          <Support numbers={numbers} days={days} />
           <DocLink path="operator-guide#see-how-support-is-going" text="analyticsDocsLink" />
         </Tipped>
       )}

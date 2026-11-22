@@ -9,6 +9,7 @@ import serverPackage from "../package.json" with { type: "json" };
 import { createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
 import {
+  appReviewFromConfig,
   inboundEmailFromConfig,
   loadConfig,
   nativePushFromConfig,
@@ -60,6 +61,9 @@ const config = loadConfig(process.env);
 const stopErrorReports = await startErrorReports(config, role, serverPackage.version);
 const logger = pino({ level: config.LOG_LEVEL });
 const stops: (() => Promise<unknown>)[] = [];
+let stopping = false;
+process.on("SIGTERM", () => void stop("SIGTERM"));
+process.on("SIGINT", () => void stop("SIGINT"));
 const pushKeys = pushKeysFromConfig(config);
 // Unset on a self-hosted install, which then never turns on the code in ee/.
 const cloud = cloudFromConfig(config);
@@ -105,6 +109,7 @@ if (role === "web" || role === "all") {
     process.exit(2);
   }
   const app = createApp({
+    appReview: appReviewFromConfig(config),
     trustedProxyHops: config.TRUSTED_PROXY_HOPS,
     limitScale: config.RATE_LIMIT_SCALE,
     ipSecret: config.AUTH_SECRET,
@@ -162,7 +167,8 @@ if (role === "worker" || role === "all") {
   const pool = new pg.Pool({ connectionString: config.WORKER_DATABASE_URL, max: 5 });
   pool.on("error", (err) => logger.error({ err }, "postgres pool error"));
   const workerDb = drizzle(pool, { schema });
-  // Only publishes, to wake open inboxes after a billing change. A lost signal loses no data.
+  // Publishes, to wake open inboxes after a billing change, and reads the site's hours to copy them
+  // to Postgres. A lost signal loses no data.
   const publisher = new Redis(config.VALKEY_URL, {
     enableOfflineQueue: false,
     maxRetriesPerRequest: 1,
@@ -179,6 +185,7 @@ if (role === "worker" || role === "all") {
     appDb: drizzle(appPool, { schema }),
     cloud,
     signals,
+    valkey: publisher,
     logger,
     push,
     nativePush,
@@ -225,7 +232,6 @@ function mailboxSweepFor(signals: Signals, valkey: Redis) {
   return { pool, run: mailboxSweep({ db, intake, domain, settings: shipmail, logger }) };
 }
 
-let stopping = false;
 async function stop(signal: string): Promise<void> {
   if (stopping) return;
   stopping = true;
@@ -242,6 +248,3 @@ async function stop(signal: string): Promise<void> {
   logger.info("stopped");
   process.exit(0);
 }
-
-process.on("SIGTERM", () => void stop("SIGTERM"));
-process.on("SIGINT", () => void stop("SIGINT"));

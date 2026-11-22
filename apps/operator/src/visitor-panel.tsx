@@ -311,8 +311,8 @@ const VISIT_GAP_MS = 30 * MINUTE_MS;
 
 /**
  * The pages the visitor went through, newest first: the title, or the address when the page has
- * none, as a link, and when. A long pause starts an earlier visit, and the newest page is where an
- * online visitor is now. Five at first, and the rest of the 20 on request.
+ * none, as a link, and when. A long pause before another day starts an earlier visit under its
+ * date, and the newest page is where an online visitor is now. Five at first, and the rest of the 20 on request.
  */
 export function PageJourney({ pages, online }: { pages: PageView[]; online: boolean }) {
   const [all, setAll] = useState(false);
@@ -325,9 +325,11 @@ export function PageJourney({ pages, online }: { pages: PageView[]; online: bool
           const name = pageName(page.title, page.path);
           const newer = shown[index - 1];
           const isNow = online && index === 0;
+          // The time beside each page already tells a visit earlier the same day.
           const startsVisit =
             newer !== undefined &&
-            Date.parse(newer.viewedAt) - Date.parse(page.viewedAt) > VISIT_GAP_MS;
+            Date.parse(newer.viewedAt) - Date.parse(page.viewedAt) > VISIT_GAP_MS &&
+            new Date(newer.viewedAt).toDateString() !== new Date(page.viewedAt).toDateString();
           return (
             <Fragment key={`${page.path} ${page.viewedAt}`}>
               {startsVisit && (

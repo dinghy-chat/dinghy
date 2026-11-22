@@ -22,6 +22,7 @@ import {
   withWorkspace,
   workspaceAccess,
 } from "./db/tenant.ts";
+import { recordKeyDraftsChanged } from "./drafts.ts";
 import {
   errorAnswer,
   FORBIDDEN,
@@ -32,7 +33,9 @@ import {
   ROLE_WRITE_ERRORS,
 } from "./errors.ts";
 import { sha256Hex } from "./identity.ts";
+import { type Live, OPERATORS } from "./live.ts";
 import { OPEN_WHILE_CLOSED, workspaceParams } from "./member.ts";
+import { lockWorkspace } from "./messages.ts";
 import { clientOrigin } from "./oauth-client.ts";
 import {
   ACCESS_PREFIX,
@@ -217,6 +220,8 @@ const ApiKey = z
     source: z.enum(API_KEY_SOURCES),
     // `send` replies go to the visitor. `draft` replies wait for an operator.
     replyMode: z.enum(REPLY_MODES),
+    // Its bot answers an operator's "Ask to change" on its drafts with a new draft.
+    rewritesDrafts: z.boolean(),
     // What it may do beyond its level. `send_as_member`: send outbound messages with a member's
     // name and picture. `send_email`: send outbound messages that a reply email carries.
     permissions: z.array(z.enum(API_KEY_PERMISSIONS)),
@@ -278,6 +283,7 @@ const createKeyRoute = createRoute({
             name: KeyName,
             level: z.enum(API_KEY_LEVELS).default("conversations"),
             replyMode: z.enum(REPLY_MODES).default("draft"),
+            rewritesDrafts: z.boolean().default(false),
             permissions: Permissions.default([]),
           }),
         },
@@ -297,7 +303,8 @@ const updateKeyRoute = createRoute({
   method: "patch",
   path: `${PREFIX}/api-keys/{keyId}`,
   security: SESSION,
-  summary: "Change an API key's or a connected app's name, reply mode, level or permissions",
+  summary:
+    "Change an API key's or a connected app's name, reply mode, whether it rewrites drafts, level or permissions",
   request: {
     params: keyParams,
     body: {
@@ -308,6 +315,7 @@ const updateKeyRoute = createRoute({
             .object({
               name: KeyName.optional(),
               replyMode: z.enum(REPLY_MODES).optional(),
+              rewritesDrafts: z.boolean().optional(),
               level: z.enum(API_KEY_LEVELS).optional(),
               permissions: Permissions.optional(),
             })
@@ -352,6 +360,7 @@ async function readKeys(tx: Transaction, workspaceId: string, keyId?: string) {
       level: apiKey.level,
       source: apiKey.source,
       replyMode: apiKey.replyMode,
+      rewritesDrafts: apiKey.rewritesDrafts,
       permissions: apiKey.permissions,
       clientId: apiKey.clientId,
       createdByName: operator.name,
@@ -378,7 +387,7 @@ async function readKeys(tx: Transaction, workspaceId: string, keyId?: string) {
   });
 }
 
-export function registerApiKeyRoutes(app: App, db: Database, logger: Logger): void {
+export function registerApiKeyRoutes(app: App, db: Database, live: Live, logger: Logger): void {
   app.openapi(listRoute, async (c) => {
     if (!allowed.settings(c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const id = c.get("memberWorkspaceId");
@@ -389,7 +398,7 @@ export function registerApiKeyRoutes(app: App, db: Database, logger: Logger): vo
     if (!allowed.settings(c.get("memberRole"))) return c.json(FORBIDDEN, 403);
     const id = c.get("memberWorkspaceId");
     const operatorId = c.get("operatorId");
-    const { name, level, replyMode, permissions } = c.req.valid("json");
+    const { name, level, replyMode, rewritesDrafts, permissions } = c.req.valid("json");
     const token = newToken(STATIC_KEY_PREFIX, id);
     const [row] = await withWorkspace(db, id, (tx) =>
       tx
@@ -399,6 +408,7 @@ export function registerApiKeyRoutes(app: App, db: Database, logger: Logger): vo
           name,
           level,
           replyMode,
+          rewritesDrafts,
           permissions,
           tokenHash: sha256Hex(token),
           createdBy: operatorId,
@@ -414,6 +424,7 @@ export function registerApiKeyRoutes(app: App, db: Database, logger: Logger): vo
         level,
         source: "static" as const,
         replyMode,
+        rewritesDrafts,
         permissions,
         client: null,
         createdByName: c.get("operatorName"),
@@ -430,21 +441,29 @@ export function registerApiKeyRoutes(app: App, db: Database, logger: Logger): vo
     const id = c.get("memberWorkspaceId");
     const { keyId } = c.req.valid("param");
     const change = c.req.valid("json");
+    const isTogglingRewrites = change.rewritesDrafts !== undefined;
     const [changed] = await withWorkspace(db, id, async (tx) => {
+      // Drafts are written under the workspace lock, so none can slip past the scan below.
+      if (isTogglingRewrites) await lockWorkspace(tx, id);
       const updated = await tx
         .update(apiKey)
         .set(change)
         .where(and(eq(apiKey.workspaceId, id), eq(apiKey.id, keyId), isNull(apiKey.revokedAt)))
         .returning({ id: apiKey.id });
-      return updated.length === 0 ? [] : readKeys(tx, id, keyId);
+      if (updated.length === 0) return [];
+      // A draft card offers "Ask to change" by this setting.
+      if (isTogglingRewrites) await recordKeyDraftsChanged(tx, id, keyId);
+      return readKeys(tx, id, keyId);
     });
     if (changed === undefined) return c.json(NOT_FOUND, 404);
+    if (isTogglingRewrites) live.wake(id, OPERATORS);
     audit(logger, "api_key.updated", {
       workspaceId: id,
       operatorId: c.get("operatorId"),
       apiKeyId: keyId,
       level: change.level,
       replyMode: change.replyMode,
+      rewritesDrafts: change.rewritesDrafts,
       permissions: change.permissions,
     });
     return c.json(changed, 200);

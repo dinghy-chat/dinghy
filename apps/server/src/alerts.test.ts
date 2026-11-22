@@ -353,15 +353,25 @@ describe("web push", () => {
     const live = await addSession(anna);
     const expired = await addSession(anna, new Date(Date.now() - 1000));
     const revoked = await addSession(anna);
+    const awaitingTwoFactor = await addSession(anna);
     await owner.insert(nativePushDevice).values([
       { operatorId: anna, sessionId: live, provider: "fcm", token: "live-device-token" },
       { operatorId: anna, sessionId: expired, provider: "fcm", token: "expired-device-token" },
       { operatorId: anna, sessionId: revoked, provider: "fcm", token: "revoked-device-token" },
+      {
+        operatorId: anna,
+        sessionId: awaitingTwoFactor,
+        provider: "fcm",
+        token: "two-factor-required-device-token",
+      },
     ]);
+    await owner.update(operator).set({ twoFactorOn: true }).where(eq(operator.id, anna));
+    await owner.update(session).set({ twoFactorAt: new Date() }).where(eq(session.id, live));
     await owner.delete(session).where(eq(session.id, revoked));
     expect((await owner.select().from(nativePushDevice)).map((row) => row.token).sort()).toEqual([
       "expired-device-token",
       "live-device-token",
+      "two-factor-required-device-token",
     ]);
     const tokens: string[] = [];
     const nativePush: NativePush = {
@@ -376,6 +386,34 @@ describe("web push", () => {
     runWorker({ push: undefined, nativePush });
     await until(() => tokens.length === 1, "the live native device");
     expect(tokens).toEqual(["live-device-token"]);
+  });
+
+  test("a native device awaiting two-factor does not make an operator reachable", async () => {
+    const anna = await addOperator(`anna-${randomUUID()}@example.com`);
+    const sessionId = await addSession(anna);
+    await owner.insert(nativePushDevice).values({
+      operatorId: anna,
+      sessionId,
+      provider: "fcm",
+      token: "two-factor-required-only-token",
+    });
+    await owner.update(operator).set({ twoFactorOn: true }).where(eq(operator.id, anna));
+    await visitorWrites(await addVisitor(), "This preview stays private.");
+
+    runWorker({
+      push: undefined,
+      nativePush: {
+        providers: ["fcm"],
+        async send() {
+          throw new Error("A session awaiting two-factor must not receive a native push");
+        },
+      },
+    });
+    await until(
+      async () => (await owner.select().from(event).where(eq(event.needsAlert, true))).length === 0,
+      "fan-out",
+    );
+    expect(await deliveries()).toEqual([]);
   });
 
   test("a gone result does not delete a token reassigned during its send", async () => {

@@ -2,6 +2,7 @@ import { expect, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
 import { say, visitor } from "./chat.ts";
 import { signedIn } from "./links.ts";
+import { picture } from "./screenshots.ts";
 
 const SNIPPET = '<script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" async></script>';
 // A single-page site, which changes its address with the History API and never reloads.
@@ -185,6 +186,16 @@ test("the Analytics page shows the workspace's numbers for the chosen period", a
 }) => {
   await visitor(browser, server, "/pricing", "Counting this one");
   await server.reply("Answered.");
+  const guide = `${server.hostOrigin}/guides/how-to-answer-every-question-before-a-visitor-leaves-the-page`;
+  await server.seedSiteHours([
+    { hoursAgo: 3, visits: 12, pages: { [guide]: 9, [`${server.hostOrigin}/pricing`]: 4 } },
+    // In the 7 days before the last 7, to compare with.
+    { hoursAgo: 10 * 24, visits: 2 },
+    // In the 30 days before the last 30, to compare with.
+    { hoursAgo: 40 * 24, visits: 6 },
+    // Counted before those 30 days began, so they have numbers.
+    { hoursAgo: 65 * 24, visits: 1 },
+  ]);
   const owner = await signedIn(browser, server, "owner@example.com");
   await owner.getByRole("button", { name: "Analytics" }).click();
   const page = owner.getByRole("region", { name: "Analytics" });
@@ -208,10 +219,51 @@ test("the Analytics page shows the workspace's numbers for the chosen period", a
   await expect(page.locator(".chart-tip")).toContainText("Half of answered conversations");
   await owner.keyboard.press("Escape");
   await expect(page.locator(".chart-tip")).toHaveCount(0);
+  // The pointer on a day of the small line shows its count and date.
+  await stats.locator(".spark-point").last().hover();
+  await expect(page.locator(".chart-tip")).toContainText(/\d+ conversations?/);
+  await picture(owner, "analytics");
+
+  // Your site, in its own tab: its numbers against the 30 days before, then the top pages and
+  // sources.
+  await page.getByRole("radio", { name: "Your site" }).check();
+  const site = page;
+  await expect(page.locator(".day-bar")).toHaveCount(0);
+  const visits = site.locator(".stat").first();
+  await expect(visits.locator(".stat-value")).toHaveText(/^1[4-9]$/);
+  await expect(visits.locator(".stat-change")).toContainText("vs previous 30 days");
+  await expect(site.locator(".stat", { hasText: "Chat rate" })).toContainText(/chats? from/);
+  // The seeded hour's 4, unless a live tab of another test made a busier minute.
+  await expect(
+    site.locator(".stat", { hasText: "Busiest moment" }).locator(".stat-value"),
+  ).toHaveText(/^\d+$/);
+  await expect(site.locator(".chart-card", { hasText: "Top pages" })).toContainText("/guides/");
+  await expect(site.locator(".chart-card", { hasText: "Top sources" })).toContainText(
+    "news.example.org",
+  );
+  await picture(owner, "analytics-site");
 
   await page.getByRole("radio", { name: "7 days" }).check();
-  await expect(page.locator(".day-bar")).toHaveCount(7);
   await expect(page.getByRole("radio", { name: "7 days" })).toBeChecked();
+  await expect(visits.locator(".stat-change")).toContainText("vs previous 7 days");
+
+  // On a phone, a long page ends in an ellipsis and nothing scrolls sideways.
+  await owner.setViewportSize({ width: 390, height: 844 });
+  const name = site
+    .locator(".chart-card", { hasText: "Top pages" })
+    .locator(".replier-name")
+    .first();
+  expect(await name.evaluate((label) => label.scrollWidth > label.clientWidth)).toBe(true);
+  const overflow = await owner.evaluate(() =>
+    [document.documentElement, ...document.querySelectorAll<HTMLElement>(".page, .page-body")]
+      .filter((element) => element.scrollWidth > element.clientWidth)
+      .map((element) => element.className || element.tagName),
+  );
+  expect(overflow).toEqual([]);
+  await picture(owner, "analytics-phone-site");
+  await page.getByRole("radio", { name: "Conversations" }).check();
+  await expect(page.locator(".day-bar")).toHaveCount(7);
+  await picture(owner, "analytics-phone");
 });
 
 test("Analytics compares the period with the one just before", async ({ browser }) => {

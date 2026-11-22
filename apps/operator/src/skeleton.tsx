@@ -135,19 +135,26 @@ export function TableSkeleton({ rows = 6 }: { rows?: number }) {
   );
 }
 
+/** The four cells of a `.stats` band. */
+function StatBones() {
+  return (
+    <div className="stats">
+      {NAMES.slice(0, 4).map((name) => (
+        <div key={name} className="stat bone-lines">
+          <Bone width={name} height={12} />
+          <Bone width={72} height={30} />
+          <Bone width="60%" height={11} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /** Analytics: the four numbers, then the charts. */
 export function AnalyticsSkeleton() {
   return (
     <Skeleton className="analytics">
-      <div className="stats">
-        {NAMES.slice(0, 4).map((name) => (
-          <div key={name} className="stat bone-lines">
-            <Bone width={name} height={12} />
-            <Bone width={72} height={30} />
-            <Bone width="60%" height={11} />
-          </div>
-        ))}
-      </div>
+      <StatBones />
       <div className="charts">
         <div className="chart-card bone-lines">
           <Bone width={170} height={15} />
@@ -181,6 +188,15 @@ export function VisitorsSkeleton() {
         <Bone width={80} height={13} />
         <RowsBones count={4} />
       </div>
+    </Skeleton>
+  );
+}
+
+/** Analytics' part about the site: its four numbers. */
+export function SiteSkeleton() {
+  return (
+    <Skeleton>
+      <StatBones />
     </Skeleton>
   );
 }

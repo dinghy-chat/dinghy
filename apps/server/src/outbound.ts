@@ -3,7 +3,7 @@ import { type AnyColumn, and, asc, desc, eq, inArray, lte, type SQL, sql } from 
 import { alias } from "drizzle-orm/pg-core";
 import { chosenButton } from "../../../packages/widget/src/shared.ts";
 import type { Actor } from "./api-keys.ts";
-import { contactChanged, upsertContactAndRecheck } from "./contact-checks.ts";
+import { upsertContactAndRecheck } from "./contact-checks.ts";
 import { apiKey, operator, outboundDedupe, outboundMessage, visitor } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import type { VisitorSelector } from "./inputs.ts";
@@ -25,7 +25,6 @@ import {
 import { keyRefusal, placeOutbound, type SendRefusal, sendsAs } from "./outbound-place.ts";
 import {
   authorRef,
-  cancelWhere,
   change,
   decide,
   end,
@@ -368,27 +367,6 @@ export function createOutbound({ db, live }: { db: Database; live: Signals }) {
     },
 
     get: view,
-
-    /**
-     * Turns automatic messages off or on for a visitor. Off, those from keys and campaigns that
-     * wait for them are cancelled. A member's by hand stay.
-     */
-    async setOptedOut(workspaceId: string, visitorId: string, optedOut: boolean) {
-      const ended = await withWorkspace(db, workspaceId, async (tx) => {
-        await lockVisitors(tx, workspaceId, [visitorId]);
-        await tx
-          .update(visitor)
-          .set({ optedOutAt: optedOut ? sql`coalesce(${visitor.optedOutAt}, now())` : null })
-          .where(and(eq(visitor.workspaceId, workspaceId), eq(visitor.id, visitorId)));
-        await lockWorkspace(tx, workspaceId);
-        const automatic = sql`${outboundMessage.visitorId} = ${visitorId}
-          and (${outboundMessage.authorApiKeyId} is not null or ${outboundMessage.campaignId} is not null)`;
-        const visitors = optedOut ? await cancelWhere(tx, workspaceId, automatic, "opted_out") : [];
-        await contactChanged(tx, workspaceId, visitorId, ["optedOut"]);
-        return visitors.length > 0;
-      });
-      if (ended) tellOutbound(live, workspaceId, visitorId);
-    },
 
     /** A page of messages, newest first. */
     async list(workspaceId: string, filter: z.infer<typeof ListQuery>) {

@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { percent, shareOf } from "./analytics.tsx";
+
 import type { Campaign } from "./api.ts";
 import { type Ending, endingItem } from "./campaign-actions.tsx";
 import { campaignSentence } from "./campaign-summary.ts";
@@ -7,6 +7,7 @@ import { StatusChip } from "./campaign-tile.tsx";
 import { TriggerTile } from "./campaign-trigger.tsx";
 import { Icon } from "./icons.tsx";
 import { Menu, type MenuItem } from "./popup.tsx";
+import { percent, shareOf } from "./stat.tsx";
 import { type TextId, t } from "./text.ts";
 
 /** One result of a row: its number, its words and a thin bar of its share. */

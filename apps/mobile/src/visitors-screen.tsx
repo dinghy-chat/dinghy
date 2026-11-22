@@ -66,11 +66,14 @@ function localTime(timeZone: string, now: number): string | null {
 
 function onSite(startedAt: string, now: number): string {
   const minutes = Math.max(0, Math.floor((now - Date.parse(startedAt)) / 60_000));
-  if (minutes < HOUR_MINUTES) return t("onSiteMinutes", { count: minutes });
-  return t("onSiteHours", {
-    hours: Math.floor(minutes / HOUR_MINUTES),
-    minutes: minutes % HOUR_MINUTES,
-  });
+  const time =
+    minutes < HOUR_MINUTES
+      ? t("timeMinutes", { count: minutes })
+      : t("timeHours", {
+          hours: Math.floor(minutes / HOUR_MINUTES),
+          minutes: minutes % HOUR_MINUTES,
+        });
+  return t("onSite", { time });
 }
 
 /** "5 on your site now", with the number in bold. */

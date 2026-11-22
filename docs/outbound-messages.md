@@ -159,7 +159,7 @@ With `data-launcher="hidden"` and your own button, `badge` raises the unread cou
 
 When the visitor answers a message sent as a member, the conversation is assigned to that member, and a person handles it from then on, so a bot's next reply cannot change the name in the middle of the chat. `assignOnReply: false` turns this off.
 
-In the operator app, the message shows "Julien, via Welcome bot" and an **Automatic** tag. The visitor sees only Julien.
+In the conversation, the operator app shows "Sent as Julien by Welcome bot" with the time under the message. The contact's list of messages shows "Julien, via Welcome bot" and an **Automatic** tag. The visitor sees only Julien.
 
 ## Its life
 
@@ -182,7 +182,7 @@ In the operator app, the message shows "Julien, via Welcome bot" and an **Automa
 | `cancelled` | A cancel, `unless` or a check ended it before it was read. `statusReason` says which |
 | `expired` | `expiresAt` passed before the visitor read it |
 
-At the send time, Dinghy checks the message again: a blocked visitor, the visitor's [opt-out](#turned-off-by-the-visitor), the key's permissions, the workspace's access, paused bots and `unless`. It checks the open conversation when the message would join it: at once with `startConversation: "now"`, and when the widget fetches it with `on_reply`. A check that can change makes the message wait: it keeps its status, `statusReason` says why, and Dinghy checks it again about once a minute. A check that holds for good cancels it. The widget's fetch checks it again too.
+At the send time, Dinghy checks the message again: a blocked visitor, the key's permissions, the workspace's access, paused bots and `unless`. It checks the open conversation when the message would join it: at once with `startConversation: "now"`, and when the widget fetches it with `on_reply`. A check that can change makes the message wait: it keeps its status, `statusReason` says why, and Dinghy checks it again about once a minute. A check that holds for good cancels it. The widget's fetch checks it again too.
 
 `statusReason` is null when nothing holds the message. These values hold for every outbound message:
 
@@ -198,7 +198,6 @@ At the send time, Dinghy checks the message again: a blocked visitor, the visito
 | `unless_matched` | Cancels | `unless` matched the contact |
 | `cancelled_by_request` | Cancels | A cancel through the API, MCP or the operator app |
 | `conversation_deleted` | Cancels | A member deleted the conversation it was in before the visitor answered. Its text goes with it |
-| `opted_out` | Cancels | The visitor turned off automatic messages, and the message came from a key or a campaign |
 
 A campaign's message can also have `audience_unmatched`, `frequency_capped`, `goal_reached`, `outside_business_hours`, `outside_send_window`, `campaign_paused`, `campaign_ended` or `control_group`. [Status reasons](campaigns.md#status-reasons) says what each one means.
 
@@ -249,7 +248,6 @@ A condition is a rule, `{ field, op, value }`, or a group, `{ all: [...] }`, `{ 
 | `hasChatted` | Boolean | True when the contact has a conversation |
 | `conversationCount` | Number | How many conversations they have |
 | `firstSeenAt`, `lastSeenAt` | Time | When they first came, and when they were last seen |
-| `optedOut` | Boolean | True when the visitor [turned off automatic messages](#turned-off-by-the-visitor) |
 | `attributes.<key>` | Any | One of the contact's attributes, such as `attributes.plan` |
 | `events.<name>.count` | Number | How often your server [tracked](campaigns.md#server-events) the event `name` for the contact, 0 when never |
 | `events.<name>.lastAt` | Time | When it last happened, such as `{ "field": "events.export.finished.lastAt", "op": "older_than", "value": "30d" }` |
@@ -324,22 +322,11 @@ A cancel ends only a message that the visitor has not read and that is in no con
 | 403 | `send_as_member_required` | The key may not send as a member. Turn on **May send as a member** |
 | 403 | `blocked` | The team blocked this visitor |
 | 404 | `not_found` | No visitor has this `id` |
-| 409 | `opted_out` | The visitor turned off automatic messages. Only a member who sends by hand can reach them |
 | 409 | `bots_paused` | An owner or admin paused every bot. A message with a later send time waits for the resume instead |
 | 429 | `too_many_waiting` | The visitor has 5 outbound messages that wait, in no conversation yet. Cancel one, or wait for them to end |
 | 429 | `too_many_requests` | The key sent more than 60 outbound messages in a minute, or made more than 300 requests in a minute. Wait for the `Retry-After` header's seconds |
 
-A member who sends by hand is never refused with `bots_paused`, `send_mode_required` or `opted_out`.
-
-## Turned off by the visitor
-
-The chat's menu has **Turn off automatic messages**, and the same item turns them back on. Off, every outbound message from an API key or a campaign skips the visitor:
-
-- a key's send answers 409 `opted_out`, and so does a campaign's send;
-- their messages from keys and campaigns that wait are cancelled, with `statusReason: "opted_out"`;
-- a campaign makes none for them.
-
-A member who sends by hand still reaches them. The condition field `optedOut` is true for them, so the contacts filter finds them and an `unless` or an audience can leave them out. The widget calls `POST /v1/widget/{key}/opt-out` with `{ "optedOut": true }` or `false`.
+A member who sends by hand is never refused with `bots_paused` or `send_mode_required`.
 
 ## Contacts
 
@@ -533,4 +520,4 @@ When a job ends, the agent tells the user in a conversation that starts now:
 }
 ```
 
-The answer's `outboundMessage.conversationId` is set, and `wait_for_messages` picks up the user's answer.
+The answer's `outboundMessage.conversationId` is set, and `wait_for_events` picks up the user's answer.

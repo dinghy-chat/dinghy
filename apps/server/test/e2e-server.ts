@@ -26,6 +26,7 @@ import {
   operator,
   outboundMessage,
   session,
+  siteHour,
   visitor,
   widgetSettings,
   workspaceMember,
@@ -40,8 +41,10 @@ import type { FetchClientDocument } from "../src/oauth-client.ts";
 import { newToken, STATIC_KEY_PREFIX } from "../src/oauth-grants.ts";
 import { runDueOutbound } from "../src/outbound.ts";
 import { createPush } from "../src/push.ts";
+import { rollUpHours } from "../src/site-hours.ts";
 import { localStore } from "../src/storage.ts";
 import { setSuspended, signalSuspension } from "../src/suspension.ts";
+import { HOUR_MS, MINUTE_MS } from "../src/time.ts";
 import { createUploads } from "../src/uploads.ts";
 import { createWorkspace } from "../src/workspaces.ts";
 import { createTestDatabase } from "./database.ts";
@@ -255,7 +258,10 @@ export async function startE2EServer(
     workspaceId: () => workspace.id,
     /** Opens tabs of the site as their beats would, each with a new contact when it has a name. */
     async openTabs(
-      tabs: (Omit<Parameters<LiveVisitors["beat"]>[1], "tab" | "visitorId" | "conversationId"> & {
+      tabs: (Omit<
+        Parameters<LiveVisitors["beat"]>[1],
+        "tab" | "visitorId" | "conversationId" | "arrival"
+      > & {
         name?: string;
       })[],
     ) {
@@ -271,10 +277,32 @@ export async function startE2EServer(
         await liveVisitors.beat(workspace.id, {
           ...details,
           tab: randomUUID(),
+          arrival: "entrance",
           visitorId: contact?.id ?? null,
           conversationId: null,
         });
       }
+      // As the worker would within a minute, so the period's numbers count them.
+      await rollUpHours(workerDb, valkey);
+    },
+    /** Stores past hours of the site's traffic, each `hoursAgo` from the current hour. */
+    async seedSiteHours(
+      hours: { hoursAgo: number; visits: number; pages?: Record<string, number> }[],
+    ) {
+      const current = Math.floor(Date.now() / HOUR_MS);
+      await owner.insert(siteHour).values(
+        hours.map(({ hoursAgo, visits, pages = {} }) => ({
+          workspaceId: workspace.id,
+          hour: new Date((current - hoursAgo) * HOUR_MS),
+          visits,
+          pageViews: visits * 2,
+          peak: Math.ceil(visits / 3),
+          peakAt: new Date((current - hoursAgo) * HOUR_MS + 17 * MINUTE_MS),
+          pages,
+          referrers: { "https://news.example.org": Math.ceil(visits / 2), "": visits },
+          titles: {},
+        })),
+      );
     },
     async blockVisitors(count: number) {
       await owner.insert(visitor).values(

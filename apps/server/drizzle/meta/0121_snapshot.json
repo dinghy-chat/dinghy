@@ -1,5 +1,5 @@
 {
-  "id": "9d5efca5-f60a-4a50-ae61-b08d6215bf6d",
+  "id": "87e678ce-0501-4375-bdbc-d62c2dcb4f49",
   "prevId": "e822f071-9def-4dce-bbdf-3f3c34f37faf",
   "version": "7",
   "dialect": "postgresql",
@@ -3403,118 +3403,6 @@
       },
       "isRLSEnabled": false
     },
-    "public.native_push_device": {
-      "name": "native_push_device",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "operator_id": {
-          "name": "operator_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "session_id": {
-          "name": "session_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "provider": {
-          "name": "provider",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "token": {
-          "name": "token",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "native_push_device_operator_idx": {
-          "name": "native_push_device_operator_idx",
-          "columns": [
-            {
-              "expression": "operator_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "native_push_device_session_idx": {
-          "name": "native_push_device_session_idx",
-          "columns": [
-            {
-              "expression": "session_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "native_push_device_operator_id_operator_id_fk": {
-          "name": "native_push_device_operator_id_operator_id_fk",
-          "tableFrom": "native_push_device",
-          "tableTo": "operator",
-          "columnsFrom": ["operator_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        },
-        "native_push_device_session_id_session_id_fk": {
-          "name": "native_push_device_session_id_session_id_fk",
-          "tableFrom": "native_push_device",
-          "tableTo": "session",
-          "columnsFrom": ["session_id"],
-          "columnsTo": ["id"],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {
-        "native_push_device_provider_token_key": {
-          "name": "native_push_device_provider_token_key",
-          "nullsNotDistinct": false,
-          "columns": ["provider", "token"]
-        }
-      },
-      "policies": {},
-      "checkConstraints": {
-        "native_push_device_provider": {
-          "name": "native_push_device_provider",
-          "value": "\"native_push_device\".\"provider\" in ('apns', 'fcm')"
-        }
-      },
-      "isRLSEnabled": false
-    },
     "public.operator": {
       "name": "operator",
       "schema": "",
@@ -5002,6 +4890,104 @@
           "columns": ["token"]
         }
       },
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.site_hour": {
+      "name": "site_hour",
+      "schema": "",
+      "columns": {
+        "workspace_id": {
+          "name": "workspace_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "hour": {
+          "name": "hour",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "visits": {
+          "name": "visits",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "page_views": {
+          "name": "page_views",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "peak": {
+          "name": "peak",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "peak_at": {
+          "name": "peak_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pages": {
+          "name": "pages",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "referrers": {
+          "name": "referrers",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "titles": {
+          "name": "titles",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        }
+      },
+      "indexes": {
+        "site_hour_hour_idx": {
+          "name": "site_hour_hour_idx",
+          "columns": [
+            {
+              "expression": "hour",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "site_hour_workspace_id_workspace_id_fk": {
+          "name": "site_hour_workspace_id_workspace_id_fk",
+          "tableFrom": "site_hour",
+          "tableTo": "workspace",
+          "columnsFrom": ["workspace_id"],
+          "columnsTo": ["id"],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {
+        "site_hour_workspace_id_hour_pk": {
+          "name": "site_hour_workspace_id_hour_pk",
+          "columns": ["workspace_id", "hour"]
+        }
+      },
+      "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
       "isRLSEnabled": false

@@ -5,8 +5,7 @@ import { buildWidget } from "../build.ts";
 // Limits in gzipped bytes. The loader runs on every page of the host site and the chat loads on
 // every visit, so a feature that grows them must be worth the bytes to every visitor.
 // Campaigns added 200 bytes to the loader, which matches a page campaign's URL and waits its
-// seconds so the chat loads only then, and 750 to the chat, for the campaign's card and the menu's
-// switch that turns automatic messages off.
+// seconds so the chat loads only then, and 750 to the chat, for the campaign's card.
 const LIMITS: Record<string, number> = {
   "loader.js": 3150,
   "page.js": 1000,

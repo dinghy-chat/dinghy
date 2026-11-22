@@ -73,9 +73,13 @@ export const ERROR_CODES = [
   "campaign_live",
   "campaign_not_live",
   "campaign_sent",
+  "change_request_closed",
+  "change_request_pending",
   "check_unavailable",
   "checkout_retry_later",
+  "client_id_reused",
   "conversation_closed",
+  "draft_not_waiting",
   "drafts_text_only",
   "email_mismatch",
   "email_rejected",
@@ -86,6 +90,7 @@ export const ERROR_CODES = [
   "grant_limit",
   "internal_error",
   "invalid_client",
+  "invalid_code",
   "invalid_name",
   "invalid_redirect_uri",
   "invalid_reply_to",
@@ -110,7 +115,6 @@ export const ERROR_CODES = [
   "not_an_image",
   "not_found",
   "operator_limit",
-  "opted_out",
   "origin_not_allowed",
   "payment_pending",
   "payment_required",
@@ -118,6 +122,7 @@ export const ERROR_CODES = [
   "read_only",
   "removal_blocked",
   "removal_not_needed",
+  "rewrites_off",
   "saved_reply_limit",
   "saved_reply_shortcut_taken",
   "send_as_member_required",
@@ -179,7 +184,7 @@ export const WRONG_ORIGIN = failure("origin_not_allowed", "This site may not do 
 /** A sign-in or join link that expired or was already used. */
 export const LINK_INVALID = failure("link_invalid", "This link has expired or was already used.");
 
-const ErrorBody = z
+export const ErrorBody = z
   .object({
     error: z.object({
       code: z.enum(ERROR_CODES),

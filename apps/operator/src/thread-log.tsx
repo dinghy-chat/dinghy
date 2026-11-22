@@ -264,11 +264,11 @@ export function ThreadLog({
           }
           flash={flashId === line.id}
           receipt={receiptFor.get(line.id) ?? null}
+          meta={meta}
           onView={() => setViewing(line.id)}
           onUploadError={onUploadError}
           onRetry={() => onRetry(line)}
         />
-        {meta !== null && <div className={line.fromVisitor ? "meta visitor" : "meta"}>{meta}</div>}
       </>
     );
   };

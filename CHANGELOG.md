@@ -6,7 +6,79 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ### Added
 
-- Operators can sign in from the native mobile development app, open a conversation from an alert, and retry a saved reply after a network interruption. Servers can send mobile alerts directly through Apple and Google.
+- The Dinghy mobile app for iOS has the Inbox, conversations, Contacts, Visitors, Analytics and Settings. A reply written without a connection waits on the phone and sends when the connection returns, and an operator can delete their account from Settings.
+- Conversations in the operator inbox list and search results have `subject`, the first line of their first message, and `hasReadyDraft`, true when a bot's draft waits for review.
+- The website has install guides, use cases, comparisons and articles, including how to send proactive chat messages and read site analytics.
+
+## [0.50.0] - 2026-11-21
+
+### Added
+
+- **Ask to change** under a bot's draft: an operator types what to change, such as "shorter" or "in Spanish", and the bot that wrote the draft answers with a new draft that takes its place. Dinghy runs no AI: an owner or admin turns on **This bot can rewrite drafts** for a key in **Settings > API & webhooks**, and the bot gets `draft.change_requested` by webhook, `GET /v1/events` or `wait_for_events`, and answers with `reply` and `changeRequestId`. See [Agents](docs/agents.md#ask-to-change).
+
+### Changed
+
+- The MCP tool `wait_for_messages` is now `wait_for_events`. It answers `{ events, cursor }`, where each event has a `type`: `message.created`, with what each item of `messages` held, or `draft.change_requested` for the key's own drafts. Rename the tool in your bot.
+
+## [0.49.0] - 2026-11-21
+
+### Changed
+
+- The app review account set by `APP_REVIEW_EMAIL` deletes at once, with no email link. The delete signs it out on every device, turns off its two-step sign-in, and keeps the account and its workspace for the next review.
+
+## [0.48.0] - 2026-11-21
+
+### Added
+
+- `APP_REVIEW_EMAIL` and `APP_REVIEW_CODE` give one account a fixed sign-in code for the Dinghy app, so an app store's reviewer can sign in without its mailbox. Both are optional, and no code goes to that account's mailbox.
+
+## [0.47.0] - 2026-11-21
+
+### Changed
+
+- A click on a conversation in the Inbox puts the caret in the reply box. J and K still leave it in the list.
+- In a conversation, one line under an outbound message says who sent it, such as "Sent as Julien by Welcome bot · 20:12", and the receipt follows it.
+
+### Removed
+
+- The chat's menu and its **Turn off automatic messages** item. Visitors misread it, and an annoyed visitor can still be blocked. Campaigns and API keys no longer check an opt-out, and the `optedOut` condition, the `opted_out` status reason and error, and `POST /v1/widget/{key}/opt-out` are gone. An upgrade rewrites a saved rule on `optedOut` to one with the same answer, and messages the opt-out cancelled now read `cancelled_by_request`. An export file from 0.46.0 or before does not import. The emails' own stop link stays.
+
+## [0.46.0] - 2026-11-19
+
+### Added
+
+- Operators can receive conversation alerts on their phones when their server has Apple or Firebase push credentials.
+- The native mobile app can sign in with a short email code, followed by an authenticator or recovery code when two-step sign-in is on.
+
+## [0.45.0] - 2026-11-19
+
+### Added
+
+- Operators can sign in to the native mobile app through an explicit browser confirmation and a one-time proof-key exchange.
+
+## [0.44.0] - 2026-11-18
+
+### Changed
+
+- The site's numbers (visits, page views, chat rate, busiest moment, top pages and sources) moved from **Visitors** to **Analytics**, under the same 7, 30 or 90 days as the support numbers. **Visitors** shows only who is on the site now. `GET .../visitors/stats` no longer takes `days=1`, and its default is now 30 days.
+
+### Fixed
+
+- A long page title no longer runs out of its tile on **Visitors**.
+
+## [0.43.0] - 2026-11-18
+
+### Changed
+
+- **Visitors** shows a change against the period before only once Dinghy has counted the site for that long, so a new site's first weeks no longer show large false rises. `GET .../visitors/stats` returns those numbers as one `previous` object, or null, in place of `visitsBefore`, `pageViewsBefore` and `chatsBefore`.
+
+## [0.42.0] - 2026-11-18
+
+### Added
+
+- **Visitors** has an **Over time** section: visits, page views, the chat rate and the busiest minute for the last 24 hours, 7, 30 or 90 days, each against the period before, with the top pages and sources. Dinghy counts each hour with no cookie and no stored ID, and keeps the hours 182 days in a new `site_hour` table, which the worker fills from Valkey about once a minute.
+- **Visitors** has a **Waiting** filter, and a visitor whose message has no reply shows how long they have waited. A small chart of the last hour sits next to the count of people on the site, and the tiles under the map add **Countries** and **Devices**.
+- `GET /v1/operator/workspaces/{workspaceId}/visitors/stats` returns those numbers, and `/visitors/live` returns `lastHour` and each chatting visitor's `waitingSince`.
 
 ## [0.41.1] - 2026-11-17
 
@@ -693,7 +765,16 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.41.1...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.50.0...HEAD
+[0.50.0]: https://github.com/dinghy-chat/dinghy/compare/v0.49.0...v0.50.0
+[0.49.0]: https://github.com/dinghy-chat/dinghy/compare/v0.48.0...v0.49.0
+[0.48.0]: https://github.com/dinghy-chat/dinghy/compare/v0.47.0...v0.48.0
+[0.47.0]: https://github.com/dinghy-chat/dinghy/compare/v0.46.0...v0.47.0
+[0.46.0]: https://github.com/dinghy-chat/dinghy/compare/v0.45.0...v0.46.0
+[0.45.0]: https://github.com/dinghy-chat/dinghy/compare/v0.44.0...v0.45.0
+[0.44.0]: https://github.com/dinghy-chat/dinghy/compare/v0.43.0...v0.44.0
+[0.43.0]: https://github.com/dinghy-chat/dinghy/compare/v0.42.0...v0.43.0
+[0.42.0]: https://github.com/dinghy-chat/dinghy/compare/v0.41.1...v0.42.0
 [0.41.1]: https://github.com/dinghy-chat/dinghy/compare/v0.41.0...v0.41.1
 [0.41.0]: https://github.com/dinghy-chat/dinghy/compare/v0.40.0...v0.41.0
 [0.40.0]: https://github.com/dinghy-chat/dinghy/compare/v0.39.0...v0.40.0

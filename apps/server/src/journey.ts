@@ -35,7 +35,13 @@ interface PageSeen {
 
 /** One line of at most 200 characters, or null when nothing is left. */
 export function pageTitle(title: string | undefined): string | null {
-  const line = title?.replace(/\s+/g, " ").trim().slice(0, PAGE_TITLE_MAX).trim() ?? "";
+  // Control characters too, as Postgres rejects a NUL in text and jsonb.
+  const line =
+    title
+      ?.replace(/[\s\p{Cc}]+/gu, " ")
+      .trim()
+      .slice(0, PAGE_TITLE_MAX)
+      .trim() ?? "";
   return line === "" ? null : line;
 }
 

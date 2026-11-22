@@ -144,30 +144,8 @@ const VisitorSchema = z
     unread: z.number(),
     // A stream from here reads only what follows the read position, as a closed panel needs.
     readCursor: z.string(),
-    // The visitor turned off automatic messages in the chat's menu.
-    optedOut: z.boolean(),
   })
   .openapi("Visitor");
-
-const optOutRoute = createRoute({
-  method: "post",
-  path: "/v1/widget/{key}/opt-out",
-  security: VISITOR_TOKEN,
-  summary: "Turn automatic messages off or on for this visitor",
-  description:
-    "Off, campaigns and outbound messages from keys skip the visitor, and those that wait for them are cancelled with `opted_out`. A member can still write by hand.",
-  request: {
-    params,
-    body: {
-      required: true,
-      content: { "application/json": { schema: z.object({ optedOut: z.boolean() }) } },
-    },
-  },
-  responses: {
-    200: { description: "The visitor", content: { "application/json": { schema: VisitorSchema } } },
-    ...WIDGET_WRITE_ERRORS,
-  },
-});
 
 const markReadRoute = createRoute({
   method: "post",
@@ -377,6 +355,11 @@ const leaveRoute = createRoute({
     ...WIDGET_WRITE_ERRORS,
   },
 });
+
+/** Whether a tab arrived from outside the site: no referrer (""), one that does not parse, or another origin. */
+function isEntrance(referrer: string, page: string): boolean {
+  return !URL.canParse(referrer) || new URL(referrer).origin !== new URL(page).origin;
+}
 
 /**
  * Only the origin of where the visitor came from, never its path. The site's own pages are no
@@ -979,7 +962,7 @@ async function visitorView(db: Database, workspaceId: string, identified: Identi
       .orderBy(sql`${conversation.status} = 'open' desc`)
       .limit(1);
     const [saved] = await tx
-      .select({ email: visitor.email, optedOutAt: visitor.optedOutAt })
+      .select({ email: visitor.email })
       .from(visitor)
       .where(and(eq(visitor.workspaceId, workspaceId), eq(visitor.id, visitorId)));
     const { lastReadSeq, unread } = await readState(tx, workspaceId, visitorId);
@@ -996,7 +979,6 @@ async function visitorView(db: Database, workspaceId: string, identified: Identi
       lastReadSeq: lastReadSeq.toString(),
       unread,
       readCursor: formatCursor({ generation: current?.generation ?? 0, seq: lastReadSeq }),
-      optedOut: saved?.optedOutAt != null,
     };
   });
 }
@@ -1637,14 +1619,6 @@ export function registerWidgetRoutes(
     });
   }
 
-  app.openapi(optOutRoute, async (c) => {
-    const found = c.get("workspace");
-    const identified = await identify(c);
-    if (identified === null) return c.json(UNAUTHORIZED, 401);
-    await outbound.setOptedOut(found.id, identified.visitorId, c.req.valid("json").optedOut);
-    return c.json(await visitorView(db, found.id, identified), 200);
-  });
-
   /** The visitor behind an optional token, or null for one who does not exist yet. */
   const maybeVisitor = async <P extends string, I extends Input>(c: Context<AppEnv, P, I>) => {
     const token = c.get("widgetToken");
@@ -1770,6 +1744,8 @@ export function registerWidgetRoutes(
       page: path,
       title: pageTitle(title),
       referrer: referrerOrigin(referrer, path),
+      // Only a tab's first beat sends the referrer, "" for none.
+      arrival: referrer === undefined ? null : isEntrance(referrer, path) ? "entrance" : "inside",
       country,
       timeZone: zone,
       device: deviceLine(c.req.header("user-agent")),

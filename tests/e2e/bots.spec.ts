@@ -134,6 +134,56 @@ test("an operator sends, edits and discards a bot's suggested replies", async ({
   await alice.context().close();
 });
 
+test("an operator asks a bot to change its draft, and the new draft takes its place", async ({
+  browser,
+}) => {
+  const alice = await signedIn(browser, server, "alice@example.com");
+  const key = (await asOperator(alice, "/api-keys", {
+    name: "Rewrite bot",
+    rewritesDrafts: true,
+  })) as { token: string };
+  const chat = await testVisitorSays(alice, "Do you ship to Spain?");
+  await draft(alice, key.token, chat, "Yes, we ship to Spain, and it takes about five days.");
+  await alice.locator(".row", { hasText: "Do you ship to Spain?" }).click();
+  const card = alice.locator(".sugg");
+  const ask = card.getByRole("textbox", { name: "Ask Rewrite bot to change this suggestion" });
+  await ask.fill("shorter");
+  await ask.press("Enter");
+  await expect(card).toContainText("Waiting for Rewrite bot…");
+  // The draft stays usable while the bot rewrites it, and the operator edits it meanwhile.
+  await expect(card.getByRole("button", { name: "Send" })).toBeEnabled();
+  await card.getByRole("button", { name: "Edit" }).click();
+  const box = alice.getByRole("textbox", { name: "Your reply" });
+  await box.fill("Yes, we ship to Spain.");
+  await expect(alice.locator(".quote-chip")).toContainText("Editing Rewrite bot's suggestion");
+
+  // The bot reads the request, as list_drafts shows it, and answers with a new draft.
+  const listed = (await (
+    await alice.request.get(`${space()}/conversations/${chat}/drafts`)
+  ).json()) as { drafts: { changeRequest: { id: string; instruction: string } | null }[] };
+  const pending = listed.drafts[0]?.changeRequest;
+  expect(pending?.instruction).toBe("shorter");
+  await asBot(alice, key.token, `/conversations/${chat}/messages`, {
+    clientId: "rewrite-1",
+    body: "Yes, in 5 days.",
+    changeRequestId: pending?.id,
+  });
+  await expect(card).toContainText("Yes, in 5 days.");
+  await expect(card).toHaveCount(1);
+  await expect(card).not.toContainText("Waiting for");
+
+  // The edited draft was replaced: Send says so and keeps the text, and the next Send sends it as a
+  // plain reply.
+  await box.press("Enter");
+  await expect(alice.getByText("This suggestion was replaced or discarded.")).toBeVisible();
+  await expect(alice.locator(".quote-chip")).toHaveCount(0);
+  await expect(box).toHaveText("Yes, we ship to Spain.");
+  await box.press("Enter");
+  await expect(alice.locator(".bubble-row", { hasText: "Yes, we ship to Spain." })).toBeVisible();
+
+  await alice.context().close();
+});
+
 test("notes, a bot's handoff, giving it back, and the bot typing", async ({ browser }) => {
   const alice = await signedIn(browser, server, "alice@example.com");
   const token = await newBot(alice, "Helper bot");

@@ -22,7 +22,8 @@ test("L adds a new label by its name, and the filter lists only the conversation
 }) => {
   await server.seedConversations(2, "labels");
   const page = await signedIn(browser, server, "owner@example.com");
-  await page.locator(".row", { hasText: "labels message 0" }).click();
+  // Enter opens it with the focus left on the row, as a click would put it in the reply.
+  await page.locator(".row", { hasText: "labels message 0" }).press("Enter");
 
   await expect(page.getByRole("button", { name: "Labels", exact: true })).toBeVisible();
   await page.keyboard.press("l");
@@ -53,7 +54,7 @@ test("X, Shift-click and the box beside the count choose rows, and Close closes 
   const rows = page.locator(".rows > li");
   await expect(rows).toHaveCount(3);
 
-  await rows.nth(0).locator(".row").click();
+  await rows.nth(0).locator(".row").press("Enter");
   await page.keyboard.press("x");
   const bar = page.getByRole("toolbar", { name: "Selected conversations" });
   await expect(bar).toContainText("1 selected");

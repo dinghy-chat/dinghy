@@ -36,6 +36,13 @@ const text = {
     text.linkLasts,
     "Didn't ask for it? You can ignore this email. Nobody gets in without the link.",
   ],
+  nativeCodeSubject: "Your Dinghy sign-in code",
+  nativeCodeBody: (code: string, minutes: number) => [
+    "Your Dinghy sign-in code is:",
+    code,
+    `It works once, for the next ${minutes} minutes.`,
+    "Didn't ask for it? You can ignore this email. Nobody gets in without the code.",
+  ],
   noAccountSubject: "You don't have a Dinghy account yet",
   // Fixed text only: anyone can type any email on the sign-in page.
   noAccountBody: (signupUrl: string) => [
@@ -246,6 +253,12 @@ export function letterHtml(page: {
 export const signInMail = (url: string) => ({
   subject: text.signInSubject,
   body: letter(text.signInBody(url)),
+});
+
+/** The short code that signs an operator in to the native app. */
+export const nativeSignInCodeMail = (code: string, minutes: number) => ({
+  subject: text.nativeCodeSubject,
+  body: letter(text.nativeCodeBody(code, minutes)),
 });
 
 /** Sent instead of a sign-in link to an email with no account, so nobody waits for nothing. */

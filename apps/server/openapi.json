@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Dinghy API",
-    "version": "0.41.1",
+    "version": "0.50.0",
     "description": "The widget API (`/v1/widget/{key}`, with the visitor's bearer token) and the operator API (`/v1/operator`, with the session cookie, or a workspace API key on the routes whose security lists `apiKey`). MCP lives at `/v1/mcp`, with an API key. Every error answer is `{ error: { code, message } }`, and clients branch on `code`. Sign-in lives at `/v1/auth`; the native app routes appear below, while the browser's BetterAuth routes are not part of the versioned API."
   },
   "components": {
@@ -53,9 +53,13 @@
                   "campaign_live",
                   "campaign_not_live",
                   "campaign_sent",
+                  "change_request_closed",
+                  "change_request_pending",
                   "check_unavailable",
                   "checkout_retry_later",
+                  "client_id_reused",
                   "conversation_closed",
+                  "draft_not_waiting",
                   "drafts_text_only",
                   "email_mismatch",
                   "email_rejected",
@@ -66,6 +70,7 @@
                   "grant_limit",
                   "internal_error",
                   "invalid_client",
+                  "invalid_code",
                   "invalid_name",
                   "invalid_redirect_uri",
                   "invalid_reply_to",
@@ -90,7 +95,6 @@
                   "not_an_image",
                   "not_found",
                   "operator_limit",
-                  "opted_out",
                   "origin_not_allowed",
                   "payment_pending",
                   "payment_required",
@@ -98,6 +102,7 @@
                   "read_only",
                   "removal_blocked",
                   "removal_not_needed",
+                  "rewrites_off",
                   "saved_reply_limit",
                   "saved_reply_shortcut_taken",
                   "send_as_member_required",
@@ -844,9 +849,6 @@
           },
           "readCursor": {
             "type": "string"
-          },
-          "optedOut": {
-            "type": "boolean"
           }
         },
         "required": [
@@ -857,8 +859,7 @@
           "hasEmail",
           "lastReadSeq",
           "unread",
-          "readCursor",
-          "optedOut"
+          "readCursor"
         ]
       },
       "PageContext": {
@@ -1573,7 +1574,7 @@
           },
           "status": {
             "type": "string",
-            "enum": ["open", "stale", "sent", "discarded"]
+            "enum": ["open", "stale", "sent", "discarded", "replaced"]
           },
           "createdAt": {
             "type": "string"
@@ -1586,6 +1587,19 @@
           },
           "sentMessageId": {
             "type": ["string", "null"]
+          },
+          "canAskToChange": {
+            "type": "boolean"
+          },
+          "changeRequest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DraftChangeRequest"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -1600,7 +1614,53 @@
           "createdAt",
           "staleAt",
           "resolvedAt",
-          "sentMessageId"
+          "sentMessageId",
+          "canAskToChange",
+          "changeRequest"
+        ]
+      },
+      "DraftChangeRequest": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "draftId": {
+            "type": "string"
+          },
+          "conversationId": {
+            "type": "string"
+          },
+          "apiKeyId": {
+            "type": "string"
+          },
+          "instruction": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "fulfilled", "cancelled"]
+          },
+          "createdAt": {
+            "type": "string"
+          },
+          "resolvedAt": {
+            "type": ["string", "null"]
+          },
+          "replacementDraftId": {
+            "type": ["string", "null"]
+          }
+        },
+        "required": [
+          "id",
+          "draftId",
+          "conversationId",
+          "apiKeyId",
+          "instruction",
+          "status",
+          "createdAt",
+          "resolvedAt",
+          "replacementDraftId"
         ]
       },
       "MessageReceipt": {
@@ -1635,6 +1695,9 @@
           "replyMode": {
             "type": "string",
             "enum": ["send", "draft"]
+          },
+          "rewritesDrafts": {
+            "type": "boolean"
           },
           "permissions": {
             "type": "array",
@@ -1675,6 +1738,7 @@
           "level",
           "source",
           "replyMode",
+          "rewritesDrafts",
           "permissions",
           "client",
           "createdByName",
@@ -1762,6 +1826,7 @@
                 "conversation.handoff",
                 "conversation.given_back",
                 "conversation.labeled",
+                "draft.change_requested",
                 "outbound_message.sent",
                 "outbound_message.delivered",
                 "outbound_message.read",
@@ -1818,6 +1883,7 @@
               "conversation.handoff",
               "conversation.given_back",
               "conversation.labeled",
+              "draft.change_requested",
               "outbound_message.sent",
               "outbound_message.delivered",
               "outbound_message.read",
@@ -2477,7 +2543,6 @@
               "unless_matched",
               "cancelled_by_request",
               "conversation_deleted",
-              "opted_out",
               "audience_unmatched",
               "frequency_capped",
               "goal_reached",
@@ -2809,7 +2874,7 @@
             "additionalProperties": false
           }
         ],
-        "description": "A rule `{ field, op, value }`, or a group `{ all: [...] }`, `{ any: [...] }` or `{ not: ... }`, which nest. Fields: name, firstName, email, userId, language, country, timeZone, signedIn, firstSeenAt, lastSeenAt, hasChatted, conversationCount, optedOut, attributes.<key>, events.<name>.count, events.<name>.lastAt. Ops: eq, ne, in, not_in, exists, missing, gt, gte, lt, lte, contains, older_than; older_than takes a duration such as 7d.",
+        "description": "A rule `{ field, op, value }`, or a group `{ all: [...] }`, `{ any: [...] }` or `{ not: ... }`, which nest. Fields: name, firstName, email, userId, language, country, timeZone, signedIn, firstSeenAt, lastSeenAt, hasChatted, conversationCount, attributes.<key>, events.<name>.count, events.<name>.lastAt. Ops: eq, ne, in, not_in, exists, missing, gt, gte, lt, lte, contains, older_than; older_than takes a duration such as 7d.",
         "example": {
           "all": [
             {
@@ -3861,6 +3926,96 @@
         },
         "required": ["days", "variants"]
       },
+      "VisitorStats": {
+        "type": "object",
+        "properties": {
+          "visits": {
+            "type": "integer"
+          },
+          "pageViews": {
+            "type": "integer"
+          },
+          "chats": {
+            "type": "integer"
+          },
+          "previous": {
+            "type": ["object", "null"],
+            "properties": {
+              "visits": {
+                "type": "integer"
+              },
+              "pageViews": {
+                "type": "integer"
+              },
+              "chats": {
+                "type": "integer"
+              }
+            },
+            "required": ["visits", "pageViews", "chats"]
+          },
+          "peak": {
+            "type": ["object", "null"],
+            "properties": {
+              "count": {
+                "type": "integer"
+              },
+              "at": {
+                "type": "string"
+              }
+            },
+            "required": ["count", "at"]
+          },
+          "series": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "pages": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "string"
+                },
+                "title": {
+                  "type": ["string", "null"]
+                },
+                "count": {
+                  "type": "integer"
+                }
+              },
+              "required": ["page", "title", "count"]
+            }
+          },
+          "referrers": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "referrer": {
+                  "type": ["string", "null"]
+                },
+                "count": {
+                  "type": "integer"
+                }
+              },
+              "required": ["referrer", "count"]
+            }
+          }
+        },
+        "required": [
+          "visits",
+          "pageViews",
+          "chats",
+          "previous",
+          "peak",
+          "series",
+          "pages",
+          "referrers"
+        ]
+      },
       "LiveVisitor": {
         "type": "object",
         "properties": {
@@ -3905,9 +4060,12 @@
               },
               "conversationId": {
                 "type": ["string", "null"]
+              },
+              "waitingSince": {
+                "type": ["string", "null"]
               }
             },
-            "required": ["id", "name", "email", "userId", "conversationId"]
+            "required": ["id", "name", "email", "userId", "conversationId", "waitingSince"]
           }
         },
         "required": [
@@ -5879,106 +6037,6 @@
         }
       }
     },
-    "/v1/widget/{key}/opt-out": {
-      "post": {
-        "security": [
-          {
-            "visitorToken": []
-          }
-        ],
-        "summary": "Turn automatic messages off or on for this visitor",
-        "description": "Off, campaigns and outbound messages from keys skip the visitor, and those that wait for them are cancelled with `opted_out`. A member can still write by hand.",
-        "parameters": [
-          {
-            "schema": {
-              "type": "string",
-              "pattern": "^wk_[0-9a-f]{32}$"
-            },
-            "required": true,
-            "name": "key",
-            "in": "path"
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "optedOut": {
-                    "type": "boolean"
-                  }
-                },
-                "required": ["optedOut"]
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "The visitor",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Visitor"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "invalid_request: the request is not valid",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "unauthorized: the browser token or host token is not valid",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "origin_not_allowed: the key is unknown, the Origin is not an allowed site, or the workspace's widget is off: it is suspended, waits for payment, is read-only or was deleted",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "too_large: the body is over 64 KB",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "too_many_requests: over the rate limit. Retry after `retry-after`",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Error"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
     "/v1/widget/{key}/campaigns/{id}/show": {
       "post": {
         "security": [
@@ -7337,6 +7395,436 @@
           },
           "503": {
             "description": "busy: too many emails are being received, or the image queue is full. The message stays",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/native/email-code/request": {
+      "post": {
+        "summary": "Email a short sign-in code for the native operator app",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "maxLength": 254,
+                    "format": "email"
+                  }
+                },
+                "required": ["email"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The code lifetime and the time before this address may ask again. The answer does not reveal whether the account exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [true]
+                    },
+                    "expiresInSeconds": {
+                      "type": "number",
+                      "enum": [600]
+                    },
+                    "resendAfterSeconds": {
+                      "type": "number",
+                      "enum": [60]
+                    }
+                  },
+                  "required": ["ok", "expiresInSeconds", "resendAfterSeconds"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the email has the wrong shape. email_unavailable: this server cannot send email",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 8 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_attempts: this email or address asked too often",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/native/email-code/verify": {
+      "post": {
+        "summary": "Use an emailed code to start or finish native operator sign-in",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "maxLength": 254,
+                    "format": "email"
+                  },
+                  "code": {
+                    "type": "string",
+                    "pattern": "^\\d{6}$"
+                  }
+                },
+                "required": ["email", "code"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "A signed-in native session, or a short-lived challenge when two-step sign-in is on",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": ["signed_in"]
+                        },
+                        "session": {
+                          "type": "object",
+                          "properties": {
+                            "origin": {
+                              "type": "string"
+                            },
+                            "session": {
+                              "type": "string"
+                            },
+                            "operator": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "format": "uuid"
+                                },
+                                "name": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": ["id", "name"]
+                            },
+                            "workspace": {
+                              "type": "object",
+                              "properties": {
+                                "id": {
+                                  "type": "string",
+                                  "format": "uuid"
+                                },
+                                "name": {
+                                  "type": "string"
+                                }
+                              },
+                              "required": ["id", "name"]
+                            }
+                          },
+                          "required": ["origin", "session", "operator", "workspace"]
+                        }
+                      },
+                      "required": ["status", "session"]
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "status": {
+                          "type": "string",
+                          "enum": ["totp_required"]
+                        },
+                        "challenge": {
+                          "type": "string",
+                          "pattern": "^[A-Za-z0-9_-]{43}$"
+                        },
+                        "expiresInSeconds": {
+                          "type": "integer"
+                        }
+                      },
+                      "required": ["status", "challenge", "expiresInSeconds"]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the email or code has the wrong shape. invalid_code: the code is wrong, expired or already used",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: every workspace waits for its first payment, so none can open",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "not_a_member: the operator is not in a workspace on this server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 8 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_attempts: the account reached its email-code attempt limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "check_unavailable: the server cannot enforce the email-code attempt limit right now",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/auth/native/totp/verify": {
+      "post": {
+        "summary": "Finish native sign-in with an authenticator or recovery code",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "challenge": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{43}$"
+                  },
+                  "code": {
+                    "type": "string"
+                  }
+                },
+                "required": ["challenge", "code"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "A signed-in native session",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": ["signed_in"]
+                    },
+                    "session": {
+                      "type": "object",
+                      "properties": {
+                        "origin": {
+                          "type": "string"
+                        },
+                        "session": {
+                          "type": "string"
+                        },
+                        "operator": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "name": {
+                              "type": "string"
+                            }
+                          },
+                          "required": ["id", "name"]
+                        },
+                        "workspace": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string",
+                              "format": "uuid"
+                            },
+                            "name": {
+                              "type": "string"
+                            }
+                          },
+                          "required": ["id", "name"]
+                        }
+                      },
+                      "required": ["origin", "session", "operator", "workspace"]
+                    }
+                  },
+                  "required": ["status", "session"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the challenge or code has the wrong shape. invalid_code: the challenge or code is wrong, expired or already used",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: every workspace waits for its first payment, so none can open",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "not_a_member: the operator is not in a workspace on this server",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 8 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_attempts: the account reached its two-step attempt limit",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "two_factor_unreadable: AUTH_SECRET changed, so the stored two-step secret cannot open",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "check_unavailable: the server cannot enforce the two-step attempt limit right now",
             "content": {
               "application/json": {
                 "schema": {
@@ -9601,6 +10089,11 @@
                     "maxItems": 10,
                     "default": [],
                     "description": "Only on a note: the members it mentions, by their operator IDs from the members list, at most 10. Each current member but the author gets an alert with the note's text, by push and by email as their email alert setting says. Other IDs are dropped."
+                  },
+                  "changeRequestId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "API keys only, not on a note: the operator's change request this answers, from a `draft.change_requested` event. The reply becomes a new draft that replaces the one the operator asked to change, whatever the key's reply mode and even while a person handles the conversation. Without its own `replyToMessageId` it keeps the old draft's quote."
                   }
                 },
                 "required": ["clientId", "body"]
@@ -9696,7 +10189,7 @@
             }
           },
           "409": {
-            "description": "conversation_closed: reopen it to reply, though a note does not need it. bots_paused: an owner or admin paused every bot. human_handling: a person handles the conversation, and the key sends directly. Neither refuses a note",
+            "description": "conversation_closed: reopen it to reply, though a note does not need it. bots_paused: an owner or admin paused every bot. human_handling: a person handles the conversation, and the key sends directly. Neither refuses a note. change_request_closed: the change request was answered or cancelled, or the visitor wrote again. client_id_reused: the clientId made another draft, not this change request's answer",
             "content": {
               "application/json": {
                 "schema": {
@@ -10859,7 +11352,7 @@
           }
         ],
         "summary": "Stream the workspace's changes after a cursor",
-        "description": "Server-sent events: `change` (its id is the new cursor), `ready` when caught up, `resync` to load everything again, `notice` for something live that is not stored, and `close` with a reason. With no cursor, the stream starts at the present, so load the lists after `ready`.\n\nA `change` event's data is `{ kind, conversationId }`, with `conversationId` null for a workspace change. A `message.created` change also has `fromVisitor`, true when the visitor wrote it. The kinds are `message.created`, `message.updated` (an operator edited a reply), `message.deleted`, `conversation.closed`, `conversation.reopened`, `conversation.assigned`, `conversation.snoozed` (snoozed or unsnoozed), `conversation.deleted`, `conversation.moderated`, `conversation.handled` (a person or a bot took it), `conversation.labeled` (a label was put on or taken off), `draft.changed`, `transcript.requested`, `team.changed`, `billing.changed` and `workspace.changed`. A client reloads what the kind names, and ignores a kind it does not know.\n\nA `notice` has no id and may be lost. Its data is `{ kind: \"typing\", conversationId, visitorId, draft }`, a visitor's unsent text, empty when they stopped, `{ kind: \"bot_typing\", conversationId, name, typing }` when an API key types or stops, or `{ kind: \"receipts\", visitorId }` when a visitor read replies or a reply email went out, so load the conversation's messages again.\n\nA `close` event's data is `{ reason }`: `lifetime` (the stream reached its 15-minute cap), `expired` (the host token expired), `revoked` (access was taken away, such as a block, a suspension or a removal), `unauthorized` (the token or session is no longer valid), `stopping` (the server is shutting down) or `error`. Reconnect from the last cursor, except after `unauthorized`, which needs a new token or sign-in.",
+        "description": "Server-sent events: `change` (its id is the new cursor), `ready` when caught up, `resync` to load everything again, `notice` for something live that is not stored, and `close` with a reason. With no cursor, the stream starts at the present, so load the lists after `ready`.\n\nA `change` event's data is `{ kind, conversationId }`, with `conversationId` null for a workspace change. A `message.created` change also has `fromVisitor`, true when the visitor wrote it. The kinds are `message.created`, `message.updated` (an operator edited a reply), `message.deleted`, `conversation.closed`, `conversation.reopened`, `conversation.assigned`, `conversation.snoozed` (snoozed or unsnoozed), `conversation.deleted`, `conversation.moderated`, `conversation.handled` (a person or a bot took it), `conversation.labeled` (a label was put on or taken off), `draft.changed`, `draft.change_requested` (an operator asked a key to rewrite its draft, so its drafts changed too), `transcript.requested`, `team.changed`, `billing.changed` and `workspace.changed`. A client reloads what the kind names, and ignores a kind it does not know.\n\nA `notice` has no id and may be lost. Its data is `{ kind: \"typing\", conversationId, visitorId, draft }`, a visitor's unsent text, empty when they stopped, `{ kind: \"bot_typing\", conversationId, name, typing }` when an API key types or stops, or `{ kind: \"receipts\", visitorId }` when a visitor read replies or a reply email went out, so load the conversation's messages again.\n\nA `close` event's data is `{ reason }`: `lifetime` (the stream reached its 15-minute cap), `expired` (the host token expired), `revoked` (access was taken away, such as a block, a suspension or a removal), `unauthorized` (the token or session is no longer valid), `stopping` (the server is shutting down) or `error`. Reconnect from the last cursor, except after `unauthorized`, which needs a new token or sign-in.",
         "parameters": [
           {
             "schema": {
@@ -11066,6 +11559,10 @@
                     "enum": ["send", "draft"],
                     "default": "draft"
                   },
+                  "rewritesDrafts": {
+                    "type": "boolean",
+                    "default": false
+                  },
                   "permissions": {
                     "type": "array",
                     "items": {
@@ -11185,7 +11682,7 @@
             "sessionCookie": []
           }
         ],
-        "summary": "Change an API key's or a connected app's name, reply mode, level or permissions",
+        "summary": "Change an API key's or a connected app's name, reply mode, whether it rewrites drafts, level or permissions",
         "parameters": [
           {
             "schema": {
@@ -11222,6 +11719,9 @@
                   "replyMode": {
                     "type": "string",
                     "enum": ["send", "draft"]
+                  },
+                  "rewritesDrafts": {
+                    "type": "boolean"
                   },
                   "level": {
                     "type": "string",
@@ -12341,6 +12841,7 @@
                         "conversation.handoff",
                         "conversation.given_back",
                         "conversation.labeled",
+                        "draft.change_requested",
                         "outbound_message.sent",
                         "outbound_message.delivered",
                         "outbound_message.read",
@@ -12353,7 +12854,7 @@
                       ]
                     },
                     "minItems": 1,
-                    "maxItems": 19
+                    "maxItems": 20
                   },
                   "enabled": {
                     "type": "boolean",
@@ -12539,6 +13040,7 @@
                         "conversation.handoff",
                         "conversation.given_back",
                         "conversation.labeled",
+                        "draft.change_requested",
                         "outbound_message.sent",
                         "outbound_message.delivered",
                         "outbound_message.read",
@@ -12551,7 +13053,7 @@
                       ]
                     },
                     "minItems": 1,
-                    "maxItems": 19
+                    "maxItems": 20
                   },
                   "enabled": {
                     "type": "boolean"
@@ -13313,7 +13815,7 @@
           }
         ],
         "summary": "The drafts that wait in a conversation, newest first",
-        "description": "Replies that API keys in draft mode wrote, which no visitor has seen. A `stale` draft is older than the visitor's newest message.",
+        "description": "Replies that API keys in draft mode wrote, which no visitor has seen. A `stale` draft is older than the visitor's newest message. `changeRequest` is the change that waits on a draft, and `canAskToChange` says whether its key takes one.",
         "parameters": [
           {
             "schema": {
@@ -13505,7 +14007,7 @@
             }
           },
           "404": {
-            "description": "not_found: no such draft here, or it was discarded",
+            "description": "not_found: no such draft here, or it was discarded or replaced",
             "content": {
               "application/json": {
                 "schema": {
@@ -13643,7 +14145,339 @@
             }
           },
           "404": {
-            "description": "not_found: no such draft here, or it was sent",
+            "description": "not_found: no such draft here, or it was sent or replaced",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: the workspace is busy. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/drafts/{draftId}/change-requests": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Ask the bot that wrote a draft to rewrite it",
+        "description": "Dinghy writes nothing itself: the key that wrote the draft gets `draft.change_requested`, by webhook, `GET /v1/events` and `wait_for_events`, and answers with a new draft that replaces this one. The draft must be open, and its key must rewrite drafts. The draft stays usable meanwhile. Sending, discarding or a new visitor message cancels the request. A retry with the same clientId returns the first request.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "conversationId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "draftId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "clientId": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9_-]{1,64}$"
+                  },
+                  "instruction": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 500,
+                    "pattern": "^[^\\0]*$"
+                  }
+                },
+                "required": ["clientId", "instruction"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "A retry. This is the first request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "changeRequest": {
+                      "$ref": "#/components/schemas/DraftChangeRequest"
+                    }
+                  },
+                  "required": ["changeRequest"]
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "The request, which waits for the bot",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "changeRequest": {
+                      "$ref": "#/components/schemas/DraftChangeRequest"
+                    }
+                  },
+                  "required": ["changeRequest"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: no such draft here",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "draft_not_waiting: the draft was sent, discarded or replaced, or the visitor wrote after it. rewrites_off: its key does not rewrite drafts. conversation_closed: reopen it first. change_request_pending: another request waits, which `changeRequest` holds: cancel it to ask again",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "allOf": [
+                    {
+                      "$ref": "#/components/schemas/Error"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "changeRequest": {
+                          "$ref": "#/components/schemas/DraftChangeRequest"
+                        }
+                      }
+                    }
+                  ],
+                  "example": {
+                    "error": {
+                      "code": "not_found",
+                      "message": "This does not exist."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: the workspace is busy. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/drafts/{draftId}/change-requests/{changeRequestId}/cancel": {
+      "post": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Cancel a change request that waits",
+        "description": "The bot's answer then gets `change_request_closed`. A request that was answered or cancelled stays as it is, and the answer shows it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "conversationId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "draftId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "changeRequestId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request as it is now",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "changeRequest": {
+                      "$ref": "#/components/schemas/DraftChangeRequest"
+                    }
+                  },
+                  "required": ["changeRequest"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: no such request on this draft",
             "content": {
               "application/json": {
                 "schema": {
@@ -15216,7 +16050,7 @@
           }
         ],
         "summary": "MCP (Model Context Protocol) over Streamable HTTP, stateless, with JSON answers",
-        "description": "One JSON-RPC 2.0 message per request. Protocol 2026-07-28 is stateless: each request names its version in `params._meta[\"io.modelcontextprotocol/protocolVersion\"]`, its `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` headers must match the body (400, -32020 otherwise), and its methods are `server/discover`, `ping`, `tools/list` and `tools/call`. The versions 2025-11-25, 2025-06-18 and 2025-03-26 use `initialize`, `notifications/initialized`, `ping`, `tools/list` and `tools/call`. An unknown version answers 400 with -32022 and the supported list. Every key gets `list_conversations`, `search_conversations`, `get_conversation`, `reply`, `close_conversation`, `reopen_conversation`, `snooze_conversation`, `unsnooze_conversation`, `assign_conversation`, `add_note`, `list_drafts`, `hand_off`, `list_members`, `list_saved_replies`, `set_typing`, `wait_for_messages`, `get_contact`, `list_contacts`, `search_contacts`, `get_live_visitors` and `get_analytics`, in the key's workspace. A Setup key also gets the webhook, install, allowed site, appearance and test visitor tools. A notification gets 202 with no body. A tool that fails answers with `isError: true` and the error's stable code. `GET` answers 405, because there is no event stream.",
+        "description": "One JSON-RPC 2.0 message per request. Protocol 2026-07-28 is stateless: each request names its version in `params._meta[\"io.modelcontextprotocol/protocolVersion\"]`, its `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` headers must match the body (400, -32020 otherwise), and its methods are `server/discover`, `ping`, `tools/list` and `tools/call`. The versions 2025-11-25, 2025-06-18 and 2025-03-26 use `initialize`, `notifications/initialized`, `ping`, `tools/list` and `tools/call`. An unknown version answers 400 with -32022 and the supported list. Every key gets `list_conversations`, `search_conversations`, `get_conversation`, `reply`, `close_conversation`, `reopen_conversation`, `snooze_conversation`, `unsnooze_conversation`, `assign_conversation`, `add_note`, `list_drafts`, `hand_off`, `list_members`, `list_saved_replies`, `set_typing`, `wait_for_events`, `get_contact`, `list_contacts`, `search_contacts`, `get_live_visitors` and `get_analytics`, in the key's workspace. A Setup key also gets the webhook, install, allowed site, appearance and test visitor tools. A notification gets 202 with no body. A tool that fails answers with `isError: true` and the error's stable code. `GET` answers 405, because there is no event stream.",
         "requestBody": {
           "required": true,
           "content": {
@@ -15325,15 +16159,15 @@
           }
         ],
         "summary": "Stream the workspace's events to an API key's bot, with no public server",
-        "description": "Server-sent events with the same `type` and `data` as webhook bodies, in the key's workspace. Each event's name is its type, and its data is `{ type, workspaceId, data }`. Its id is its position: reconnect with `Last-Event-ID` or `?after=` to resume after it. When one change makes several events, such as `conversation.created` then `message.created`, each has its own position, `generation.seq.part`, and the last has the change's cursor, `generation.seq`. With no cursor it starts now. `resync` means the cursor is too old: read the open conversations again. `ready` comes when caught up. Heartbeats come every 25 seconds, the stream ends after 15 minutes, and it takes a slot in the workspace's stream limit. A revoked key's stream ends within 25 seconds.\n\nA `notice` has no id and may be lost: `{ kind: \"typing\", conversationId, draft }`, a visitor's unsent text, only while the workspace shows typing previews. Messages from test visitors come with `conversation.visitor.isTest: true`.\n\nA `close` event's data is `{ reason }`: `lifetime` (the stream reached its 15-minute cap), `expired` (the host token expired), `revoked` (access was taken away, such as a block, a suspension or a removal), `unauthorized` (the token or session is no longer valid), `stopping` (the server is shutting down) or `error`. Reconnect from the last cursor, except after `unauthorized`, which needs a new token or sign-in.",
+        "description": "Server-sent events with the same `type` and `data` as webhook bodies, in the key's workspace. Each event's name is its type, and its data is `{ type, workspaceId, data }`. Its id is its position: reconnect with `Last-Event-ID` or `?after=` to resume after it. When one change makes several events, such as `conversation.created` then `message.created`, each has its own position, `generation.seq.part`, and the last has the change's cursor, `generation.seq`. With no cursor it starts now. `resync` means the cursor is too old: read the open conversations again. `ready` comes when caught up. Heartbeats come every 25 seconds, the stream ends after 15 minutes, and it takes a slot in the workspace's stream limit. A revoked key's stream ends within 25 seconds.\n\nA `notice` has no id and may be lost: `{ kind: \"typing\", conversationId, draft }`, a visitor's unsent text, only while the workspace shows typing previews. Messages from test visitors come with `conversation.visitor.isTest: true`. `draft.change_requested` comes only to the key that wrote the draft.\n\nA `close` event's data is `{ reason }`: `lifetime` (the stream reached its 15-minute cap), `expired` (the host token expired), `revoked` (access was taken away, such as a block, a suspension or a removal), `unauthorized` (the token or session is no longer valid), `stopping` (the server is shutting down) or `error`. Reconnect from the last cursor, except after `unauthorized`, which needs a new token or sign-in.",
         "parameters": [
           {
             "schema": {
               "type": "string",
-              "description": "A comma list of conversation.created, message.created, message.updated, message.deleted, conversation.closed, conversation.reopened, conversation.assigned, conversation.handoff, conversation.given_back, conversation.labeled, outbound_message.sent, outbound_message.delivered, outbound_message.read, outbound_message.clicked, outbound_message.replied, outbound_message.dismissed, outbound_message.cancelled, outbound_message.expired, campaign.updated. All by default."
+              "description": "A comma list of conversation.created, message.created, message.updated, message.deleted, conversation.closed, conversation.reopened, conversation.assigned, conversation.handoff, conversation.given_back, conversation.labeled, draft.change_requested, outbound_message.sent, outbound_message.delivered, outbound_message.read, outbound_message.clicked, outbound_message.replied, outbound_message.dismissed, outbound_message.cancelled, outbound_message.expired, campaign.updated. All by default."
             },
             "required": false,
-            "description": "A comma list of conversation.created, message.created, message.updated, message.deleted, conversation.closed, conversation.reopened, conversation.assigned, conversation.handoff, conversation.given_back, conversation.labeled, outbound_message.sent, outbound_message.delivered, outbound_message.read, outbound_message.clicked, outbound_message.replied, outbound_message.dismissed, outbound_message.cancelled, outbound_message.expired, campaign.updated. All by default.",
+            "description": "A comma list of conversation.created, message.created, message.updated, message.deleted, conversation.closed, conversation.reopened, conversation.assigned, conversation.handoff, conversation.given_back, conversation.labeled, draft.change_requested, outbound_message.sent, outbound_message.delivered, outbound_message.read, outbound_message.clicked, outbound_message.replied, outbound_message.dismissed, outbound_message.cancelled, outbound_message.expired, campaign.updated. All by default.",
             "name": "types",
             "in": "query"
           },
@@ -20620,7 +21454,7 @@
           }
         ],
         "summary": "Run a live campaign for one person, from your code",
-        "description": "It skips the audience and the trigger, because your code chose the person, and keeps the frequency and the visitor's opt-out. `data` fills `{{ data.<key> }}` in the text. A retry with the same `clientId`, and a send that the frequency keeps out, answer 200 with the message that is there.",
+        "description": "It skips the audience and the trigger, because your code chose the person, and keeps the frequency. `data` fills `{{ data.<key> }}` in the text. A retry with the same `clientId`, and a send that the frequency keeps out, answer 200 with the message that is there.",
         "parameters": [
           {
             "schema": {
@@ -20766,7 +21600,7 @@
             }
           },
           "409": {
-            "description": "campaign_not_live: the campaign is a draft, paused or ended. opted_out: the visitor turned off automatic messages",
+            "description": "campaign_not_live: the campaign is a draft, paused or ended",
             "content": {
               "application/json": {
                 "schema": {
@@ -20819,7 +21653,7 @@
           }
         ],
         "summary": "Run a live campaign for one person, from your code",
-        "description": "It skips the audience and the trigger, because your code chose the person, and keeps the frequency and the visitor's opt-out. `data` fills `{{ data.<key> }}` in the text. A retry with the same `clientId`, and a send that the frequency keeps out, answer 200 with the message that is there.",
+        "description": "It skips the audience and the trigger, because your code chose the person, and keeps the frequency. `data` fills `{{ data.<key> }}` in the text. A retry with the same `clientId`, and a send that the frequency keeps out, answer 200 with the message that is there.",
         "parameters": [
           {
             "schema": {
@@ -20966,7 +21800,7 @@
             }
           },
           "409": {
-            "description": "campaign_not_live: the campaign is a draft, paused or ended. opted_out: the visitor turned off automatic messages",
+            "description": "campaign_not_live: the campaign is a draft, paused or ended",
             "content": {
               "application/json": {
                 "schema": {
@@ -21486,6 +22320,98 @@
         }
       }
     },
+    "/v1/operator/workspaces/{workspaceId}/visitors/stats": {
+      "get": {
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Count the site's visits, page views, chats and busiest minute over 7, 30 or 90 days",
+        "description": "Counted by the hour with no cookie and no stored ID, and kept 182 days; the stored hours are at most about a minute behind. A period runs from the start of the day, `days - 1` days ago, in `tz`, to now, as for analytics. `previous` holds the numbers of a period of the same length just before, or null when the stored hours do not reach back to its start. A visit is a tab that opened from another site or from nowhere; a page view is a tab that opened, or one whose page changed. `series` holds the visits per day in `tz`, oldest first. `peak` is the busiest minute, by the most tabs open at once. `pages` and `referrers` list the top 8, with a null `referrer` for none; an hour keeps at most 200 distinct pages and 200 referrers. `chats` counts the conversations that visitors started in the period, leaving out the welcome chat and test visitors.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "integer",
+              "default": 30
+            },
+            "required": false,
+            "name": "days",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "default": "UTC"
+            },
+            "required": false,
+            "name": "tz",
+            "in": "query"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The stats",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VisitorStats"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/operator/workspaces/{workspaceId}/visitors/live": {
       "get": {
         "security": [
@@ -21494,7 +22420,7 @@
           }
         ],
         "summary": "List the tabs of the site open now, newest first",
-        "description": "Each tab of a page with the widget beats once a minute while it is visible, and leaves the list 90 seconds after its last beat. It holds no cookie and no stored ID. Null `visitors` means the server cannot tell now.",
+        "description": "Each tab of a page with the widget beats once a minute while it is visible, and leaves the list 90 seconds after its last beat. It holds no cookie and no stored ID. `lastHour` holds the most tabs open at once in each of the last 60 minutes, oldest first. Null `visitors` or `lastHour` means the server cannot tell now.",
         "parameters": [
           {
             "schema": {
@@ -21519,9 +22445,15 @@
                       "items": {
                         "$ref": "#/components/schemas/LiveVisitor"
                       }
+                    },
+                    "lastHour": {
+                      "type": ["array", "null"],
+                      "items": {
+                        "type": "integer"
+                      }
                     }
                   },
-                  "required": ["visitors"]
+                  "required": ["visitors", "lastHour"]
                 }
               }
             }

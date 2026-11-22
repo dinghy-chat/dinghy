@@ -61,10 +61,6 @@ beforeAll(async () => {
   const bob = rows.find((row) => row.userId === "bob");
   const ada = rows.find((row) => row.userId === "ada");
   await owner.insert(conversation).values({ workspaceId: space.id, visitorId: bob?.id ?? "" });
-  await owner
-    .update(visitor)
-    .set({ optedOutAt: new Date() })
-    .where(eq(visitor.id, bob?.id ?? ""));
   await owner.insert(contactEvent).values({
     workspaceId: space.id,
     visitorId: ada?.id ?? "",
@@ -98,7 +94,6 @@ describe("the SQL", () => {
     [{ field: "hasChatted", op: "eq", value: true }, ["bob"]],
     [{ field: "conversationCount", op: "lt", value: 1 }, ["ada", "cy"]],
     [{ field: "lastSeenAt", op: "older_than", value: "7d" }, ["ada"]],
-    [{ field: "optedOut", op: "eq", value: true }, ["bob"]],
     // A contact with no event counts 0 and has no last time.
     [{ field: "events.export.finished.count", op: "gte", value: 2 }, ["ada"]],
     [{ field: "events.export.finished.count", op: "eq", value: 0 }, ["bob", "cy"]],

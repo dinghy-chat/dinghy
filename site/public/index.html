@@ -3,27 +3,29 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Dinghy: live chat for solo founders and small teams</title>
+  <title>Dinghy: open-source live chat for solo founders and small teams</title>
   <meta name="description" content="Live chat for solo founders and small teams. Open source, free on your own server, or $9 a month on our cloud.">
   <link rel="canonical" href="https://dinghy.chat/">
   <meta name="theme-color" content="#ffc917">
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="Dinghy">
   <meta property="og:url" content="https://dinghy.chat/">
-  <meta property="og:title" content="Dinghy: live chat for solo founders and small teams">
+  <meta property="og:title" content="Dinghy: open-source live chat for solo founders and small teams">
   <meta property="og:description" content="Live chat for solo founders and small teams. Open source, free on your own server, or $9 a month on our cloud.">
   <meta property="og:image" content="https://dinghy.chat/og.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
   <meta property="og:image:alt" content="A boat on the water, with the words: Live chat for solo founders and small teams.">
   <meta name="twitter:card" content="summary_large_image">
-  <meta name="twitter:title" content="Dinghy: live chat for solo founders and small teams">
+  <meta name="twitter:title" content="Dinghy: open-source live chat for solo founders and small teams">
   <meta name="twitter:description" content="Live chat for solo founders and small teams. Open source, free on your own server, or $9 a month on our cloud.">
   <meta name="twitter:image" content="https://dinghy.chat/og.png">
-  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="preload" href="/fonts/gabarito-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/fonts/hanken-grotesk-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/css/site.css">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"Organization","name":"Dinghy","url":"https://dinghy.chat/","logo":"https://dinghy.chat/icon.svg","email":"hello@dinghy.chat","sameAs":["https://github.com/dinghy-chat/dinghy"]}</script>
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Dinghy","url":"https://dinghy.chat/","description":"Open-source live chat for websites, with a shared inbox for small teams. $9 a month per workspace on Dinghy Cloud, or free on your own server.","applicationCategory":"BusinessApplication","operatingSystem":"Web, Linux server","license":"https://www.gnu.org/licenses/agpl-3.0.html","downloadUrl":"https://github.com/dinghy-chat/dinghy","offers":[{"@type":"Offer","name":"Dinghy Cloud","price":"9","priceCurrency":"USD","description":"Per workspace, per month, up to 5 operators"},{"@type":"Offer","name":"Self-hosted","price":"0","priceCurrency":"USD"}]}</script>
   <script type="module" src="/js/main.js"></script>
   <script src="https://app.dinghy.chat/widget/loader.js" data-key="wk_f2dce993672e6c0e4e08e116323ffe7e" async></script>
 </head>
@@ -72,13 +74,13 @@
     <section class="section section-features" id="features">
       <div class="wrap">
         <div class="section-head">
-          <h2>Talk to your customers, right from your site.</h2>
-          <p>A light chat on your site, a shared inbox for your team, alerts on your phone, replies by email when the visitor has left, messages that reach out first, and room for your own AI agent.</p>
+          <h2>Answer chats from your site</h2>
+          <p>Visitors write from your site. Your team answers from the same inbox.</p>
         </div>
         <div class="bento">
           <article class="tile tile-wide tile-blue">
             <h3>One inbox for the whole team</h3>
-            <p>See what waits for a reply, who has each chat and who is typing, so two people never answer the same customer.</p>
+            <p>See which chats are waiting, who’s assigned and when a teammate has a chat open.</p>
             <div class="toy" data-toy="inbox" aria-hidden="true">
               <div class="app-window">
                 <div class="app-side">
@@ -104,7 +106,7 @@
                       </div>
                       <div class="chat-row">
                         <span class="avatar tint-3">EH</span>
-                        <div class="chat-row-main"><span class="chat-row-top"><b>Emma Holt</b><time>5 min</time></span><small>Can I switch to the yearly plan?</small><span class="chat-row-meta"><span class="chip">Waiting for a reply</span><span class="chip chip-label">Billing</span><span class="handler handler-bot"><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 7V4M9.5 12h0M14.5 12h0M9.5 15.5h5"/></svg></span></span></div>
+                        <div class="chat-row-main"><span class="chat-row-top"><b>Emma Holt</b><time>5 min</time></span><small>Where can I download my invoice?</small><span class="chat-row-meta"><span class="chip">Waiting for a reply</span><span class="chip chip-label">Billing</span><span class="handler handler-bot"><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 7V4M9.5 12h0M14.5 12h0M9.5 15.5h5"/></svg></span></span></div>
                       </div>
                       <div class="chat-row">
                         <span class="avatar tint-0">SO</span>
@@ -139,8 +141,8 @@
           </article>
 
           <article class="tile tile-narrow tile-peach">
-            <h3>Alerts that reach you</h3>
-            <p>A push on your phone or an email. You do not need to keep a tab open.</p>
+            <h3>Get alerts on your phone</h3>
+            <p>Get a push notification or an email when a visitor writes.</p>
             <div class="toy" data-toy="alerts" aria-hidden="true">
               <div class="phone">
                 <div class="notice">
@@ -208,15 +210,15 @@
                 <div class="agent-thread">
                   <div class="app-conversation-head"><span class="avatar avatar-head tint-3">EH</span><b class="agent-name">Emma Holt</b><span class="agent-handler"><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 7V4M9.5 12h0M14.5 12h0M9.5 15.5h5"/></svg><span class="agent-handler-name">Support bot</span></span></div>
                   <div class="agent-log" data-state="draft">
-                    <div class="chat-bubble from-visitor agent-question">Can I switch to the yearly plan?</div>
+                    <div class="chat-bubble from-visitor agent-question">Where can I download my invoice?</div>
                     <div class="agent-draft">
                       <span class="agent-label"><svg class="ico" viewBox="0 0 24 24"><rect x="4" y="7" width="16" height="12" rx="3"/><path d="M12 7V4M9.5 12h0M14.5 12h0M9.5 15.5h5"/></svg>Suggested by Support bot</span>
-                      <div class="agent-draft-bubble agent-answer">Yes! Open Billing and pick Yearly.</div>
+                      <div class="agent-draft-bubble agent-answer">Open Settings > Workspace, then select Manage billing to find your invoices.</div>
                       <span class="agent-actions"><span>Discard</span><span class="agent-edit">Edit</span><b>Send</b></span>
                     </div>
                     <div class="agent-sent">
                       <span class="agent-label agent-label-sent"><img src="/img/people/ana.webp" width="16" height="16" alt=""><span class="agent-sent-by">Sent by Ana</span></span>
-                      <div class="chat-bubble from-team agent-answer">Yes! Open Billing and pick Yearly.</div>
+                      <div class="chat-bubble from-team agent-answer">Open Settings > Workspace, then select Manage billing to find your invoices.</div>
                     </div>
                     <div class="agent-handoff">
                       <span class="agent-divider"><svg class="ico" viewBox="0 0 24 24"><circle cx="9" cy="9" r="3"/><circle cx="16.5" cy="10" r="2.5"/><path d="M3.5 19c.9-2.8 3.3-4 5.5-4s4.6 1.2 5.5 4M15 15.2c2.2-.3 4.6.8 5.5 3.3"/></svg>Handed to the team</span>
@@ -229,8 +231,8 @@
           </article>
 
           <article class="tile tile-narrow tile-peach">
-            <h3>Gone? Your reply goes by email</h3>
-            <p>A visitor who left gets your answer in their inbox, and answers from their mail app or back in the chat.</p>
+            <h3>Keep the chat going by email</h3>
+            <p>If a visitor leaves an email address, they can get your reply after they close the tab. Their email response comes back to the same chat.</p>
             <div class="toy" aria-hidden="true">
               <div class="mail">
                 <div class="mail-bar">
@@ -255,7 +257,7 @@
 
           <article class="tile tile-narrow tile-blue">
             <h3>See who is on your site</h3>
-            <p>A live map of your visitors, with the page they are on and where they came from.</p>
+            <p>See which pages are open and who’s waiting for a reply. In Analytics, see visits and chat rates over time.</p>
             <div class="toy" data-toy="visitors" aria-hidden="true">
               <div class="live-window">
                 <div class="live-head"><i class="live-dot"></i><b class="live-count">12</b>people on your site now</div>
@@ -274,8 +276,8 @@
           </article>
 
           <article class="tile tile-narrow tile-fog">
-            <h3>Your data stays yours</h3>
-            <p>Export it, delete it or host it on your own server.</p>
+            <h3>Export your workspace</h3>
+            <p>Download your conversations, contacts and settings. You can import the file on your own Dinghy server.</p>
             <div class="control-list" data-toy="control" aria-hidden="true">
               <div class="control-row is-on"><svg width="18" height="18" viewBox="0 0 256 256" fill="currentColor"><path class="duo" d="M224,128a96,96,0,1,1-96-96A96,96,0,0,1,224,128Z"/><path d="M128,24A104,104,0,1,0,232,128,104.11,104.11,0,0,0,128,24Zm88,104a87.56,87.56,0,0,1-20.41,56.28L71.72,60.4A88,88,0,0,1,216,128ZM40,128A87.56,87.56,0,0,1,60.41,71.72L184.28,195.6A88,88,0,0,1,40,128Z"/></svg>Block a visitor<span>Blocked</span></div>
               <div class="control-row"><svg width="18" height="18" viewBox="0 0 256 256" fill="currentColor"><path class="duo" d="M200,56V208a8,8,0,0,1-8,8H64a8,8,0,0,1-8-8V56Z"/><path d="M216,48H176V40a24,24,0,0,0-24-24H104A24,24,0,0,0,80,40v8H40a8,8,0,0,0,0,16h8V208a16,16,0,0,0,16,16H192a16,16,0,0,0,16-16V64h8a8,8,0,0,0,0-16ZM96,40a8,8,0,0,1,8-8h48a8,8,0,0,1,8,8v8H96Zm96,168H64V64H192ZM112,104v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Zm48,0v64a8,8,0,0,1-16,0V104a8,8,0,0,1,16,0Z"/></svg>Delete a chat<span>Deleted</span></div>
@@ -326,8 +328,7 @@
         </div>
         <div class="extras">
           <div class="extras-head">
-            <h3>And all the small things</h3>
-            <p>In every workspace, on the cloud or your own server.</p>
+            <h3>What’s in the inbox and widget</h3>
           </div>
           <ul class="extras-list">
             <li><svg class="ico" viewBox="0 0 24 24"><path d="M20 11.5l-7.8 7.8a5 5 0 0 1-7.1-7.1l7.8-7.8a3.3 3.3 0 0 1 4.7 4.7l-7.8 7.8a1.7 1.7 0 0 1-2.4-2.4l7.1-7.1"/></svg>Images and files</li>
@@ -358,8 +359,8 @@
     <section class="section" id="install">
       <div class="wrap install">
         <div>
-          <h2>One tag. That is the install.</h2>
-          <p>Paste it before the closing body tag and the chat button appears. The loader is under 3 KB gzipped, and the full chat loads only when a visitor opens it.</p>
+          <h2>Add the chat with one tag</h2>
+          <p>Paste it before the closing body tag. Add your site to the allowed list in Settings &gt; Install. The loader is under 4 KB gzipped.</p>
           <p class="install-agent">Or let your coding agent do it. Connect it to Dinghy and ask it to install the chat. <a href="/docs/agents">How it works</a></p>
         </div>
         <div class="install-demo" data-toy="install" role="img" aria-label="The script tag is pasted into a page, and the chat button appears">
@@ -395,7 +396,7 @@
           <div class="price-card tile-yellow">
             <h3>We host it</h3>
             <p class="price">$9 <small>a month</small></p>
-            <p>One flat price for each workspace, with up to 5 teammates and 1 GB of files, plus VAT or sales tax where it applies. You add your payment details when you sign up.</p>
+            <p>One flat price for each workspace, with up to 5 teammates and 1 GB of files, plus VAT or sales tax where it applies. Pay through Stripe when you create the workspace.</p>
             <a class="btn btn-navy" href="https://app.dinghy.chat/signup">Get started</a>
           </div>
         </div>
@@ -407,7 +408,7 @@
           </div>
           <ul class="price-line">
             <li class="pin pin-dinghy"><em>$9</em><span class="pin-logo"><img src="/favicon.svg" width="46" height="46" alt="Dinghy logo"></span><b>Dinghy<small>Flat price</small></b></li>
-            <li class="pin pin-tidio"><em>$24</em><span class="pin-logo"><img src="/logos/tidio.png" width="24" height="24" alt="Tidio logo"></span><b>Tidio<small>Starter</small></b></li>
+            <li class="pin pin-tidio"><em>$24</em><span class="pin-logo"><img src="/logos/tidio.png" width="24" height="24" alt="Tidio logo"></span><b>Tidio<small>Human only</small></b></li>
             <li class="pin pin-crisp"><em>$45</em><span class="pin-logo"><img src="/logos/crisp.png" width="24" height="24" alt="Crisp logo"></span><b>Crisp<small>Mini</small></b></li>
             <li class="pin pin-livechat"><em>$57</em><span class="pin-logo"><img src="/logos/livechat.svg" width="24" height="24" alt="LiveChat logo"></span><b>LiveChat<small>Essential</small></b></li>
             <li class="pin pin-helpscout"><em>$75</em><span class="pin-logo"><img src="/logos/helpscout.svg" width="24" height="24" alt="Help Scout logo"></span><b>Help Scout<small>Standard</small></b></li>
@@ -422,7 +423,7 @@
             </div>
             <details class="fine-print">
               <summary>How we got these prices</summary>
-              <p>First paid plan with live chat, from each company's pricing page on <time datetime="2026-11-07">Nov 7, 2026</time>. Per-seat prices are for 3 seats. LiveChat and Zendesk are billed yearly. Tidio includes 100 conversations a month. Intercom's list price is $29 a seat. It shows $19 a seat for new customers and charges $0.99 per Fin AI outcome if you use Fin. Crisp, Tidio and Help Scout also have free plans with limits.</p>
+              <p>US monthly prices for the plans shown, checked <time datetime="2026-11-22">Nov 22, 2026</time>. Per-seat prices are for 3 seats. Tidio, LiveChat, Help Scout and Zendesk use annual billing here. Intercom shows a $19 new-customer price alongside its $29 list price per seat. <a href="/compare/">See the full comparison and sources</a>.</p>
             </details>
           </div>
         </div>
@@ -444,22 +445,22 @@
           <article class="faq-card tile-yellow">
             <span class="faq-icon" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 256 256" fill="currentColor"><rect class="duo" x="40" y="104" width="176" height="112" rx="8"/><path d="M208,96H96V64a32,32,0,0,1,61.6-12.2,8,8,0,1,0,14.8-6.1A48,48,0,0,0,80,64V96H48a16,16,0,0,0-16,16v96a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V112A16,16,0,0,0,208,96Zm0,112H48V112H208Zm-68-56a12,12,0,1,1-12-12A12,12,0,0,1,140,152Z"/></svg></span>
             <h3>Is anything locked behind a plan?</h3>
-            <p>No. The cloud and your own server run the same product, with every feature. On the cloud you pay for us to run it, not for features.</p>
+            <p>You get the inbox, widget and campaigns on either setup. Dinghy Cloud handles updates and backups for you.</p>
           </article>
           <article class="faq-card tile-mint">
             <span class="faq-icon" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 256 256" fill="currentColor"><path class="duo" d="M232,152v24a8,8,0,0,1-8,8H32a8,8,0,0,1-8-8V153.13C24,95.65,70.15,48.2,127.63,48A104,104,0,0,1,232,152Z"/><path d="M207.06,72.67A111.24,111.24,0,0,0,128,40h-.4C66.07,40.21,16,91,16,153.13V176a16,16,0,0,0,16,16H224a16,16,0,0,0,16-16V152A111.25,111.25,0,0,0,207.06,72.67ZM224,176H119.71l54.76-75.3a8,8,0,0,0-12.94-9.42L99.92,176H32V153.13c0-3.08.15-6.12.43-9.13H56a8,8,0,0,0,0-16H35.27c10.32-38.86,44-68.24,84.73-71.66V80a8,8,0,0,0,16,0V56.33A96.14,96.14,0,0,1,221,128H200a8,8,0,0,0,0,16h23.67c.21,2.65.33,5.31.33,8Z"/></svg></span>
             <h3>Will it slow down my site?</h3>
-            <p>The tag loads a script under 3 KB gzipped. The chat itself loads when a visitor opens it.</p>
+            <p>The <a href="/live-chat-widget">widget loader</a> takes under 4 KB gzipped. The full chat loads only when needed.</p>
           </article>
           <article class="faq-card tile-peach">
             <span class="faq-icon" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 256 256" fill="currentColor"><path class="duo" d="M224,64V192a8,8,0,0,1-8,8H80L45.15,230.11A8,8,0,0,1,32,224V64a8,8,0,0,1,8-8H216A8,8,0,0,1,224,64Z"/><path d="M216,48H40A16,16,0,0,0,24,64V224a15.85,15.85,0,0,0,9.24,14.5A16.13,16.13,0,0,0,40,240a15.89,15.89,0,0,0,10.25-3.78l.09-.07L83,208H216a16,16,0,0,0,16-16V64A16,16,0,0,0,216,48ZM40,224h0ZM216,192H80a8,8,0,0,0-5.23,1.95L40,224V64H216ZM88,112a8,8,0,0,1,8-8h64a8,8,0,0,1,0,16H96A8,8,0,0,1,88,112Zm0,32a8,8,0,0,1,8-8h64a8,8,0,1,1,0,16H96A8,8,0,0,1,88,144Z"/></svg></span>
             <h3>Can an AI agent answer chats?</h3>
-            <p>Yours can. Dinghy has no AI of its own, but your bot or agent connects through MCP or the API. Its replies wait as drafts for your team to send, unless you let it send directly.</p>
+            <p>Yours can. Dinghy has no AI of its own, but your bot or agent connects through MCP or the API. Its replies wait as drafts by default. If your bot supports revisions, your team can <a href="/docs/agents#ask-to-change">ask it to revise a draft</a> before sending.</p>
           </article>
           <article class="faq-card tile-fog">
             <span class="faq-icon" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 256 256" fill="currentColor"><path class="duo" d="M216,48V208H40V48A16,16,0,0,1,56,32H200A16,16,0,0,1,216,48Z"/><path d="M224,144v64a8,8,0,0,1-8,8H40a8,8,0,0,1-8-8V144a8,8,0,0,1,16,0v56H208V144a8,8,0,0,1,16,0Zm-101.66,5.66a8,8,0,0,0,11.32,0l40-40a8,8,0,0,0-11.32-11.32L136,124.69V32a8,8,0,0,0-16,0v92.69L93.66,98.34a8,8,0,0,0-11.32,11.32Z"/></svg></span>
             <h3>Can I take my data with me?</h3>
-            <p>Yes. Export a file at any time, and import it into your own server.</p>
+            <p>Yes. A workspace owner can <a href="/blog/move-to-your-own-server">export the workspace</a> and import it into a self-hosted Dinghy.</p>
           </article>
           <article class="faq-card tile-blue">
             <span class="faq-icon" aria-hidden="true"><svg width="24" height="24" viewBox="0 0 256 256" fill="currentColor"><path class="duo" d="M216,152v48a8,8,0,0,1-8,8H48a8,8,0,0,1-8-8V152a8,8,0,0,1,8-8H208A8,8,0,0,1,216,152ZM208,48H48a8,8,0,0,0-8,8v48a8,8,0,0,0,8,8H208a8,8,0,0,0,8-8V56A8,8,0,0,0,208,48Z"/><path d="M208,136H48a16,16,0,0,0-16,16v48a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V152A16,16,0,0,0,208,136Zm0,64H48V152H208v48Zm0-160H48A16,16,0,0,0,32,56v48a16,16,0,0,0,16,16H208a16,16,0,0,0,16-16V56A16,16,0,0,0,208,40Zm0,64H48V56H208v48ZM192,80a12,12,0,1,1-12-12A12,12,0,0,1,192,80Zm0,96a12,12,0,1,1-12-12A12,12,0,0,1,192,176Z"/></svg></span>
@@ -482,7 +483,7 @@
     <div class="footer-body">
       <div class="wrap footer-grid">
         <div class="footer-pitch">
-          <h2>Start talking with your visitors today.</h2>
+          <h2>Try Dinghy on your site</h2>
           <p>Free on your own server, or $9 a month on our cloud.</p>
           <a class="btn btn-white btn-large" href="https://app.dinghy.chat/signup">Get started</a>
         </div>
@@ -499,10 +500,13 @@
             <a href="/docs/add-to-your-site">Add it to your site</a>
             <a href="/docs/self-hosting">Host it yourself</a>
             <a href="/docs/agents">AI agents</a>
+            <a href="/blog/proactive-live-chat">Proactive chat</a>
+            <a href="/blog/live-chat-analytics-without-cookies">Site analytics</a>
           </div>
           <div>
             <h3>Open source</h3>
             <a href="/docs/">Docs</a>
+            <a href="/open-source-live-chat">Why open source</a>
             <a href="https://github.com/dinghy-chat/dinghy">GitHub</a>
             <a href="https://github.com/dinghy-chat/dinghy/blob/main/CHANGELOG.md">Changelog</a>
             <a href="https://status.dinghy.chat">Status</a>
@@ -511,6 +515,13 @@
             <h3>Legal</h3>
             <a href="/terms">Terms</a>
             <a href="/privacy">Privacy</a>
+          </div>
+          <div>
+            <h3>Learn</h3>
+            <a href="/compare/">Compare</a>
+            <a href="/for/">Use cases</a>
+            <a href="/guides/">Install guides</a>
+            <a href="/blog/">Blog</a>
           </div>
         </nav>
       </div>

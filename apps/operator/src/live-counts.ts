@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { getWaiting, type WorkspaceApi } from "./api.ts";
-import { useLatestLoad } from "./load.ts";
+import { useLatestLoad, usePolling } from "./load.ts";
 
 /** How often the waiting counts load again, which a hidden tab's timers allow anyway. */
 const WAITING_EVERY_MS = 60_000;
@@ -18,12 +18,8 @@ export function useWaitingBy(visible: boolean): Record<string, number> {
     const { workspaces } = await getWaiting();
     setCounts(Object.fromEntries(workspaces.map((one) => [one.workspaceId, one.waiting])));
   });
-  // biome-ignore lint/correctness/useExhaustiveDependencies: showing or hiding the tab asks for a load.
-  useEffect(() => {
-    load();
-    const timer = setInterval(load, WAITING_EVERY_MS);
-    return () => clearInterval(timer);
-  }, [load, visible]);
+  // Showing or hiding the tab asks for a load.
+  usePolling(load, WAITING_EVERY_MS, true, visible);
   return counts;
 }
 

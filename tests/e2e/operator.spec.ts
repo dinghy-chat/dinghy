@@ -1,3 +1,4 @@
+import { createHash, randomBytes } from "node:crypto";
 import { expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
 import { visitor } from "./chat.ts";
@@ -338,6 +339,51 @@ test("the sign-in page sends a link, and the answer is the same for an unknown e
   await expect(page.getByRole("heading", { name: "E2E", exact: true })).toBeVisible();
   expect(server.mail.filter((one) => one.to === unknown)).toEqual([]);
   await page.context().close();
+});
+
+test("mobile sign-in returns from email to consent and opens the operator inbox @smoke", async ({
+  page,
+  request,
+}) => {
+  const email = `mobile-${crypto.randomUUID()}@example.com`;
+  await server.createOperator(email);
+  const verifier = randomBytes(32).toString("base64url");
+  const state = randomBytes(32).toString("base64url");
+  const query = new URLSearchParams({
+    code_challenge: createHash("sha256").update(verifier).digest("base64url"),
+    code_challenge_method: "S256",
+    redirect_uri: "dinghy://auth/callback",
+    state,
+  });
+
+  await page.goto(`${server.apiOrigin}/operator/native-sign-in?${query}`);
+  await page.getByLabel("Email").fill(email);
+  await page.getByRole("button", { name: "Email me a sign-in link" }).click();
+  await expect(page.getByRole("heading", { name: "Check your email" })).toBeVisible();
+  const linkTab = await page.context().newPage();
+  await openLink(linkTab, await server.linkTo(email));
+  const authorized = linkTab.waitForResponse(
+    (response) => new URL(response.url()).pathname === "/v1/auth/native/authorize",
+  );
+  await linkTab.getByRole("button", { name: "Allow mobile access" }).click();
+  const callback = new URL((await (await authorized).json()).redirectTo);
+  expect(callback.protocol).toBe("dinghy:");
+  expect(callback.host).toBe("auth");
+  expect(callback.pathname).toBe("/callback");
+  expect(callback.searchParams.get("state")).toBe(state);
+
+  const exchange = await request.post(`${server.apiOrigin}/v1/auth/native/exchange`, {
+    headers: { Origin: server.apiOrigin },
+    data: { code: callback.searchParams.get("code"), codeVerifier: verifier },
+  });
+  expect(exchange.ok()).toBe(true);
+  const { session, workspace } = await exchange.json();
+  const inbox = await request.get(
+    `${server.apiOrigin}/v1/operator/workspaces/${workspace.id}/conversations?status=open&limit=100`,
+    { headers: { Cookie: session } },
+  );
+  expect(inbox.ok()).toBe(true);
+  expect((await inbox.json()).conversations).toEqual(expect.any(Array));
 });
 
 test("opening a link uses nothing: only its page's button signs in", async ({ browser }) => {

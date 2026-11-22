@@ -6,7 +6,7 @@ import { AUTH_SECRET, PUBLIC_URL } from "../test/env.ts";
 import { signedInOperator } from "../test/operators.ts";
 import { type App, createApp } from "./app.ts";
 import { type Auth, createAuth } from "./auth.ts";
-import { nativePushDevice, session, widgetSettings } from "./db/schema.ts";
+import { nativePushDevice, operator, session, widgetSettings } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
 import { createWorkspace } from "./workspaces.ts";
 
@@ -125,6 +125,18 @@ test("each step turns done with what it asks, and a dismiss hides them for that 
     .set({ expiresAt: new Date(0) })
     .where(eq(session.id, otherSession?.id ?? ""));
   expect((await read(other.cookie)).notifications).toBe(false);
+  await owner.update(operator).set({ twoFactorOn: true }).where(eq(operator.id, other.id));
+  await owner.update(session).set({ twoFactorAt: new Date() }).where(eq(session.userId, other.id));
+  await owner
+    .update(session)
+    .set({ expiresAt: new Date(Date.now() + 60 * 60_000), twoFactorAt: null })
+    .where(eq(session.id, otherSession?.id ?? ""));
+  expect((await read(other.cookie)).notifications).toBe(false);
+  await owner
+    .update(session)
+    .set({ twoFactorAt: new Date() })
+    .where(eq(session.id, otherSession?.id ?? ""));
+  expect((await read(other.cookie)).notifications).toBe(true);
 });
 
 test("a workspace with no widget settings yet reads its steps as not done", async () => {

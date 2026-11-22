@@ -61,7 +61,7 @@ The **Install** page in the operator app has a "Set up with an agent" row with a
 
 Your bot reads new visitor messages, reads the conversation, and replies. Pick the way it hears about new messages:
 
-- **`wait_for_messages`**, for an agent with no public address, such as Claude Code on a laptop. Call it once with no cursor: it answers at once with a cursor for now, and no messages. Read the messages from before then with `list_conversations` and `get_conversation`. Then call it in a loop, each time with the last answer's `cursor`. It waits up to `timeoutSeconds` (1 to 30, 25 by default) and answers as soon as a visitor writes in an open conversation. Each item has `conversationId`, `message`, the visitor's name and email, `humanHandling` and `botsPaused`. `resync: true` means the cursor is too old: read the open conversations again.
+- **`wait_for_events`**, for an agent with no public address, such as Claude Code on a laptop. Call it once with no cursor: it answers at once with a cursor for now, and no events. Read the messages from before then with `list_conversations` and `get_conversation`. Then call it in a loop, each time with the last answer's `cursor`. It waits up to `timeoutSeconds` (1 to 30, 25 by default) and answers `{ events, cursor }` as soon as something comes. Each event has a `type`. A `message.created` event is a visitor's new message in an open conversation, with `conversationId`, `message`, the visitor's name and email, `humanHandling` and `botsPaused`. A `draft.change_requested` event is an operator's request to rewrite one of your key's drafts, with `changeRequest` and `draft`: see [Ask to change](#ask-to-change). `resync: true` means the cursor is too old: read the open conversations and `list_drafts` again.
 - **`GET /v1/events`**, for a bot that runs for a long time. It is a server-sent event stream with the same events as webhooks, and it needs no public address either. Reconnect with the last event's ID, and the stream replays what you missed, even between the two events that a conversation's first message makes. See [API](api.md#events-for-api-keys).
 - **Webhooks**, for a bot that has a public `https` address. Dinghy sends a signed `POST` for each event. See [API](api.md#webhooks).
 
@@ -80,6 +80,8 @@ Then:
 | `human_handling` | A person handles this conversation | Stop replying. Write a note if you found something useful |
 | `bots_paused` | An owner or admin paused every bot | Stop replying. Reads, notes and handoffs still work |
 | `conversation_closed` | The conversation is closed | Do nothing, or reopen it if you must reply |
+| `change_request_closed` | A reply with `changeRequestId` came after the request ended | Do nothing: the operator cancelled it, sent or discarded the draft, or the visitor wrote again |
+| `client_id_reused` | A reply with `changeRequestId` used a `clientId` that made another draft | Answer again with a new `clientId` |
 
 ## Send outbound messages
 
@@ -99,7 +101,6 @@ The key must be in **Send directly**. To show a member's name and picture with `
 | `send_email_required` | The key may not send email | Leave `sendEmail` out, or ask a person to turn on **May email visitors** |
 | `bots_paused` | An owner or admin paused every bot | Do not send now. A message with `delay` or `sendAt` waits for the resume instead |
 | `blocked` | The team blocked this visitor | Do nothing |
-| `opted_out` | The visitor turned off automatic messages | Do not send. Only a member can write to them by hand |
 | `too_many_waiting` | 5 outbound messages already wait for this visitor | Cancel one, or wait |
 
 For example, when a job ends, tell the user in a conversation that starts now:
@@ -114,7 +115,7 @@ For example, when a job ends, tell the user in a conversation that starts now:
 }
 ```
 
-`send_outbound_message` answers the outbound message, with `conversationId` set, and `wait_for_messages` picks up the user's answer as any other. With `startConversation: "on_reply"`, the default, the message waits in the chat on your site, and the conversation starts only when the user answers. A message from a key never joins a conversation that a person handles: it waits, with `statusReason: "human_handling"`.
+`send_outbound_message` answers the outbound message, with `conversationId` set, and `wait_for_events` picks up the user's answer as any other. With `startConversation: "on_reply"`, the default, the message waits in the chat on your site, and the conversation starts only when the user answers. A message from a key never joins a conversation that a person handles: it waits, with `statusReason: "human_handling"`.
 
 ## Campaigns
 
@@ -123,7 +124,7 @@ A [campaign](campaigns.md) is a saved rule that sends outbound messages: who, wh
 - `list_campaigns` lists the campaigns, oldest first, each with its `status` (`draft`, `live`, `paused` or `ended`), its `definition` and its `totals`. `status` keeps one status.
 - `get_campaign` reads one, by `id` or `key`, exactly one of them.
 - `get_campaign_results` reads a campaign's results per day in UTC and per A/B variant, by `id` or `key`, between `from` and `to` (`YYYY-MM-DD`): contacts reached, messages sent, delivered, read, replied and dismissed, clicks by button value, goals reached and conversations started.
-- `send_campaign` runs a live campaign for one person, by `id` or `key`, with `visitor`, `clientId` and `data`, which fills `{{ data.<key> }}` in the text. It skips the audience and the trigger, and keeps the frequency and the visitor's opt-out. A retry with the same `clientId`, and a send the frequency keeps out, answer the message that is there.
+- `send_campaign` runs a live campaign for one person, by `id` or `key`, with `visitor`, `clientId` and `data`, which fills `{{ data.<key> }}` in the text. It skips the audience and the trigger, and keeps the frequency. A retry with the same `clientId`, and a send the frequency keeps out, answer the message that is there.
 - `track_event` tells Dinghy that something happened to a contact, such as `export.finished`, with `visitor`, `name`, and the optional `properties`, `occurredAt` and `id`. Conditions read `events.<name>.count` and `events.<name>.lastAt`, and a live campaign with the trigger `{ "type": "event", "name" }` runs for the contact. Properties are never stored. A repeat of a recent `id` answers `counted: false`.
 
 A Full access key also gets these:
@@ -141,7 +142,6 @@ A new campaign is a draft until `resume_campaign`, so a person can check it firs
 | `invalid_request` | The definition does not fit together, such as an unknown variable | Read the message, which has one line per problem, and fix the definition |
 | `campaign_not_live` | `send_campaign` named a draft, paused or ended campaign | Ask a person to start it |
 | `campaign_ended` | The campaign ended, and does not change again | Save a new one with another key |
-| `opted_out` | The visitor turned off automatic messages | Do nothing |
 | `blocked`, `too_many_waiting` | As for `send_outbound_message` | As above |
 
 ## Hand off to a person
@@ -171,6 +171,16 @@ While a person handles a conversation, a key in draft mode may still write draft
 
 When the drafts read well, an owner or admin changes the key or the connection to **Send directly** in **Settings > API & webhooks**. A bot cannot change its own reply mode.
 
+## Ask to change
+
+An operator can ask your bot to rewrite one of its drafts, such as "shorter", "answer in Spanish" or "offer a call". Dinghy has no AI of its own: it passes the instruction to the bot that wrote the draft, and your bot answers with a new draft, which replaces the old one under the conversation. The visitor never sees drafts or instructions.
+
+1. An owner or admin turns on **This bot can rewrite drafts** for the key or the connection, in **Settings > API & webhooks** (`rewritesDrafts: true` on the key). Turn it on only if your bot handles these requests: the operator app shows the **Ask to change** box only under the open drafts of such a key.
+2. Listen for `draft.change_requested`: on a webhook, on `GET /v1/events`, or from `wait_for_events`. The event's data is `{ changeRequest, draft }`: `changeRequest.instruction` says what to change, and `draft.body` is the text to change. `/v1/events` and `wait_for_events` give it only to the key that wrote the draft. A webhook gets every one in the workspace, so check `changeRequest.apiKeyId`. After a restart, `list_drafts` shows `changeRequest` on each of your key's waiting drafts, or null. Other keys' drafts always show null.
+3. Answer with `reply`, or `POST .../messages`, with the draft's conversation, a new `clientId` and `changeRequestId`. The answer is always a draft, `status: "drafted"`, even when your key sends directly and while a person handles the conversation, because a person asked for it. It keeps the old draft's quote unless you pass `replyToMessageId`. Bots paused still refuses it with `bots_paused`.
+
+One request waits on a draft at a time. The old draft stays usable while it waits, and the request ends when an operator cancels it, sends or discards the draft, or when the visitor writes again. A reply after that gets `change_request_closed`. After 30 seconds the operator app offers **Ask again**, which cancels the request and asks once more, with a new request. If your bot does not handle these requests, turn the setting off, so operators do not wait for it.
+
 ## Notes
 
 `add_note` writes an internal note on a conversation. The visitor never sees it: not in the widget, an email or a transcript. A note is a message with `kind: "note"`, so `get_conversation` reads it in its place among the messages, and operators write one from the **Note** tab above the reply box. A note goes in a closed conversation, while a person handles it and while bots are paused, and it alerts nobody unless it mentions someone. To ask a member for help, pass their `id` from `list_members` in `mentions`, at most 10, and write `@Name` in the text: each of them gets an alert with the note's text, by push and by email as their alert settings say. A link in a bot's note shows as its address, not as a link to click, so a link a visitor slipped in does not look trusted. Use a note to pass on what you found, or to suggest an answer while a person handles the chat.
@@ -185,7 +195,7 @@ An owner or admin can pause every bot of a workspace with one switch, in **Setti
 
 ## Test a bot
 
-With Full access, `send_test_message` sends a message as a test visitor, through the widget's own path. Webhooks, `/v1/events` and `wait_for_messages` see it, with `visitor.isTest: true`, and the inbox shows it with a **Test** label. Analytics, contacts, live counts, alerts and transcripts leave test visitors out. Pass the answer's `conversationId` to write again in the same conversation. A workspace may send 10 test messages a minute.
+With Full access, `send_test_message` sends a message as a test visitor, through the widget's own path. Webhooks, `/v1/events` and `wait_for_events` see it, with `visitor.isTest: true`, and the inbox shows it with a **Test** label. Analytics, contacts, live counts, alerts and transcripts leave test visitors out. Pass the answer's `conversationId` to write again in the same conversation. A workspace may send 10 test messages a minute.
 
 `delete_test_visitors` deletes every test visitor with their conversations, messages and images. Real visitors are never touched.
 

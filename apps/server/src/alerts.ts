@@ -7,6 +7,7 @@ import {
   isNotNull,
   isNull,
   notExists,
+  or,
   type SQL,
   sql,
 } from "drizzle-orm";
@@ -55,6 +56,7 @@ import { pruneOutboundBodies } from "./outbound.ts";
 import { imageUrls } from "./public-images.ts";
 import type { Push, PushPayload } from "./push.ts";
 import { retryDelayMs } from "./retry.ts";
+import { pruneSiteHours } from "./site-hours.ts";
 import { MINUTE_MS } from "./time.ts";
 import {
   requestedTranscriptRows,
@@ -164,6 +166,13 @@ export async function sendToOperator(
               gt(session.expiresAt, new Date()),
             ),
           )
+          .innerJoin(
+            operator,
+            and(
+              eq(operator.id, session.userId),
+              or(eq(operator.twoFactorOn, false), isNotNull(session.twoFactorAt)),
+            ),
+          )
           .where(
             and(
               eq(nativePushDevice.operatorId, operatorId),
@@ -254,6 +263,13 @@ async function alertReach(
               eq(session.id, nativePushDevice.sessionId),
               eq(session.userId, nativePushDevice.operatorId),
               gt(session.expiresAt, new Date()),
+            ),
+          )
+          .innerJoin(
+            operator,
+            and(
+              eq(operator.id, session.userId),
+              or(eq(operator.twoFactorOn, false), isNotNull(session.twoFactorAt)),
             ),
           )
           .where(
@@ -1112,6 +1128,7 @@ export async function pruneOnce(db: Database, before: Date): Promise<number> {
     const links = await pruneChatLinks(db, PRUNE_BATCH);
     const addresses = await pruneReplyAddresses(db, PRUNE_BATCH);
     const pages = await prunePageViews(db, PRUNE_BATCH);
+    const hours = await pruneSiteHours(db, PRUNE_BATCH);
     const outbound = await pruneOutboundBodies(db, PRUNE_BATCH);
     const counts = [
       events.rowCount ?? 0,
@@ -1121,6 +1138,7 @@ export async function pruneOnce(db: Database, before: Date): Promise<number> {
       links,
       addresses,
       pages,
+      hours,
       outbound,
     ];
     removed += counts.reduce((sum, count) => sum + count, 0);

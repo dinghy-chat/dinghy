@@ -1,17 +1,12 @@
-import { expect, type Page, test } from "@playwright/test";
+import { expect, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
 import { visitor } from "./chat.ts";
 import { signedIn } from "./links.ts";
+import { picture } from "./screenshots.ts";
 
 const SNIPPET = '<script src="{{API}}/widget/loader.js" data-key="{{PUBLIC_KEY}}" async></script>';
 
 let server: Awaited<ReturnType<typeof startE2EServer>>;
-
-/** With SCREENSHOTS set to a folder, each step saves a picture there for a review. */
-async function picture(page: Page, name: string) {
-  const folder = process.env.SCREENSHOTS;
-  if (folder !== undefined) await page.screenshot({ path: `${folder}/${name}.png` });
-}
 
 test.beforeAll(async () => {
   server = await startE2EServer({
@@ -135,7 +130,13 @@ test("the operator filters who is on the site and picks a country on the map", a
       referrer: "https://google.com",
     },
     { ...details, title: "Docs", country: "FR", referrer: "https://google.com" },
-    { ...details, title: "Pricing", country: "US", referrer: null },
+    {
+      ...details,
+      page: `${server.hostOrigin}/pricing/teams`,
+      title: "Pricing for teams of every size, with yearly plans and priority support",
+      country: "US",
+      referrer: null,
+    },
   ]);
   const operator = await signedIn(browser, server, "vera@example.com");
   await operator
@@ -148,8 +149,46 @@ test("the operator filters who is on the site and picks a country on the map", a
   await expect(claire).toBeVisible();
   await expect(american).toContainText("Pricing");
 
-  // Known keeps the people with a name, and Chatting only those in a conversation.
+  // The head counts the people here, with the last hour beside it, ending at the count now. The
+  // first test's tab may still be here.
+  const count = await rows.count();
+  await expect(
+    operator.getByRole("img", {
+      name: `People on your site each minute of the last hour, ${count} now`,
+    }),
+  ).toBeVisible();
+  // Under the list, their time on site; daytime or night depends on the hour in Paris.
+  const people = operator.getByRole("region", { name: "Everyone" });
+  await expect(people.locator(".live-summary")).toContainText(
+    "Median 0 min on site, longest 0 min.",
+  );
+  await expect(people.locator(".live-summary")).toContainText("in daytime");
+  await expect(operator.getByRole("region", { name: "Countries" })).toContainText("France2");
+  await expect(operator.getByRole("region", { name: "Devices" })).toContainText("Firefox on Linux");
+
+  // A long page title ends in an ellipsis inside its tile.
+  const pagesNow = operator.getByRole("region", { name: "Pages now" });
+  const long = pagesNow.locator("li", { hasText: "Pricing for teams" });
+  const fits = await long.evaluate((row) => {
+    const label = row.children[1] as HTMLElement;
+    const tile = row.closest(".live-tile")?.getBoundingClientRect();
+    return {
+      isCut: label.scrollWidth > label.clientWidth,
+      isInside: tile !== undefined && row.getBoundingClientRect().right <= tile.right,
+    };
+  });
+  expect(fits).toEqual({ isCut: true, isInside: true });
+  await picture(operator, "visitors-live");
+  await pagesNow.scrollIntoViewIfNeeded();
+  await picture(operator, "visitors-tiles");
+
+  // Known keeps the people with a name, Chatting only those in a conversation, and Waiting nobody
+  // yet, as no chat waits.
   const show = operator.getByRole("group", { name: "Show" });
+  await expect(show.getByRole("radio")).toHaveCount(4);
+  await show.getByRole("radio", { name: /^Waiting/ }).check();
+  await expect(operator.getByRole("heading", { name: "Waiting for a reply" })).toBeVisible();
+  await expect(rows).toHaveCount(0);
   await show.getByRole("radio", { name: /^Known/ }).check();
   await expect(claire).toBeVisible();
   await expect(american).toHaveCount(0);
@@ -167,9 +206,12 @@ test("the operator filters who is on the site and picks a country on the map", a
   await expect(operator.getByRole("heading", { name: "In France" })).toBeVisible();
   await expect(rows).toHaveCount(2);
   await expect(map).toHaveClass(/zoomed/);
-  await expect(operator.getByRole("region", { name: "Came from" })).toContainText("google.com2");
+  await expect(operator.getByRole("region", { name: "Came from now" })).toContainText(
+    "google.com2",
+  );
   // Pages count by address, so two titles of one page make one row.
-  await expect(operator.getByRole("region", { name: "Pages now" }).locator("li")).toHaveCount(1);
+  const pages = operator.getByRole("region", { name: "Pages now" });
+  await expect(pages.locator("li")).toHaveCount(1);
   await map.getByRole("button", { name: "All countries" }).click();
   await expect(american).toBeVisible();
   await expect(map).not.toHaveClass(/zoomed/);
@@ -186,9 +228,52 @@ test("the operator filters who is on the site and picks a country on the map", a
   await map.getByRole("button", { name: "Zoom out" }).click();
   await expect(map).not.toHaveClass(/zoomed/);
 
+  // On a phone, everything fits the width: nothing scrolls sideways.
+  await operator.setViewportSize({ width: 390, height: 844 });
+  await expect(claire).toBeVisible();
+  const overflow = await operator.evaluate(() =>
+    [document.documentElement, ...document.querySelectorAll<HTMLElement>(".page, .page-body")]
+      .filter((element) => element.scrollWidth > element.clientWidth)
+      .map((element) => element.className || element.tagName),
+  );
+  expect(overflow).toEqual([]);
+  await picture(operator, "visitors-phone");
+  await pagesNow.evaluate((element) => element.scrollIntoView({ block: "start" }));
+  await picture(operator, "visitors-phone-tiles");
+
   await claire.getByRole("button", { name: "View contact" }).click();
   await expect(operator.getByRole("heading", { name: "Claire Martin" })).toBeVisible();
   await operator.context().close();
+});
+
+test("the card over the last minute follows the live count while the pointer stays", async ({
+  browser,
+}) => {
+  // The page reads the visitors again every 15 seconds.
+  test.setTimeout(60_000);
+  const details = {
+    page: `${server.hostOrigin}/pricing`,
+    title: "Pricing",
+    timeZone: "Europe/Paris",
+    device: "Firefox on Linux",
+    country: "FR",
+    referrer: null,
+  };
+  await server.openTabs([details]);
+  const operator = await signedIn(browser, server, "vera@example.com");
+  await operator
+    .getByRole("navigation", { name: "Main menu" })
+    .getByRole("button", { name: /^Visitors/ })
+    .click();
+  const rows = operator.locator(".live-row");
+  await expect(rows.first()).toBeVisible();
+  const count = await rows.count();
+  await operator.locator(".live-spark .spark-point").last().hover();
+  const card = operator.locator(".chart-tip");
+  await expect(card).toContainText(`${count} ${count === 1 ? "person" : "people"}`);
+
+  await server.openTabs([{ ...details, title: "Docs" }]);
+  await expect(card).toContainText(`${count + 1} people`, { timeout: 20_000 });
 });
 
 test("the operator edits, blocks and deletes a contact from the contact page's menu", async ({

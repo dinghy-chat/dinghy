@@ -1735,12 +1735,17 @@ button.workspace[aria-expanded="true"],
     grid-column: 1 / -1;
     margin-top: 12px;
   }
+  /* More choices than fit, such as the Visitors filters, scroll sideways rather than wrap. */
   .page-actions > .choices.outlined {
     flex: 1;
+    min-width: 0;
+    overflow-x: auto;
+    scrollbar-width: none;
   }
   .page-actions > .choices.outlined label {
-    flex: 1;
+    flex: 1 0 auto;
     justify-content: center;
+    white-space: nowrap;
   }
 }
 
@@ -2266,6 +2271,10 @@ img.ws-tile {
 .page-body:has(> .empty-boat) {
   flex: 1;
   align-content: stretch;
+}
+/* Tabs over an empty state keep their height, and the state takes the rest. */
+.page-body:has(> .choices.tabs + .empty-boat) {
+  grid-template-rows: auto 1fr;
 }
 /* An empty Inbox list: the pixel buoy, a title, one line and at most one action, in the column's
    middle. list-empty.tsx draws the buoy. */
@@ -3290,6 +3299,13 @@ img.ws-tile {
   color: var(--mute);
   font-size: 12px;
 }
+/* An author line and its receipt read as one footer, spaced from the next message. */
+.meta:has(+ .receipt) {
+  margin-bottom: 2px;
+}
+.meta + .receipt {
+  margin-bottom: 8px;
+}
 .receipt.read {
   color: var(--blue-deep);
 }
@@ -4107,6 +4123,20 @@ button.quote:hover {
   stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
 }
+/* A point's column takes the pointer, and its guide drops from the line to the floor. */
+.spark-point rect {
+  fill: transparent;
+}
+.spark-point line {
+  pointer-events: none;
+  stroke: var(--blue-deep);
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+  opacity: 0;
+}
+.spark-point:hover line {
+  opacity: 1;
+}
 .stat-ring {
   display: flex;
   align-items: center;
@@ -4156,6 +4186,10 @@ button.quote:hover {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
   gap: 16px;
+}
+/* A card alone on the last row takes the whole width. */
+.charts > :last-child:nth-child(odd) {
+  grid-column: 1 / -1;
 }
 .chart-card {
   min-width: 0;
@@ -6444,6 +6478,7 @@ button.quote:hover {
    view. On a narrow screen the people come between the map and the tiles. */
 .live-count {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
 }
@@ -6658,10 +6693,25 @@ button.quote:hover {
   white-space: nowrap;
 }
 
-/* Pages now and Came from, as bars behind the counts. */
+/* The last hour beside the count in the page's head, as the Analytics spark draws it. */
+.live-spark {
+  flex: none;
+  width: 120px;
+  height: 24px;
+  margin-left: 4px;
+  overflow: visible;
+}
+.live-summary {
+  margin: -4px 0 12px;
+  color: var(--mute);
+  font-size: 13px;
+}
+
+/* Pages, Came from, Countries and Devices now, and the top pages and sources of a period, as bars
+   behind the counts, two to a row. */
 .live-tiles {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 16px;
 }
 .live-tile {
@@ -6676,8 +6726,10 @@ button.quote:hover {
   color: var(--navy);
   font: 700 16px / 1.2 var(--display);
 }
+/* One column as wide as the tile: an auto column would grow to fit a label that does not wrap. */
 .live-bars {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   padding: 0;
   list-style: none;
@@ -6694,7 +6746,9 @@ button.quote:hover {
 .live-bars span {
   position: relative;
 }
+/* The label shrinks to its ellipsis, as a flex item is otherwise as wide as its words. */
 .live-bars span:nth-child(2) {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -6770,11 +6824,15 @@ button.quote:hover {
   white-space: nowrap;
 }
 .chip.live-chatting,
+.chip.live-waiting,
 .chip.campaign-live {
   padding: 2px 8px;
+  font-size: 12px;
+}
+.chip.live-chatting,
+.chip.campaign-live {
   background: color-mix(in srgb, var(--green) 14%, transparent);
   color: var(--green);
-  font-size: 12px;
 }
 .chip.live-chatting::before,
 .chip.campaign-live::before {
@@ -6840,7 +6898,7 @@ button.quote:hover {
   .live-side {
     display: contents;
   }
-  .live-tiles {
+  .live-side > .live-tiles {
     order: 3;
   }
   .live-people {
@@ -7544,6 +7602,33 @@ button.quote:hover {
 }
 .sugg-discard:hover:not(:disabled) {
   background: var(--soft);
+}
+/* Ask to change: one line under the buttons, or what it waits for. */
+.sugg-ask {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 6px;
+  width: min(100%, 420px);
+}
+.sugg-ask input:not([type="checkbox"]) {
+  flex: 1 1 200px;
+  width: auto;
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 13.5px;
+}
+.sugg-ask .pill.small {
+  min-height: 32px;
+  padding: 0 13px;
+  font-size: 13.5px;
+}
+.sugg-ask-wait {
+  color: var(--bot-ink);
+  font-size: 13px;
+  font-weight: 600;
 }
 .draft-more {
   margin-top: 4px;

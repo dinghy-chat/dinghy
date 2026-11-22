@@ -1,12 +1,26 @@
 /** @jsxImportSource react */
-import { createElement, useLayoutEffect, useRef, useState } from "react";
+import { createElement, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { newClientId } from "../../../packages/widget/src/compose.ts";
 import { renderMarkdown } from "../../../packages/widget/src/markdown.ts";
-import type { Message, SuggestedReply, WorkspaceApi } from "./api.ts";
+import {
+  ApiError,
+  type ChangeRequest,
+  type Message,
+  type SuggestedReply,
+  type WorkspaceApi,
+} from "./api.ts";
 import { clockTime } from "./format.ts";
 import { Icon } from "./icons.tsx";
 import { useLoad } from "./load.ts";
 import type { Act } from "./message-actions.tsx";
 import { plural, t } from "./text.ts";
+
+/** The server's limit on an "Ask to change" instruction. */
+const INSTRUCTION_MAX_LENGTH = 500;
+/** How long an Ask shows "Waiting" before it offers to ask again. Display only: no server limit. */
+const STILL_WAITING_MS = 30_000;
+
+type SendOutcome = "sent" | "gone" | "failed";
 
 /**
  * The suggested replies that keys in draft mode wrote and that wait in a conversation, oldest first
@@ -38,18 +52,50 @@ export function useSuggestedReplies({
   );
   const drop = (id: string) =>
     loaded.setData((current) => current?.filter((draft) => draft.id !== id) ?? null);
-  /** Sends a draft as it is, or with the operator's edit. */
-  const send = (draft: SuggestedReply, body?: string) =>
-    act(async () => {
-      keep(await api.sendDraft(conversationId, draft.id, body));
+  /**
+   * Sends a draft as it is, or with the operator's edit. `gone` when it was replaced or discarded
+   * meanwhile. A draft another operator sent answers the message it sent, so it goes once.
+   */
+  const send = async (draft: SuggestedReply, body?: string): Promise<SendOutcome> => {
+    let isGone = false;
+    const done = await act(async () => {
+      try {
+        keep(await api.sendDraft(conversationId, draft.id, body));
+      } catch (error) {
+        isGone = error instanceof ApiError && error.status === 404;
+        throw error;
+      }
       drop(draft.id);
     });
+    return done ? "sent" : isGone ? "gone" : "failed";
+  };
   const discard = (draft: SuggestedReply) =>
     act(async () => {
       await api.discardDraft(conversationId, draft.id);
       drop(draft.id);
     });
-  return { drafts: loaded.data ?? [], send, discard };
+  // Every write loads the drafts again rather than patch them, so a late answer cannot overwrite
+  // what the server holds now.
+  const request = async (draft: SuggestedReply, instruction: string) => {
+    await api.askToChange(conversationId, draft.id, newClientId(), instruction);
+    loaded.reload();
+  };
+  const cancel = async (draft: SuggestedReply, pending: ChangeRequest) => {
+    await api.cancelChangeRequest(conversationId, draft.id, pending.id);
+    loaded.reload();
+  };
+  /** The key's new draft replaces this one when it comes, as `version` loads it. */
+  const askToChange = (draft: SuggestedReply, instruction: string) =>
+    act(() => request(draft, instruction));
+  const cancelAsk = (draft: SuggestedReply, pending: ChangeRequest) =>
+    act(() => cancel(draft, pending));
+  /** Cancels the request that waits, and asks the same again. */
+  const askAgain = (draft: SuggestedReply, pending: ChangeRequest) =>
+    act(async () => {
+      await cancel(draft, pending);
+      await request(draft, pending.instruction);
+    });
+  return { drafts: loaded.data ?? [], send, discard, askToChange, cancelAsk, askAgain };
 }
 
 /**
@@ -138,6 +184,88 @@ function DraftActions({
   );
 }
 
+/** Whether a request made at this time has waited long enough to offer asking again. */
+function useIsLate(since: string) {
+  const [isLate, setIsLate] = useState(false);
+  useEffect(() => {
+    const dueMs = Date.parse(since) + STILL_WAITING_MS - Date.now();
+    setIsLate(dueMs <= 0);
+    if (dueMs <= 0) return;
+    const timer = setTimeout(() => setIsLate(true), dueMs);
+    return () => clearTimeout(timer);
+  }, [since]);
+  return isLate;
+}
+
+/** While the bot rewrites the draft: who it waits for, Cancel, and Ask again after a while. */
+function AskWaiting({
+  draft,
+  pending,
+  handlers,
+}: {
+  draft: SuggestedReply;
+  pending: ChangeRequest;
+  handlers: DraftHandlers;
+}) {
+  const isLate = useIsLate(pending.createdAt);
+  const name = draft.authorName;
+  return (
+    <div className="sugg-ask" role="status">
+      <span className="sugg-ask-wait">
+        {t(isLate ? "draftAskStillWaiting" : "draftAskWaiting", { name })}
+      </span>
+      <button
+        type="button"
+        className="sugg-discard"
+        onClick={() => void handlers.onCancelAsk(draft, pending)}
+      >
+        {t("cancel")}
+      </button>
+      {isLate && (
+        <button
+          type="button"
+          className="pill small"
+          onClick={() => void handlers.onAskAgain(draft, pending)}
+        >
+          {t("draftAskAgain")}
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** One line under a draft whose bot rewrites drafts: what to change, and Ask. Enter asks too. */
+function AskForm({ draft, handlers }: { draft: SuggestedReply; handlers: DraftHandlers }) {
+  const [instruction, setInstruction] = useState("");
+  const [busy, setBusy] = useState(false);
+  const wanted = instruction.trim();
+  const submit = async () => {
+    setBusy(true);
+    if (await handlers.onAsk(draft, wanted)) setInstruction("");
+    setBusy(false);
+  };
+  return (
+    <form
+      className="sugg-ask"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (wanted !== "" && !busy) void submit();
+      }}
+    >
+      <input
+        aria-label={t("draftAskLabel", { name: draft.authorName })}
+        placeholder={t("draftAskPlaceholder")}
+        maxLength={INSTRUCTION_MAX_LENGTH}
+        value={instruction}
+        onChange={(event) => setInstruction(event.target.value)}
+      />
+      <button type="submit" className="pill small" disabled={busy || wanted === ""}>
+        {t("draftAsk")}
+      </button>
+    </form>
+  );
+}
+
 /** What a suggested reply's card needs from the thread. */
 interface DraftHandlers {
   /** The visitor's name, as the card says who cannot see it yet. */
@@ -147,11 +275,15 @@ interface DraftHandlers {
   onSend(draft: SuggestedReply): Promise<boolean>;
   onEdit(draft: SuggestedReply): void;
   onDiscard(draft: SuggestedReply): Promise<boolean>;
+  onAsk(draft: SuggestedReply, instruction: string): Promise<boolean>;
+  onCancelAsk(draft: SuggestedReply, pending: ChangeRequest): Promise<boolean>;
+  onAskAgain(draft: SuggestedReply, pending: ChangeRequest): Promise<boolean>;
 }
 
 /**
  * One suggested reply, on the operator's side, shaped like the reply it becomes but pale: who wrote
- * it and when, a line that says the visitor cannot see it, its text, and Discard, Edit and Send.
+ * it and when, a line that says the visitor cannot see it, its text, Discard, Edit and Send, and
+ * Ask to change when its bot rewrites drafts.
  */
 function DraftCard({
   draft,
@@ -199,6 +331,12 @@ function DraftCard({
         onEdit={() => handlers.onEdit(draft)}
         onDiscard={() => void run(() => handlers.onDiscard(draft))}
       />
+      {handlers.canSend && draft.changeRequest !== null && (
+        <AskWaiting draft={draft} pending={draft.changeRequest} handlers={handlers} />
+      )}
+      {handlers.canSend && draft.changeRequest === null && draft.canAskToChange && (
+        <AskForm draft={draft} handlers={handlers} />
+      )}
     </article>
   );
 }

@@ -152,7 +152,7 @@ describe("the protocol", () => {
       "list_members",
       "list_saved_replies",
       "set_typing",
-      "wait_for_messages",
+      "wait_for_events",
       "get_contact",
       "list_contacts",
       "search_contacts",
@@ -476,16 +476,17 @@ describe("the tools", () => {
 });
 
 describe("answering chats", () => {
-  test("wait_for_messages gives the cursor at once, then a new visitor message, then a timeout", async () => {
-    const first = await callTool(app, token, "wait_for_messages", {});
-    expect(first.structuredContent).toEqual({ messages: [], cursor: expect.any(String) });
+  test("wait_for_events gives the cursor at once, then a new visitor message, then a timeout", async () => {
+    const first = await callTool(app, token, "wait_for_events", {});
+    expect(first.structuredContent).toEqual({ events: [], cursor: expect.any(String) });
     const chat = await visitorStarts(app, space.publicKey, "Is anyone there?");
-    const second = await callTool(app, token, "wait_for_messages", {
+    const second = await callTool(app, token, "wait_for_events", {
       cursor: first.structuredContent.cursor,
       timeoutSeconds: 1,
     });
-    expect(second.structuredContent.messages).toEqual([
+    expect(second.structuredContent.events).toEqual([
       {
+        type: "message.created",
         conversationId: chat.conversationId,
         message: expect.objectContaining({ body: "Is anyone there?", fromVisitor: true }),
         visitor: { name: null, email: null },
@@ -495,27 +496,27 @@ describe("answering chats", () => {
     ]);
     expect(second.content[0]?.text).toContain("Is anyone there?");
     const started = Date.now();
-    const third = await callTool(app, token, "wait_for_messages", {
+    const third = await callTool(app, token, "wait_for_events", {
       cursor: second.structuredContent.cursor,
       timeoutSeconds: 1,
     });
     expect(Date.now() - started).toBeGreaterThanOrEqual(900);
     expect(third.structuredContent).toEqual({
-      messages: [],
+      events: [],
       cursor: second.structuredContent.cursor,
     });
   });
 
-  test("wait_for_messages gives a visitor's message that reopens a closed conversation", async () => {
+  test("wait_for_events gives a visitor's message that reopens a closed conversation", async () => {
     const chat = await visitorStarts(app, space.publicKey, "Hello?");
     await callTool(app, token, "close_conversation", { conversationId: chat.conversationId });
-    const first = await callTool(app, token, "wait_for_messages", {});
+    const first = await callTool(app, token, "wait_for_events", {});
     await visitorSays(app, space.publicKey, chat.token, "Back again");
-    const second = await callTool(app, token, "wait_for_messages", {
+    const second = await callTool(app, token, "wait_for_events", {
       cursor: first.structuredContent.cursor,
       timeoutSeconds: 1,
     });
-    expect(second.structuredContent.messages).toEqual([
+    expect(second.structuredContent.events).toEqual([
       expect.objectContaining({
         conversationId: chat.conversationId,
         message: expect.objectContaining({ body: "Back again" }),

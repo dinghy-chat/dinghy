@@ -1,5 +1,6 @@
 import { z } from "@hono/zod-openapi";
 import { MENTIONS_MAX, MESSAGE_MAX } from "../../../packages/widget/src/shared.ts";
+import { CHANGE_INSTRUCTION_MAX } from "./db/schema.ts";
 import { FILE_TYPES_TEXT, FILENAME_INPUT_MAX } from "./files.ts";
 
 // The input schemas and words that routes and MCP tools share. This module imports no route or tool
@@ -35,6 +36,9 @@ export const Mentions = z.array(z.uuid()).max(MENTIONS_MAX);
 /** Why a bot hands a conversation to people, and what it found, as the handoff's note holds them. */
 export const HandoffReason = boundedText(500);
 export const HandoffSummary = boundedText(2000);
+
+/** What an operator asks the bot to change in its draft, such as "shorter, in Spanish". */
+export const ChangeInstruction = boundedText(CHANGE_INSTRUCTION_MAX);
 
 /** Said by every tool that returns text from outside, because a bot reads it as input. */
 export const UNTRUSTED_TEXT =

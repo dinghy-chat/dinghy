@@ -7,9 +7,10 @@ import { fileURLToPath } from "node:url";
 import { sql } from "drizzle-orm";
 import { Redis } from "iovalkey";
 import { pino } from "pino";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import { authenticatorCode, turnOnTwoFactor } from "../test/authenticator.ts";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
-import { AUTH_SECRET, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
+import { AUTH_SECRET, DATABASE_URL, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
 import {
   addOperator,
   captureMail,
@@ -22,7 +23,8 @@ import {
 } from "../test/operators.ts";
 import { type App, createApp, openApiDocument } from "./app.ts";
 import { type Auth, createAuth, signInLink } from "./auth.ts";
-import { session, workspaceMember } from "./db/schema.ts";
+import { appReviewFromConfig, loadConfig } from "./config.ts";
+import { session, verification, workspaceMember } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
 import { sha256Hex } from "./identity.ts";
 import { createLinkLimit } from "./login-limit.ts";
@@ -269,6 +271,9 @@ describe("asking for a link", () => {
     expect(answer.status).not.toBe(404);
     expect(document.paths["/v1/auth/native/authorize"]?.post).toBeDefined();
     expect(document.paths["/v1/auth/native/exchange"]?.post).toBeDefined();
+    expect(document.paths["/v1/auth/native/email-code/request"]?.post).toBeDefined();
+    expect(document.paths["/v1/auth/native/email-code/verify"]?.post).toBeDefined();
+    expect(document.paths["/v1/auth/native/totp/verify"]?.post).toBeDefined();
   });
 
   test("a request with no session is refused", async () => {
@@ -557,6 +562,432 @@ describe("native app sign-in", () => {
       select count(*)::int as count from session where user_id = ${person.id}
     `);
     expect(after.rows[0]?.count).toBe(before.rows[0]?.count);
+  });
+});
+
+describe("native email-code sign-in", () => {
+  const requestCode = (
+    to: string,
+    { target = app, ip = address(nextAddress++) }: { target?: App; ip?: string } = {},
+  ) =>
+    target.request("/v1/auth/native/email-code/request", {
+      method: "POST",
+      headers: { origin: ORIGIN, "content-type": "application/json", "x-forwarded-for": ip },
+      body: JSON.stringify({ email: to }),
+    });
+
+  const verifyCode = (to: string, code: string, target = app) =>
+    target.request("/v1/auth/native/email-code/verify", {
+      method: "POST",
+      headers: { origin: ORIGIN, "content-type": "application/json" },
+      body: JSON.stringify({ email: to, code }),
+    });
+
+  const verifyTotp = (challenge: string, code: string, target = app) =>
+    target.request("/v1/auth/native/totp/verify", {
+      method: "POST",
+      headers: { origin: ORIGIN, "content-type": "application/json" },
+      body: JSON.stringify({ challenge, code }),
+    });
+
+  const sentCodes = (to: string) =>
+    mail.sent.filter((sent) => sent.to === to && sent.subject === "Your Dinghy sign-in code");
+
+  const codeTo = async (to: string, index = 0) => {
+    await vi.waitFor(() => expect(sentCodes(to).length).toBeGreaterThan(index));
+    const code = /\b\d{6}\b/.exec(sentCodes(to)[index]?.text ?? "")?.[0];
+    if (code === undefined) throw new Error(`No native code reached ${to}`);
+    return code;
+  };
+
+  test("answers known and unknown emails alike, sends only to the account, and stores no code", async () => {
+    const knownEmail = email("native-email-known");
+    const unknownEmail = email("native-email-unknown");
+    const person = await newOperator(knownEmail);
+    const known = await requestCode(knownEmail);
+    const unknown = await requestCode(unknownEmail);
+    expect(known.status).toBe(200);
+    const knownBody = await known.clone().json();
+    expect(await known.text()).toBe(await unknown.text());
+    expect(knownBody).toEqual({
+      ok: true,
+      expiresInSeconds: 600,
+      resendAfterSeconds: 60,
+    });
+    const code = await codeTo(knownEmail);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(sentCodes(unknownEmail)).toHaveLength(0);
+    const records = await owner
+      .select({ identifier: verification.identifier, value: verification.value })
+      .from(verification)
+      .where(sql`${verification.identifier} like 'native-email-code:%'`);
+    const ours = records.find((record) => record.value.includes(person.id));
+    expect(ours).toBeDefined();
+    expect(JSON.stringify(ours)).not.toContain(knownEmail);
+    expect(JSON.stringify(ours)).not.toContain(code);
+  });
+
+  test("uses one code once, selects a paid workspace, and returns a normal session", async () => {
+    const waiting = await createWorkspace(db, "Email waiting", [], { active: false });
+    const available = await createWorkspace(db, "Email native", []);
+    const person = await addOperator({
+      auth,
+      owner,
+      email: email("native-email-session"),
+      name: "Email Anna",
+      workspaceId: waiting.id,
+    });
+    await owner
+      .insert(workspaceMember)
+      .values({ workspaceId: available.id, operatorId: person.id, role: "owner" });
+    await requestCode(person.email);
+    const code = await codeTo(person.email);
+    const answers = await Promise.all([
+      verifyCode(person.email, code),
+      verifyCode(person.email, code),
+    ]);
+    expect(answers.map((answer) => answer.status).sort()).toEqual([200, 400]);
+    const signed = answers.find((answer) => answer.status === 200);
+    if (signed === undefined) throw new Error("No email code exchange succeeded");
+    const body = (await signed.json()) as {
+      status: string;
+      session: {
+        origin: string;
+        session: string;
+        operator: { id: string; name: string };
+        workspace: { id: string; name: string };
+      };
+    };
+    expect(body).toMatchObject({
+      status: "signed_in",
+      session: {
+        origin: ORIGIN,
+        operator: { id: person.id, name: "Email Anna" },
+        workspace: { id: available.id, name: "Email native" },
+      },
+    });
+    expect((await me(body.session.session)).status).toBe(200);
+  });
+
+  test("expires an email code", async () => {
+    const space = await createWorkspace(db, "Email attempts", []);
+    const person = await addOperator({
+      auth,
+      owner,
+      email: email("native-email-attempts"),
+      workspaceId: space.id,
+    });
+    await requestCode(person.email);
+    const code = await codeTo(person.email);
+    await owner.execute(sql`
+      update verification set expires_at = now() - interval '1 second'
+      where identifier like 'native-email-code:%' and value like ${`%${person.id}%`}
+    `);
+    expect((await verifyCode(person.email, code)).status).toBe(400);
+  });
+
+  test("signs in the app review account with its fixed code, once per request, and mails nothing", async () => {
+    const space = await createWorkspace(db, "App review", []);
+    const reviewer = await addOperator({
+      auth,
+      owner,
+      email: email("native-app-review"),
+      workspaceId: space.id,
+    });
+    const other = await addOperator({
+      auth,
+      owner,
+      email: email("native-app-review-other"),
+      workspaceId: space.id,
+    });
+    const base = { DATABASE_URL, VALKEY_URL, AUTH_SECRET, APP_REVIEW_EMAIL: "Review@Example.com" };
+    expect(() => appReviewFromConfig(loadConfig(base))).toThrow(/APP_REVIEW_CODE/);
+    expect(appReviewFromConfig(loadConfig({ ...base, APP_REVIEW_CODE: "123456" }))).toEqual({
+      email: "review@example.com",
+      code: "123456",
+    });
+    expect(() => loadConfig({ ...base, APP_REVIEW_CODE: "12345" })).toThrow();
+    // A leading zero, which an emailed code never has.
+    const fixed = "024680";
+    const review = createApp({
+      appReview: { email: reviewer.email, code: fixed },
+      db,
+      logger,
+      valkey,
+      mailer: mail,
+      trustedProxyHops: 1,
+      checks: { postgres: ok, valkey: ok },
+      auth,
+    });
+    for (const round of [1, 2]) {
+      await requestCode(reviewer.email, { target: review });
+      expect((await verifyCode(reviewer.email, fixed, review)).status, `round ${round}`).toBe(200);
+      expect((await verifyCode(reviewer.email, fixed, review)).status).toBe(400);
+    }
+    expect(sentCodes(reviewer.email)).toHaveLength(0);
+
+    await requestCode(other.email, { target: review });
+    await codeTo(other.email);
+    expect((await verifyCode(other.email, fixed, review)).status).toBe(400);
+  });
+
+  test("keeps the five-guess account budget when a replacement code is sent", async () => {
+    const space = await createWorkspace(db, "Email replacement attempts", []);
+    const person = await addOperator({
+      auth,
+      owner,
+      email: email("native-email-replacement-attempts"),
+      workspaceId: space.id,
+    });
+    await requestCode(person.email);
+    await codeTo(person.email);
+    for (let tries = 1; tries < 5; tries += 1) {
+      expect((await verifyCode(person.email, "000000")).status).toBe(400);
+    }
+
+    await requestCode(person.email, { ip: address(nextAddress++) });
+    const replacement = await codeTo(person.email, 1);
+    const locked = await verifyCode(person.email, "000000");
+    expect(locked.status).toBe(429);
+    expect(await locked.json()).toMatchObject({ error: { code: "too_many_attempts" } });
+    expect((await verifyCode(person.email, replacement)).status).toBe(429);
+  });
+
+  test("fails closed when the email-code guess counter is unavailable", async () => {
+    const space = await createWorkspace(db, "Email unavailable limit", []);
+    const person = await addOperator({
+      auth,
+      owner,
+      email: email("native-email-limit-down"),
+      workspaceId: space.id,
+    });
+    await requestCode(person.email);
+    const code = await codeTo(person.email);
+    const down = new Redis("redis://127.0.0.1:1", {
+      enableOfflineQueue: false,
+      maxRetriesPerRequest: 1,
+      retryStrategy: () => null,
+    });
+    down.on("error", () => {});
+    const offline = createApp({
+      db,
+      logger,
+      valkey: down,
+      mailer: mail,
+      checks: { postgres: ok, valkey: ok },
+      auth,
+    });
+    const unavailable = await verifyCode(person.email, code, offline);
+    expect(unavailable.status).toBe(503);
+    expect(await unavailable.json()).toMatchObject({ error: { code: "check_unavailable" } });
+    down.disconnect();
+    expect((await verifyCode(person.email, code)).status).toBe(200);
+  });
+
+  test("enforces the resend delay without revealing whether the account exists", async () => {
+    for (const target of [email("native-email-resend"), email("native-email-resend-unknown")]) {
+      if (target === email("native-email-resend")) await newOperator(target);
+      const ip = address(nextAddress++);
+      expect((await requestCode(target, { ip })).status).toBe(200);
+      const limited = await requestCode(target, { ip });
+      expect(limited.status).toBe(429);
+      expect(await limited.json()).toMatchObject({ error: { code: "too_many_attempts" } });
+    }
+  });
+
+  test("proves the mailbox and ends sessions made before its first proof", async () => {
+    const space = await createWorkspace(db, "Email proof", []);
+    const address = email("native-email-proof");
+    const [person] = await owner
+      .execute<{ id: string }>(sql`
+        insert into operator (name, email, email_proven)
+        values ('Email proof', ${address}, false)
+        returning id
+      `)
+      .then((result) => result.rows);
+    if (person === undefined) throw new Error("The proof account was not inserted");
+    await owner
+      .insert(workspaceMember)
+      .values({ workspaceId: space.id, operatorId: person.id, role: "owner" });
+    await owner.execute(sql`
+      insert into session (user_id, token, expires_at)
+      values (${person.id}, ${`before-proof-${RUN}`}, now() + interval '1 day')
+    `);
+    await requestCode(address);
+    expect((await verifyCode(address, await codeTo(address))).status).toBe(200);
+    const proof = await owner.execute<{ email_proven: boolean; old: number; sessions: number }>(sql`
+      select email_proven,
+        (select count(*)::int from session where token = ${`before-proof-${RUN}`}) as old,
+        (select count(*)::int from session where user_id = ${person.id}) as sessions
+      from operator where id = ${person.id}
+    `);
+    expect(proof.rows[0]).toEqual({ email_proven: true, old: 0, sessions: 1 });
+  });
+
+  test("finishes two-step sign-in with an authenticator or one recovery code", async () => {
+    const space = await createWorkspace(db, "Email two-step", []);
+    const person = await addOperator({
+      auth,
+      owner,
+      email: email("native-email-totp"),
+      workspaceId: space.id,
+    });
+    const browser = await signIn(app, auth, person.email);
+    const factor = await turnOnTwoFactor(app, browser);
+
+    await requestCode(person.email);
+    const firstCode = await codeTo(person.email);
+    const first = (await (await verifyCode(person.email, firstCode)).json()) as {
+      status: string;
+      challenge: string;
+      expiresInSeconds: number;
+    };
+    expect(first).toMatchObject({ status: "totp_required", expiresInSeconds: 300 });
+    expect((await verifyTotp(first.challenge, "000000")).status).toBe(400);
+    const completed = await verifyTotp(first.challenge, await authenticatorCode(factor.secret));
+    expect(completed.status).toBe(200);
+    const signed = (await completed.json()) as { session: { session: string } };
+    expect(await (await me(signed.session.session)).json()).toMatchObject({ twoFactor: "on" });
+    expect(
+      (await verifyTotp(first.challenge, await authenticatorCode(factor.secret, 1))).status,
+    ).toBe(400);
+
+    await requestCode(person.email, { ip: address(nextAddress++) });
+    const secondCode = await codeTo(person.email, 1);
+    const second = (await (await verifyCode(person.email, secondCode)).json()) as {
+      challenge: string;
+    };
+    expect((await verifyTotp(second.challenge, factor.recoveryCodes[0] ?? "")).status).toBe(200);
+    await requestCode(person.email, { ip: address(nextAddress++) });
+    const thirdCode = await codeTo(person.email, 2);
+    const third = (await (await verifyCode(person.email, thirdCode)).json()) as {
+      challenge: string;
+    };
+    expect((await verifyTotp(third.challenge, factor.recoveryCodes[0] ?? "")).status).toBe(400);
+  });
+
+  test("a duplicate concurrent TOTP check cannot revoke the session that passed", async () => {
+    const space = await createWorkspace(db, "Email concurrent two-step", []);
+    const person = await addOperator({
+      auth,
+      owner,
+      email: email("native-email-totp-concurrent"),
+      workspaceId: space.id,
+    });
+    const browser = await signIn(app, auth, person.email);
+    const factor = await turnOnTwoFactor(app, browser);
+    await requestCode(person.email);
+    const pending = (await (await verifyCode(person.email, await codeTo(person.email))).json()) as {
+      challenge: string;
+    };
+
+    // Hold the account lock until both requests have read the same challenge and wait behind it.
+    const client = await owner.$client.connect();
+    await client.query("begin");
+    try {
+      await client.query("select 1 from operator where id = $1 for no key update", [person.id]);
+      const code = await authenticatorCode(factor.secret);
+      const requests = [verifyTotp(pending.challenge, code), verifyTotp(pending.challenge, code)];
+      for (let tries = 0; ; tries += 1) {
+        const waiting = await owner.$client.query<{ count: number }>(
+          `select count(*)::int as count from pg_locks as l
+           join pg_stat_activity as a on a.pid = l.pid
+           where not l.granted and a.datname = current_database()`,
+        );
+        if ((waiting.rows[0]?.count ?? 0) >= 2) break;
+        if (tries === 250) throw new Error("Both TOTP checks did not wait for the account lock");
+        await new Promise((resolve) => setTimeout(resolve, 20));
+      }
+      await client.query("commit");
+      const answers = await Promise.all(requests);
+      expect(answers.map((answer) => answer.status).sort()).toEqual([200, 400]);
+      const passed = answers.find((answer) => answer.status === 200);
+      if (passed === undefined) throw new Error("No concurrent TOTP check passed");
+      const signed = (await passed.json()) as { session: { session: string } };
+      expect((await me(signed.session.session)).status).toBe(200);
+    } finally {
+      await client.query("rollback").catch(() => undefined);
+      client.release();
+    }
+  });
+
+  test("ends a pending session after five wrong two-step codes and keeps the account locked", async () => {
+    const space = await createWorkspace(db, "Email two-step lockout", []);
+    const person = await addOperator({
+      auth,
+      owner,
+      email: email("native-email-totp-lockout"),
+      workspaceId: space.id,
+    });
+    const browser = await signIn(app, auth, person.email);
+    const factor = await turnOnTwoFactor(app, browser);
+    const before = await owner.execute<{ count: number }>(sql`
+      select count(*)::int as count from session where user_id = ${person.id}
+    `);
+    await requestCode(person.email);
+    const first = (await (await verifyCode(person.email, await codeTo(person.email))).json()) as {
+      challenge: string;
+    };
+    for (let tries = 1; tries < 5; tries += 1) {
+      expect((await verifyTotp(first.challenge, "000000")).status).toBe(400);
+    }
+    const locked = await verifyTotp(first.challenge, "000000");
+    expect(locked.status).toBe(429);
+    const after = await owner.execute<{ count: number }>(sql`
+      select count(*)::int as count from session where user_id = ${person.id}
+    `);
+    expect(after.rows[0]?.count).toBe(before.rows[0]?.count);
+
+    await requestCode(person.email, { ip: address(nextAddress++) });
+    const second = (await (
+      await verifyCode(person.email, await codeTo(person.email, 1))
+    ).json()) as { challenge: string };
+    const stillLocked = await verifyTotp(second.challenge, await authenticatorCode(factor.secret));
+    expect(stillLocked.status).toBe(429);
+  });
+
+  test("refuses unavailable workspaces and an account deleted during session creation", async () => {
+    const unpaid = await createWorkspace(db, "Email unpaid", [], { active: false });
+    const waiting = await addOperator({
+      auth,
+      owner,
+      email: email("native-email-unpaid"),
+      workspaceId: unpaid.id,
+    });
+    await requestCode(waiting.email);
+    expect((await verifyCode(waiting.email, await codeTo(waiting.email))).status).toBe(402);
+
+    const memberless = await newOperator(email("native-email-memberless"));
+    await requestCode(memberless.email);
+    expect((await verifyCode(memberless.email, await codeTo(memberless.email))).status).toBe(409);
+
+    const space = await createWorkspace(db, "Email deleting", []);
+    const deleting = await addOperator({
+      auth,
+      owner,
+      email: email("native-email-deleting"),
+      workspaceId: space.id,
+    });
+    await requestCode(deleting.email);
+    const code = await codeTo(deleting.email);
+    const answer = await deletedDuring(owner, deleting.id, () => verifyCode(deleting.email, code));
+    expect(answer.status).toBe(400);
+    const sessions = await owner.execute<{ count: number }>(sql`
+      select count(*)::int as count from session where user_id = ${deleting.id}
+    `);
+    expect(sessions.rows[0]?.count).toBe(0);
+  });
+
+  test("requires the server origin and a mail server", async () => {
+    const quiet = createApp({ db, logger, checks: { postgres: ok, valkey: ok }, auth });
+    const target = email("native-email-guards");
+    expect((await requestCode(target, { target: quiet })).status).toBe(400);
+    const wrongOrigin = await app.request("/v1/auth/native/email-code/request", {
+      method: "POST",
+      headers: { origin: "https://evil.example.com", "content-type": "application/json" },
+      body: JSON.stringify({ email: target }),
+    });
+    expect(wrongOrigin.status).toBe(403);
   });
 });
 
