@@ -10,6 +10,10 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Conversations in the operator inbox list and search results have `subject`, the first line of their first message, and `hasReadyDraft`, true when a bot's draft waits for review.
 - The website has install guides, use cases, comparisons and articles, including how to send proactive chat messages and read site analytics.
 
+### Changed
+
+- **Close** opens the next conversation in the list, as Shift+E does, or no conversation when no other is left. It stays on the conversation while a reply is still sending or failed, so the reply can be retried.
+
 ## [0.50.0] - 2026-11-21
 
 ### Added

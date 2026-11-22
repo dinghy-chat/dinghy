@@ -1,6 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
 import { answer, say, visitor } from "./chat.ts";
+import { showStatus } from "./filters.ts";
 import { signedIn } from "./links.ts";
 import { openSettings } from "./settings.ts";
 
@@ -226,6 +227,8 @@ test("an operator adds a note that the visitor never sees, and a note draft keep
 
   // A closed conversation still takes a note, and only a note.
   await alice.getByRole("button", { name: "Close", exact: true }).click();
+  await showStatus(alice, "Closed");
+  await alice.locator(".row", { hasText: "Ask Ben about this one" }).click();
   await expect(alice.getByText("Reopen it to reply, or add a note.")).toBeVisible();
   await expect(alice.getByRole("radio", { name: "Reply" })).toHaveCount(0);
   await alice.getByRole("button", { name: "Add note" }).click();

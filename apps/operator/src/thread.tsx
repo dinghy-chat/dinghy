@@ -149,8 +149,8 @@ export function Thread({
   botTyping: string | null;
   onBack(): void;
   /**
-   * Picks the conversation to open after this one closes from the keyboard, and returns what opens
-   * it once the close saved.
+   * Picks the conversation to open after this one closes, and returns what opens it once the close
+   * saved.
    */
   nextAfterClose(conversationId: string): () => void;
   onChanged(): void;
@@ -249,6 +249,18 @@ export function Thread({
   // does, as in a conversation that closed meanwhile.
   const [editedDraft, setEditingDraft] = useState<SuggestedReply | null>(null);
   const editingDraft = mode === "reply" ? editedDraft : null;
+  const linesNow = useRef(thread.lines);
+  linesNow.current = thread.lines;
+  /**
+   * Closes or reopens the conversation. A close opens the next chat, or none if the list is empty.
+   * It stays if a reply is unsent when it saves, so a send the close refuses keeps its Retry.
+   */
+  const setStatus = (status: "open" | "closed") => {
+    const next = status === "closed" ? nextAfterClose(conversationId) : null;
+    void change.setStatus(status).then((saved) => {
+      if (saved && linesNow.current.every((line) => line.status === "sent")) next?.();
+    });
+  };
   /** Puts the caret in the composer, as a reply or a note. A closed conversation takes notes only. */
   const write = (next: ComposeMode) => {
     if (repliesOffReason !== null) return;
@@ -264,15 +276,9 @@ export function Thread({
       : {
           r: () => write("reply"),
           n: () => write("note"),
-          // A close moves on to the next chat, so the keyboard can clear a queue. It takes Shift,
-          // so a stray E does not close a chat.
+          // It takes Shift, so a stray E does not close a chat.
           // biome-ignore lint/correctness/noComponentHookFactories: a key name, not a component.
-          E: () => {
-            const next = closed ? null : nextAfterClose(conversationId);
-            void change.setStatus(closed ? "open" : "closed").then((saved) => {
-              if (saved) next?.();
-            });
-          },
+          E: () => setStatus(closed ? "open" : "closed"),
           i: () => {
             if (conversation.assigneeOperatorId === meId) return;
             void change.assign(meId, members.find((member) => member.id === meId)?.name ?? null);
@@ -385,7 +391,7 @@ export function Thread({
           onBack={onBack}
           onAssign={assign}
           labels={labelPicks}
-          onStatus={(status) => void change.setStatus(status)}
+          onStatus={setStatus}
           onSnooze={(snooze) => void change.setSnooze(snooze)}
           onBlocked={(blocked) => void change.setBlocked(blocked)}
           onDelete={() => change.setConfirming(true)}

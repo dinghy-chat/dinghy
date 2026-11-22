@@ -2,7 +2,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
 import { visitor } from "./chat.ts";
-import { inboxFilter } from "./filters.ts";
+import { inboxFilter, showStatus } from "./filters.ts";
 import { openLink, signedIn, signOut } from "./links.ts";
 import { openSettings } from "./settings.ts";
 
@@ -64,12 +64,13 @@ test("a full conversation between the widget and the operator app @smoke", async
   await widget.getByRole("textbox", { name: "Your message" }).press("Enter");
   await expect(operator.locator(".msg.visitor", { hasText: "Tuesday" })).toBeVisible();
 
-  // Close, then reopen.
+  // Closing the last open conversation leaves no conversation on screen. Then reopen it.
   await operator.getByRole("button", { name: "Close", exact: true }).click();
+  await expect(row(operator, "Tuesday")).toHaveCount(0);
+  await expect(operator.locator(".thread .msg")).toHaveCount(0);
+  await showStatus(operator, "Closed");
+  await row(operator, "Tuesday").click();
   await expect(operator.getByText("This conversation is closed.")).toBeVisible();
-  await expect(reply(operator)).toHaveCount(0);
-  await (await inboxFilter(operator, "Closed")).click();
-  await expect(row(operator, "Tuesday")).toBeVisible();
   await operator.getByRole("button", { name: "Reopen" }).click();
   await expect(reply(operator)).toBeVisible();
 
@@ -158,7 +159,8 @@ test("a draft survives closing and reopening the conversation", async ({ browser
   const reply = page.getByRole("textbox", { name: "Your reply" });
   await reply.fill("Half a sentence");
   await page.getByRole("button", { name: "Close", exact: true }).click();
-  await expect(reply).toHaveCount(0);
+  await showStatus(page, "Closed");
+  await row(page, "Half a sentence").click();
   await page.getByRole("button", { name: "Reopen" }).click();
   await expect(reply).toHaveText("Half a sentence");
   await customer.context().close();
@@ -575,6 +577,8 @@ test("a block shows in another open thread of the same visitor", async ({ browse
   const widget = await visitor(browser, server, "/plain", "My first visit");
   await row(first, "My first visit").click();
   await first.getByRole("button", { name: "Close", exact: true }).click();
+  await showStatus(first, "Closed");
+  await row(first, "My first visit").click();
   await expect(first.getByText("This conversation is closed.")).toBeVisible();
   // The visitor writes again, which starts a second conversation.
   await widget.getByRole("textbox", { name: "Your message" }).fill("My second visit");

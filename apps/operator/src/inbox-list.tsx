@@ -94,6 +94,7 @@ function ConversationRow({
         type="button"
         className={unread ? "row unread" : "row"}
         aria-current={selected}
+        data-conversation={id}
         {...press}
         onClick={(event) => {
           if (!takesClick()) onSelect(event.detail > 0);

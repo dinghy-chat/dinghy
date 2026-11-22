@@ -110,11 +110,6 @@ function rowFrom(by: 1 | -1): HTMLElement | undefined {
   return rows[at === -1 ? 0 : at + by];
 }
 
-function openRow(row: HTMLElement | undefined) {
-  row?.click();
-  row?.scrollIntoView({ block: "nearest" });
-}
-
 /** The conversation the address names, when it is in this workspace, as a notification's link. */
 function linkedConversation(workspaceId: string): string | null {
   const params = new URLSearchParams(location.search);
@@ -271,6 +266,18 @@ export function Inbox({
       setSelected(conversationId);
       showFilter({ ...shownFilter, status: conversationStatus });
     });
+
+  /**
+   * Opens a row's conversation as J, K and a close do. It selects the conversation itself, as a
+   * click could land in a touch selection.
+   */
+  const openRow = (row: HTMLElement | undefined) => {
+    const id = row?.dataset.conversation;
+    if (row === undefined || id === undefined) return;
+    setSelected(id);
+    setClicked(null);
+    row.scrollIntoView({ block: "nearest" });
+  };
 
   /** Shows a view from the sidebar or the keyboard. Contacts opens on its list. */
   const openView = (next: View) => {
@@ -481,7 +488,9 @@ export function Inbox({
                     return () => {
                       // The operator moved on while the close saved, as with J or a second E.
                       if (selectedNow.current !== closing) return;
-                      if (next?.isConnected) openRow(next);
+                      // A row that left the list meanwhile gives way to the rows still in it.
+                      const row = next?.isConnected ? next : (rowFrom(1) ?? rowFrom(-1));
+                      if (row) openRow(row);
                       else setSelected(null);
                     };
                   }}
