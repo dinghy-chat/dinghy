@@ -122,10 +122,15 @@ const codeRequest = (server: App, email: string, ip: string) =>
     body: JSON.stringify({ email }),
   });
 
+// From an address of its own, so its checks do not use up the per-address limit of other files.
 const codeVerify = (server: App, email: string, code: string) =>
   server.request("/v1/auth/native/email-code/verify", {
     method: "POST",
-    headers: { origin: ORIGIN, "content-type": "application/json" },
+    headers: {
+      origin: ORIGIN,
+      "content-type": "application/json",
+      "x-forwarded-for": "203.0.113.79",
+    },
     body: JSON.stringify({ email, code }),
   });
 
@@ -488,12 +493,15 @@ describe("the app review account", () => {
     expect((await askDelete(reviewer, {}, review)).status).toBe(200);
     expect((await codeVerify(review, reviewer.email, "024680")).status).toBe(400);
     expect((await codeRequest(review, reviewer.email, "203.0.113.72")).status).toBe(200);
-    expect((await codeVerify(review, reviewer.email, "024680")).status).toBe(400);
+    // More tries than the guess limit, which must not lock the account after the window.
+    for (let attempt = 0; attempt < 6; attempt += 1) {
+      expect((await codeVerify(review, reviewer.email, "024680")).status).toBe(400);
+    }
 
     await owner
       .update(verification)
       .set({ expiresAt: new Date(Date.now() - 1000) })
-      .where(eq(verification.identifier, "app-review-deleted"));
+      .where(like(verification.identifier, "app-review-deleted:%"));
     expect((await codeRequest(review, reviewer.email, "203.0.113.73")).status).toBe(200);
     expect((await codeVerify(review, reviewer.email, "024680")).status).toBe(200);
   });

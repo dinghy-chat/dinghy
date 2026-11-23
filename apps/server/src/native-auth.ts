@@ -361,7 +361,7 @@ async function sendEmailCode(
   // The reviewer cannot read this account's mail, so its code is the fixed one, with the same
   // expiry, single use and guess limit as an emailed code.
   if (email === appReview?.email) {
-    if (await reviewLooksDeleted(db)) return;
+    if (await reviewLooksDeleted(db, email)) return;
     await storeEmailCode(db, auth.options.secret, email, account.id, appReview.code);
     audit(logger, "native_email_code.review", { operatorId: account.id, ip });
     return;
@@ -702,6 +702,11 @@ export function registerNativeAuthRoutes(
     if (wait !== null) return tooManyAttempts(c, { windowSeconds: wait });
     const request = c.req.valid("json");
     const email = request.email.toLowerCase();
+    // It has no code while it looks deleted. Its own code counts as no guess, so the next
+    // reviewer is not locked out after the window.
+    if (email === appReview?.email && (await reviewLooksDeleted(db, email))) {
+      return c.json(INVALID_NATIVE_CODE, 400);
+    }
     const attempt = await nativeEmailCodes.attempt(email);
     if (attempt === null) return c.json(CHECK_UNAVAILABLE, 503);
     if (attempt > NATIVE_EMAIL_CODE_MAX_FAILURES) {
