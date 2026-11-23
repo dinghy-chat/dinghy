@@ -8141,6 +8141,10 @@ button.quote:hover {
   .updates-foot {
     padding: 12px 20px max(16px, env(safe-area-inset-bottom));
   }
+  .updates .dialog-body {
+    scroll-padding-block: calc(max(18px, env(safe-area-inset-top)) + 58px)
+      calc(max(16px, env(safe-area-inset-bottom)) + 46px);
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .dialog.updates {
