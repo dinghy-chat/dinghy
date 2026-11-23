@@ -6,6 +6,7 @@
 import {
   type Block,
   escapeHtml,
+  FENCE,
   isBareLink,
   parseMarkdown,
 } from "../../../packages/widget/src/markdown.ts";
@@ -263,6 +264,13 @@ const plainOf = (lines: Line[]) =>
 export const visibleOffset = (text: string, at: number) =>
   at - (text.slice(0, at).split(HIDDEN).length - 1);
 
+/** A visible offset, as Android's selection counts it, in the editor's text with hidden characters. */
+export function hiddenOffset(text: string, visible: number): number {
+  let at = 0;
+  for (let seen = 0; at < text.length && seen < visible; at++) if (text[at] !== HIDDEN) seen++;
+  return at;
+}
+
 /** The editor's HTML as a Markdown draft, and its text as the editor's selection counts it. */
 export function draftMarkdown(html: string): { markdown: string; text: string } {
   const lines = linesOf(html);
@@ -303,20 +311,21 @@ function replaced(lines: Line[], from: number, to: number, insert: string): Rewr
       placed = true;
     };
     const hidden = line.runs.length === 0 && line.container !== "p";
-    if (from === at || (hidden && from === at + 1)) place();
-    for (const run of line.runs) {
+    if (from === at || (hidden && from === at + 1)) place(line.runs[0]);
+    line.runs.forEach((run, index) => {
       const start = at;
       at += run.text.length;
       if (at <= from || start >= to) {
-        if (start === from) place(run);
+        // Between two runs, the caret goes on with the formats of the words before it.
+        if (start === from) place(line.runs[index - 1] ?? run);
         runs.push(run);
-        continue;
+        return;
       }
       runs.push({ ...run, text: run.text.slice(0, Math.max(from - start, 0)) });
       if (from >= start) place(run);
       runs.push({ ...run, text: run.text.slice(Math.max(to - start, 0)) });
-    }
-    if (at === from) place();
+    });
+    if (at === from) place(line.runs.at(-1));
     at += hidden ? 2 : 1;
     return { ...line, runs: merged(runs) };
   });
@@ -334,35 +343,41 @@ function replaced(lines: Line[], from: number, to: number, insert: string): Rewr
   };
 }
 
-/** Where a change from `before` to `after` ends in `after`. */
-function changeEnd(before: string, after: string): number {
+/** Where a change from `before` to `after` starts and ends in `after`. */
+function changed(before: string, after: string): { start: number; end: number } {
   let start = 0;
   while (start < before.length && start < after.length && before[start] === after[start]) start++;
   let same = 0;
   const most = Math.min(before.length, after.length) - start;
   while (same < most && before[before.length - 1 - same] === after[after.length - 1 - same]) same++;
-  return after.length - same;
+  return { start, end: after.length - same };
 }
 
 /**
- * The editor's HTML with its Markdown marks shown as formats, as pasted or typed `**words**`, and
- * the caret where the change from `before` ended. Null when the text has no marks to format.
+ * The editor's HTML with the Markdown marks of pasted words, such as `**words**`, shown as their
+ * formats, and the caret after the paste. Null when the change from `before` is not a paste or
+ * has no marks to format. A typed mark stays text, as the field formats with its buttons.
  */
-export function formatMarks(html: string, before: string): Rewrite | null {
+export function formatPaste(html: string, before: string): Rewrite | null {
   const lines = linesOf(html);
   const text = plainOf(lines);
+  const paste = changed(before, text);
+  if (paste.end - paste.start < 2) return null;
+  // Markdown cannot hold a code line that starts with a fence.
+  if (lines.some((line) => line.container === "code" && FENCE.test(runsText(line.runs)))) {
+    return null;
+  }
   const words = (value: string) => value.replace(/[\s\u200B]/g, "");
   // Formats only take marks away, so a text that would not get shorter has none.
   const next = words(plainOf(linesOf(draftHtml(linesMarkdown(lines)))));
   if (next.length >= words(text).length) return null;
-  const caret = changeEnd(before, text);
-  return replaced(lines, caret, caret, "");
+  return replaced(lines, paste.end, paste.end, "");
 }
 
 /**
  * The editor's HTML with a saved reply in place of the text from `from` to `to`, and the caret
- * after it. The reply's own formats come with it. With no place, the reply goes at the end, on a
- * line of its own when the text has words already.
+ * after it. The reply's own formats come with it. With no place, the reply goes after the text,
+ * on a line of its own when the text has words already.
  */
 export function insertSaved(
   html: string,
@@ -371,7 +386,6 @@ export function insertSaved(
 ): Rewrite {
   const lines = linesOf(html);
   if (place !== null) return replaced(lines, place.from, place.to, body);
-  const text = plainOf(lines);
-  const end = text.length;
-  return replaced(lines, end, end, text.replaceAll(HIDDEN, "").trim() === "" ? body : `\n${body}`);
+  const empty = plainOf(lines).replaceAll(HIDDEN, "").trim() === "";
+  return replaced(lines, -1, -1, empty ? body : `\n${body}`);
 }

@@ -2,7 +2,8 @@ import { describe, expect, test } from "vitest";
 import {
   draftHtml,
   draftMarkdown,
-  formatMarks,
+  formatPaste,
+  hiddenOffset,
   insertSaved,
   visibleOffset,
 } from "./src/rich-draft.ts";
@@ -48,6 +49,7 @@ describe("draftMarkdown", () => {
     const html = "<html><ul><li>one</li><li></li></ul></html>";
     expect(draftMarkdown(html)).toEqual({ markdown: "- one\n", text: "one\n\u200B" });
     expect(visibleOffset("one\n\u200B\nx", 6)).toBe(5);
+    expect(hiddenOffset("one\n\u200B\nx", 5)).toBe(6);
   });
 
   test("numbers lists and fences code blocks", () => {
@@ -78,14 +80,14 @@ describe("draftMarkdown", () => {
   });
 });
 
-describe("formatMarks", () => {
+describe("formatPaste", () => {
   test("formats pasted Markdown and puts the caret after it", () => {
-    expect(formatMarks("<html><p>**Fight** now</p></html>", "")).toEqual({
+    expect(formatPaste("<html><p>**Fight** now</p></html>", "")).toEqual({
       html: "<html><p><b>Fight</b> now</p></html>",
       caret: 9,
       ended: [],
     });
-    expect(formatMarks("<html><p>- one</p><p>- two</p></html>", "")).toEqual({
+    expect(formatPaste("<html><p>- one</p><p>- two</p></html>", "")).toEqual({
       html: "<html><ul><li>one</li><li>two</li></ul></html>",
       caret: 7,
       ended: [],
@@ -93,30 +95,39 @@ describe("formatMarks", () => {
   });
 
   test("finds the caret when the pasted words repeat the text", () => {
-    expect(formatMarks("<html><p>Hi there **there**</p></html>", "Hi there")).toEqual({
+    expect(formatPaste("<html><p>Hi there **there**</p></html>", "Hi there")).toEqual({
       html: "<html><p>Hi there <b>there</b></p></html>",
       caret: 14,
       ended: ["bold"],
     });
-    expect(formatMarks("<html><p>a **x** b</p></html>", "a  b")).toEqual({
+    expect(formatPaste("<html><p>a **x** b</p></html>", "a  b")).toEqual({
       html: "<html><p>a <b>x</b> b</p></html>",
       caret: 3,
       ended: ["bold"],
     });
   });
 
-  test("formats a mark typed to close a format, which then ends", () => {
-    expect(formatMarks("<html><p><b>bold</b> *it*</p></html>", "bold *it")).toEqual({
-      html: "<html><p><b>bold</b> <i>it</i></p></html>",
-      caret: 7,
+  test("ends only the formats the paste added", () => {
+    expect(formatPaste("<html><p><b>Note *this*</b></p></html>", "Note ")).toEqual({
+      html: "<html><p><b>Note </b><b><i>this</i></b></p></html>",
+      caret: 9,
       ended: ["italic"],
     });
   });
 
+  test("leaves a typed mark as text", () => {
+    expect(formatPaste("<html><p>*it*</p></html>", "*it")).toBeNull();
+  });
+
+  test("leaves a code block with a fence line alone", () => {
+    const html = "<html><codeblock><p>```js</p></codeblock><p>**x**</p></html>";
+    expect(formatPaste(html, "```js\n")).toBeNull();
+  });
+
   test("leaves text with no Markdown alone, spaces and empty lines too", () => {
-    expect(formatMarks("<html><p><b>Fight</b> 2 * 3</p><br><br><p>next</p></html>", "")).toBeNull();
-    expect(formatMarks("<html><p>see https://a.example </p></html>", "")).toBeNull();
-    expect(formatMarks("<html><p>Steps:</p><ul><li>one</li></ul></html>", "")).toBeNull();
+    expect(formatPaste("<html><p><b>Fight</b> 2 * 3</p><br><br><p>next</p></html>", "")).toBeNull();
+    expect(formatPaste("<html><p>see https://a.example </p></html>", "")).toBeNull();
+    expect(formatPaste("<html><p>Steps:</p><ul><li>one</li></ul></html>", "")).toBeNull();
   });
 });
 
@@ -142,6 +153,14 @@ describe("insertSaved", () => {
       html: "<html><p><b>Hi</b> Pay $$5</p></html>",
       caret: 10,
       ended: [],
+    });
+  });
+
+  test("goes after a code block, not in it, with no place", () => {
+    expect(insertSaved("<html><codeblock><p>x</p></codeblock></html>", "**Bye**", null)).toEqual({
+      html: "<html><codeblock><p>x</p></codeblock><p><b>Bye</b></p></html>",
+      caret: 5,
+      ended: ["bold"],
     });
   });
 

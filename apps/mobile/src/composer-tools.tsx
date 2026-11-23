@@ -6,6 +6,7 @@ import {
   Animated,
   Easing,
   LayoutAnimation,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -27,7 +28,8 @@ import { Icon } from "./icon";
 import {
   draftHtml,
   draftMarkdown,
-  formatMarks,
+  formatPaste,
+  hiddenOffset,
   insertSaved,
   type Rewrite,
   visibleOffset,
@@ -276,8 +278,8 @@ export function ThreadComposer({
     field.current.html = html;
     field.current.text = next.text;
     setFieldText(next.text);
-    // Markdown marks pasted or typed show as their formats, as on the web.
-    const formatted = formatMarks(html, before);
+    // Pasted Markdown shows as its formats, as on the web.
+    const formatted = formatPaste(html, before);
     changeText(
       formatted ? showHtml(formatted.html, formatted.caret, formatted.ended) : next.markdown,
     );
@@ -588,7 +590,12 @@ export function ThreadComposer({
             }}
             onBlur={() => setFocused(false)}
             onChangeHtml={(event) => changeHtml(event.nativeEvent.value)}
-            onChangeSelection={({ nativeEvent: { start, end } }) => setSelection({ start, end })}
+            onChangeSelection={({ nativeEvent: { start, end } }) => {
+              // iOS counts the hidden character of an empty list line, and Android does not.
+              const at = (offset: number) =>
+                Platform.OS === "android" ? hiddenOffset(field.current.text, offset) : offset;
+              setSelection({ start: at(start), end: at(end) });
+            }}
             onChangeState={(event) => setFormats(event.nativeEvent)}
             onFocus={() => setFocused(true)}
             placeholder={
