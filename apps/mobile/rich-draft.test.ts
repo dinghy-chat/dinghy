@@ -83,10 +83,12 @@ describe("formatMarks", () => {
     expect(formatMarks("<html><p>**Fight** now</p></html>", "")).toEqual({
       html: "<html><p><b>Fight</b> now</p></html>",
       caret: 9,
+      ended: [],
     });
     expect(formatMarks("<html><p>- one</p><p>- two</p></html>", "")).toEqual({
       html: "<html><ul><li>one</li><li>two</li></ul></html>",
       caret: 7,
+      ended: [],
     });
   });
 
@@ -94,17 +96,20 @@ describe("formatMarks", () => {
     expect(formatMarks("<html><p>Hi there **there**</p></html>", "Hi there")).toEqual({
       html: "<html><p>Hi there <b>there</b></p></html>",
       caret: 14,
+      ended: ["bold"],
     });
     expect(formatMarks("<html><p>a **x** b</p></html>", "a  b")).toEqual({
       html: "<html><p>a <b>x</b> b</p></html>",
       caret: 3,
+      ended: ["bold"],
     });
   });
 
-  test("formats a mark typed to close a format, inside other formats", () => {
+  test("formats a mark typed to close a format, which then ends", () => {
     expect(formatMarks("<html><p><b>bold</b> *it*</p></html>", "bold *it")).toEqual({
       html: "<html><p><b>bold</b> <i>it</i></p></html>",
       caret: 7,
+      ended: ["italic"],
     });
   });
 
@@ -121,7 +126,14 @@ describe("insertSaved", () => {
     expect(insertSaved(html, "Thanks for **writing**", { from: 3, to: 10 })).toEqual({
       html: "<html><p><b>Hi</b> Thanks for <b>writing</b></p></html>",
       caret: 21,
+      ended: ["bold"],
     });
+  });
+
+  test("keeps the reply's marks whole when the /word is bold", () => {
+    expect(
+      insertSaved("<html><p><b>Hi /thanks</b></p></html>", "**Thanks**", { from: 3, to: 10 }),
+    ).toEqual({ html: "<html><p><b>Hi</b> <b>Thanks</b></p></html>", caret: 9, ended: ["bold"] });
   });
 
   test("replaces a /word split over formats, and keeps $ in the reply", () => {
@@ -129,6 +141,7 @@ describe("insertSaved", () => {
     expect(insertSaved(html, "Pay $$5", { from: 3, to: 10 })).toEqual({
       html: "<html><p><b>Hi</b> Pay $$5</p></html>",
       caret: 10,
+      ended: [],
     });
   });
 
@@ -136,7 +149,12 @@ describe("insertSaved", () => {
     expect(insertSaved("<html><p>Hello</p></html>", "Bye", null)).toEqual({
       html: "<html><p>Hello</p><p>Bye</p></html>",
       caret: 9,
+      ended: [],
     });
-    expect(insertSaved("", "Bye", null)).toEqual({ html: "<html><p>Bye</p></html>", caret: 3 });
+    expect(insertSaved("", "Bye", null)).toEqual({
+      html: "<html><p>Bye</p></html>",
+      caret: 3,
+      ended: [],
+    });
   });
 });

@@ -270,24 +270,36 @@ export function draftMarkdown(html: string): { markdown: string; text: string } 
 }
 
 const CARET = "\uE000";
+const INLINE = ["bold", "italic", "code"] as const;
+
+/** The field's new HTML, where its caret goes, and the formats that end just before the caret. */
+export type Rewrite = { html: string; caret: number; ended: (typeof INLINE)[number][] };
+
+/** The formats on the text just before the caret mark that the mark itself does not have. */
+function endedAt(lines: Line[]): Rewrite["ended"] {
+  for (const line of lines) {
+    const index = line.runs.findIndex((run) => run.text.includes(CARET));
+    const run = line.runs[index];
+    if (run === undefined) continue;
+    const before = run.text.startsWith(CARET) ? line.runs[index - 1] : run;
+    return INLINE.filter((mark) => before?.[mark] && !run[mark]);
+  }
+  return [];
+}
 
 /**
  * The lines' Markdown with `insert` in place of the text from `from` to `to`, as the editor's HTML,
  * and the caret after `insert`.
  */
-function replaced(
-  lines: Line[],
-  from: number,
-  to: number,
-  insert: string,
-): { html: string; caret: number } {
+function replaced(lines: Line[], from: number, to: number, insert: string): Rewrite {
   let at = 0;
   let placed = false;
   const marked = lines.map((line): Line => {
     const runs: Run[] = [];
-    // The caret takes the formats of the words around it, so their marks stay whole.
+    // A bare caret takes the formats of the words around it, so their marks stay whole. Inserted
+    // Markdown goes outside them, so its own marks stay whole.
     const place = (run?: Run) => {
-      if (!placed) runs.push({ ...run, text: CARET });
+      if (!placed) runs.push({ ...(insert === "" ? run : undefined), text: CARET });
       placed = true;
     };
     const hidden = line.runs.length === 0 && line.container !== "p";
@@ -312,11 +324,13 @@ function replaced(
   const withCaret = placed
     ? markdown.replace(CARET, () => insert + CARET)
     : markdown + insert + CARET;
-  const text = plainOf(linesOf(draftHtml(withCaret)));
+  const caretLines = linesOf(draftHtml(withCaret));
+  const text = plainOf(caretLines);
   const caret = text.indexOf(CARET);
   return {
     html: draftHtml(withCaret.replace(CARET, "")),
     caret: caret < 0 ? text.length : caret,
+    ended: endedAt(caretLines),
   };
 }
 
@@ -334,7 +348,7 @@ function changeEnd(before: string, after: string): number {
  * The editor's HTML with its Markdown marks shown as formats, as pasted or typed `**words**`, and
  * the caret where the change from `before` ended. Null when the text has no marks to format.
  */
-export function formatMarks(html: string, before: string): { html: string; caret: number } | null {
+export function formatMarks(html: string, before: string): Rewrite | null {
   const lines = linesOf(html);
   const text = plainOf(lines);
   const words = (value: string) => value.replace(/[\s\u200B]/g, "");
@@ -354,7 +368,7 @@ export function insertSaved(
   html: string,
   body: string,
   place: { from: number; to: number } | null,
-): { html: string; caret: number } {
+): Rewrite {
   const lines = linesOf(html);
   if (place !== null) return replaced(lines, place.from, place.to, body);
   const text = plainOf(lines);

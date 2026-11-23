@@ -24,7 +24,14 @@ import { usePhotoComposer } from "./attachments";
 import { readableError } from "./common";
 import { fonts } from "./fonts";
 import { Icon } from "./icon";
-import { draftHtml, draftMarkdown, formatMarks, insertSaved, visibleOffset } from "./rich-draft";
+import {
+  draftHtml,
+  draftMarkdown,
+  formatMarks,
+  insertSaved,
+  type Rewrite,
+  visibleOffset,
+} from "./rich-draft";
 import { SavedReplyList } from "./saved-reply-list";
 import type { Palette } from "./theme";
 import { matchSavedReplies, typedSlash } from "./thread-logic";
@@ -224,8 +231,10 @@ export function ThreadComposer({
   });
 
   const changeText = (body: string) => {
-    if (body === drafts.current[field.current.mode]) return;
+    const same = body.trim() === drafts.current[field.current.mode].trim();
     drafts.current[field.current.mode] = body;
+    // Spaces at the ends, as the field writes them back after a mode switch, are not a new text.
+    if (same) return;
     if (field.current.mode === "note") {
       setNoteDraft(body);
       setNoteError(null);
@@ -237,8 +246,11 @@ export function ThreadComposer({
     onDraftChange(body);
   };
 
-  /** Puts new HTML in the field, with the caret at `caret` or at the end, and returns its Markdown. */
-  const showHtml = (html: string, caret?: number) => {
+  /**
+   * Puts new HTML in the field, with the caret at `caret` or at the end, and returns its Markdown.
+   * The formats that `ended` before the caret stay off for the next words typed, as on the web.
+   */
+  const showHtml = (html: string, caret?: number, ended: Rewrite["ended"] = []) => {
     const next = draftMarkdown(html);
     field.current.html = html;
     field.current.text = next.text;
@@ -247,7 +259,13 @@ export function ThreadComposer({
     setSelection({ start: at, end: at });
     inputRef.current?.setValue(html);
     const visible = visibleOffset(next.text, at);
-    inputRef.current?.setSelection(visible, visible);
+    const input = inputRef.current;
+    input?.setSelection(visible, visible);
+    for (const format of ended) {
+      if (format === "bold") input?.toggleBold();
+      else if (format === "italic") input?.toggleItalic();
+      else input?.toggleInlineCode();
+    }
     return next.markdown;
   };
 
@@ -260,7 +278,9 @@ export function ThreadComposer({
     setFieldText(next.text);
     // Markdown marks pasted or typed show as their formats, as on the web.
     const formatted = formatMarks(html, before);
-    changeText(formatted ? showHtml(formatted.html, formatted.caret) : next.markdown);
+    changeText(
+      formatted ? showHtml(formatted.html, formatted.caret, formatted.ended) : next.markdown,
+    );
   };
 
   const switchMode = (next: Mode) => {
@@ -284,7 +304,7 @@ export function ThreadComposer({
   const pickSaved = (reply: SavedReply) => {
     const place = slashOpen && typed ? { from: typed.from, to: typed.to } : null;
     const next = insertSaved(field.current.html, reply.body, place);
-    changeText(showHtml(next.html, next.caret));
+    changeText(showHtml(next.html, next.caret, next.ended));
     setSavedToolOpen(false);
     requestAnimationFrame(() => inputRef.current?.focus());
   };
