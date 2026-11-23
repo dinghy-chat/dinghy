@@ -7,6 +7,7 @@
 <!-- The commands you ran, such as bun run typecheck, bun run lint, bun run test and bun run test:e2e. -->
 
 - [ ] I signed the [contributor license agreement](https://github.com/dinghy-chat/dinghy/blob/main/CLA.md), or the bot will ask me to on this pull request. See CONTRIBUTING.md.
-- [ ] A user-visible change has a line in `CHANGELOG.md` under Unreleased.
+- [ ] A change that people see has a line in `CHANGELOG.md` under Unreleased.
+- [ ] A change that operators notice in the app also has an entry at the top of `apps/operator/src/updates.ts`.
 
 <!-- If an agent did the work, name the model and the tool here. -->

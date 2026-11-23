@@ -16,14 +16,8 @@ import {
 
 const CHANGELOG_URL = "https://dinghy.chat/changelog/";
 
-/** "Nov 23", with the year only when it is not this one. */
-const shortDay = (date: string) =>
-  dayName(
-    date,
-    date.startsWith(String(new Date().getFullYear()))
-      ? { month: "short", day: "numeric" }
-      : { month: "short", day: "numeric", year: "numeric" },
-  );
+/** "November 23, 2026". */
+const longDay = (date: string) => dayName(date, { month: "long", day: "numeric", year: "numeric" });
 
 const KIND_TEXT: Record<UpdateKind, TextId> = {
   feature: "updateFeature",
@@ -42,8 +36,8 @@ function byDay(): { date: string; updates: (Update & { index: number })[] }[] {
   return days;
 }
 
-/** The updates by day, newest first. The first `freshCount` get a New tag. */
-function UpdatesDialog({ freshCount, onClose }: { freshCount: number; onClose(): void }) {
+/** A sheet on the right with the updates by day, newest first. The first `freshCount` get a New tag. */
+function UpdatesSheet({ freshCount, onClose }: { freshCount: number; onClose(): void }) {
   const titleId = useId();
   return (
     <Modal className="dialog updates" labelledBy={titleId} onClose={onClose}>
@@ -51,10 +45,6 @@ function UpdatesDialog({ freshCount, onClose }: { freshCount: number; onClose():
         <div className="dialog-body">
           <div className="updates-head">
             <h2 id={titleId}>{t("whatsNew")}</h2>
-            <a className="doc-link" href={CHANGELOG_URL} target="_blank" rel="noopener noreferrer">
-              {t("updatesAll")}
-              <Icon name="arrowUpRight" size={14} />
-            </a>
             <button type="button" className="icon-button" aria-label={t("close")} onClick={close}>
               <Icon name="close" size={18} />
             </button>
@@ -63,7 +53,7 @@ function UpdatesDialog({ freshCount, onClose }: { freshCount: number; onClose():
             {byDay().map((day) => (
               <section key={day.date} className="updates-day">
                 <h3>
-                  <time dateTime={day.date}>{shortDay(day.date)}</time>
+                  <time dateTime={day.date}>{longDay(day.date)}</time>
                 </h3>
                 <ul>
                   {day.updates.map((update) => (
@@ -88,6 +78,12 @@ function UpdatesDialog({ freshCount, onClose }: { freshCount: number; onClose():
                 </ul>
               </section>
             ))}
+          </div>
+          <div className="updates-foot">
+            <a className="doc-link" href={CHANGELOG_URL} target="_blank" rel="noopener noreferrer">
+              {t("updatesAll")}
+              <Icon name="arrowUpRight" size={14} />
+            </a>
           </div>
         </div>
       )}
@@ -118,12 +114,12 @@ export function WhatsNew({ operatorId }: { operatorId: string }) {
         aria-label={t(unseen > 0 ? "whatsNewUnseen" : "whatsNew")}
         onClick={openUpdates}
       >
-        <Icon name="sparkle" size={20} />
+        <Icon name="gift" size={20} />
         <span className="help-text">{t("whatsNew")}</span>
         {unseen > 0 && <i className="whats-new-dot" aria-hidden="true" />}
       </button>
       {freshCount !== null && (
-        <UpdatesDialog freshCount={freshCount} onClose={() => setFreshCount(null)} />
+        <UpdatesSheet freshCount={freshCount} onClose={() => setFreshCount(null)} />
       )}
     </div>
   );

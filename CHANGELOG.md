@@ -4,6 +4,16 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- **What's new** opens as a sheet on the right, with each day's date in full and the full changelog link at the bottom. Its sidebar icon is a gift.
+- While nobody is on the site, Visitors shows a pixel sonar that sweeps and pings. Analytics with no conversations shows a lighthouse whose light sweeps the sea, in place of the gull and its pilings.
+
+### Fixed
+
+- On a screen from 761 to 1000 pixels wide, the top bar keeps two rows: the workspace and the icons, then the sections. Before, Get started and the operator's avatar fell to a third row.
+- On Dinghy Cloud, the founder's contact in a new workspace has a company, a country and a last seen time. The new owner's contact in Dinghy's workspace has their workspace as its company.
+
 ## [0.52.0] - 2026-11-23
 
 ### Added

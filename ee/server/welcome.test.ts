@@ -245,7 +245,15 @@ describe("a new workspace's welcome chat", () => {
       welcome: true,
       status: "open",
     });
-    expect(customerSide?.guest).toMatchObject({ name: "Julien from Dinghy", email: null });
+    // No widget reports for either visitor, so the contacts list gets these from the welcome.
+    expect(customerSide?.guest).toMatchObject({
+      name: "Julien from Dinghy",
+      email: null,
+      attributes: { company: "Dinghy" },
+      country: "FR",
+      timeZone: "Europe/Paris",
+    });
+    expect(customerSide?.guest.lastSeenAt).toBeInstanceOf(Date);
     expect(await messagesIn(acme.workspaceId, link.customerConversationId)).toMatchObject([
       { body: WELCOME, authorVisitorId: customerSide?.guest.id },
     ]);
@@ -269,6 +277,8 @@ describe("a new workspace's welcome chat", () => {
     expect(founderSide?.chat).toMatchObject({ welcome: true, assigneeOperatorId: julien.id });
     expect(founderSide?.guest.name).toMatch(/^Ana, Acme /);
     expect(founderSide?.guest.email).toBeNull();
+    expect(founderSide?.guest.attributes).toEqual({ company: expect.stringMatching(/^Acme /) });
+    expect(founderSide?.guest.lastSeenAt).toBeInstanceOf(Date);
     expect(await messagesIn(dinghy.id, link.founderConversationId)).toMatchObject([
       { body: WELCOME, authorOperatorId: julien.id },
     ]);

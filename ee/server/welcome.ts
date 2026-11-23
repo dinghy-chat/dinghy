@@ -99,16 +99,20 @@ export async function welcomeProblem(
     : null;
 }
 
-/** A visitor with no email and no browser, and its welcome conversation, in the current context. */
+/**
+ * A visitor with no email and no browser, and its welcome conversation, in the current context.
+ * No widget ever reports for it, so it is seen now and its company is set here.
+ */
 async function welcomeConversation(
   tx: Transaction,
   workspaceId: string,
-  guest: { userId: string; name: string },
+  guest: { userId: string; name: string; company: string; country?: string; timeZone?: string },
   assigneeOperatorId: string | null,
 ) {
+  const { company, ...fields } = guest;
   const [made] = await tx
     .insert(visitor)
-    .values({ workspaceId, ...guest })
+    .values({ workspaceId, ...fields, attributes: { company }, lastSeenAt: new Date() })
     .returning({ id: visitor.id });
   if (made === undefined) throw new Error("The welcome visitor insert returned no row");
   const [chat] = await tx
@@ -142,6 +146,7 @@ export async function startWelcomeChat(
     {
       userId: customerUserId(customer.workspaceId),
       name: text.customerVisitor(customer.ownerName, customer.workspaceName),
+      company: customer.workspaceName,
     },
     operatorId,
   );
@@ -156,7 +161,13 @@ export async function startWelcomeChat(
   const customerSide = await welcomeConversation(
     tx,
     customer.workspaceId,
-    { userId: FOUNDER_USER_ID, name: text.founderVisitor },
+    {
+      userId: FOUNDER_USER_ID,
+      name: text.founderVisitor,
+      company: "Dinghy",
+      country: "FR",
+      timeZone: "Europe/Paris",
+    },
     null,
   );
   await appendMessage(

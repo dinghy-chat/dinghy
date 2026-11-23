@@ -12,9 +12,9 @@ import { clockTime, MINUTE_MS } from "./format.ts";
 import { Icon } from "./icons.tsx";
 import { useTabVisible } from "./live.ts";
 import { useLatestLoad, usePolling } from "./load.ts";
+import { Lookout } from "./lookout.tsx";
 import { MessageButton } from "./outbound.tsx";
 import { countryName, flag, localHour, localTime } from "./place.ts";
-import { EmptyArt } from "./scene.tsx";
 import { VisitorsSkeleton } from "./skeleton.tsx";
 import { Sparkline, Tipped } from "./stat.tsx";
 import { plural, type TextId, t } from "./text.ts";
@@ -618,11 +618,7 @@ function LiveVisitors({
         <h3 id="live-people-title">{listTitle(show, country)}</h3>
         <PeopleSummary listed={listed} now={now} />
         {visitors.length === 0 ? (
-          <div className="nothing">
-            <EmptyArt />
-            <b>{t("visitorsNone")}</b>
-            {t("visitorsNoneHint")}
-          </div>
+          <Lookout kind="sonar" title={t("visitorsNone")} hint={t("visitorsNoneHint")} />
         ) : listed.length === 0 ? (
           <p className="hint">{t("visitorsNoneShown")}</p>
         ) : (
