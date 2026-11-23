@@ -20,7 +20,7 @@ const MAX_DEPTH = 4;
 export const SAFE_LINK = /^(https?:\/\/|mailto:)[^\s]+$/i;
 // A bare link stops before trailing punctuation, so "see https://a.example." keeps its period.
 const BARE_LINK = /https?:\/\/[^\s<>"]*[^\s<>"'.,;:!?)\]]/iy;
-const FENCE = /^\s*```/;
+export const FENCE = /^\s*```/;
 const LIST_ITEM = /^\s*(?:[-*+]|(\d{1,9})[.)])\s+(.*)$/;
 const QUOTE = /^\s*> ?(.*)$/;
 
@@ -89,6 +89,10 @@ export function isBareLink(href: string): boolean {
   BARE_LINK.lastIndex = 0;
   return BARE_LINK.exec(href)?.[0] === href;
 }
+
+/** Whether a link's words are only its bare address, as the parser makes them. */
+export const isBareLinkText = (href: string, children: readonly unknown[]): boolean =>
+  children.length === 1 && children[0] === href && isBareLink(href);
 
 /** Splits a message into paragraphs, code blocks and lists. */
 export function parseMarkdown(source: string): Block[] {
