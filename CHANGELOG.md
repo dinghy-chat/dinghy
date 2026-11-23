@@ -13,6 +13,7 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 ### Changed
 
 - **Close** opens the next conversation in the list, as Shift+E does, or no conversation when no other is left. It stays on the conversation while a reply is still sending or failed, so the reply can be retried.
+- The red dot on the operator app's favicon, which shows that conversations wait for a reply, sits on the icon's corner with a clear gap around it, so it is easier to see in the tab.
 
 ## [0.50.0] - 2026-11-21
 
