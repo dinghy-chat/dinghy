@@ -1,6 +1,6 @@
 // Licensed under the Dinghy Enterprise License. See ee/LICENSE.
 /** @jsxImportSource react */
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import {
   type BillingDetails,
   type BillingState,
@@ -381,14 +381,18 @@ export function BillingPage({
   inboxBilling: BillingState | null;
   usage: ReactNode;
 }) {
-  // The page reads the state itself on opening and after each change the inbox hears of, so it
-  // never shows an answer older than its own. A failed read shows, not the last answer.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the inbox's new state asks for a read.
-  const loaded = useLoad(() => api.billing(), [api, inboxBilling]);
-  const billing = {
-    data: loaded.failure === null ? (loaded.data ?? inboxBilling) : null,
-    failure: loaded.failure,
-  };
+  // The page reads the state when it opens, and the inbox's live events bring each change after.
+  // Whichever came last shows, so neither an old inbox answer nor an old read wins. A failed read
+  // shows only when nothing else has come.
+  const loaded = useLoad(() => api.billing(), [api]);
+  const [latest, setLatest] = useState(inboxBilling);
+  useEffect(() => {
+    if (inboxBilling !== null) setLatest(inboxBilling);
+  }, [inboxBilling]);
+  useEffect(() => {
+    if (loaded.data !== null) setLatest(loaded.data);
+  }, [loaded.data]);
+  const billing = { data: latest, failure: latest === null ? loaded.failure : null };
   const details = useLoad(() => api.billingDetails(), [api]);
   return (
     <Page
