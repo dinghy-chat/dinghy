@@ -55,7 +55,6 @@ import {
   STRIPE_WEBHOOK_SECRET,
   startFakeStripe,
 } from "./test/fake-stripe.ts";
-import { FOUNDER_USER_ID } from "./welcome.ts";
 
 const ORIGIN = new URL(PUBLIC_URL).origin;
 const DAY_MS = 86_400_000;
@@ -1161,16 +1160,32 @@ describe("the lifecycle emails", () => {
   test("the welcome chat's founder contact does not count as a widget visitor", async () => {
     const paid = await paidWorkspace({ onboarding: true });
     // The welcome chat makes its founder contact seen, with no browser behind it.
+    await withWorkspace(db, paid.workspaceId, async (tx) => {
+      const [founder] = await tx
+        .insert(visitor)
+        .values({ workspaceId: paid.workspaceId, userId: "dinghy-welcome", lastSeenAt: new Date() })
+        .returning({ id: visitor.id });
+      await tx
+        .insert(conversation)
+        .values({ workspaceId: paid.workspaceId, visitorId: founder?.id ?? "", welcome: true });
+    });
+    later(ONBOARDING_DAYS.install);
+    await lifecycle();
+    expect(await sentKinds(paid.workspaceId)).toEqual(["ready", "install"]);
+  });
+
+  test("a site's own signed-in visitor counts, whatever its user ID", async () => {
+    const paid = await paidWorkspace({ onboarding: true });
     await withWorkspace(db, paid.workspaceId, (tx) =>
       tx.insert(visitor).values({
         workspaceId: paid.workspaceId,
-        userId: FOUNDER_USER_ID,
+        userId: "dinghy-welcome",
         lastSeenAt: new Date(),
       }),
     );
     later(ONBOARDING_DAYS.install);
     await lifecycle();
-    expect(await sentKinds(paid.workspaceId)).toEqual(["ready", "install"]);
+    expect(await sentKinds(paid.workspaceId)).toEqual(["ready"]);
   });
 
   test("the stop link stops the onboarding emails of its owner, and billing emails still go", async () => {

@@ -8030,6 +8030,8 @@ button.quote:hover {
   height: 100%;
   padding: 0;
   overflow-y: auto;
+  /* A focused link scrolls clear of the sticky head and foot. */
+  scroll-padding-block: 76px 60px;
 }
 .updates-head,
 .updates-foot {

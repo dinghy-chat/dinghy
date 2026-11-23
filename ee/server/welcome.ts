@@ -49,7 +49,7 @@ const text = {
 };
 
 /** The founder's visitor in a new workspace. A workspace has one welcome chat, so one is enough. */
-export const FOUNDER_USER_ID = "dinghy-welcome";
+const FOUNDER_USER_ID = "dinghy-welcome";
 /** A new workspace's visitor in Dinghy's own workspace. */
 const customerUserId = (workspaceId: string) => `dinghy-welcome-${workspaceId}`;
 /** A copy's own client ID, so a copy of one message can never go in twice. */
