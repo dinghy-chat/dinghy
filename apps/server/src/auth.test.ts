@@ -86,7 +86,7 @@ function askLink(to: string, { target = app, origin = ORIGIN, ip = address(nextA
 }
 
 const me = (cookie: string) => app.request("/v1/operator/me", { headers: { cookie } });
-const linkIn = (text: string) => /https?:\/\/\S+/.exec(text)?.[0] ?? "";
+const linkIn = (text: string) => /https?:\/\/[^\s)]+/.exec(text)?.[0] ?? "";
 
 beforeAll(async () => {
   database = await createTestDatabase();

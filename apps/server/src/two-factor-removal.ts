@@ -533,7 +533,7 @@ export function removalWorkerStep({
 
   const send = async (to: string, mail: Mail) => {
     if (mailer === undefined) throw new Error("This worker has no mail server");
-    await mailer.send(to, mail.subject, mail.body);
+    await mailer.send(to, mail.subject, mail.body, { html: mail.html });
   };
 
   /**

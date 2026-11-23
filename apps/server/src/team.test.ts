@@ -364,7 +364,9 @@ describe("inviting by email", () => {
     // It names the workspace and who invited, as the invite did.
     expect(mail.sent.at(-1)?.subject).toBe("Join Acme on Dinghy");
     expect(mail.sent.at(-1)?.text).toContain(`${boss.email} invited you to Acme.`);
-    expect(mail.sent.at(-1)?.text).toContain("Open this link to sign in and join Acme:");
+    expect(mail.sent.at(-1)?.text).toContain("Sign in and join Acme (");
+    // The HTML puts the link behind those words.
+    expect(mail.sent.at(-1)?.html).toMatch(/<a href="[^"]+"[^>]*>Sign in and join Acme<\/a>/);
     expect(mail.sent.at(-1)?.text).toContain("for the next 15 minutes");
     // Opening the link, as a mail scanner does, uses nothing.
     await openLink(mailApp, link);

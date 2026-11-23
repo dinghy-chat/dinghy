@@ -20,7 +20,14 @@ import {
   safeErrorFields,
   WRONG_ORIGIN,
 } from "../../apps/server/src/errors.ts";
-import { LINK_LASTS, letter } from "../../apps/server/src/letter.ts";
+import {
+  LINK_LASTS,
+  letter,
+  link,
+  note,
+  type Paragraph,
+  plainLetterHtml,
+} from "../../apps/server/src/letter.ts";
 import { type Live, OPERATORS } from "../../apps/server/src/live.ts";
 import { createLinkLimit, tooManyAttempts } from "../../apps/server/src/login-limit.ts";
 import type { Mailer } from "../../apps/server/src/mailer.ts";
@@ -46,29 +53,28 @@ export const CLOUD_CONTACT = "hello@dinghy.chat";
 const text = {
   signupSubject: "Finish signing up for Dinghy",
   // Fixed text only: nobody has proved this address yet.
-  signupBody: (url: string) => [
-    "Thanks for trying Dinghy! Open this link to confirm your email and set up your workspace:",
-    url,
+  signupBody: (url: string): Paragraph[] => [
+    ["Thanks for trying Dinghy! ", link("Confirm your email and set up your workspace", url), "."],
     LINK_LASTS,
     "Didn't sign up? You can ignore this email, and nothing happens.",
   ],
   takenSubject: "Your Dinghy sign-in link",
   // Sent instead of an answer that would tell the person signing up that this email has an account.
-  takenBody: (url: string) => [
+  takenBody: (url: string): Paragraph[] => [
     "Someone, hopefully you, just tried to sign up for Dinghy with this email. You already have " +
       "an account, so here's a link to sign in instead. From there, you can add a workspace.",
-    url,
+    [link("Sign in to Dinghy", url), "."],
     LINK_LASTS,
     "If it wasn't you, you can ignore this email. Nobody gets in without the link.",
   ],
   welcomeSubject: (workspace: string) => `${workspace} is ready`,
   // The operator proved this address with their link before they named themselves and the workspace.
   // Only early signup sends it, so it lists only what works before the cloud opens: no widget yet.
-  welcomeBody: (workspace: string, url: string) => [
+  welcomeBody: (workspace: string, url: string): Paragraph[] => [
     `Welcome to Dinghy! Your workspace ${workspace} is set up. Here's what to do next:`,
     "- Invite your team from Settings, under Team.\n" +
       "- Turn on alerts there too, so you hear about new messages.",
-    `Sign in any time at ${url}`,
+    [link("Sign in", url), " any time."],
     `Questions? Write to us at ${CLOUD_CONTACT}.`,
   ],
 };
@@ -190,9 +196,11 @@ export function registerSignup(
       logger.info("this server has no SMTP, so a welcome email was not sent");
       return;
     }
-    const body = letter(text.welcomeBody(workspace, publicUrl), name);
+    const paragraphs = text.welcomeBody(workspace, publicUrl);
     mailer
-      .send(to, text.welcomeSubject(workspace), body)
+      .send(to, text.welcomeSubject(workspace), letter(paragraphs, name), {
+        html: plainLetterHtml(paragraphs, { name }),
+      })
       .catch((err: unknown) => logger.warn({ err }, "a welcome email was not sent"));
   };
 
@@ -207,8 +215,11 @@ export function registerSignup(
     const taken = known?.proven === true;
     // A known email lands on the workspace setup, which is why its owner came to sign up.
     const url = await signInLink(auth, email, taken ? "add-workspace" : "signup", "email");
-    const subject = taken ? text.takenSubject : text.signupSubject;
-    await mailer.send(email, subject, letter(taken ? text.takenBody(url) : text.signupBody(url)));
+    const mail = note(
+      taken ? text.takenSubject : text.signupSubject,
+      taken ? text.takenBody(url) : text.signupBody(url),
+    );
+    await mailer.send(email, mail.subject, mail.body, { html: mail.html });
   };
 
   app.use("/v1/signup", limitByIp(rateLimit, "signup", 10, 3600));

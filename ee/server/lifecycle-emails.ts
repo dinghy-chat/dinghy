@@ -7,8 +7,9 @@ import type { App } from "../../apps/server/src/app.ts";
 import type { lifecycleEmailKind } from "../../apps/server/src/db/schema.ts";
 import { workspaceMember } from "../../apps/server/src/db/schema.ts";
 import { type Database, withWorkspace } from "../../apps/server/src/db/tenant.ts";
-import { letter } from "../../apps/server/src/letter.ts";
+import { link, type Paragraph, plainLetterHtml } from "../../apps/server/src/letter.ts";
 import { limitByIp, type RateLimit } from "../../apps/server/src/rate-limit.ts";
+import { escapeHtml } from "../../packages/widget/src/markdown.ts";
 
 /** The founder signs the cloud's lifecycle emails, and replies reach the founder too. */
 export const LIFECYCLE_SIGN_OFF = "Cheers,\nJulien from Dinghy";
@@ -35,16 +36,6 @@ export interface MailContext {
   deleteOn: Date;
   endsOn: Date | null;
 }
-
-/** Words that open a link. The HTML puts the link behind them, and the plain text adds the address. */
-interface Link {
-  label: string;
-  url: string;
-}
-/** A paragraph: words, and links among them. */
-type Paragraph = string | (string | Link)[];
-
-const link = (label: string, url: string): Link => ({ label, url });
 
 /** A date as people write it, such as "December 10, 2026". */
 const date = (value: Date | null) =>
@@ -259,42 +250,16 @@ const MAILS: Record<Kind, (c: MailContext) => Mail> = {
   deleted: (c) => ({ subject: text.deletedSubject(c.name), body: text.deletedBody(c) }),
 };
 
-const escapeHtml = (value: string) =>
-  value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-
-const parts = (paragraph: Paragraph) => (typeof paragraph === "string" ? [paragraph] : paragraph);
-
-/** A paragraph in plain text, where each link's address follows its words. */
-const plainText = (paragraph: Paragraph) =>
-  parts(paragraph)
-    .map((part) => (typeof part === "string" ? part : `${part.label} (${part.url})`))
-    .join("");
-
-/** A paragraph in HTML, where each link sits behind its words. Every word is escaped. */
-const paragraphHtml = (paragraph: Paragraph) =>
-  parts(paragraph)
-    .map((part) =>
-      typeof part === "string"
-        ? escapeHtml(part)
-        : `<a href="${escapeHtml(part.url)}" style="color:#1d4ed8">${escapeHtml(part.label)}</a>`,
-    )
-    .join("");
-
 /**
- * One email's subject, its paragraphs as plain text and as HTML, the footer and the headers. An
- * onboarding email's footer unsubscribes.
+ * One email's subject, its paragraphs, the footer and the headers. An onboarding email's footer
+ * unsubscribes.
  */
 export function lifecycleMail(kind: Kind, context: MailContext) {
   const { subject, body } = MAILS[kind](context);
   const { stopUrl } = context;
   return {
     subject,
-    body: body.map(plainText),
-    bodyHtml: body.map(paragraphHtml),
+    body,
     footer: stopUrl === undefined ? undefined : text.stopLine(stopUrl),
     stopUrl,
     headers: {
@@ -310,28 +275,20 @@ export function lifecycleMail(kind: Kind, context: MailContext) {
 }
 
 /**
- * The HTML version of a lifecycle email to one owner, from its HTML paragraphs. It looks like the
- * plain text, and an onboarding email ends with a small Unsubscribe link instead of the address.
+ * The HTML version of a lifecycle email to one owner. It looks like the plain text, and an
+ * onboarding email ends with a small Unsubscribe link instead of the address.
  */
 export function lifecycleHtml(
-  bodyHtml: string[],
+  body: Paragraph[],
   ownerName: string,
   stopUrl: string | undefined,
 ): string {
-  const signed = letter(bodyHtml, escapeHtml(ownerName), undefined, LIFECYCLE_SIGN_OFF);
-  const paragraphs = signed
-    .split("\n\n")
-    .map((paragraph) => `<p style="margin:0 0 14px">${paragraph.replaceAll("\n", "<br>")}</p>`);
   const footer =
     stopUrl === undefined
       ? ""
       : `<p style="margin:28px 0 0;font-size:11px;color:#8a8f98"><a href="${escapeHtml(stopUrl)}" ` +
         `style="color:#8a8f98">${text.stopLink}</a></p>`;
-  return (
-    '<!doctype html><html><body style="margin:0;padding:16px;font-family:-apple-system,' +
-    "BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.55;" +
-    `color:#1d2433">${paragraphs.join("")}${footer}</body></html>`
-  );
+  return plainLetterHtml(body, { name: ownerName, signOff: LIFECYCLE_SIGN_OFF, footer });
 }
 
 /** Signs the stop link, so nobody can stop the emails of another owner. */

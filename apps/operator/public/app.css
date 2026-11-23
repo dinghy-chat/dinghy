@@ -1132,6 +1132,21 @@ textarea {
   width: 32px;
   height: 32px;
 }
+/* A banner's button: light on the navy banners, and the dark fill on the white waiting one. */
+.btn.light {
+  background: var(--on-navy);
+  color: var(--navy);
+}
+.btn.light:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--on-navy) 88%, var(--navy));
+}
+.waiting-banner .btn.light {
+  background: var(--fill);
+  color: var(--on-fill);
+}
+.waiting-banner .btn.light:hover:not(:disabled) {
+  background: var(--fill-hover);
+}
 .billing-banner a {
   color: inherit;
   font-weight: 600;

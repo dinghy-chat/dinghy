@@ -20,6 +20,7 @@ import {
   workspaceMember,
 } from "../../apps/server/src/db/schema.ts";
 import { type Database, withWorkspace } from "../../apps/server/src/db/tenant.ts";
+import { letter } from "../../apps/server/src/letter.ts";
 import { createSignals } from "../../apps/server/src/live.ts";
 import type { MailExtras, Mailer } from "../../apps/server/src/mailer.ts";
 import { appendMessage } from "../../apps/server/src/messages.ts";
@@ -512,8 +513,8 @@ describe("the HTML version of a lifecycle email", () => {
     });
     const install = "https://app.dinghy.chat/settings/install?workspace=1&x=2";
     // The plain text keeps the address after the words.
-    expect(mail.body[1]).toContain(`the Install page (${install})`);
-    const html = lifecycleHtml(mail.bodyHtml, "<i>Bob</i>", "https://app.dinghy.chat/stop?s=1");
+    expect(letter(mail.body)).toContain(`the Install page (${install})`);
+    const html = lifecycleHtml(mail.body, "<i>Bob</i>", "https://app.dinghy.chat/stop?s=1");
     expect(html).toContain("Hi &lt;i&gt;Bob&lt;/i&gt;,");
     expect(html).toContain("&lt;b&gt;&quot;Acme&quot;&lt;/b&gt; is all set.");
     expect(html).toContain(
@@ -522,7 +523,7 @@ describe("the HTML version of a lifecycle email", () => {
     expect(html).not.toContain(">https://");
     expect(html).toContain("Cheers,<br>Julien from Dinghy");
     expect(html).toContain(">Unsubscribe</a></p></body></html>");
-    expect(lifecycleHtml(mail.bodyHtml, "Bob", undefined)).not.toContain("Unsubscribe");
+    expect(lifecycleHtml(mail.body, "Bob", undefined)).not.toContain("Unsubscribe");
   });
 });
 

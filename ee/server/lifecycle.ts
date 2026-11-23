@@ -613,7 +613,7 @@ async function sendLifecycleEmails({
         // The unsubscribe line sits under the signature, out of the way of the message.
         const signed = letter(mail.body, owner.name, undefined, LIFECYCLE_SIGN_OFF);
         const body = mail.footer === undefined ? signed : `${signed}\n\n${mail.footer}`;
-        const html = lifecycleHtml(mail.bodyHtml, owner.name, mail.stopUrl);
+        const html = lifecycleHtml(mail.body, owner.name, mail.stopUrl);
         await mailer?.send(owner.email, mail.subject, body, { headers: mail.headers, html });
         delivered += 1;
       } catch (err) {

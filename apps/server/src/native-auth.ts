@@ -369,7 +369,7 @@ async function sendEmailCode(
   const code = randomInt(10 ** (EMAIL_CODE_DIGITS - 1), 10 ** EMAIL_CODE_DIGITS).toString();
   await storeEmailCode(db, auth.options.secret, email, account.id, code);
   const mail = nativeSignInCodeMail(code, EMAIL_CODE_MINUTES);
-  await mailer.send(email, mail.subject, mail.body);
+  await mailer.send(email, mail.subject, mail.body, { html: mail.html });
   audit(logger, "native_email_code.sent", { operatorId: account.id, ip });
 }
 
