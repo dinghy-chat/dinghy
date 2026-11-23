@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.52.0] - 2026-11-23
+
 ### Added
 
 - **What's new** in the sidebar lists the changes a team notices, in plain words, with a red dot until the operator opens it. The browser remembers what each operator saw. The same list is at [dinghy.chat/changelog](https://dinghy.chat/changelog/).
@@ -792,7 +794,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.51.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.52.0...HEAD
+[0.52.0]: https://github.com/dinghy-chat/dinghy/compare/v0.51.0...v0.52.0
 [0.51.0]: https://github.com/dinghy-chat/dinghy/compare/v0.50.0...v0.51.0
 [0.50.0]: https://github.com/dinghy-chat/dinghy/compare/v0.49.0...v0.50.0
 [0.49.0]: https://github.com/dinghy-chat/dinghy/compare/v0.48.0...v0.49.0
