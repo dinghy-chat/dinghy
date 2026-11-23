@@ -29,8 +29,7 @@ function deleteError(failure: unknown): string {
   return readableError(failure);
 }
 
-/** How the server confirms a delete: by an emailed link, or by the typed email at once. */
-type Mode = "email" | "typed";
+type Mode = Me["deleteConfirmation"];
 
 /**
  * The operator deletes their account. The sheet first lists what they lose, with what happens to
@@ -86,10 +85,10 @@ export function DeleteAccountSheet({
     setSent(false);
     setError("");
     let active = true;
-    void Promise.all([api.sendsEmail(), api.me()]).then(
-      ([email, fresh]) => {
+    void api.me().then(
+      (fresh) => {
         if (!active) return;
-        setMode(email ? "email" : "typed");
+        setMode(fresh.deleteConfirmation);
         setAccount(fresh);
       },
       (failure: unknown) => {
@@ -140,8 +139,6 @@ export function DeleteAccountSheet({
     }
     setBusy(false);
   }
-  const explanation =
-    mode === "email" ? t("deleteAccountConfirmEmail") : t("deleteAccountConfirmTyped");
   return (
     <Sheet visible={visible} onClose={close} dismissible={!busy} palette={palette}>
       <View style={s.bar}>
@@ -170,17 +167,7 @@ export function DeleteAccountSheet({
           </Text>
         ) : (
           <>
-            <Text style={[s.label, { color: palette.ink }]}>{t("mobileDeleteAccountLoses")}</Text>
-            <View style={s.losses}>
-              {(["mobileDeleteAccountLosesAccess", "mobileDeleteAccountLosesProfile"] as const).map(
-                (key) => (
-                  <View key={key} style={s.loss}>
-                    <View style={[s.dot, { backgroundColor: palette.danger }]} />
-                    <Text style={[s.text, s.flex, { color: palette.ink }]}>{t(key)}</Text>
-                  </View>
-                ),
-              )}
-            </View>
+            <Text style={[s.text, { color: palette.ink }]}>{t("mobileDeleteAccountSummary")}</Text>
             {owned.length > 0 && (
               <View style={[s.card, { backgroundColor: palette.wash }]}>
                 {owned.map((one, index) => (
@@ -194,17 +181,17 @@ export function DeleteAccountSheet({
                       />
                       <Text style={[s.outcomeText, { color: palette.ink }]}>
                         {one.heir === null
-                          ? t("deleteAccountWorkspaceGoes", { name: one.name })
-                          : t("deleteAccountWorkspacePasses", { name: one.name, heir: one.heir })}
+                          ? t("mobileDeleteAccountWorkspaceGoes", { name: one.name })
+                          : t("mobileDeleteAccountWorkspacePasses", {
+                              name: one.name,
+                              heir: one.heir,
+                            })}
                       </Text>
                     </View>
                   </View>
                 ))}
               </View>
             )}
-            <Text style={[s.text, { color: palette.sub }]}>
-              {t("mobileDeleteAccountKeepsReplies")}
-            </Text>
             {loadFailed ? (
               <View style={s.checking}>
                 <Text style={[s.text, s.flex, { color: palette.danger }]}>
@@ -219,15 +206,15 @@ export function DeleteAccountSheet({
                   <Text style={[s.barText, { color: palette.blue }]}>{t("mobileRetry")}</Text>
                 </Pressable>
               </View>
-            ) : mode === null ? (
-              <View style={s.checking}>
-                <ActivityIndicator color={palette.sub} />
-                <Text style={[s.text, s.flex, { color: palette.sub }]}>
-                  {t("mobileDeleteAccountChecking")}
-                </Text>
-              </View>
             ) : (
-              <Text style={[s.text, { color: palette.sub }]}>{explanation}</Text>
+              mode === null && (
+                <View style={s.checking}>
+                  <ActivityIndicator color={palette.sub} />
+                  <Text style={[s.text, s.flex, { color: palette.sub }]}>
+                    {t("mobileDeleteAccountChecking")}
+                  </Text>
+                </View>
+              )
             )}
             {mode !== null && (
               <>
@@ -302,9 +289,6 @@ const s = StyleSheet.create({
   body: { paddingHorizontal: 20, paddingTop: 12, paddingBottom: 24, gap: 14 },
   text: { fontFamily: fonts.body, fontSize: 15, lineHeight: 21 },
   flex: { flex: 1, minWidth: 0 },
-  losses: { gap: 8 },
-  loss: { flexDirection: "row", alignItems: "flex-start", gap: 10 },
-  dot: { width: 6, height: 6, borderRadius: 3, marginTop: 8 },
   checking: { flexDirection: "row", alignItems: "center", gap: 10 },
   card: { borderRadius: 14, overflow: "hidden" },
   divider: { height: StyleSheet.hairlineWidth, marginLeft: 46 },

@@ -111,7 +111,23 @@ const askDelete = (as: Person, body: unknown = {}, server = app) =>
     body: JSON.stringify(body),
   });
 
-const me = (as: Person) => app.request("/v1/operator/me", { headers: { cookie: as.cookie } });
+const me = (as: Person, server = app) =>
+  server.request("/v1/operator/me", { headers: { cookie: as.cookie } });
+
+/** Each request comes from its own address, past the limit of one code a minute. */
+const codeRequest = (server: App, email: string, ip: string) =>
+  server.request("/v1/auth/native/email-code/request", {
+    method: "POST",
+    headers: { origin: ORIGIN, "content-type": "application/json", "x-forwarded-for": ip },
+    body: JSON.stringify({ email }),
+  });
+
+const codeVerify = (server: App, email: string, code: string) =>
+  server.request("/v1/auth/native/email-code/verify", {
+    method: "POST",
+    headers: { origin: ORIGIN, "content-type": "application/json" },
+    body: JSON.stringify({ email, code }),
+  });
 
 /** Asks for a delete link and returns it, from the email. */
 async function deleteLink(as: Person): Promise<string> {
@@ -445,6 +461,41 @@ describe("the app review account", () => {
       const signedIn = { ...reviewer, cookie: await signIn(app, auth, reviewer.email) };
       expect((await askDelete(signedIn, {}, review)).status).toBe(200);
     }
+  });
+
+  test("is confirmed at once, and sign-in refuses it for ten minutes as a deleted account", async () => {
+    const space = await createWorkspace(db, "Review harbor window", []);
+    const reviewer = await person(space.id, "owner");
+    const other = await person(space.id, "member");
+    const review = createApp({
+      appReview: { email: reviewer.email, code: "024680" },
+      auth,
+      db,
+      logger,
+      live,
+      valkey,
+      mailer: mail,
+      trustedProxyHops: 1,
+      checks: { postgres: ok, valkey: ok },
+    });
+    const confirmation = async (as: Person) =>
+      ((await (await me(as, review)).json()) as { deleteConfirmation: string }).deleteConfirmation;
+    expect(await confirmation(reviewer)).toBe("typed");
+    expect(await confirmation(other)).toBe("email");
+
+    // A code asked for before the delete goes with it.
+    expect((await codeRequest(review, reviewer.email, "203.0.113.71")).status).toBe(200);
+    expect((await askDelete(reviewer, {}, review)).status).toBe(200);
+    expect((await codeVerify(review, reviewer.email, "024680")).status).toBe(400);
+    expect((await codeRequest(review, reviewer.email, "203.0.113.72")).status).toBe(200);
+    expect((await codeVerify(review, reviewer.email, "024680")).status).toBe(400);
+
+    await owner
+      .update(verification)
+      .set({ expiresAt: new Date(Date.now() - 1000) })
+      .where(eq(verification.identifier, "app-review-deleted"));
+    expect((await codeRequest(review, reviewer.email, "203.0.113.73")).status).toBe(200);
+    expect((await codeVerify(review, reviewer.email, "024680")).status).toBe(200);
   });
 
   test("a delete link sent before the review settings only signs it out", async () => {

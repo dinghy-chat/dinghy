@@ -5,6 +5,7 @@ import { bodyLimit } from "hono/body-limit";
 import type { Logger } from "pino";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
+import { markReviewDeleted } from "./app-review.ts";
 import { audit } from "./audit.ts";
 import { confirmUrl, LINK_MINUTES } from "./auth.ts";
 import {
@@ -411,13 +412,17 @@ export function registerAccountDelete(
   };
 
   /**
-   * The app review account's delete. The reviewer sees it finish at once, as the end of their
-   * test. The account and its workspace stay for the next review, so it ends the sessions and push
-   * devices, and turns off two-step sign-in, which the next reviewer could not pass. With `link`,
-   * an emailed delete link's row, it uses the link up in the same transaction, and returns false
-   * when another request used it first.
+   * The app review account's delete. The reviewer sees it finish at once, and for a few minutes
+   * sign-in answers as for a deleted account. The account and its workspace stay for the next
+   * review, so it ends the sessions and push devices, and turns off two-step sign-in, which the
+   * next reviewer could not pass. With `link`, an emailed delete link's row, it uses the link up
+   * in the same transaction, and returns false when another request used it first.
    */
-  const signOutReview = async (operatorId: string, link?: string): Promise<boolean> => {
+  const signOutReview = async (
+    operatorId: string,
+    email: string,
+    link?: string,
+  ): Promise<boolean> => {
     const done = await db.transaction(async (tx) => {
       // The account's row first, then the link, in the order the full delete locks them.
       await tx
@@ -437,6 +442,7 @@ export function registerAccountDelete(
       await tx.update(operator).set({ twoFactorOn: false }).where(eq(operator.id, operatorId));
       await tx.delete(session).where(eq(session.userId, operatorId));
       await tx.delete(pushSubscription).where(eq(pushSubscription.operatorId, operatorId));
+      await markReviewDeleted(tx, email);
       return true;
     });
     if (!done) return false;
@@ -453,7 +459,7 @@ export function registerAccountDelete(
     const email = c.get("operatorEmail");
     // Before the limit, because each reviewer deletes the same account.
     if (email.toLowerCase() === appReviewEmail) {
-      await signOutReview(operatorId);
+      await signOutReview(operatorId, email);
       return c.json({ deleted: true }, 200);
     }
     const wait = await rateLimit.hit("account-delete", operatorId, REQUESTS_PER_HOUR, HOUR_SECONDS);
@@ -501,7 +507,7 @@ export function registerAccountDelete(
     const { operatorId, email } = PendingDelete.parse(JSON.parse(row.value));
     // A link sent before the review settings were set still only signs the review account out.
     if (email.toLowerCase() === appReviewEmail) {
-      if (!(await signOutReview(operatorId, identifier))) return c.json(LINK_INVALID, 400);
+      if (!(await signOutReview(operatorId, email, identifier))) return c.json(LINK_INVALID, 400);
       return c.json({ ok: true as const }, 200);
     }
     // The link names the account's email, so the delete removes it with the other links: it works

@@ -210,12 +210,7 @@ export function Settings({
     switch (shown) {
       case "profile":
         return (
-          <ProfilePage
-            me={me}
-            emailAvailable={emailAvailable}
-            onChanged={onProfileChanged}
-            onAccountDeleted={onAccountDeleted}
-          />
+          <ProfilePage me={me} onChanged={onProfileChanged} onAccountDeleted={onAccountDeleted} />
         );
       case "notifications":
         return <NotificationsPage api={api} />;

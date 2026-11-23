@@ -173,12 +173,10 @@ const en = {
     "Dinghy could not reach the server. Retry when this phone is online.",
   mobileDeleteAccountDeleted: "Your account is deleted.",
   mobileDeleteAccountSentTitle: "Check your email",
-  mobileDeleteAccountLoses: "When your account is deleted, you lose:",
-  mobileDeleteAccountLosesAccess:
-    "Access to every workspace you are in. You are signed out on all your devices.",
-  mobileDeleteAccountLosesProfile: "Your name, email and profile photo. They are erased.",
-  mobileDeleteAccountKeepsReplies:
-    'Your replies stay in their conversations, shown as from "Former team member".',
+  mobileDeleteAccountSummary:
+    "You lose access to every workspace, and your name, email and photo are erased. This can't be undone.",
+  mobileDeleteAccountWorkspaceGoes: "{name} and its conversations are deleted.",
+  mobileDeleteAccountWorkspacePasses: "{name} passes to {heir}.",
   // Native profile and team, build 6. Keep this block unique so mobile worktrees can merge it.
   mobileEditProfile: "Edit profile",
   mobileChangePhoto: "Change photo",

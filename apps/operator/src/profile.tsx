@@ -61,16 +61,9 @@ function ThemeChoice() {
  * own: it passes to a teammate, or goes with the account when nobody else is in it. The Profile
  * page shows it, and so does every screen an operator can land on without a workspace.
  */
-export function DeleteAccount({
-  me,
-  emailAvailable,
-  onDeleted,
-}: {
-  me: Me;
-  /** The server sends email, so a link confirms. Without, the operator types their email. */
-  emailAvailable: boolean;
-  onDeleted(): void;
-}) {
+export function DeleteAccount({ me, onDeleted }: { me: Me; onDeleted(): void }) {
+  // A link sent to the account confirms, or the operator types their email.
+  const emailAvailable = me.deleteConfirmation === "email";
   const owned = me.workspaces.filter((one) => one.soleOwner);
   const [open, setOpen] = useState(false);
   const [typed, setTyped] = useState("");
@@ -157,12 +150,10 @@ export function DeleteAccount({
 
 export function ProfilePage({
   me,
-  emailAvailable,
   onChanged,
   onAccountDeleted,
 }: {
   me: Me;
-  emailAvailable: boolean;
   onChanged(): void;
   onAccountDeleted(): void;
 }) {
@@ -212,7 +203,7 @@ export function ProfilePage({
         docs={[{ path: "operator-guide#delete-your-account", text: "accountDocsLink" }]}
         danger
       >
-        <DeleteAccount me={me} emailAvailable={emailAvailable} onDeleted={onAccountDeleted} />
+        <DeleteAccount me={me} onDeleted={onAccountDeleted} />
       </PageRow>
     </Page>
   );

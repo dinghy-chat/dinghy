@@ -83,14 +83,12 @@ export function Signup({ early }: { early: boolean }) {
 export function Onboarding({
   early,
   me,
-  emailAvailable,
   onSignedOut,
   onAccountDeleted,
   deletedName = null,
 }: {
   early: boolean;
   me: Me;
-  emailAvailable: boolean;
   onSignedOut(): void;
   onAccountDeleted(): void;
   /** The workspace the operator just deleted, when it was their last one. */
@@ -174,7 +172,7 @@ export function Onboarding({
       {/* An account that has been in a workspace has a name, and with no workspace it has no
           Profile page, so its delete is here. A new account, still without a name, sees none. */}
       {me.name !== "" && me.workspaces.length === 0 && (
-        <DeleteAccount me={me} emailAvailable={emailAvailable} onDeleted={onAccountDeleted} />
+        <DeleteAccount me={me} onDeleted={onAccountDeleted} />
       )}
     </AuthPage>
   );
@@ -185,7 +183,6 @@ export function FinishPayment({
   me,
   workspace,
   others,
-  emailAvailable,
   onSwitch,
   onSignedOut,
   onWorkspaceDeleted,
@@ -195,7 +192,6 @@ export function FinishPayment({
   workspace: Me["workspaces"][number];
   /** The operator's paid workspaces, so this screen is never a dead end. */
   others: Me["workspaces"];
-  emailAvailable: boolean;
   onSwitch(id: string): void;
   onSignedOut(): void;
   onWorkspaceDeleted(name: string): void;
@@ -257,7 +253,7 @@ export function FinishPayment({
           {t("deleteWorkspaceOpen")}
         </button>
       )}
-      <DeleteAccount me={me} emailAvailable={emailAvailable} onDeleted={onAccountDeleted} />
+      <DeleteAccount me={me} onDeleted={onAccountDeleted} />
       {deleting && (
         // Nothing was paid, so no subscription ends, and the workspace shows no counts and has no
         // export until it is paid.
