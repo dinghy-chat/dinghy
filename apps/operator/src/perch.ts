@@ -3,8 +3,6 @@
 import {
   BEAK_OPEN,
   BLINK,
-  CLOUD_A,
-  CLOUD_B,
   FISH,
   FISH_DOWN,
   FISH_UP,
@@ -28,37 +26,33 @@ import {
   pixelCanvas,
   type Sprite,
 } from "./pixel.ts";
+import {
+  BIG_CLOUDS,
+  BIG_SCENE,
+  type Cloud,
+  drawClouds,
+  drawLapping,
+  drawPond,
+  moveClouds,
+  POND_FROM_BOTTOM,
+  POND_HALF_WIDTHS,
+} from "./pond.ts";
 
 /** What the gull does at home: watch, sleep, or look through its telescope. */
 export type PerchMode = "idle" | "sleep" | "search";
 /**
- * What else is on the pond: the skiff of a live chat, the post that holds the board, or pilings
- * that rise and fall like the bars of a chart, for Analytics before its first numbers.
+ * What else is on the pond: the skiff of a live chat, or the post that holds the board.
  */
-export type PondExtra = "skiff" | "board" | "chart" | null;
+export type PondExtra = "skiff" | "board" | null;
 
 export type Point = { x: number; y: number };
 
-type Cloud = { art: Sprite; x: number; y: number; speed: number };
-
 /** The big scene in the empty pane, and the small one in the corner beside a list. */
 const SIZES = {
-  big: {
-    w: 110,
-    h: 78,
-    pondScale: 1,
-    clouds: [
-      { art: CLOUD_B, x: 6, y: 6, speed: 1.2 },
-      { art: CLOUD_A, x: 78, y: 16, speed: 0.8 },
-    ],
-  },
+  big: { ...BIG_SCENE, pondScale: 1, clouds: BIG_CLOUDS },
   small: { w: 62, h: 60, pondScale: 0.78, clouds: [] },
 } satisfies Record<string, { w: number; h: number; pondScale: number; clouds: Cloud[] }>;
 export type PerchSize = keyof typeof SIZES;
-/** The big scene's size in art pixels, to fit it in the pane. */
-export const BIG_SCENE = { w: SIZES.big.w, h: SIZES.big.h };
-
-const POND_FROM_BOTTOM = 17;
 const POST_ABOVE_POND = 21;
 /** The board's short post stands right of the gull's, its top a little above the pond. */
 const BOARD_POST = { right: 29, abovePond: 13 };
@@ -67,19 +61,6 @@ export const BOARD_POST_TOP = {
   x: Math.round(SIZES.big.w / 2) + BOARD_POST.right,
   y: SIZES.big.h - POND_FROM_BOTTOM - BOARD_POST.abovePond,
 };
-/** The chart's pilings, right of the gull: how far from the middle, and their usual height. */
-const CHART_PILINGS = [
-  { right: 11, abovePond: 5 },
-  { right: 17, abovePond: 9 },
-  { right: 23, abovePond: 7 },
-  { right: 29, abovePond: 13 },
-];
-const CHART_PILING_WIDTH = 4;
-/** Each piling rises and falls this far, a beat after the one before, as numbers would come in. */
-const CHART_SWING = { px: 3, speed: 1.1, lag: 0.8 };
-/** Half the pond's width on each of its rows, top to bottom. */
-const POND_HALF_WIDTHS = [15, 23, 28, 31, 33, 34, 34, 33, 31, 28, 23, 15];
-const CLOUD_SWAP = { 1: "4", 2: "5", 3: "6" } as const;
 /** Where the skiff sails, from the scene's middle. */
 const SKIFF_RANGE = { from: -28, to: 16 };
 /** Where a click on the pond makes a fish leap, which stays inside the small scene's pond too. */
@@ -153,33 +134,12 @@ export function createPerch(canvas: HTMLCanvasElement, size: PerchSize, scale: n
     return { x: box.left + x * pixel, y: box.top + y * pixel };
   };
 
-  function drawPond() {
-    widths.forEach((half, row) => {
-      const wide = half + Math.round(Math.sin(s.time * 1.6 + row * 0.9));
-      const color = row < 3 ? P.l : row < 8 ? P.b : P.B;
-      fillRun(ctx, color, CX - wide, POND + row, wide * 2);
-    });
-    for (let index = 0; index < 5; index += 1) {
-      if (Math.sin(s.time * 1.5 + index * 2.1) < 0) continue;
-      const x = CX - 24 + ((index * 13 + Math.floor(s.time * 3)) % 46);
-      fillRun(ctx, P.s, x, POND + 1 + ((index * 2) % 9), 3);
-    }
-  }
-
-  /** Blue dashes that move along a waterline: the water lapping at something. */
-  function drawLapping(origin: number, from: number, to: number, y: number, speed: number) {
-    for (let i = from; i <= to; i += 1) {
-      if ((i + Math.floor(s.time * speed)) % 4 < 2) fillRun(ctx, P.b, origin + i, y, 1);
-    }
-  }
-
   function drawExtra() {
     if (s.extra === "skiff") {
       const bob = Math.round(Math.sin(s.time * 2.2));
       blit(ctx, SKIFF, skiff.x, POND - 5 + bob, { flip: skiff.way < 0 });
-      drawLapping(Math.round(skiff.x), 1, 9, POND + 4, 5);
+      drawLapping(ctx, Math.round(skiff.x), 1, 9, POND + 4, 5, s.time);
     }
-    if (s.extra === "chart") drawChart();
     if (s.extra === "board") {
       const postX = CX + BOARD_POST.right;
       const postY = POND - BOARD_POST.abovePond;
@@ -187,25 +147,6 @@ export function createPerch(canvas: HTMLCanvasElement, size: PerchSize, scale: n
       fillRun(ctx, P.T, postX + 1, postY + 1, 2, 20);
       fillRun(ctx, P.t, postX - 4, postY, 8, 2);
     }
-  }
-
-  /** Wooden pilings as bars, the tallest with a yellow cap, each lapped by the water. */
-  function drawChart() {
-    const heights = CHART_PILINGS.map(
-      ({ abovePond }, index) =>
-        abovePond +
-        Math.round(Math.sin(s.time * CHART_SWING.speed - index * CHART_SWING.lag) * CHART_SWING.px),
-    );
-    const tallest = Math.max(...heights);
-    CHART_PILINGS.forEach(({ right }, index) => {
-      const height = heights[index] ?? 0;
-      const x = CX + right;
-      const top = POND - height;
-      fillRun(ctx, P.t, x, top, CHART_PILING_WIDTH, height + 4);
-      fillRun(ctx, P.T, x + CHART_PILING_WIDTH - 1, top, 1, height + 4);
-      fillRun(ctx, height === tallest ? P.y : P.e, x, top - 1, CHART_PILING_WIDTH, 1);
-      drawLapping(x, -1, CHART_PILING_WIDTH, POND + 3, 4);
-    });
   }
 
   function pose(now: number): { art: Sprite; isFull: boolean; into: number } {
@@ -292,11 +233,11 @@ export function createPerch(canvas: HTMLCanvasElement, size: PerchSize, scale: n
 
   function draw(now: number) {
     clearCanvas(ctx);
-    for (const cloud of clouds) blit(ctx, cloud.art, cloud.x, cloud.y, { swap: CLOUD_SWAP });
-    drawPond();
+    drawClouds(ctx, clouds);
+    drawPond(ctx, CX, POND, widths, s.time);
     drawExtra();
     blit(ctx, POST, CX - 4, TOP);
-    drawLapping(CX, -6, 5, TOP + 28, 4);
+    drawLapping(ctx, CX, -6, 5, TOP + 28, 4, s.time);
     if (!s.isAway) drawGull(now);
     drawLeaps(now);
   }
@@ -306,10 +247,7 @@ export function createPerch(canvas: HTMLCanvasElement, size: PerchSize, scale: n
     if (s.time > s.blinkAt + BLINK_S) {
       s.blinkAt = s.time + BLINK_GAP_S.least + Math.random() * BLINK_GAP_S.more;
     }
-    for (const cloud of clouds) {
-      cloud.x += cloud.speed * deltaS;
-      if (cloud.x > W + 2) cloud.x = -cloud.art.w;
-    }
+    moveClouds(clouds, W, deltaS);
     skiff.x += skiff.way * SKIFF_SPEED_PX_S * deltaS;
     if (skiff.x > CX + SKIFF_RANGE.to) skiff.way = -1;
     if (skiff.x < CX + SKIFF_RANGE.from) skiff.way = 1;
@@ -335,7 +273,6 @@ export function createPerch(canvas: HTMLCanvasElement, size: PerchSize, scale: n
     else if (s.pointerX !== null && now - s.pointerAt < POINTER_FRESH_MS) {
       s.flip = s.pointerX < canvas.getBoundingClientRect().left + CX * pixel;
     } else if (s.extra === "skiff") s.flip = skiff.x + 5 < CX;
-    else if (s.extra === "chart") s.flip = false;
   }
 
   const loop = animate(canvas, (deltaS, now) => {

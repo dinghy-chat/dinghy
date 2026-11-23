@@ -5,7 +5,6 @@ import type { WorkspaceApi } from "./api.ts";
 import { isEmptyInbox, lookKey, type PaneLook } from "./empty-look.ts";
 import { createFlights, type Flights, type Pickup } from "./flight.ts";
 import {
-  BIG_SCENE,
   BOARD_POST_TOP,
   createPerch,
   type Perch,
@@ -14,6 +13,7 @@ import {
   type PondExtra,
 } from "./perch.ts";
 import { isLessMotion } from "./pixel.ts";
+import { BIG_SCENE } from "./pond.ts";
 import { isShortcut, NEXT_ROW_KEY, useShortcutsOn } from "./shortcuts.tsx";
 import { plural, type TextId, t } from "./text.ts";
 import { failureText } from "./ui.tsx";
@@ -104,8 +104,8 @@ function useHeld(look: PaneLook): Held | null {
   return held;
 }
 
-/** The pane's biggest whole scale that leaves room for the words. */
-function useFitScale(pane: RefObject<HTMLDivElement | null>): number {
+/** The pane's biggest whole scale for a big scene that leaves room for the words. */
+export function useFitScale(pane: RefObject<HTMLDivElement | null>): number {
   const [scale, setScale] = useState(BIG_SCALE.most);
   useEffect(() => {
     const element = pane.current;
@@ -338,24 +338,6 @@ function GullScene({
       ) : (
         <p className="gull-sub">{t(sceneHint(look))}</p>
       )}
-    </div>
-  );
-}
-
-/** Analytics before its first numbers: the gull watches pilings rise and fall like a chart's bars. */
-export function ChartGull({ title, hint }: { title: string; hint: string }) {
-  const pane = useRef<HTMLDivElement>(null);
-  const scale = useFitScale(pane);
-  const { canvas, perch } = useGull("big", scale);
-  useMode(perch, "idle", "chart");
-  return (
-    // Placed as the page's empty state, so it takes the room under the tabs.
-    <div className="gull-pane empty-boat" ref={pane}>
-      <div className="gull-stage">
-        <canvas ref={canvas} role="img" aria-label={t("gullChart")} />
-      </div>
-      <h3>{title}</h3>
-      <p className="gull-sub">{hint}</p>
     </div>
   );
 }

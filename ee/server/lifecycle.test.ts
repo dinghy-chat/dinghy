@@ -16,6 +16,7 @@ import {
   operator,
   subscription,
   visitor,
+  widgetSiteSeen,
   workspace,
   workspaceMember,
 } from "../../apps/server/src/db/schema.ts";
@@ -1145,9 +1146,11 @@ describe("the lifecycle emails", () => {
 
   test("the install email is skipped once the widget has run on a site", async () => {
     const paid = await paidWorkspace({ onboarding: true });
-    // A visitor from the widget: a browser token, as its first message gives one.
+    // The widget loaded on an allowed site, as Settings > Install shows.
     await withWorkspace(db, paid.workspaceId, (tx) =>
-      tx.insert(visitor).values({ workspaceId: paid.workspaceId, tokenHash: randomUUID() }),
+      tx
+        .insert(widgetSiteSeen)
+        .values({ workspaceId: paid.workspaceId, origin: "https://acme.test" }),
     );
     later(ONBOARDING_DAYS.install);
     await lifecycle();
@@ -1155,6 +1158,22 @@ describe("the lifecycle emails", () => {
     await lifecycle();
     expect(subjectsTo(paid.email)).toEqual([ready(paid), "Working with someone?"]);
     expect(await sentKinds(paid.workspaceId)).toEqual(["ready", "team"]);
+  });
+
+  test("a seen visitor with no site behind it, as the welcome chat's founder, does not count", async () => {
+    const paid = await paidWorkspace({ onboarding: true });
+    // The welcome chat's founder contact is seen, with no browser and no site. Its conversation
+    // may be gone, as an owner can delete it.
+    await withWorkspace(db, paid.workspaceId, (tx) =>
+      tx.insert(visitor).values({
+        workspaceId: paid.workspaceId,
+        userId: "dinghy-welcome",
+        lastSeenAt: new Date(),
+      }),
+    );
+    later(ONBOARDING_DAYS.install);
+    await lifecycle();
+    expect(await sentKinds(paid.workspaceId)).toEqual(["ready", "install"]);
   });
 
   test("the stop link stops the onboarding emails of its owner, and billing emails still go", async () => {

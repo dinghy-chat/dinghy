@@ -1,24 +1,12 @@
 // Licensed under the Dinghy Enterprise License. See ee/LICENSE.
-import {
-  and,
-  type Column,
-  eq,
-  inArray,
-  isNotNull,
-  isNull,
-  lt,
-  lte,
-  notInArray,
-  or,
-  sql,
-} from "drizzle-orm";
+import { and, type Column, eq, inArray, isNull, lt, lte, notInArray, or, sql } from "drizzle-orm";
 import type { Logger } from "pino";
 import {
   lifecycleEmail,
   type lifecycleEmailKind,
   operator,
   subscription,
-  visitor,
+  widgetSiteSeen,
   workspace,
   workspaceMember,
 } from "../../apps/server/src/db/schema.ts";
@@ -429,7 +417,7 @@ const isEmail = (email: ClaimedEmail) =>
 /** What decides whether a queued email still holds, read when it is due. */
 interface EmailState extends LifecycleRow {
   isDeleted: boolean;
-  hasWidgetVisitor: boolean;
+  hasWidgetSite: boolean;
 }
 
 const same = (a: Date | null, b: Date) => a?.getTime() === b.getTime();
@@ -446,7 +434,7 @@ function stillHolds(email: ClaimedEmail, state: EmailState): boolean {
     case "welcome_back":
       return paid && live;
     case "install":
-      return settled && !state.hasWidgetVisitor;
+      return settled && !state.hasWidgetSite;
     case "team":
     case "check_in":
     case "review":
@@ -509,26 +497,20 @@ async function loadEmailState(tx: Transaction, email: ClaimedEmail) {
         isNull(workspaceMember.removedAt),
       ),
     );
-  // Nothing records a widget load itself. A visitor gets a browser token on their first message,
-  // and a last-seen time when a widget stream ends, so either one means the widget ran on a site.
-  // An early signup's sample visitor has neither.
-  const widgetVisitors =
+  // The widget notes each allowed site it loads on, as Settings > Install shows. A visitor alone
+  // proves nothing: the welcome chat's founder contact is seen with no site behind it.
+  const widgetSites =
     email.kind === "install"
       ? await tx
-          .select({ id: visitor.id })
-          .from(visitor)
-          .where(
-            and(
-              eq(visitor.workspaceId, workspaceId),
-              or(isNotNull(visitor.tokenHash), isNotNull(visitor.lastSeenAt)),
-            ),
-          )
+          .select({ origin: widgetSiteSeen.origin })
+          .from(widgetSiteSeen)
+          .where(eq(widgetSiteSeen.workspaceId, workspaceId))
           .limit(1)
       : [];
   const state: EmailState = {
     ...found,
     isDeleted: found.deletedAt !== null,
-    hasWidgetVisitor: widgetVisitors.length > 0,
+    hasWidgetSite: widgetSites.length > 0,
   };
   return { name: found.name, state, owners };
 }

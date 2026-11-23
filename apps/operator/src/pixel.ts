@@ -31,6 +31,9 @@ export const PALETTE = {
   "7": "#f4f6f8",
   "8": "#dfe5ea",
   D: "#7c8b9b",
+  // The sonar's deep navy face and its grid lines.
+  "9": "#17335c",
+  "0": "#2f5d93",
   // Light on the water and on brass, and a gull's white in flight.
   s: "#d6eaff",
   h: "#ffe07a",

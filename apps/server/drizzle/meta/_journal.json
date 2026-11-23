@@ -897,6 +897,13 @@
       "when": 1795297861788,
       "tag": "0127_draft_change_requests_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 128,
+      "version": "7",
+      "when": 1795476172108,
+      "tag": "0128_lifecycle_widget_sites_grant",
+      "breakpoints": true
     }
   ]
 }

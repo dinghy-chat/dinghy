@@ -245,7 +245,15 @@ describe("a new workspace's welcome chat", () => {
       welcome: true,
       status: "open",
     });
-    expect(customerSide?.guest).toMatchObject({ name: "Julien from Dinghy", email: null });
+    // No widget reports for either visitor, so the contacts list gets these from the welcome.
+    expect(customerSide?.guest).toMatchObject({
+      name: "Julien from Dinghy",
+      email: null,
+      attributes: { company: "Dinghy" },
+      country: "FR",
+      timeZone: "Europe/Paris",
+    });
+    expect(customerSide?.guest.lastSeenAt).toBeInstanceOf(Date);
     expect(await messagesIn(acme.workspaceId, link.customerConversationId)).toMatchObject([
       { body: WELCOME, authorVisitorId: customerSide?.guest.id },
     ]);
@@ -269,6 +277,8 @@ describe("a new workspace's welcome chat", () => {
     expect(founderSide?.chat).toMatchObject({ welcome: true, assigneeOperatorId: julien.id });
     expect(founderSide?.guest.name).toMatch(/^Ana, Acme /);
     expect(founderSide?.guest.email).toBeNull();
+    expect(founderSide?.guest.attributes).toEqual({ company: expect.stringMatching(/^Acme /) });
+    expect(founderSide?.guest.lastSeenAt).toBeInstanceOf(Date);
     expect(await messagesIn(dinghy.id, link.founderConversationId)).toMatchObject([
       { body: WELCOME, authorOperatorId: julien.id },
     ]);
@@ -391,8 +401,19 @@ describe("copies between the two sides", () => {
       ["Hi Julien!", true],
     ]);
 
+    // A reply makes its sender seen on the other side.
+    const seenBefore = new Date("2026-01-01T00:00:00Z");
+    await owner
+      .update(visitor)
+      .set({ lastSeenAt: seenBefore })
+      .where(eq(visitor.workspaceId, acme.workspaceId));
     const fromJulien = await reply(early, julien.cookie, dinghy.id, founderChat, "Hi Ana!");
     expect(fromJulien.status).toBe(201);
+    const [founderSeen] = await owner
+      .select({ at: visitor.lastSeenAt })
+      .from(visitor)
+      .where(eq(visitor.workspaceId, acme.workspaceId));
+    expect(founderSeen?.at?.getTime()).toBeGreaterThan(seenBefore.getTime());
     const customerMessages = await messagesIn(acme.workspaceId, customerChat);
     expect(customerMessages.map((one) => [one.body, one.authorVisitorId !== null])).toEqual([
       [WELCOME, true],

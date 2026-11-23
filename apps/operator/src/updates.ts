@@ -22,6 +22,27 @@ export interface Update {
 /** Newest first. Add a new entry at the top, in the pull request that makes the change. */
 export const UPDATES: Update[] = [
   {
+    id: "whats-new-sheet",
+    date: "2026-11-23",
+    kind: "improvement",
+    title: "What's new opens on the right",
+    text: "What's new opens as a sheet on the right, and its icon in the sidebar is a gift. On a tablet, the top bar keeps two rows, with the sections in the second.",
+  },
+  {
+    id: "sonar-and-lighthouse",
+    date: "2026-11-23",
+    kind: "improvement",
+    title: "A sonar and a lighthouse",
+    text: "While nobody is on your site, Visitors shows a sonar sweeping for people. Analytics with no conversations yet shows a lighthouse keeping watch.",
+  },
+  {
+    id: "welcome-contact-details",
+    date: "2026-11-23",
+    kind: "fix",
+    title: "The welcome contact has its details",
+    text: "On Dinghy Cloud, the founder's contact in a new workspace shows a company, a country and when it was last seen.",
+  },
+  {
     id: "billing-page",
     date: "2026-11-23",
     kind: "feature",

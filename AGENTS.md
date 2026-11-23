@@ -48,7 +48,7 @@ Three things matter more than any feature:
 
 Tests use a real Postgres and a real Valkey. Do not mock them. Start them with `bun run dev:services`.
 
-A change that fixes a bug or changes behavior comes with a test that fails without it. Before you finish, run `bun run typecheck`, `bun run lint` and `bun run test`, and `bun run test:e2e` for a change to the widget or the operator app. A change to a route, a doc or the schema has one more step, listed in `CONTRIBUTING.md`.
+A change that fixes a bug or changes behavior comes with a test that fails without it. Before you finish, run `bun run typecheck`, `bun run lint` and `bun run test`, and `bun run test:e2e` for a change to the widget or the operator app. A change that people see, or a change to a route, a doc or the schema, has one more step, listed in `CONTRIBUTING.md`. A change that people see goes in `CHANGELOG.md`, and also in `apps/operator/src/updates.ts` when operators notice it in the app or the widget.
 
 ## Pull requests
 

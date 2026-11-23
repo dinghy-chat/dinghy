@@ -2,8 +2,8 @@
 import { type ReactNode, useEffect, useState } from "react";
 import type { Analytics, AnalyticsDays, VisitorStats, WorkspaceApi } from "./api.ts";
 import { browserTimeZone, dayAndTime, duration, weekdayNames } from "./format.ts";
-import { ChartGull } from "./gull.tsx";
 import { LabelDot } from "./labels.tsx";
+import { Lookout } from "./lookout.tsx";
 import { AnalyticsSkeleton, SiteSkeleton } from "./skeleton.tsx";
 import {
   Change,
@@ -602,7 +602,13 @@ export function AnalyticsPage({ api }: { api: WorkspaceApi }) {
           <AnalyticsSkeleton />
         </Loading>
       ) : numbers.started === 0 ? (
-        <ChartGull title={t("analyticsEmpty", { days })} hint={t("analyticsEmptyHint")} />
+        // Placed as the page's empty state, so it takes the room under the tabs.
+        <Lookout
+          kind="lighthouse"
+          className="gull-pane empty-boat"
+          title={t("analyticsEmpty", { days })}
+          hint={t("analyticsEmptyHint")}
+        />
       ) : (
         <Tipped className="analytics">
           <Support numbers={numbers} days={days} />
