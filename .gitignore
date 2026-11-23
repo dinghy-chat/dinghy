@@ -17,6 +17,7 @@ site/public/for/
 site/public/compare/
 site/public/guides/
 site/public/blog/
+site/public/changelog/
 # Content pages at the site's root. The hand-written pages are the exceptions.
 site/public/*.html
 !site/public/index.html

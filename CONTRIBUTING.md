@@ -67,6 +67,7 @@ Some changes need one more step:
 - A change to an API route needs a new `apps/server/openapi.json`. Run `bun run openapi:generate`, then `bun x biome format --write apps/server/openapi.json`.
 - A change to `apps/server/openapi.json` needs new SDK types. Run `node packages/sdk/scripts/types.ts`.
 - A change that users see needs a line in `CHANGELOG.md` under `## [Unreleased]`, in its group: `### Upgrading` when an owner must act, then `### Added`, `### Changed`, `### Deprecated`, `### Removed`, `### Fixed` or `### Security`. The group sets the next version, and a merge releases nothing: see [RELEASING.md](RELEASING.md).
+- A change that a team notices in the app also gets an entry at the top of `apps/operator/src/updates.ts`, in plain words. The app shows it under **What's new**, and the site at [dinghy.chat/changelog](https://dinghy.chat/changelog/).
 
 ## How the code is laid out
 
