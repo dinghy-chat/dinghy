@@ -22,6 +22,35 @@ export interface Update {
 /** Newest first. Add a new entry at the top, in the pull request that makes the change. */
 export const UPDATES: Update[] = [
   {
+    id: "billing-page",
+    date: "2026-11-23",
+    kind: "feature",
+    title: "A Billing page in Settings",
+    text: "On Dinghy Cloud, owners see the plan, its price, the usage, the card that pays and the recent invoices in Settings > Billing. Each invoice opens on Stripe, with its PDF.",
+    docs: "operator-guide#billing",
+  },
+  {
+    id: "get-started-next-step",
+    date: "2026-11-23",
+    kind: "improvement",
+    title: "Get started shows the next step",
+    text: "Get started in the sidebar now names the next step. Inviting a teammate is optional, so it no longer counts.",
+  },
+  {
+    id: "welcome-contact",
+    date: "2026-11-23",
+    kind: "improvement",
+    title: "The welcome chat has its contact panel",
+    text: "The welcome chat shows the contact panel beside it, and Contacts show the founder's picture. Empty charts show a grey shape, and Analytics shows the gull until the first conversations come.",
+  },
+  {
+    id: "email-links",
+    date: "2026-11-23",
+    kind: "improvement",
+    title: "Links in emails sit behind words",
+    text: 'Emails from Dinghy show each link behind a few words, such as "sign in to Dinghy", in place of the whole address.',
+  },
+  {
     id: "close-opens-next",
     date: "2026-11-23",
     kind: "improvement",
