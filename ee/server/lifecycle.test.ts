@@ -55,6 +55,7 @@ import {
   STRIPE_WEBHOOK_SECRET,
   startFakeStripe,
 } from "./test/fake-stripe.ts";
+import { FOUNDER_USER_ID } from "./welcome.ts";
 
 const ORIGIN = new URL(PUBLIC_URL).origin;
 const DAY_MS = 86_400_000;
@@ -1155,6 +1156,21 @@ describe("the lifecycle emails", () => {
     await lifecycle();
     expect(subjectsTo(paid.email)).toEqual([ready(paid), "Working with someone?"]);
     expect(await sentKinds(paid.workspaceId)).toEqual(["ready", "team"]);
+  });
+
+  test("the welcome chat's founder contact does not count as a widget visitor", async () => {
+    const paid = await paidWorkspace({ onboarding: true });
+    // The welcome chat makes its founder contact seen, with no browser behind it.
+    await withWorkspace(db, paid.workspaceId, (tx) =>
+      tx.insert(visitor).values({
+        workspaceId: paid.workspaceId,
+        userId: FOUNDER_USER_ID,
+        lastSeenAt: new Date(),
+      }),
+    );
+    later(ONBOARDING_DAYS.install);
+    await lifecycle();
+    expect(await sentKinds(paid.workspaceId)).toEqual(["ready", "install"]);
   });
 
   test("the stop link stops the onboarding emails of its owner, and billing emails still go", async () => {

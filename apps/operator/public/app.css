@@ -8006,7 +8006,8 @@ button.quote:hover {
   border-radius: 50%;
   background: var(--red);
 }
-/* What's new is a sheet on the right, full height. Its head and foot stay while the updates scroll. */
+/* What's new is a sheet on the right, full height. Its head and foot stay while the updates scroll
+   under them. The body itself scrolls, so Page Down works while Close has focus. */
 .dialog.updates {
   width: min(480px, calc(100vw - 32px));
   max-width: none;
@@ -8028,8 +8029,16 @@ button.quote:hover {
   gap: 0;
   height: 100%;
   padding: 0;
+  overflow-y: auto;
+}
+.updates-head,
+.updates-foot {
+  position: sticky;
+  z-index: 1;
+  background: var(--raised);
 }
 .updates-head {
+  top: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -8042,9 +8051,7 @@ button.quote:hover {
 }
 .updates-days {
   flex: 1;
-  min-height: 0;
   padding: 0 28px 16px;
-  overflow-y: auto;
 }
 .updates-day {
   padding-top: 20px;
@@ -8111,6 +8118,7 @@ button.quote:hover {
   font-weight: 700;
 }
 .updates-foot {
+  bottom: 0;
   padding: 14px 28px 18px;
   border-top: 1px solid var(--line);
 }

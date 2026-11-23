@@ -49,7 +49,7 @@ const text = {
 };
 
 /** The founder's visitor in a new workspace. A workspace has one welcome chat, so one is enough. */
-const FOUNDER_USER_ID = "dinghy-welcome";
+export const FOUNDER_USER_ID = "dinghy-welcome";
 /** A new workspace's visitor in Dinghy's own workspace. */
 const customerUserId = (workspaceId: string) => `dinghy-welcome-${workspaceId}`;
 /** A copy's own client ID, so a copy of one message can never go in twice. */
@@ -101,7 +101,8 @@ export async function welcomeProblem(
 
 /**
  * A visitor with no email and no browser, and its welcome conversation, in the current context.
- * No widget ever reports for it, so it is seen now and its company is set here.
+ * No widget ever reports for it, so it is seen now, again with each reply, and its company is set
+ * here.
  */
 async function welcomeConversation(
   tx: Transaction,
@@ -274,6 +275,11 @@ async function copyInto(
     },
     limits,
   );
+  // No widget reports for this visitor, so its reply is what makes it seen.
+  await tx
+    .update(visitor)
+    .set({ lastSeenAt: new Date() })
+    .where(and(eq(visitor.workspaceId, other.workspaceId), eq(visitor.id, theirs.id)));
   return { visitorId: theirs.id, usedAttachment: fitting !== undefined };
 }
 

@@ -114,7 +114,6 @@ export function createLookout(canvas: HTMLCanvasElement, kind: LookoutKind, scal
   let ctx = pixelCanvas(canvas, W, H, scale);
   let pixel = scale;
   const clouds = BIG_CLOUDS.map((cloud) => ({ ...cloud }));
-  const widths = [...POND_HALF_WIDTHS];
   let time = 0;
   const draw = () => {
     clearCanvas(ctx);
@@ -123,13 +122,13 @@ export function createLookout(canvas: HTMLCanvasElement, kind: LookoutKind, scal
       return;
     }
     drawClouds(ctx, clouds);
-    drawPond(ctx, CX, POND, widths, time);
+    drawPond(ctx, CX, POND, POND_HALF_WIDTHS, time);
     drawLighthouse(ctx, time);
   };
   const loop = animate(canvas, (deltaS) => {
     if (!isLessMotion()) {
       time += deltaS;
-      moveClouds(clouds, W, deltaS);
+      if (kind === "lighthouse") moveClouds(clouds, W, deltaS);
     }
     draw();
   });

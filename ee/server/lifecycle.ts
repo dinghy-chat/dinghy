@@ -8,6 +8,7 @@ import {
   isNull,
   lt,
   lte,
+  ne,
   notInArray,
   or,
   sql,
@@ -34,6 +35,7 @@ import {
   lifecycleMail,
   onboardingStopUrl,
 } from "./lifecycle-emails.ts";
+import { FOUNDER_USER_ID } from "./welcome.ts";
 
 /**
  * Stripe's subscription statuses that pay for service. This set and the two below live in this
@@ -511,7 +513,8 @@ async function loadEmailState(tx: Transaction, email: ClaimedEmail) {
     );
   // Nothing records a widget load itself. A visitor gets a browser token on their first message,
   // and a last-seen time when a widget stream ends, so either one means the widget ran on a site.
-  // An early signup's sample visitor has neither.
+  // An early signup's sample visitor has neither, and the welcome chat's founder contact has a
+  // last-seen time but no browser, so it does not count.
   const widgetVisitors =
     email.kind === "install"
       ? await tx
@@ -520,6 +523,7 @@ async function loadEmailState(tx: Transaction, email: ClaimedEmail) {
           .where(
             and(
               eq(visitor.workspaceId, workspaceId),
+              or(isNull(visitor.userId), ne(visitor.userId, FOUNDER_USER_ID)),
               or(isNotNull(visitor.tokenHash), isNotNull(visitor.lastSeenAt)),
             ),
           )
