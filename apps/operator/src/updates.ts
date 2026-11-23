@@ -283,7 +283,7 @@ export const UPDATES: Update[] = [
     date: "2026-11-12",
     kind: "feature",
     title: "Transcripts by email",
-    text: "When a conversation that your team answered closes, a visitor who gave an email gets it by email 5 minutes later. Settings > Appearance turns it off.",
+    text: "A visitor who gave an email can get the conversation by email 5 minutes after it closes, once your team has replied. Settings > Appearance turns it off.",
   },
   {
     id: "get-started",
