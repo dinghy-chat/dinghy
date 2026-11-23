@@ -5,13 +5,13 @@ const ICON = "/assets/icon.svg";
 /** The favicon's drawing size. */
 const ICON_SIZE_PX = 64;
 /**
- * The red dot, as fractions of the icon. It and its ring stay 0.04 inside the edge, as a browser
- * can round the icon's corners and would cut it.
+ * The red dot, as fractions of the icon. It sits on the corner and stays 0.04 inside the edge. A
+ * transparent gap around it shows the tab behind, which keeps it apart from the yellow icon and the
+ * red sail in light and dark browsers.
  */
-const DOT = { x: 0.78, y: 0.22, radius: 0.13, ring: 0.05 };
-/** As --red in app.css, with a white ring that keeps it apart from the navy icon. */
+const DOT = { x: 0.82, y: 0.18, radius: 0.14, gap: 0.06 };
+/** As --red in app.css. */
 const DOT_COLOR = "#e5352b";
-const DOT_RING_COLOR = "#fff";
 
 /** The app's icon with a red dot in its corner, drawn once, or null if the browser cannot. */
 let dotted: Promise<string | null> | null = null;
@@ -24,7 +24,7 @@ function dottedIcon(): Promise<string | null> {
       const context = canvas.getContext("2d");
       if (context === null) return resolve(null);
       context.drawImage(image, 0, 0, ICON_SIZE_PX, ICON_SIZE_PX);
-      const circle = (radius: number, color: string) => {
+      const circle = (radius: number) => {
         context.beginPath();
         context.arc(
           DOT.x * ICON_SIZE_PX,
@@ -33,11 +33,13 @@ function dottedIcon(): Promise<string | null> {
           0,
           2 * Math.PI,
         );
-        context.fillStyle = color;
         context.fill();
       };
-      circle(DOT.radius + DOT.ring, DOT_RING_COLOR);
-      circle(DOT.radius, DOT_COLOR);
+      context.globalCompositeOperation = "destination-out";
+      circle(DOT.radius + DOT.gap);
+      context.globalCompositeOperation = "source-over";
+      context.fillStyle = DOT_COLOR;
+      circle(DOT.radius);
       resolve(canvas.toDataURL("image/png"));
     };
     image.onerror = () => resolve(null);
