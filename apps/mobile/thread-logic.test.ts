@@ -1,7 +1,6 @@
 import { describe, expect, test } from "vitest";
 import {
   displayLink,
-  insertSavedReply,
   matchSavedReplies,
   menuPlacement,
   typedSlash,
@@ -72,15 +71,6 @@ describe("saved replies in the composer", () => {
   test("lists shortcuts that start with the word first", () => {
     const found = matchSavedReplies([reply("mobile-sig"), reply("sig"), reply("sync")], "sig");
     expect(found.map((item) => item.shortcut)).toEqual(["sig", "mobile-sig"]);
-  });
-
-  test("replaces the slash word with the reply and puts the caret after it", () => {
-    expect(insertSavedReply("Hi /sig", "Thanks!", { from: 3, to: 7 })).toEqual({
-      text: "Hi Thanks!",
-      caret: 10,
-    });
-    expect(insertSavedReply("Hi", "Thanks!", null)).toEqual({ text: "Hi\nThanks!", caret: 10 });
-    expect(insertSavedReply("", "Thanks!", null)).toEqual({ text: "Thanks!", caret: 7 });
   });
 });
 

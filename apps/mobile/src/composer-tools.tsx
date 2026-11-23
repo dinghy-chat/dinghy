@@ -1,5 +1,5 @@
 import * as Crypto from "expo-crypto";
-import { type ComponentRef, type RefObject, useEffect, useRef, useState } from "react";
+import { type RefObject, useEffect, useRef, useState } from "react";
 import {
   AccessibilityInfo,
   ActivityIndicator,
@@ -9,21 +9,25 @@ import {
   Pressable,
   StyleSheet,
   Text,
-  TextInput,
   useWindowDimensions,
   View,
 } from "react-native";
+import {
+  EnrichedTextInput,
+  type EnrichedTextInputInstance,
+  type OnChangeStateEvent,
+} from "react-native-enriched-html";
 import { markdownText } from "../../../packages/widget/src/markdown.ts";
 import { t } from "../../operator/src/text.ts";
 import { ApiError, type DinghyApi } from "./api";
 import { usePhotoComposer } from "./attachments";
 import { readableError } from "./common";
-import { type Edit, type Selection, toggleInline, toggleList } from "./composer-format";
 import { fonts } from "./fonts";
 import { Icon } from "./icon";
+import { caretAfter, draftHtml, draftMarkdown, formattedHtml, insertSaved } from "./rich-draft";
 import { SavedReplyList } from "./saved-reply-list";
 import type { Palette } from "./theme";
-import { insertSavedReply, matchSavedReplies, typedSlash } from "./thread-logic";
+import { matchSavedReplies, typedSlash } from "./thread-logic";
 import type { Message, SavedReply } from "./types";
 import { useReduceMotion } from "./use-reduce-motion";
 
@@ -34,7 +38,7 @@ type ComposerProps = {
   bottomInset: number;
   conversationId: string;
   initialDraft: string;
-  inputRef: RefObject<ComponentRef<typeof TextInput> | null>;
+  inputRef: RefObject<EnrichedTextInputInstance | null>;
   keyboardVisible: boolean;
   /** The visitor's name, for the placeholder and the reply chip. */
   name: string;
@@ -50,34 +54,53 @@ type ComposerProps = {
 
 type IconName = Parameters<typeof Icon>[0]["name"];
 
-/** The formats of the web composer that a phone can apply to plain text, in the web's order. */
+type Selection = { start: number; end: number };
+
+/**
+ * The formats of the web composer, in the web's order: the styles that show each one as on, and
+ * what it does. Code over several lines is a code block, as on the web.
+ */
 const FORMATS: {
   label: Parameters<typeof t>[0];
   icon: IconName;
-  edit(text: string, at: Selection): Edit;
+  styles: ("bold" | "italic" | "inlineCode" | "codeBlock" | "unorderedList" | "orderedList")[];
+  apply(input: EnrichedTextInputInstance, lines: boolean): void;
 }[] = [
-  { label: "formatBold", icon: "bold", edit: (text, at) => toggleInline(text, at, "bold") },
-  { label: "formatItalic", icon: "italic", edit: (text, at) => toggleInline(text, at, "italic") },
-  { label: "formatCode", icon: "code", edit: (text, at) => toggleInline(text, at, "code") },
+  { label: "formatBold", icon: "bold", styles: ["bold"], apply: (input) => input.toggleBold() },
+  {
+    label: "formatItalic",
+    icon: "italic",
+    styles: ["italic"],
+    apply: (input) => input.toggleItalic(),
+  },
+  {
+    label: "formatCode",
+    icon: "code",
+    styles: ["inlineCode", "codeBlock"],
+    apply: (input, lines) => (lines ? input.toggleCodeBlock() : input.toggleInlineCode()),
+  },
   {
     label: "formatBulleted",
     icon: "bulletList",
-    edit: (text, at) => toggleList(text, at, "bulleted"),
+    styles: ["unorderedList"],
+    apply: (input) => input.toggleUnorderedList(),
   },
   {
     label: "formatNumbered",
     icon: "numberList",
-    edit: (text, at) => toggleList(text, at, "numbered"),
+    styles: ["orderedList"],
+    apply: (input) => input.toggleOrderedList(),
   },
 ];
 
 /**
  * The thread's composer: a chevron and a field. The chevron opens a row of labelled tools above the
  * field, Photo, Saved replies and Formatting, and closes it again. The row opens in place: the
- * keyboard, the field and its selection stay as they were. Formatting turns the row into Bold, Italic,
- * Code and the two lists, which edit the Markdown around the selection, as the web composer's
- * buttons do. While the field has focus, the Reply or Note switch sits above it, and `/` lists the
- * saved replies as on the web. A note has no photo, so its row leaves Photo out.
+ * keyboard, the field and its selection stay as they were. The field shows formats, not Markdown,
+ * as the web composer does, and pasted Markdown turns into its formats. Formatting turns the row
+ * into Bold, Italic, Code and the two lists. The draft stays Markdown. While the field has focus,
+ * the Reply or Note switch sits above it, and `/` lists the saved replies as on the web. A note has
+ * no photo, so its row leaves Photo out.
  *
  * A reply and a note keep separate drafts, so switching to Reply never turns note text into a message
  * the visitor receives. The reply draft is saved on the phone and sent through the outbox. A note
@@ -105,10 +128,16 @@ export function ThreadComposer({
   const [replyDraft, setReplyDraft] = useState(initialDraft);
   const [noteDraft, setNoteDraft] = useState("");
   const [focused, setFocused] = useState(false);
+  // The field's text as it shows it, without Markdown marks. Its selection counts in this text.
+  const [initialHtml] = useState(() => draftHtml(initialDraft));
+  const [fieldText, setFieldText] = useState(() => draftMarkdown(initialHtml).text);
   const [selection, setSelection] = useState<Selection>({
-    start: initialDraft.length,
-    end: initialDraft.length,
+    start: fieldText.length,
+    end: fieldText.length,
   });
+  const [formats, setFormats] = useState<OnChangeStateEvent | null>(null);
+  const field = useRef({ html: initialHtml, text: fieldText, mode: "reply" as Mode });
+  const drafts = useRef({ reply: initialDraft, note: "" });
   const [toolsOpen, setToolsOpen] = useState(false);
   const [formatting, setFormatting] = useState(false);
   const [sending, setSending] = useState(false);
@@ -128,7 +157,7 @@ export function ThreadComposer({
   const isNote = mode === "note";
   const text = isNote ? noteDraft : replyDraft;
   const caret = selection.end;
-  const typed = typedSlash(text, Math.min(caret, text.length));
+  const typed = typedSlash(fieldText, Math.min(caret, fieldText.length));
   const slashOpen = typed !== null && typed.from !== dismissedSlash;
   const listOpen = savedToolOpen || slashOpen;
   const showTools = focused || isNote || savedToolOpen || toolsOpen;
@@ -192,7 +221,8 @@ export function ThreadComposer({
   });
 
   const changeText = (body: string) => {
-    if (isNote) {
+    drafts.current[field.current.mode] = body;
+    if (field.current.mode === "note") {
       setNoteDraft(body);
       setNoteError(null);
       // Changed text is a new note. It must not reuse a failed request's idempotency key.
@@ -203,20 +233,57 @@ export function ThreadComposer({
     onDraftChange(body);
   };
 
+  /** Puts new HTML in the field, with the caret at `caret` or at the end, and returns its Markdown. */
+  const showHtml = (html: string, caret?: number) => {
+    const next = draftMarkdown(html);
+    field.current.html = html;
+    field.current.text = next.text;
+    setFieldText(next.text);
+    const at = caret ?? next.text.length;
+    setSelection({ start: at, end: at });
+    inputRef.current?.setValue(html);
+    inputRef.current?.setSelection(at, at);
+    return next.markdown;
+  };
+
+  const changeHtml = (html: string) => {
+    if (html === field.current.html) return;
+    const before = field.current.text;
+    const next = draftMarkdown(html);
+    field.current.html = html;
+    field.current.text = next.text;
+    setFieldText(next.text);
+    // A paste adds several characters at once. Markdown in it shows as its formats, as on the web.
+    const formatted = next.text.length - before.length >= 2 ? formattedHtml(html) : null;
+    if (formatted === null) {
+      changeText(next.markdown);
+      return;
+    }
+    changeText(showHtml(formatted, caretAfter(before, draftMarkdown(formatted).text)));
+  };
+
   const switchMode = (next: Mode) => {
     if (next === mode) return;
     setMode(next);
+    field.current.mode = next;
     setSavedToolOpen(false);
-    const length = (next === "note" ? noteDraft : replyDraft).length;
-    setSelection({ start: length, end: length });
+    showHtml(draftHtml(drafts.current[next]));
     if (next === "note") AccessibilityInfo.announceForAccessibility(t("mobileNoteModeHint"));
   };
 
-  const insertSaved = (reply: SavedReply) => {
+  /** Empties the field after a send, unless the operator wrote more or switched mode meanwhile. */
+  const clearSent = (sent: Mode, body: string) => {
+    if (drafts.current[sent].trim() !== body) return;
+    drafts.current[sent] = "";
+    if (sent === "note") setNoteDraft("");
+    else setReplyDraft("");
+    if (field.current.mode === sent) showHtml("");
+  };
+
+  const pickSaved = (reply: SavedReply) => {
     const place = slashOpen && typed ? { from: typed.from, to: typed.to } : null;
-    const next = insertSavedReply(text, reply.body, place);
-    changeText(next.text);
-    setSelection({ start: next.caret, end: next.caret });
+    const next = insertSaved(field.current.html, reply.body, place);
+    changeText(showHtml(next.html, next.caret));
     setSavedToolOpen(false);
     requestAnimationFrame(() => inputRef.current?.focus());
   };
@@ -237,19 +304,12 @@ export function ThreadComposer({
     setFormatting(show);
   };
 
-  /**
-   * One format on the selection. The field gets the new text and the selection back on the same
-   * words, through the same draft path as typing, and nothing is sent.
-   */
-  const applyFormat = (edit: (text: string, at: Selection) => Edit) => {
-    const next = edit(text, selection);
-    if (next.text === text) return;
-    changeText(next.text);
-    setSelection(next.selection);
-    requestAnimationFrame(() => {
-      inputRef.current?.focus();
-      inputRef.current?.setSelection(next.selection.start, next.selection.end);
-    });
+  /** One format on the selection, or on the next words typed when nothing is selected. */
+  const applyFormat = (format: (typeof FORMATS)[number]) => {
+    const input = inputRef.current;
+    if (!input) return;
+    format.apply(input, fieldText.slice(selection.start, selection.end).includes("\n"));
+    input.focus();
   };
 
   const pickPhoto = () => {
@@ -266,13 +326,12 @@ export function ThreadComposer({
   };
 
   const sendReply = async () => {
-    const submitted = replyDraft;
-    const body = submitted.trim();
+    const body = replyDraft.trim();
     if (!body || sending) return;
     setSending(true);
     try {
       await onSend(body, replyingTo?.id ?? null);
-      setReplyDraft((current) => (current === submitted ? "" : current));
+      clearSent("reply", body);
       onCancelReply();
     } catch {
       // The parent shows the storage error. Keep the draft so the operator can try again.
@@ -298,7 +357,7 @@ export function ThreadComposer({
       setNoteBusy(false);
     }
     noteClientId.current = null;
-    setNoteDraft((current) => (current.trim() === body ? "" : current));
+    clearSent("note", body);
     onNoteAdded();
   };
 
@@ -326,7 +385,7 @@ export function ThreadComposer({
             setSavedToolOpen(false);
             if (typed) setDismissedSlash(typed.from);
           }}
-          onPick={insertSaved}
+          onPick={pickSaved}
           onRetry={() => void loadSavedReplies()}
           palette={palette}
           replies={shown}
@@ -440,7 +499,8 @@ export function ThreadComposer({
                     icon={format.icon}
                     key={format.label}
                     label={t(format.label)}
-                    onPress={() => applyFormat(format.edit)}
+                    on={format.styles.some((style) => formats?.[style].isActive === true)}
+                    onPress={() => applyFormat(format)}
                     palette={palette}
                   />
                 ))}
@@ -489,13 +549,26 @@ export function ThreadComposer({
               <Icon color={isNote ? palette.noteInk : palette.ink} name="down" size={22} />
             </Animated.View>
           </Pressable>
-          <TextInput
+          <EnrichedTextInput
             accessibilityLabel={isNote ? t("mobilePrivateNoteTitle") : t("mobileReplyTo", { name })}
-            multiline
+            defaultValue={initialHtml}
+            htmlStyle={{
+              a: { color: palette.blue, textDecorationLine: "underline" },
+              blockquote: { borderColor: palette.line, color: palette.sub },
+              code: { color: ink, backgroundColor: isNote ? palette.warm : palette.wash },
+              codeblock: {
+                color: ink,
+                backgroundColor: isNote ? palette.warm : palette.wash,
+                borderRadius: 8,
+              },
+              ol: { markerColor: ink },
+              ul: { bulletColor: ink },
+            }}
             onBlur={() => setFocused(false)}
-            onChangeText={changeText}
+            onChangeHtml={(event) => changeHtml(event.nativeEvent.value)}
+            onChangeSelection={({ nativeEvent: { start, end } }) => setSelection({ start, end })}
+            onChangeState={(event) => setFormats(event.nativeEvent)}
             onFocus={() => setFocused(true)}
-            onSelectionChange={(event) => setSelection(event.nativeEvent.selection)}
             placeholder={
               isNote
                 ? t("mobilePrivateNotePlaceholder")
@@ -503,17 +576,13 @@ export function ThreadComposer({
             }
             placeholderTextColor={isNote ? palette.noteInk : palette.sub}
             ref={inputRef}
-            style={[
-              styles.input,
-              {
-                backgroundColor: isNote ? palette.note : palette.paper,
-                borderColor: isNote ? palette.noteInk : palette.line,
-                color: ink,
-                fontFamily: fonts.body,
-              },
-            ]}
-            textAlignVertical="top"
-            value={text}
+            style={{
+              ...styles.input,
+              backgroundColor: isNote ? palette.note : palette.paper,
+              borderColor: isNote ? palette.noteInk : palette.line,
+              color: ink,
+              fontFamily: fonts.body,
+            }}
           />
           {text.trim() !== "" && (
             <Pressable
@@ -551,13 +620,14 @@ export function ThreadComposer({
 
 /**
  * A button of the tools row. With `shown`, its name shows next to its icon. A format button shows
- * only its icon, and its name is for VoiceOver.
+ * only its icon, and its name is for VoiceOver. A format that is `on` at the caret shows as active.
  */
 function ToolButton({
   active = false,
   expanded,
   icon,
   label,
+  on,
   onPress,
   palette,
   shown = false,
@@ -566,21 +636,25 @@ function ToolButton({
   expanded?: boolean;
   icon: IconName;
   label: string;
+  on?: boolean;
   onPress(): void;
   palette: Palette;
   shown?: boolean;
 }) {
-  const color = active ? palette.blue : palette.ink;
+  const lit = active || on === true;
+  const color = lit ? palette.blue : palette.ink;
   return (
     <Pressable
       accessibilityLabel={label}
-      accessibilityRole="button"
-      accessibilityState={expanded === undefined ? undefined : { expanded }}
+      accessibilityRole={on === undefined ? "button" : "togglebutton"}
+      accessibilityState={
+        on !== undefined ? { checked: on } : expanded === undefined ? undefined : { expanded }
+      }
       hitSlop={{ top: 4, bottom: 4 }}
       onPress={onPress}
       style={({ pressed }) => [
         shown ? styles.tool : styles.iconTool,
-        { backgroundColor: active || pressed ? palette.tint : palette.wash },
+        { backgroundColor: lit || pressed ? palette.tint : palette.wash },
       ]}
     >
       <Icon color={color} name={icon} size={17} />

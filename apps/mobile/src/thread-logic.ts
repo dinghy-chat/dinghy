@@ -120,23 +120,6 @@ export function matchSavedReplies(replies: SavedReply[], word: string): SavedRep
 /** A saved reply's words on one line, for the list. */
 export const savedReplyPreview = (reply: SavedReply) => plainText(reply.body).replace(/\s+/g, " ");
 
-/**
- * The text after a saved reply takes the place of `from` to `to`, and where the caret goes. With no
- * place, the reply goes at the end, on a line of its own when the text has words already.
- */
-export function insertSavedReply(
-  text: string,
-  body: string,
-  place: { from: number; to: number } | null,
-): { text: string; caret: number } {
-  if (place === null) {
-    const joined = text === "" || /\s$/.test(text) ? text + body : `${text}\n${body}`;
-    return { text: joined, caret: joined.length };
-  }
-  const next = text.slice(0, place.from) + body + text.slice(place.to);
-  return { text: next, caret: place.from + body.length };
-}
-
 /** A bare link as people read it: no scheme, and no slash at the end of a bare domain. */
 export function displayLink(href: string): string {
   return href.replace(/^(https?:\/\/|mailto:)/i, "").replace(/^([^/]+)\/$/, "$1");

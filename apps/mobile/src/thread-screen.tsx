@@ -14,10 +14,10 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  type TextInput,
   useColorScheme,
   View,
 } from "react-native";
+import type { EnrichedTextInputInstance } from "react-native-enriched-html";
 import { t } from "../../operator/src/text.ts";
 import { Harbor } from "../Harbor";
 import type { PendingReply } from "../outbox";
@@ -562,7 +562,7 @@ export function ThreadScreen({
   const [contactFailure, setContactFailure] = useState<string | null>(null);
   const [contactRequest, setContactRequest] = useState(0);
   const [now, setNow] = useState(() => new Date());
-  const input = useRef<ComponentRef<typeof TextInput>>(null);
+  const input = useRef<EnrichedTextInputInstance>(null);
   const moreButton = useRef<ComponentRef<typeof View>>(null);
   const list = useRef<FlatList<Message | PendingReply>>(null);
   const current = thread?.conversation ?? conversation;
