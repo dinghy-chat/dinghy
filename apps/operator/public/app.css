@@ -7922,7 +7922,142 @@ button.quote:hover {
 .help:is(:hover, [aria-expanded="true"]) {
   background: var(--side-tint);
 }
-
+/* What's new sits above Help, with a red dot until the operator opens the newest updates. */
+.whats-new {
+  position: relative;
+  margin-top: auto;
+}
+.whats-new + .help-menu {
+  margin-top: 4px;
+}
+.whats-new-dot {
+  width: 8px;
+  height: 8px;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--red);
+}
+.dialog.updates {
+  width: min(600px, calc(100vw - 32px));
+}
+/* The head stays while the updates scroll under it. */
+.updates .dialog-body {
+  gap: 0;
+  max-height: min(720px, calc(100dvh - 48px));
+  padding: 0;
+  overflow-y: auto;
+}
+.updates-head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 20px 28px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--raised);
+}
+.updates-head h2 {
+  margin-right: auto;
+}
+.updates-head .icon-button {
+  width: 36px;
+  height: 36px;
+  margin-right: -8px;
+}
+.updates-days {
+  padding: 0 28px 8px;
+}
+/* Each day: its date in a narrow column, its updates beside it, and a line between days. */
+.updates-day {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 0 16px;
+  padding: 22px 0;
+}
+.updates-day + .updates-day {
+  border-top: 1px solid var(--line);
+}
+.updates-day h3 {
+  padding-top: 1px;
+  color: var(--mute);
+  font: 600 13px / 18px var(--body);
+  font-variant-numeric: tabular-nums;
+}
+.updates-day ul {
+  display: grid;
+  gap: 22px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.update {
+  display: grid;
+  justify-items: start;
+}
+.update h4 {
+  margin: 0;
+  color: var(--navy);
+  font: 700 15px / 1.35 var(--display);
+}
+.update p {
+  margin: 4px 0 0;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.55;
+}
+.update p.update-docs {
+  margin-top: 6px;
+}
+.update p.update-tags {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 4px;
+  color: var(--mute);
+  font: 600 12px / 18px var(--body);
+}
+/* The kind is a colored dot and a word, quieter than the title under it. */
+.update-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.update-kind::before {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  content: "";
+}
+.update-kind.feature::before {
+  background: var(--blue);
+}
+.update-kind.improvement::before {
+  background: var(--green);
+}
+.update-kind.fix::before {
+  background: var(--warn-fill);
+}
+.update-new {
+  color: var(--red);
+  font-weight: 700;
+}
+/* On a phone, the date goes above its updates. */
+@media (max-width: 480px) {
+  .updates-head {
+    padding: 16px 20px 12px;
+  }
+  .updates-days {
+    padding: 0 20px 4px;
+  }
+  .updates-day {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    padding: 18px 0;
+  }
+}
 /* The sheet of every shortcut: two columns where there is room, each group kept whole. */
 .dialog.shortcuts {
   width: min(720px, calc(100vw - 32px));
@@ -8021,6 +8156,19 @@ button.quote:hover {
   }
   .help-menu {
     margin-left: auto;
+  }
+  .whats-new {
+    margin: 0 0 0 auto;
+  }
+  .whats-new + .help-menu {
+    margin: 0;
+  }
+  /* The dot sits on the icon's corner. */
+  .whats-new-dot {
+    position: absolute;
+    top: 7px;
+    right: 7px;
+    box-shadow: 0 0 0 2px var(--sky);
   }
   .help {
     justify-content: center;

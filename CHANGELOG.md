@@ -4,6 +4,10 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- **What's new** in the sidebar lists the changes a team notices, in plain words, with a red dot until the operator opens it. The browser remembers what each operator saw. The same list is at [dinghy.chat/changelog](https://dinghy.chat/changelog/).
+
 ## [0.51.0] - 2026-11-23
 
 ### Added

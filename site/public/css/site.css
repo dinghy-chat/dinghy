@@ -3438,6 +3438,13 @@ main:has(> .lost) {
   top: calc(var(--header-height) + 28px);
   max-height: calc(100dvh - var(--header-height) - 56px);
   overflow-y: auto;
+  /* A short window still scrolls them, without the page's navy scrollbar beside the links. */
+  scrollbar-width: none;
+}
+
+.docs-side::-webkit-scrollbar,
+.docs-toc::-webkit-scrollbar {
+  display: none;
 }
 
 .docs-group {
@@ -3621,7 +3628,7 @@ main:has(> .lost) {
 .doc p a,
 .doc li a,
 .doc td a {
-  color: var(--blue-deep);
+  color: var(--navy);
   font-weight: 600;
   text-decoration: underline;
   text-decoration-color: rgb(31 107 255 / .35);

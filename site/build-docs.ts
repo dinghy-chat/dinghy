@@ -13,6 +13,7 @@ import {
   highlight,
   isCodeLanguage,
 } from "../packages/widget/src/highlight.ts";
+import { UPDATES, type UpdateKind } from "../apps/operator/src/updates.ts";
 
 const REPO = "https://github.com/dinghy-chat/dinghy";
 const SITE = "https://dinghy.chat";
@@ -22,7 +23,7 @@ const WIDGET =
 const PUBLIC = "site/public";
 const CONTENT = "site/content";
 /** The folders this script owns. It empties them before it writes. */
-export const OWNED_DIRS = ["docs", "for", "compare", "guides", "blog"].map((dir) => join(PUBLIC, dir));
+export const OWNED_DIRS = ["docs", "for", "compare", "guides", "blog", "changelog"].map((dir) => join(PUBLIC, dir));
 
 interface Page {
   kind: "docs" | "content";
@@ -166,6 +167,7 @@ const GROUPS: [string, string][] = [
   ["for", "Use cases"],
   ["guides", "Install guides"],
   ["blog", "Blog"],
+  ["changelog", "Changelog"],
 ];
 
 /** Splits the `key: value` lines between two `---` lines from the Markdown under them. */
@@ -202,7 +204,8 @@ function contentPages(): Page[] {
         description: meta.description,
         title: meta.title,
         date: meta.date,
-        updated: meta.updated ?? meta.date,
+        // The changelog changes with its newest update.
+        updated: folder === "changelog" ? UPDATES[0]?.date : (meta.updated ?? meta.date),
         priceChecked: meta.priceChecked,
         card: meta.card,
         stat: meta.stat,
@@ -511,7 +514,7 @@ const FOOTER = `  <footer>
 function pageList(current: Page): string {
   const pages = current.kind === "docs" ? DOCS_PAGES : CONTENT_PAGES;
   const groups = [...new Set(pages.map((page) => page.group))];
-  return groups
+  const lists = groups
     .map((group) => {
       const links = pages
         .filter((page) => page.group === group)
@@ -524,6 +527,12 @@ function pageList(current: Page): string {
       return `${title}\n        <ul>\n          ${links}\n        </ul>`;
     })
     .join("");
+  // The docs also link the changelog, which is a content page.
+  const updates =
+    current.kind === "docs"
+      ? '\n        <p class="docs-group">Updates</p>\n        <ul>\n          <li><a href="/changelog/">What\'s new</a></li>\n        </ul>'
+      : "";
+  return lists + updates;
 }
 
 const BAND = (heading: string, lede: string, meta: string, extra = "") => `    <section class="docs-band${extra ? ` ${extra}` : ""}" data-hero data-pause-offscreen>
@@ -568,6 +577,24 @@ function groupPages(group: string): Page[] {
   return group === "Blog"
     ? [...pages].sort((a, b) => (b.date ?? "").localeCompare(a.date ?? "") || b.order - a.order)
     : pages;
+}
+
+const KIND_TEXT: Record<UpdateKind, string> = {
+  feature: "New feature",
+  improvement: "Improvement",
+  fix: "Fix",
+};
+
+/** The operator app's What's new, newest first, for the changelog page. */
+function updatesList(): string {
+  return UPDATES.map((update) => {
+    const docs = update.docs ? `\n          <p><a href="/docs/${update.docs}">Read the docs</a></p>` : "";
+    return `<section class="update" id="${update.id}">
+          <h2>${escape(update.title)}</h2>
+          <p class="doc-meta"><time datetime="${update.date}">${longDate(update.date)}</time> · ${KIND_TEXT[update.kind]}</p>
+          <p>${escape(update.text)}</p>${docs}
+        </section>`;
+  }).join("\n        ");
 }
 
 const CARD_ACTION: Record<string, string> = {
@@ -646,16 +673,19 @@ function buildStory(page: Page): { html: string; images: string[] } {
   const description = page.description ?? plain(doc.lede);
   const section = SECTION[page.group];
   const index = isIndex(page);
-  const eyebrow =
-    section && section.path !== page.path
+  // The changelog has no section label: its title says what it is.
+  const eyebrow = !section
+    ? ""
+    : section.path !== page.path
       ? `<a class="band-eyebrow" href="${section.path}">${section.label}</a>`
-      : `<span class="band-eyebrow">${section?.label ?? ""}</span>`;
+      : `<span class="band-eyebrow">${section.label}</span>`;
   let meta = "";
   if (page.group === "Blog" && !index && page.date)
     meta = `${longDate(page.date)} · ${minutesToRead(page)} min read`;
   else if (page.priceChecked) meta = `Prices checked ${longDate(page.priceChecked)}`;
   const metaLine = meta ? `\n          <p class="doc-meta">${meta}</p>` : "";
   let body = doc.html.trim();
+  body = body.replace("<!-- updates -->", updatesList);
   body = body.replace(/<!-- pages(?: (\d+)-(\d+))? -->/g, (_, from?: string, to?: string) =>
     cards(
       groupPages(page.group).filter(

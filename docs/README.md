@@ -12,6 +12,8 @@ A coding agent such as Claude Code can do step 2 for you, and your own bot can a
 
 If something does not work, read [Troubleshooting](troubleshooting.md). If the server itself breaks, read the [Runbooks](runbooks.md).
 
+To see what changed lately, read [What's new](https://dinghy.chat/changelog/), which the operator app also shows under **What's new** in the sidebar.
+
 ## Run the server
 
 - [Self-hosting](self-hosting.md) has the install, the settings, running behind your own proxy, backups, restore, upgrades and going back.

@@ -9,8 +9,9 @@ on:
   pull_request:
     paths:
       - "site/**"
-      # The docs pages are built from these.
+      # The docs pages are built from these, and the changelog page from the app's updates.
       - "docs/*.md"
+      - "apps/operator/src/updates.ts"
       - "docs/media/**"
       - "compose.yaml"
       - "tests/site.test.ts"
@@ -20,6 +21,7 @@ on:
     paths:
       - "site/**"
       - "docs/*.md"
+      - "apps/operator/src/updates.ts"
       - "docs/media/**"
   workflow_dispatch:
 

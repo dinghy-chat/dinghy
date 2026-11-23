@@ -11,6 +11,7 @@ import { Keys } from "./shortcuts.tsx";
 import { type TextId, t } from "./text.ts";
 import { toast } from "./toast.tsx";
 import { Avatar, DOCS_URL, initials, ROLE_TEXT } from "./ui.tsx";
+import { WhatsNew } from "./whats-new.tsx";
 
 /** What the panel shows: the Inbox, or a page. */
 export type View = "inbox" | "contacts" | "visitors" | "analytics" | "campaigns" | "settings";
@@ -344,6 +345,7 @@ export function Sidebar({
           {waitingText}
         </span>
       )}
+      <WhatsNew operatorId={me.id} />
       <HelpMenu onShortcuts={onShortcuts} />
       {steps}
       <UserMenu
