@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.51.0] - 2026-11-23
+
 ### Added
 
 - The Dinghy mobile app for iOS has the Inbox, conversations, Contacts, Visitors, Analytics and Settings. A reply written without a connection waits on the phone and sends when the connection returns, and an operator can delete their account from Settings.
@@ -770,7 +772,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.50.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.51.0...HEAD
+[0.51.0]: https://github.com/dinghy-chat/dinghy/compare/v0.50.0...v0.51.0
 [0.50.0]: https://github.com/dinghy-chat/dinghy/compare/v0.49.0...v0.50.0
 [0.49.0]: https://github.com/dinghy-chat/dinghy/compare/v0.48.0...v0.49.0
 [0.48.0]: https://github.com/dinghy-chat/dinghy/compare/v0.47.0...v0.48.0
