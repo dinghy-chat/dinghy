@@ -65,7 +65,6 @@ describe("saved replies in the composer", () => {
     expect(typedSlash("Hi /", 4)).toEqual({ from: 3, to: 4, word: "" });
     expect(typedSlash("and/or", 6)).toBeNull();
     expect(typedSlash("see https://a.example/x", 23)).toBeNull();
-    expect(typedSlash("```\n/usr", 8)).toBeNull();
   });
 
   test("lists shortcuts that start with the word first", () => {

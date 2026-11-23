@@ -24,7 +24,7 @@ import { usePhotoComposer } from "./attachments";
 import { readableError } from "./common";
 import { fonts } from "./fonts";
 import { Icon } from "./icon";
-import { caretAfter, draftHtml, draftMarkdown, formattedHtml, insertSaved } from "./rich-draft";
+import { draftHtml, draftMarkdown, formatMarks, insertSaved, visibleOffset } from "./rich-draft";
 import { SavedReplyList } from "./saved-reply-list";
 import type { Palette } from "./theme";
 import { matchSavedReplies, typedSlash } from "./thread-logic";
@@ -64,7 +64,7 @@ const FORMATS: {
   label: Parameters<typeof t>[0];
   icon: IconName;
   styles: ("bold" | "italic" | "inlineCode" | "codeBlock" | "unorderedList" | "orderedList")[];
-  apply(input: EnrichedTextInputInstance, lines: boolean): void;
+  apply(input: EnrichedTextInputInstance, block: boolean): void;
 }[] = [
   { label: "formatBold", icon: "bold", styles: ["bold"], apply: (input) => input.toggleBold() },
   {
@@ -77,7 +77,7 @@ const FORMATS: {
     label: "formatCode",
     icon: "code",
     styles: ["inlineCode", "codeBlock"],
-    apply: (input, lines) => (lines ? input.toggleCodeBlock() : input.toggleInlineCode()),
+    apply: (input, block) => (block ? input.toggleCodeBlock() : input.toggleInlineCode()),
   },
   {
     label: "formatBulleted",
@@ -157,7 +157,9 @@ export function ThreadComposer({
   const isNote = mode === "note";
   const text = isNote ? noteDraft : replyDraft;
   const caret = selection.end;
-  const typed = typedSlash(fieldText, Math.min(caret, fieldText.length));
+  // A `/` in code is a path, not a saved reply.
+  const inCode = formats?.inlineCode.isActive === true || formats?.codeBlock.isActive === true;
+  const typed = inCode ? null : typedSlash(fieldText, Math.min(caret, fieldText.length));
   const slashOpen = typed !== null && typed.from !== dismissedSlash;
   const listOpen = savedToolOpen || slashOpen;
   const showTools = focused || isNote || savedToolOpen || toolsOpen;
@@ -187,8 +189,9 @@ export function ThreadComposer({
   }, [slashGone]);
   // A swipe or a menu Reply quotes a message, and only a reply can quote, so it leaves note mode.
   const quotedId = replyingTo?.id ?? null;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Runs when a new message is quoted.
   useEffect(() => {
-    if (quotedId !== null) setMode("reply");
+    if (quotedId !== null) switchMode("reply");
   }, [quotedId]);
 
   const loadSavedReplies = async () => {
@@ -221,6 +224,7 @@ export function ThreadComposer({
   });
 
   const changeText = (body: string) => {
+    if (body === drafts.current[field.current.mode]) return;
     drafts.current[field.current.mode] = body;
     if (field.current.mode === "note") {
       setNoteDraft(body);
@@ -242,7 +246,8 @@ export function ThreadComposer({
     const at = caret ?? next.text.length;
     setSelection({ start: at, end: at });
     inputRef.current?.setValue(html);
-    inputRef.current?.setSelection(at, at);
+    const visible = visibleOffset(next.text, at);
+    inputRef.current?.setSelection(visible, visible);
     return next.markdown;
   };
 
@@ -253,17 +258,13 @@ export function ThreadComposer({
     field.current.html = html;
     field.current.text = next.text;
     setFieldText(next.text);
-    // A paste adds several characters at once. Markdown in it shows as its formats, as on the web.
-    const formatted = next.text.length - before.length >= 2 ? formattedHtml(html) : null;
-    if (formatted === null) {
-      changeText(next.markdown);
-      return;
-    }
-    changeText(showHtml(formatted, caretAfter(before, draftMarkdown(formatted).text)));
+    // Markdown marks pasted or typed show as their formats, as on the web.
+    const formatted = formatMarks(html, before);
+    changeText(formatted ? showHtml(formatted.html, formatted.caret) : next.markdown);
   };
 
   const switchMode = (next: Mode) => {
-    if (next === mode) return;
+    if (next === field.current.mode) return;
     setMode(next);
     field.current.mode = next;
     setSavedToolOpen(false);
@@ -308,7 +309,8 @@ export function ThreadComposer({
   const applyFormat = (format: (typeof FORMATS)[number]) => {
     const input = inputRef.current;
     if (!input) return;
-    format.apply(input, fieldText.slice(selection.start, selection.end).includes("\n"));
+    const lines = fieldText.slice(selection.start, selection.end).includes("\n");
+    format.apply(input, lines || formats?.codeBlock.isActive === true);
     input.focus();
   };
 

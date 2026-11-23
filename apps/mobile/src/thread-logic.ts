@@ -92,11 +92,9 @@ const TYPED_SLASH = /(?:^|\s)\/([^\s/@]*)$/;
 
 export type SlashWord = { from: number; to: number; word: string };
 
-/** The `/word` that ends at the caret, or null. Text inside a code fence keeps its slash. */
+/** The `/word` that ends at the caret, or null. */
 export function typedSlash(text: string, caret: number): SlashWord | null {
-  const before = text.slice(0, caret);
-  if ((before.match(/```/g)?.length ?? 0) % 2 === 1) return null;
-  const found = TYPED_SLASH.exec(before);
+  const found = TYPED_SLASH.exec(text.slice(0, caret));
   if (!found) return null;
   const word = found[1] ?? "";
   return { from: caret - word.length - 1, to: caret, word };

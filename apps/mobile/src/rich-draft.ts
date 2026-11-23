@@ -104,10 +104,15 @@ function blockHtml(block: Block): string {
   }
 }
 
-/** A Markdown draft as the editor's HTML, with an empty line between blocks as in the Markdown. */
+/** A Markdown draft as the editor's HTML. */
 export function draftHtml(markdown: string): string {
   if (markdown.trim() === "") return "";
-  return `<html>${parseMarkdown(markdown).map(blockHtml).join("<br>")}</html>`;
+  const blocks = parseMarkdown(markdown);
+  // Two blocks of one kind in a row need the empty line between them to stay apart.
+  const html = blocks.map(
+    (block, index) => (blocks[index - 1]?.tag === block.tag ? "<br>" : "") + blockHtml(block),
+  );
+  return `<html>${html.join("")}</html>`;
 }
 
 // The editor's HTML to Markdown
@@ -188,8 +193,6 @@ function linesOf(html: string): Line[] {
   return lines;
 }
 
-const isEmpty = (line: Line) => line.runs.every((run) => run.text.trim() === "");
-
 /** One line's formats in Markdown, by the web composer's rules. */
 function inlineMarkdown(runs: Run[]): string {
   return toMarkdown({
@@ -212,92 +215,140 @@ function inlineMarkdown(runs: Run[]): string {
   });
 }
 
+const runsText = (runs: Run[]) => runs.map((run) => run.text).join("");
+
+/**
+ * The lines as Markdown. An empty list item or quote line has no Markdown, so it becomes an empty
+ * line, and empty lines in a row become one, except in code.
+ */
 function linesMarkdown(lines: Line[]): string {
   const out: string[] = [];
   let number = 0;
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index] as Line;
-    const previous = lines[index - 1];
-    // Blocks of different kinds need an empty line between them to stay apart.
-    if (previous && previous.container !== line.container && !isEmpty(previous) && !isEmpty(line)) {
-      out.push("");
-    }
-    if (line.container !== "ol" || previous?.container !== "ol") number = 0;
-    const words = inlineMarkdown(line.runs);
-    switch (line.container) {
-      case "code": {
-        const code: string[] = [];
-        for (; lines[index]?.container === "code"; index += 1) {
-          code.push((lines[index] as Line).runs.map((run) => run.text).join(""));
-        }
-        index -= 1;
-        out.push("```", ...code, "```");
-        break;
+    if (line.container === "code") {
+      const code: string[] = [];
+      for (; lines[index]?.container === "code"; index += 1) {
+        code.push(runsText((lines[index] as Line).runs));
       }
-      case "ul":
-        out.push(`- ${words}`);
-        break;
-      case "ol":
-        number += 1;
-        out.push(`${number}. ${words}`);
-        break;
-      case "quote":
-        out.push(words === "" ? ">" : `> ${words}`);
-        break;
-      default:
-        out.push(words);
+      index -= 1;
+      out.push("```", ...code, "```");
+      continue;
     }
+    number = line.container === "ol" && lines[index - 1]?.container === "ol" ? number + 1 : 1;
+    const words = inlineMarkdown(line.runs);
+    if (words.trim() === "") {
+      if (out.at(-1) !== "") out.push("");
+      continue;
+    }
+    const marker = { p: "", ul: "- ", ol: `${number}. `, quote: "> " }[line.container];
+    out.push(marker + words);
   }
-  return out
-    .join("\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+  return out.join("\n");
 }
 
-/** The editor's text as offsets count it: its lines joined by line breaks. */
-const plainOf = (lines: Line[]) =>
-  lines.map((line) => line.runs.map((run) => run.text).join("")).join("\n");
+/** The character the editor keeps on an empty line of a list, quote or code block. */
+const HIDDEN = "\u200B";
 
-/** The editor's HTML as a Markdown draft, and its text as the editor counts it. */
+/** The editor's text as its selection counts it: its lines, joined by line breaks. */
+const plainOf = (lines: Line[]) =>
+  lines
+    .map((line) => {
+      const text = runsText(line.runs);
+      return text === "" && line.container !== "p" ? HIDDEN : text;
+    })
+    .join("\n");
+
+/** An offset in the editor's text as `setSelection` counts it, which skips hidden characters. */
+export const visibleOffset = (text: string, at: number) =>
+  at - (text.slice(0, at).split(HIDDEN).length - 1);
+
+/** The editor's HTML as a Markdown draft, and its text as the editor's selection counts it. */
 export function draftMarkdown(html: string): { markdown: string; text: string } {
   const lines = linesOf(html);
   return { markdown: linesMarkdown(lines), text: plainOf(lines) };
 }
 
-/**
- * The editor's HTML again from its own Markdown, when its text holds Markdown marks that would
- * format it, as pasted `**words**` do. Null when the Markdown reads back the same.
- */
-export function formattedHtml(html: string): string | null {
-  const shape = (lines: Line[]) =>
-    JSON.stringify(
-      lines
-        .map((line) => ({ ...line, runs: merged(line.runs) }))
-        .filter((line, index, all) => !isEmpty(line) || (index > 0 && index < all.length - 1)),
-    );
-  const lines = linesOf(html);
-  const next = draftHtml(linesMarkdown(lines));
-  return shape(linesOf(next)) === shape(lines) ? null : next;
-}
+const CARET = "\uE000";
 
 /**
- * Where the caret goes after the editor's text changed from `before` to `after` around it: after
- * the new words, before the text they both end with.
+ * The lines' Markdown with `insert` in place of the text from `from` to `to`, as the editor's HTML,
+ * and the caret after `insert`.
  */
-export function caretAfter(before: string, after: string): number {
+function replaced(
+  lines: Line[],
+  from: number,
+  to: number,
+  insert: string,
+): { html: string; caret: number } {
+  let at = 0;
+  let placed = false;
+  const marked = lines.map((line): Line => {
+    const runs: Run[] = [];
+    // The caret takes the formats of the words around it, so their marks stay whole.
+    const place = (run?: Run) => {
+      if (!placed) runs.push({ ...run, text: CARET });
+      placed = true;
+    };
+    const hidden = line.runs.length === 0 && line.container !== "p";
+    if (from === at || (hidden && from === at + 1)) place();
+    for (const run of line.runs) {
+      const start = at;
+      at += run.text.length;
+      if (at <= from || start >= to) {
+        if (start === from) place(run);
+        runs.push(run);
+        continue;
+      }
+      runs.push({ ...run, text: run.text.slice(0, Math.max(from - start, 0)) });
+      if (from >= start) place(run);
+      runs.push({ ...run, text: run.text.slice(Math.max(to - start, 0)) });
+    }
+    if (at === from) place();
+    at += hidden ? 2 : 1;
+    return { ...line, runs: merged(runs) };
+  });
+  const markdown = linesMarkdown(marked);
+  const withCaret = placed
+    ? markdown.replace(CARET, () => insert + CARET)
+    : markdown + insert + CARET;
+  const text = plainOf(linesOf(draftHtml(withCaret)));
+  const caret = text.indexOf(CARET);
+  return {
+    html: draftHtml(withCaret.replace(CARET, "")),
+    caret: caret < 0 ? text.length : caret,
+  };
+}
+
+/** Where a change from `before` to `after` ends in `after`. */
+function changeEnd(before: string, after: string): number {
+  let start = 0;
+  while (start < before.length && start < after.length && before[start] === after[start]) start++;
   let same = 0;
-  const most = Math.min(before.length, after.length);
-  while (same < most && before[before.length - 1 - same] === after[after.length - 1 - same])
-    same += 1;
+  const most = Math.min(before.length, after.length) - start;
+  while (same < most && before[before.length - 1 - same] === after[after.length - 1 - same]) same++;
   return after.length - same;
 }
 
-const SAVED = "";
+/**
+ * The editor's HTML with its Markdown marks shown as formats, as pasted or typed `**words**`, and
+ * the caret where the change from `before` ended. Null when the text has no marks to format.
+ */
+export function formatMarks(html: string, before: string): { html: string; caret: number } | null {
+  const lines = linesOf(html);
+  const text = plainOf(lines);
+  const words = (value: string) => value.replace(/[\s\u200B]/g, "");
+  // Formats only take marks away, so a text that would not get shorter has none.
+  const next = words(plainOf(linesOf(draftHtml(linesMarkdown(lines)))));
+  if (next.length >= words(text).length) return null;
+  const caret = changeEnd(before, text);
+  return replaced(lines, caret, caret, "");
+}
 
 /**
  * The editor's HTML with a saved reply in place of the text from `from` to `to`, and the caret
  * after it. The reply's own formats come with it. With no place, the reply goes at the end, on a
- * line of its own.
+ * line of its own when the text has words already.
  */
 export function insertSaved(
   html: string,
@@ -305,38 +356,8 @@ export function insertSaved(
   place: { from: number; to: number } | null,
 ): { html: string; caret: number } {
   const lines = linesOf(html);
-  let at = 0;
-  let placed = false;
-  for (const line of place === null ? [] : lines) {
-    const runs: Run[] = [];
-    for (const run of line.runs) {
-      const start = at;
-      at += run.text.length;
-      const from = Math.max((place?.from ?? 0) - start, 0);
-      const to = Math.min((place?.to ?? 0) - start, run.text.length);
-      if (placed || from > run.text.length || to < 0) {
-        runs.push(run);
-        continue;
-      }
-      runs.push(
-        { ...run, text: run.text.slice(0, from) },
-        { text: SAVED },
-        { ...run, text: run.text.slice(to) },
-      );
-      placed = true;
-    }
-    if (!placed && at === place?.from) {
-      runs.push({ text: SAVED });
-      placed = true;
-    }
-    line.runs = merged(runs);
-    at += 1;
-  }
-  const markdown = linesMarkdown(lines);
-  const marked = placed
-    ? markdown.replace(SAVED, body + SAVED)
-    : `${markdown}${markdown === "" ? "" : "\n"}${body}${SAVED}`;
-  const { text } = draftMarkdown(draftHtml(marked));
-  const caret = text.indexOf(SAVED);
-  return { html: draftHtml(marked.replace(SAVED, "")), caret: caret < 0 ? text.length : caret };
+  if (place !== null) return replaced(lines, place.from, place.to, body);
+  const text = plainOf(lines);
+  const end = text.length;
+  return replaced(lines, end, end, text.replaceAll(HIDDEN, "").trim() === "" ? body : `\n${body}`);
 }
