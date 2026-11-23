@@ -52,6 +52,8 @@ export async function startFakeStripe() {
   const subscriptions = new Map<string, FakeSubscription>();
   const replies = new Map<string, unknown>();
   const counts = { subscriptionFetches: 0, cancels: 0 };
+  /** The subscriptions' own payment method, which tests set. Null leaves the customer's default. */
+  const paymentMethods: { subscription: unknown } = { subscription: null };
   /** Invoices, newest last, which a payment adds. */
   const invoices: { id: string; customer: string; created: number; status: string }[] = [];
   /** Billing portal sessions, by ID, with the customer and return URL they were made for. */
@@ -203,7 +205,7 @@ export async function startFakeStripe() {
             {
               ...subscription,
               items: { data: [{ price: PRICE }] },
-              default_payment_method: null,
+              default_payment_method: paymentMethods.subscription,
               customer: {
                 id: subscription.customer,
                 invoice_settings: { default_payment_method: { id: "pm_1", card } },
@@ -275,6 +277,7 @@ export async function startFakeStripe() {
     subscriptions,
     counts,
     portals,
+    paymentMethods,
     failures,
     hooks,
     /** Pays a session: Stripe makes a subscription with the session's metadata. */

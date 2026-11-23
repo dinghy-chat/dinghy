@@ -2,7 +2,7 @@
 import type { Money } from "../../apps/operator/src/api.ts";
 
 /** Currencies that Stripe counts in hundredths although people write them whole. */
-const STRIPE_DECIMALS: Partial<Record<string, number>> = { isk: 2, ugx: 2 };
+const STRIPE_DECIMALS: Partial<Record<string, number>> = { isk: 2, ugx: 2, huf: 2, twd: 2 };
 
 /** An amount in Stripe's smallest unit, as people write it, such as $9, $9.50 or ¥1,500. */
 export function formatMoney({ amount, currency }: Money): string {

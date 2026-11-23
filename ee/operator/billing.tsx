@@ -372,20 +372,23 @@ function InvoicesRow({ invoices }: { invoices: BillingDetails["invoices"] }) {
 export function BillingPage({
   api,
   workspaceId,
-  version,
+  inboxBilling,
   usage,
 }: {
   api: WorkspaceApi;
   workspaceId: string;
-  /** The inbox's copy of the billing state, kept fresh by its live events. Null until it loads. */
-  version: BillingState | null;
+  /** The inbox's copy of the billing state, which its live events load again. Null until it loads. */
+  inboxBilling: BillingState | null;
   usage: ReactNode;
 }) {
-  // The inbox keeps the state fresh. The page loads it only while the inbox has none, so a
-  // failure shows here rather than an old answer.
-  const isMissing = version === null;
-  const loaded = useLoad(() => (isMissing ? api.billing() : null), [api, isMissing]);
-  const billing = { data: version ?? loaded.data, failure: loaded.failure };
+  // The page reads the state itself on opening and after each change the inbox hears of, so it
+  // never shows an answer older than its own. A failed read shows, not the last answer.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the inbox's new state asks for a read.
+  const loaded = useLoad(() => api.billing(), [api, inboxBilling]);
+  const billing = {
+    data: loaded.failure === null ? (loaded.data ?? inboxBilling) : null,
+    failure: loaded.failure,
+  };
   const details = useLoad(() => api.billingDetails(), [api]);
   return (
     <Page

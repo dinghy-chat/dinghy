@@ -768,6 +768,17 @@ describe("the billing page", () => {
     expect(body.invoices[0]?.url).toMatch(/\/invoice\/in_/);
   });
 
+  test("a subscription paid by bank debit shows no card, not the customer's default card", async () => {
+    const created = await activeSignup();
+    stripe.paymentMethods.subscription = { id: "pm_debit", type: "sepa_debit" };
+    try {
+      const response = await details(created.workspaceId, created.cookie);
+      expect(((await response.json()) as { card: unknown }).card).toBeNull();
+    } finally {
+      stripe.paymentMethods.subscription = null;
+    }
+  });
+
   test("Stripe's portal returns to the billing page", async () => {
     const created = await activeSignup();
     const response = await request(
