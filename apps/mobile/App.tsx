@@ -387,10 +387,21 @@ function SignedInApp({
     void refreshInbox();
   }, [refreshInbox]);
 
+  // While the list shows, it refreshes every 30 seconds, and at once when the operator comes back
+  // to it from a conversation or from another app. The first load shows its own spinner.
+  const listShown = useRef(false);
   useEffect(() => {
     if (page !== "inbox" || isThreadOpen) return;
+    if (listShown.current) void refreshInbox(false);
+    listShown.current = true;
     const timer = setInterval(() => void refreshInbox(false), 30_000);
-    return () => clearInterval(timer);
+    const appState = AppState.addEventListener("change", (state) => {
+      if (state === "active") void refreshInbox(false);
+    });
+    return () => {
+      clearInterval(timer);
+      appState.remove();
+    };
   }, [isThreadOpen, page, refreshInbox]);
 
   useEffect(() => {
