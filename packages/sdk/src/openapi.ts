@@ -8017,6 +8017,8 @@ export interface components {
         heir: string | null;
       }[];
       billing: boolean;
+      /** @enum {string} */
+      deleteConfirmation: "email" | "typed";
       contact: string | null;
       /** @enum {string} */
       twoFactor: "off" | "on" | "required";
