@@ -1,6 +1,10 @@
 import * as Clipboard from "expo-clipboard";
 import { AccessibilityInfo, Linking, Platform, StyleSheet, Text, View } from "react-native";
-import { type Block, isBareLink, parseMarkdown } from "../../../packages/widget/src/markdown.ts";
+import {
+  type Block,
+  isBareLinkText,
+  parseMarkdown,
+} from "../../../packages/widget/src/markdown.ts";
 import { t } from "../../operator/src/text.ts";
 import { fonts } from "./fonts";
 import type { Palette } from "./theme";
@@ -84,10 +88,7 @@ export function MessageMarkdown({
       }
       if (part.tag === "a") {
         const href = part.href;
-        const label =
-          isBareLink(href) && part.children.length === 1 && part.children[0] === href
-            ? [displayLink(href)]
-            : part.children;
+        const label = isBareLinkText(href, part.children) ? [displayLink(href)] : part.children;
         return (
           <Text
             accessibilityHint={t("mobileLinkHint")}

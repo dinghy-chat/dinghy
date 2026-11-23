@@ -90,6 +90,10 @@ export function isBareLink(href: string): boolean {
   return BARE_LINK.exec(href)?.[0] === href;
 }
 
+/** Whether a link's words are only its bare address, as the parser makes them. */
+export const isBareLinkText = (href: string, children: readonly unknown[]): boolean =>
+  children.length === 1 && children[0] === href && isBareLink(href);
+
 /** Splits a message into paragraphs, code blocks and lists. */
 export function parseMarkdown(source: string): Block[] {
   const lines = source.replace(/\r\n?/g, "\n").split("\n");

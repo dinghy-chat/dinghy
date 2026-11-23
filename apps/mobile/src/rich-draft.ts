@@ -7,7 +7,7 @@ import {
   type Block,
   escapeHtml,
   FENCE,
-  isBareLink,
+  isBareLinkText,
   parseMarkdown,
 } from "../../../packages/widget/src/markdown.ts";
 import { toMarkdown } from "../../operator/src/rich-text.ts";
@@ -37,15 +37,12 @@ function merged(runs: Run[]): Run[] {
 
 // Markdown to the editor's HTML
 
-const isBare = (href: string, children: Inline[]) =>
-  children.length === 1 && children[0] === href && isBareLink(href);
-
 function runsOf(parts: Inline[], marks: Omit<Run, "text"> = {}): Run[] {
   return parts.flatMap((part): Run[] => {
     if (typeof part === "string") return [{ ...marks, text: part }];
     if (part.tag === "code") return [{ ...marks, code: true, text: part.text }];
     // A bare link stays text, as the editor finds links in text itself.
-    if (part.tag === "a" && !isBare(part.href, part.children)) {
+    if (part.tag === "a" && !isBareLinkText(part.href, part.children)) {
       return runsOf(part.children, { ...marks, href: part.href });
     }
     if (part.tag === "a") return runsOf(part.children, marks);
@@ -168,7 +165,7 @@ function linesOf(html: string): Line[] {
       const run: Run = { text: decode(text) };
       for (const [tag, mark] of Object.entries(MARK_TAGS)) if (counts[tag]) run[mark] = true;
       const href = hrefs.at(-1);
-      if (href !== undefined && !isBare(href, [run.text])) run.href = href;
+      if (href !== undefined && !isBareLinkText(href, [run.text])) run.href = href;
       line ??= [];
       line.push(run);
       continue;
@@ -280,8 +277,10 @@ export function draftMarkdown(html: string): { markdown: string; text: string } 
 const CARET = "\uE000";
 const INLINE = ["bold", "italic", "code"] as const;
 
+export type InlineFormat = (typeof INLINE)[number];
+
 /** The field's new HTML, where its caret goes, and the formats that end just before the caret. */
-export type Rewrite = { html: string; caret: number; ended: (typeof INLINE)[number][] };
+export type Rewrite = { html: string; caret: number; ended: InlineFormat[] };
 
 /** The formats on the text just before the caret mark that the mark itself does not have. */
 function endedAt(lines: Line[]): Rewrite["ended"] {
@@ -299,7 +298,13 @@ function endedAt(lines: Line[]): Rewrite["ended"] {
  * The lines' Markdown with `insert` in place of the text from `from` to `to`, as the editor's HTML,
  * and the caret after `insert`.
  */
-function replaced(lines: Line[], from: number, to: number, insert: string): Rewrite {
+function replaced(
+  lines: Line[],
+  place: { from: number; to: number } | null,
+  insert: string,
+): Rewrite {
+  // With no place, `insert` goes after the last line.
+  const { from, to } = place ?? { from: -1, to: -1 };
   let at = 0;
   let placed = false;
   const marked = lines.map((line): Line => {
@@ -367,11 +372,11 @@ export function formatPaste(html: string, before: string): Rewrite | null {
   if (lines.some((line) => line.container === "code" && FENCE.test(runsText(line.runs)))) {
     return null;
   }
-  const words = (value: string) => value.replace(/[\s\u200B]/g, "");
+  const words = (value: string) => value.replace(/\s/g, "").replaceAll(HIDDEN, "");
   // Formats only take marks away, so a text that would not get shorter has none.
   const next = words(plainOf(linesOf(draftHtml(linesMarkdown(lines)))));
   if (next.length >= words(text).length) return null;
-  return replaced(lines, paste.end, paste.end, "");
+  return replaced(lines, { from: paste.end, to: paste.end }, "");
 }
 
 /**
@@ -385,7 +390,7 @@ export function insertSaved(
   place: { from: number; to: number } | null,
 ): Rewrite {
   const lines = linesOf(html);
-  if (place !== null) return replaced(lines, place.from, place.to, body);
+  if (place !== null) return replaced(lines, place, body);
   const empty = plainOf(lines).replaceAll(HIDDEN, "").trim() === "";
-  return replaced(lines, -1, -1, empty ? body : `\n${body}`);
+  return replaced(lines, null, empty ? body : `\n${body}`);
 }

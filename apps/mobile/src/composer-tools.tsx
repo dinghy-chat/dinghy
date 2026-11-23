@@ -30,8 +30,8 @@ import {
   draftMarkdown,
   formatPaste,
   hiddenOffset,
+  type InlineFormat,
   insertSaved,
-  type Rewrite,
   visibleOffset,
 } from "./rich-draft";
 import { SavedReplyList } from "./saved-reply-list";
@@ -65,6 +65,13 @@ type IconName = Parameters<typeof Icon>[0]["name"];
 
 type Selection = { start: number; end: number };
 
+/** Turns a format on or off at the selection, or for the next words typed. */
+const TOGGLE: Record<InlineFormat, (input: EnrichedTextInputInstance) => void> = {
+  bold: (input) => input.toggleBold(),
+  italic: (input) => input.toggleItalic(),
+  code: (input) => input.toggleInlineCode(),
+};
+
 /**
  * The formats of the web composer, in the web's order: the styles that show each one as on, and
  * what it does. Code over several lines is a code block, as on the web.
@@ -75,18 +82,13 @@ const FORMATS: {
   styles: ("bold" | "italic" | "inlineCode" | "codeBlock" | "unorderedList" | "orderedList")[];
   apply(input: EnrichedTextInputInstance, block: boolean): void;
 }[] = [
-  { label: "formatBold", icon: "bold", styles: ["bold"], apply: (input) => input.toggleBold() },
-  {
-    label: "formatItalic",
-    icon: "italic",
-    styles: ["italic"],
-    apply: (input) => input.toggleItalic(),
-  },
+  { label: "formatBold", icon: "bold", styles: ["bold"], apply: TOGGLE.bold },
+  { label: "formatItalic", icon: "italic", styles: ["italic"], apply: TOGGLE.italic },
   {
     label: "formatCode",
     icon: "code",
     styles: ["inlineCode", "codeBlock"],
-    apply: (input, block) => (block ? input.toggleCodeBlock() : input.toggleInlineCode()),
+    apply: (input, block) => (block ? input.toggleCodeBlock() : TOGGLE.code(input)),
   },
   {
     label: "formatBulleted",
@@ -144,7 +146,7 @@ export function ThreadComposer({
     start: fieldText.length,
     end: fieldText.length,
   });
-  const [formats, setFormats] = useState<OnChangeStateEvent | null>(null);
+  const [styleState, setStyleState] = useState<OnChangeStateEvent | null>(null);
   const field = useRef({ html: initialHtml, text: fieldText, mode: "reply" as Mode });
   const drafts = useRef({ reply: initialDraft, note: "" });
   const [toolsOpen, setToolsOpen] = useState(false);
@@ -167,7 +169,8 @@ export function ThreadComposer({
   const text = isNote ? noteDraft : replyDraft;
   const caret = selection.end;
   // A `/` in code is a path, not a saved reply.
-  const inCode = formats?.inlineCode.isActive === true || formats?.codeBlock.isActive === true;
+  const inCode =
+    styleState?.inlineCode.isActive === true || styleState?.codeBlock.isActive === true;
   const typed = inCode ? null : typedSlash(fieldText, Math.min(caret, fieldText.length));
   const slashOpen = typed !== null && typed.from !== dismissedSlash;
   const listOpen = savedToolOpen || slashOpen;
@@ -252,7 +255,7 @@ export function ThreadComposer({
    * Puts new HTML in the field, with the caret at `caret` or at the end, and returns its Markdown.
    * The formats that `ended` before the caret stay off for the next words typed, as on the web.
    */
-  const showHtml = (html: string, caret?: number, ended: Rewrite["ended"] = []) => {
+  const showHtml = (html: string, caret?: number, ended: InlineFormat[] = []) => {
     const next = draftMarkdown(html);
     field.current.html = html;
     field.current.text = next.text;
@@ -263,11 +266,7 @@ export function ThreadComposer({
     const visible = visibleOffset(next.text, at);
     const input = inputRef.current;
     input?.setSelection(visible, visible);
-    for (const format of ended) {
-      if (format === "bold") input?.toggleBold();
-      else if (format === "italic") input?.toggleItalic();
-      else input?.toggleInlineCode();
-    }
+    if (input) for (const format of ended) TOGGLE[format](input);
     return next.markdown;
   };
 
@@ -332,7 +331,7 @@ export function ThreadComposer({
     const input = inputRef.current;
     if (!input) return;
     const lines = fieldText.slice(selection.start, selection.end).includes("\n");
-    format.apply(input, lines || formats?.codeBlock.isActive === true);
+    format.apply(input, lines || styleState?.codeBlock.isActive === true);
     input.focus();
   };
 
@@ -523,7 +522,7 @@ export function ThreadComposer({
                     icon={format.icon}
                     key={format.label}
                     label={t(format.label)}
-                    on={format.styles.some((style) => formats?.[style].isActive === true)}
+                    on={format.styles.some((style) => styleState?.[style].isActive === true)}
                     onPress={() => applyFormat(format)}
                     palette={palette}
                   />
@@ -541,7 +540,6 @@ export function ThreadComposer({
                   />
                 )}
                 <ToolButton
-                  active={listOpen}
                   expanded={listOpen}
                   icon="savedReply"
                   label={t("mobileUseSavedReply")}
@@ -596,7 +594,7 @@ export function ThreadComposer({
                 Platform.OS === "android" ? hiddenOffset(field.current.text, offset) : offset;
               setSelection({ start: at(start), end: at(end) });
             }}
-            onChangeState={(event) => setFormats(event.nativeEvent)}
+            onChangeState={(event) => setStyleState(event.nativeEvent)}
             onFocus={() => setFocused(true)}
             placeholder={
               isNote
@@ -649,10 +647,10 @@ export function ThreadComposer({
 
 /**
  * A button of the tools row. With `shown`, its name shows next to its icon. A format button shows
- * only its icon, and its name is for VoiceOver. A format that is `on` at the caret shows as active.
+ * only its icon, and its name is for VoiceOver. An open list or a format that is `on` at the caret
+ * shows as lit.
  */
 function ToolButton({
-  active = false,
   expanded,
   icon,
   label,
@@ -661,7 +659,6 @@ function ToolButton({
   palette,
   shown = false,
 }: {
-  active?: boolean;
   expanded?: boolean;
   icon: IconName;
   label: string;
@@ -670,7 +667,7 @@ function ToolButton({
   palette: Palette;
   shown?: boolean;
 }) {
-  const lit = active || on === true;
+  const lit = on ?? expanded ?? false;
   const color = lit ? palette.blue : palette.ink;
   return (
     <Pressable
