@@ -101,6 +101,10 @@ const meRoute = createRoute({
                 }),
               ),
               billing: z.boolean(),
+              // How this account's delete is confirmed: `email`, by a link sent to it, or `typed`,
+              // at once after the operator types their email. The app review account is `typed`,
+              // because the reviewer cannot read its mail.
+              deleteConfirmation: z.enum(["email", "typed"]),
               // Who a suspended workspace's operators write to: Dinghy Cloud's address, or null on
               // a self-hosted server, whose admin they already know.
               contact: z.string().nullable(),
@@ -509,6 +513,10 @@ export function registerOperatorRoutes(
           ),
         ),
         billing,
+        deleteConfirmation:
+          mailer !== undefined && c.get("operatorEmail").toLowerCase() !== appReview?.email
+            ? ("email" as const)
+            : ("typed" as const),
         contact,
         twoFactor: c.get("twoFactor"),
         recoveryCodesLeft:

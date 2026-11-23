@@ -40,6 +40,8 @@ export type Me = {
   pictureUrl: string | null;
   away: boolean;
   workspaces: Workspace[];
+  /** How the account's delete is confirmed: by a link sent to it, or at once by typing its email. */
+  deleteConfirmation: "email" | "typed";
 };
 
 type Handler =

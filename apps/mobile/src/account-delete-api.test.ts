@@ -21,12 +21,6 @@ beforeEach(() => {
 });
 
 describe("mobile account delete API", () => {
-  test("reads whether the server sends email", async () => {
-    mockedFetch.mockResolvedValue(answer({ name: "dinghy", email: false }));
-    await expect(new DinghyApi(session).sendsEmail()).resolves.toBe(false);
-    expect(mockedFetch).toHaveBeenCalledWith("https://chat.example.com/v1/meta", expect.anything());
-  });
-
   test("sends the typed email with the native session, and returns whether it is gone", async () => {
     mockedFetch.mockResolvedValue(answer({ deleted: false }));
     await expect(new DinghyApi(session).deleteAccount("ana@example.com")).resolves.toEqual({

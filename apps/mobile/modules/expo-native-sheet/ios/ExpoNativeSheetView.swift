@@ -15,6 +15,7 @@ final class ExpoNativeSheetView: ExpoView {
   private var fittedHeight: CGFloat = 0
   private var reportedMaximum: CGFloat = 0
   private var reportedKeyboardHeight: CGFloat = 0
+  private var keyboardDocked = false
   private var keyboardFrame = CGRect.null
   private var style = UIUserInterfaceStyle.unspecified
 
@@ -95,7 +96,8 @@ final class ExpoNativeSheetView: ExpoView {
     return nil
   }
 
-  // UIKit measures a custom detent above the bottom safe area, as tall as the content here.
+  // UIKit measures a custom detent above the bottom safe area, as tall as the content here. Over a
+  // docked keyboard that safe area is empty space above the keys, so the detent gives it back.
   private func resolve(_ context: UISheetPresentationControllerDetentResolutionContext) -> CGFloat {
     let maximum = context.maximumDetentValue
     if maximum != reportedMaximum {
@@ -105,7 +107,8 @@ final class ExpoNativeSheetView: ExpoView {
         self?.onSheetLayout(["maxHeight": maximum])
       }
     }
-    let height = bounds.height
+    let safeArea = keyboardDocked ? (window?.safeAreaInsets.bottom ?? 0) : 0
+    let height = bounds.height - safeArea
     return height > 0 ? min(height, maximum) : maximum
   }
 
@@ -144,6 +147,10 @@ final class ExpoNativeSheetView: ExpoView {
     let frame = window.convert(keyboardFrame, from: window.screen.coordinateSpace)
     let docked = frame.minY < window.bounds.maxY && frame.maxY >= window.bounds.maxY - 1
     let available = docked ? max(1, frame.minY - window.safeAreaInsets.top - 10) : 0
+    if docked != keyboardDocked {
+      keyboardDocked = docked
+      refit()
+    }
     guard available != reportedKeyboardHeight else { return }
     reportedKeyboardHeight = available
     onKeyboardInset(["availableHeight": available])

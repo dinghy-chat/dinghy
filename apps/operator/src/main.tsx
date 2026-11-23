@@ -161,7 +161,6 @@ function App() {
       <Onboarding
         early={meta.signup === "early"}
         me={me}
-        emailAvailable={meta.email}
         onSignedOut={() => navigate("/")}
         onAccountDeleted={accountGone}
       />
@@ -199,7 +198,6 @@ function App() {
       <Onboarding
         early={meta.signup === "early"}
         me={me}
-        emailAvailable={meta.email}
         onSignedOut={signedOut}
         onAccountDeleted={accountGone}
         deletedName={deletedName}
@@ -218,7 +216,7 @@ function App() {
           {t("signOut")}
         </button>
         {/* With no workspace there is no Profile page, so the account's delete is here. */}
-        <DeleteAccount me={me} emailAvailable={meta.email} onDeleted={accountGone} />
+        <DeleteAccount me={me} onDeleted={accountGone} />
       </AuthPage>
     );
   }
@@ -233,7 +231,6 @@ function App() {
         me={me}
         workspace={first}
         others={me.workspaces.filter(opens)}
-        emailAvailable={meta.email}
         onSwitch={switchTo}
         onSignedOut={signedOut}
         onWorkspaceDeleted={workspaceDeleted}

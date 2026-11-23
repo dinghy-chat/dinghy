@@ -5,6 +5,7 @@ import type { Logger } from "pino";
 import { TWO_FACTOR_CODE_MAX } from "../../../packages/widget/src/shared.ts";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
+import { reviewLooksDeleted } from "./app-review.ts";
 import { audit } from "./audit.ts";
 import type { Auth } from "./auth.ts";
 import { signedSessionCookie } from "./auth.ts";
@@ -28,7 +29,7 @@ import {
   UNAUTHORIZED,
   WRONG_ORIGIN_TEXT,
 } from "./errors.ts";
-import { emailAddressHash, sha256Hex } from "./identity.ts";
+import { emailAddressHash, nativeEmailCodeIdentifier, sha256Hex } from "./identity.ts";
 import { nativeSignInCodeMail } from "./letter.ts";
 import {
   NATIVE_EMAIL_CODE_MAX_FAILURES,
@@ -45,7 +46,6 @@ const NATIVE_REDIRECT_URI = "dinghy://auth/callback";
 const NATIVE_CODE_MINUTES = 5;
 const NATIVE_EXCHANGES_PER_MINUTE = 20;
 const CODE_PREFIX = "native-sign-in:";
-const EMAIL_CODE_PREFIX = "native-email-code:";
 const TOTP_CHALLENGE_PREFIX = "native-totp:";
 const EMAIL_CODE_DIGITS = 6;
 const EMAIL_CODE_MINUTES = 10;
@@ -312,7 +312,6 @@ async function nativeWorkspace(db: Database, operatorId: string): Promise<Native
     : { kind: "available", id: membership.workspaceId, name };
 }
 
-const emailCodeIdentifier = (email: string) => `${EMAIL_CODE_PREFIX}${emailAddressHash(email)}`;
 const totpChallengeIdentifier = (challenge: string) =>
   `${TOTP_CHALLENGE_PREFIX}${sha256Hex(challenge)}`;
 const emailCodeDigest = (secret: string, email: string, code: string) =>
@@ -330,7 +329,7 @@ async function storeEmailCode(
   operatorId: string,
   code: string,
 ): Promise<void> {
-  const identifier = emailCodeIdentifier(email);
+  const identifier = nativeEmailCodeIdentifier(email);
   await db.transaction(async (tx) => {
     await lockWrites(tx, "native-email-code", emailAddressHash(email));
     await tx.delete(verification).where(eq(verification.identifier, identifier));
@@ -362,6 +361,7 @@ async function sendEmailCode(
   // The reviewer cannot read this account's mail, so its code is the fixed one, with the same
   // expiry, single use and guess limit as an emailed code.
   if (email === appReview?.email) {
+    if (await reviewLooksDeleted(db, email)) return;
     await storeEmailCode(db, auth.options.secret, email, account.id, appReview.code);
     audit(logger, "native_email_code.review", { operatorId: account.id, ip });
     return;
@@ -385,7 +385,7 @@ async function consumeEmailCode(
   code: string,
   attempt: number,
 ): Promise<EmailCodeResult> {
-  const identifier = emailCodeIdentifier(email);
+  const identifier = nativeEmailCodeIdentifier(email);
   return db.transaction(async (tx) => {
     await lockWrites(tx, "native-email-code", emailAddressHash(email));
     const [record] = await tx
@@ -702,6 +702,11 @@ export function registerNativeAuthRoutes(
     if (wait !== null) return tooManyAttempts(c, { windowSeconds: wait });
     const request = c.req.valid("json");
     const email = request.email.toLowerCase();
+    // It has no code while it looks deleted. Its own code counts as no guess, so the next
+    // reviewer is not locked out after the window.
+    if (email === appReview?.email && (await reviewLooksDeleted(db, email))) {
+      return c.json(INVALID_NATIVE_CODE, 400);
+    }
     const attempt = await nativeEmailCodes.attempt(email);
     if (attempt === null) return c.json(CHECK_UNAVAILABLE, 503);
     if (attempt > NATIVE_EMAIL_CODE_MAX_FAILURES) {

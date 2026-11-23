@@ -485,6 +485,8 @@ export interface Me {
   }[];
   /** True on the cloud plan, where a workspace waits for payment. */
   billing: boolean;
+  /** How this account's delete is confirmed: by a link sent to it, or by typing its email. */
+  deleteConfirmation: "email" | "typed";
   /** Who to write to about a suspension, on Dinghy Cloud. Null on a self-hosted server. */
   contact: string | null;
   /** `required`: it is on, and this session must pass the check before anything else works. */

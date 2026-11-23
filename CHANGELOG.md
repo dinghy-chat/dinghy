@@ -4,6 +4,11 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- `GET /v1/operator/me` answers `deleteConfirmation`: `email` when a link sent to the account confirms its delete, or `typed` when the delete happens at once after the operator types their email. The app and the web app read it, so the app review account's delete no longer offers an email link.
+- For 10 minutes after the app review account's delete, its sign-in code is refused, as for a deleted account. The account then signs in again for the next review.
+
 ## [0.53.0] - 2026-11-23
 
 ### Changed

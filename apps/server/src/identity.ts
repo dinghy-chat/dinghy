@@ -88,6 +88,10 @@ export const visitorAuthorId = (authorId: string) => sha256Hex(authorId).slice(0
  */
 export const emailAddressHash = (email: string) => sha256Hex(email.trim().toLowerCase());
 
+/** The verification row that holds an email's native sign-in code. */
+export const nativeEmailCodeIdentifier = (email: string) =>
+  `native-email-code:${emailAddressHash(email)}`;
+
 /** Returns the exact origin of a URL, or null if it is not a plain http or https origin. */
 export function normalizeOrigin(value: string): string | null {
   try {
