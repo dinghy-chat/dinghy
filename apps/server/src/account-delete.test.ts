@@ -498,6 +498,21 @@ describe("the app review account", () => {
       expect((await codeVerify(review, reviewer.email, "024680")).status).toBe(400);
     }
 
+    // A new review account set during the window signs in.
+    const next = createApp({
+      appReview: { email: other.email, code: "135791" },
+      auth,
+      db,
+      logger,
+      live,
+      valkey,
+      mailer: mail,
+      trustedProxyHops: 1,
+      checks: { postgres: ok, valkey: ok },
+    });
+    expect((await codeRequest(next, other.email, "203.0.113.74")).status).toBe(200);
+    expect((await codeVerify(next, other.email, "135791")).status).toBe(200);
+
     await owner
       .update(verification)
       .set({ expiresAt: new Date(Date.now() - 1000) })
