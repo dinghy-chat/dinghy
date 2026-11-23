@@ -7,6 +7,22 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 ### Added
 
 - **What's new** in the sidebar lists the changes a team notices, in plain words, with a red dot until the operator opens it. The browser remembers what each operator saw. The same list is at [dinghy.chat/changelog](https://dinghy.chat/changelog/).
+- On Dinghy Cloud, owners have a **Billing** page in Settings, with the plan, its price and state, the usage, the card that pays and the recent invoices. `GET /v1/operator/workspaces/{workspaceId}/billing/details` answers the price, the card and the invoices. Stripe's portal returns to the page.
+- Contacts answer `pictureUrl`. On Dinghy Cloud, the founder's contact in a new workspace shows the founder's picture, as its welcome chat does.
+- With no conversations yet, Analytics shows the gull watching pilings rise and fall like a bar chart.
+
+### Changed
+
+- Every email from Dinghy has an HTML version that puts each link behind its words, such as "sign in to Dinghy". The plain text keeps the address after the words.
+- **Get started** shows the next step, and inviting a teammate is optional, so it leaves the count. The test chat step reads "Send yourself a message from your site".
+- The welcome chat shows the contact panel beside it.
+- A chart with nothing counted yet, such as Visits, shows a grey placeholder.
+- A signed-in operator who opens `/signup` with a workspace goes to the app. **Add a workspace** in the workspace menu still adds one.
+- After sign-in, an emailed link to a page, such as Settings > Billing, opens that page.
+
+### Fixed
+
+- The buttons in the billing banners have their style again.
 
 ## [0.51.0] - 2026-11-23
 

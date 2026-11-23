@@ -207,7 +207,7 @@ const teamChanges = async (workspaceId: string) =>
 const cancelLinkOf = async (email: string) => {
   await workerStep();
   const sent = await mailTo(email, "Someone asked to remove");
-  return sent.text.match(/https?:\/\/\S+/)?.[0] ?? "";
+  return sent.text.match(/https?:\/\/[^\s)]+/)?.[0] ?? "";
 };
 
 describe("asking for a removal", () => {

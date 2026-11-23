@@ -71,7 +71,7 @@ function ContactRow({ contact, onOpen }: { contact: Contact; onOpen(): void }) {
     <tr>
       <td>
         <button type="button" className="who-cell contact-open" onClick={onOpen}>
-          <Avatar name={name} letters={avatarLetters(contact)} />
+          <Avatar name={name} letters={avatarLetters(contact)} pictureUrl={contact.pictureUrl} />
           <span className="who-lines">
             <b>{name}</b>
             {contact.email !== null && contact.email !== name && <span>{contact.email}</span>}
@@ -310,7 +310,7 @@ function ContactHero({ contact, actions }: { contact: ContactDetail; actions: Re
   return (
     <header className="contact-hero">
       <span className="avatar-wrap">
-        <Avatar name={name} letters={avatarLetters(contact)} />
+        <Avatar name={name} letters={avatarLetters(contact)} pictureUrl={contact.pictureUrl} />
         {contact.country !== null && <FlagBadge country={contact.country} />}
       </span>
       <div className="contact-who">

@@ -1,7 +1,6 @@
 /** @jsxImportSource react */
 import { useState } from "react";
-import { BillingRow } from "../../../ee/operator/billing.tsx";
-import type { BillingState, Usage, WorkspaceApi, WorkspaceSettings } from "./api.ts";
+import type { Usage, WorkspaceApi, WorkspaceSettings } from "./api.ts";
 import { useLoad } from "./load.ts";
 import { Confirm } from "./popup.tsx";
 import { BlockedRow, type Team } from "./team.tsx";
@@ -115,7 +114,7 @@ const imagesText = (usage: Usage) =>
   });
 
 /** The plan's limits and how much of each is used, on Dinghy Cloud. */
-function PlanRow({ usage }: { usage: Usage }) {
+export function PlanRow({ usage }: { usage: Usage }) {
   return (
     <PageRow
       title={t("usageTitle")}
@@ -274,7 +273,7 @@ export function DeleteWorkspaceDialog({
 }
 
 /**
- * The workspace: its name and logo, the plan, blocked visitors, the export and the delete. Owners
+ * The workspace: its name and logo, the plan's usage, blocked visitors, the export and the delete. Owners
  * and admins see it, and only an owner exports or deletes.
  */
 export function WorkspacePage({
@@ -285,8 +284,6 @@ export function WorkspacePage({
   endsSubscription,
   deletion,
   usage,
-  billing,
-  workspaceId,
   team,
   onDeleted,
 }: {
@@ -298,10 +295,8 @@ export function WorkspacePage({
   endsSubscription: boolean;
   /** What the delete removes, once the settings have loaded. */
   deletion: Deletion | null;
-  /** On Dinghy Cloud, with pending invites counted. Null with no limits. */
+  /** On Dinghy Cloud, with pending invites counted. Null with no limits, or on the Billing page. */
   usage: Usage | null;
-  billing: BillingState | null;
-  workspaceId: string;
   team: Team;
   onDeleted(): void;
 }) {
@@ -326,7 +321,6 @@ export function WorkspacePage({
       </PageRow>
       <TypingPreviewRow api={api} />
       {usage !== null && <PlanRow usage={usage} />}
-      {isOwner && <BillingRow api={api} workspaceId={workspaceId} billing={billing} />}
       {team.blocked.length > 0 && <BlockedRow api={api} team={team} />}
       {isOwner && (
         <PageRow

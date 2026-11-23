@@ -1,4 +1,5 @@
 import { escapeHtml } from "../../../packages/widget/src/markdown.ts";
+import type { Mail } from "./mailer.ts";
 
 /** How long a sign-in link works. Every email that carries one says so. */
 export const LINK_MINUTES = 15;
@@ -14,6 +15,7 @@ export const EMAIL_COLORS = {
   bubble: "#f0f2f5",
   line: "#e3e7ec",
   onDark: "#ffffff",
+  link: "#1d4ed8",
 };
 
 /**
@@ -30,9 +32,8 @@ const text = {
   signOff: (team: string) => `Cheers,\nThe ${team} team`,
   linkLasts: `The link works once, for the next ${LINK_MINUTES} minutes.`,
   signInSubject: "Your Dinghy sign-in link",
-  signInBody: (url: string) => [
-    "Here's your link to sign in to Dinghy:",
-    url,
+  signInBody: (url: string): Paragraph[] => [
+    ["Here's your link to ", link("sign in to Dinghy", url), "."],
     text.linkLasts,
     "Didn't ask for it? You can ignore this email. Nobody gets in without the link.",
   ],
@@ -45,24 +46,21 @@ const text = {
   ],
   noAccountSubject: "You don't have a Dinghy account yet",
   // Fixed text only: anyone can type any email on the sign-in page.
-  noAccountBody: (signupUrl: string) => [
+  noAccountBody: (signupUrl: string): Paragraph[] => [
     "Someone, hopefully you, asked to sign in to Dinghy with this email, but it has no account yet.",
-    "To create one, sign up here:",
-    signupUrl,
+    ["To create one, ", link("sign up here", signupUrl), "."],
     "Didn't ask? You can ignore this email.",
   ],
   joinSubject: (workspace: string) => `Join ${workspace} on Dinghy`,
-  joinBody: (url: string, workspace: string, inviter: string) => [
+  joinBody: (url: string, workspace: string, inviter: string): Paragraph[] => [
     ...(inviter === "" ? [] : [`${inviter} invited you to ${workspace}.`]),
-    `Open this link to sign in and join ${workspace}:`,
-    url,
+    [link(`Sign in and join ${workspace}`, url), "."],
     text.linkLasts,
     "Didn't ask to join? You can ignore this email, and nothing happens.",
   ],
   deleteAccountSubject: "Confirm that you want to delete your Dinghy account",
-  deleteAccountBody: (url: string) => [
-    "Here's your link to delete your Dinghy account:",
-    url,
+  deleteAccountBody: (url: string): Paragraph[] => [
+    ["Here's your link to ", link("delete your Dinghy account", url), "."],
     text.linkLasts,
     "Deleting it takes you out of every workspace, and can't be undone. Your old replies stay, from a former team member.",
     "Didn't ask for it? Ignore this email, and nothing happens.",
@@ -92,21 +90,24 @@ const text = {
         "Two-step sign-in was removed from your Dinghy account, as someone asked, and every session signed out.",
     }[by];
   },
-  removalCancelLink: (url: string) => [
-    "Wasn't you? Cancel it with this link, then secure your email account, because someone can read it:",
-    url,
+  removalCancelLink: (url: string): Paragraph[] => [
+    [
+      "Wasn't you? ",
+      link("Cancel the request", url),
+      ", then secure your email account, because someone can read it.",
+    ],
   ],
   removalFoundApp:
     "Was it you? Then there is nothing to do. Found your authenticator app or a recovery code? Sign in and enter a code, and the request ends.",
   removalRequestedSubject: "Someone asked to remove two-step sign-in from your Dinghy account",
-  removalRequestedBody: (url: string, waitHours: number) => [
+  removalRequestedBody: (url: string, waitHours: number): Paragraph[] => [
     `You, or someone who can read your email, asked to remove two-step sign-in from your Dinghy account, because the authenticator app and the recovery codes are lost. Unless the request is cancelled, it is removed in ${waitHours} hours, and every session signs out.`,
     text.removalFoundApp,
     ...text.removalCancelLink(url),
   ],
   removalReminderSubject: (hours: number) =>
     `Two-step sign-in will be removed from your Dinghy account in ${hours} hours`,
-  removalReminderBody: (url: string, hours: number) => [
+  removalReminderBody: (url: string, hours: number): Paragraph[] => [
     `In ${hours} hours, two-step sign-in is removed from your Dinghy account, as someone asked, and every session signs out.`,
     text.removalFoundApp,
     ...text.removalCancelLink(url),
@@ -151,9 +152,9 @@ const text = {
     text.twoFactorNotYou,
   ],
   inviteSubject: (workspace: string) => `Join ${workspace} on Dinghy`,
-  inviteBody: (url: string, workspace: string, role: "admin" | "member") => [
-    `You're invited to join ${workspace} on Dinghy as ${role === "admin" ? "an admin" : "a member"}:`,
-    url,
+  inviteBody: (url: string, workspace: string, role: "admin" | "member"): Paragraph[] => [
+    `You're invited to join ${workspace} on Dinghy as ${role === "admin" ? "an admin" : "a member"}.`,
+    [link("Accept the invite", url), "."],
     "The link works once, for the next 7 days.",
     "Didn't expect this? You can ignore this email.",
   ],
@@ -169,6 +170,46 @@ export const mailParagraphs = (html: string) =>
 // One line, so a name cannot add paragraphs of its own.
 export const oneLine = (words: string | undefined) => words?.replace(/\s+/g, " ").trim();
 
+/** Words that open a link. The HTML puts the link behind them, and the plain text adds the address. */
+export interface Link {
+  label: string;
+  url: string;
+}
+/** A paragraph of an email: words, and links among them. */
+export type Paragraph = string | (string | Link)[];
+
+export const link = (label: string, url: string): Link => ({ label, url });
+
+const parts = (paragraph: Paragraph) => (typeof paragraph === "string" ? [paragraph] : paragraph);
+
+/** A paragraph in plain text, where each link's address follows its words. */
+const plainText = (paragraph: Paragraph) =>
+  parts(paragraph)
+    .map((part) => (typeof part === "string" ? part : `${part.label} (${part.url})`))
+    .join("");
+
+/** A paragraph in HTML, where each link sits behind its words. Every word is escaped. */
+const paragraphHtml = (paragraph: Paragraph) =>
+  parts(paragraph)
+    .map((part) =>
+      typeof part === "string"
+        ? escapeHtml(part)
+        : `<a href="${escapeHtml(part.url)}" style="color:${EMAIL_COLORS.link}">${escapeHtml(part.label)}</a>`,
+    )
+    .join("");
+
+/** The greeting, the paragraphs and the sign-off, before they become text or HTML. */
+function letterParts(
+  paragraphs: Paragraph[],
+  name: string | undefined,
+  team: string,
+  signOff: string | undefined,
+): Paragraph[] {
+  const shown = oneLine(name);
+  const greeting = shown ? text.hiName(shown) : text.hi;
+  return [greeting, ...paragraphs, signOff ?? text.signOff(oneLine(team) || "Dinghy")];
+}
+
 /**
  * An email's text. Pass a name only when the person it goes to typed it and proved this address,
  * so a stranger cannot put their own words in someone else's inbox. `team` signs it, and defaults
@@ -176,15 +217,45 @@ export const oneLine = (words: string | undefined) => words?.replace(/\s+/g, " "
  * sign-off, for emails that a person signs.
  */
 export function letter(
-  paragraphs: string[],
+  paragraphs: Paragraph[],
   name?: string,
   team = "Dinghy",
   signOff?: string,
 ): string {
-  const shown = oneLine(name);
-  const greeting = shown ? text.hiName(shown) : text.hi;
-  return [greeting, ...paragraphs, signOff ?? text.signOff(oneLine(team) || "Dinghy")].join("\n\n");
+  return letterParts(paragraphs, name, team, signOff).map(plainText).join("\n\n");
 }
+
+/**
+ * The same letter in HTML, which looks like the text but puts each link behind its words. `footer`
+ * is HTML that its maker escaped, in small print under the sign-off.
+ */
+export function plainLetterHtml(
+  paragraphs: Paragraph[],
+  { name, team = "Dinghy", signOff, footer = "" }: LetterOptions = {},
+): string {
+  const body = letterParts(paragraphs, name, team, signOff)
+    .map((one) => `<p style="margin:0 0 14px">${paragraphHtml(one).replaceAll("\n", "<br>")}</p>`)
+    .join("");
+  return (
+    '<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:16px;' +
+    `font-family:${EMAIL_FONTS};font-size:15px;line-height:1.55;color:${EMAIL_COLORS.text}">` +
+    `${body}${footer}</body></html>`
+  );
+}
+
+interface LetterOptions {
+  name?: string | undefined;
+  team?: string;
+  signOff?: string | undefined;
+  footer?: string;
+}
+
+/** One email from Dinghy, as plain text and as HTML. */
+export const note = (subject: string, paragraphs: Paragraph[]): Mail => ({
+  subject,
+  body: letter(paragraphs),
+  html: plainLetterHtml(paragraphs),
+});
 
 // The fonts every system has, because mail apps load no web fonts.
 const EMAIL_FONTS = "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif";
@@ -250,22 +321,15 @@ export function letterHtml(page: {
 }
 
 /** The sign-in link that an operator asked for on the sign-in page. */
-export const signInMail = (url: string) => ({
-  subject: text.signInSubject,
-  body: letter(text.signInBody(url)),
-});
+export const signInMail = (url: string) => note(text.signInSubject, text.signInBody(url));
 
 /** The short code that signs an operator in to the native app. */
-export const nativeSignInCodeMail = (code: string, minutes: number) => ({
-  subject: text.nativeCodeSubject,
-  body: letter(text.nativeCodeBody(code, minutes)),
-});
+export const nativeSignInCodeMail = (code: string, minutes: number) =>
+  note(text.nativeCodeSubject, text.nativeCodeBody(code, minutes));
 
 /** Sent instead of a sign-in link to an email with no account, so nobody waits for nothing. */
-export const noAccountMail = (signupUrl: string) => ({
-  subject: text.noAccountSubject,
-  body: letter(text.noAccountBody(signupUrl)),
-});
+export const noAccountMail = (signupUrl: string) =>
+  note(text.noAccountSubject, text.noAccountBody(signupUrl));
 
 /**
  * The link that joins an existing account to a workspace, from an invite that was emailed to it. It
@@ -274,103 +338,71 @@ export const noAccountMail = (signupUrl: string) => ({
 export function joinMail(url: string, workspaceName: string, inviterName: string) {
   const workspace = (oneLine(workspaceName) ?? "").slice(0, WORKSPACE_NAME_MAX);
   const inviter = (oneLine(inviterName) ?? "").slice(0, WORKSPACE_NAME_MAX);
-  return {
-    subject: text.joinSubject(workspace),
-    body: letter(text.joinBody(url, workspace, inviter)),
-  };
+  return note(text.joinSubject(workspace), text.joinBody(url, workspace, inviter));
 }
 
 /** The link that deletes the account, which its operator asked for in the app. */
-export const deleteAccountMail = (url: string) => ({
-  subject: text.deleteAccountSubject,
-  body: letter(text.deleteAccountBody(url)),
-});
+export const deleteAccountMail = (url: string) =>
+  note(text.deleteAccountSubject, text.deleteAccountBody(url));
 
 /** An invite to a workspace. Its admin picked this address and the workspace's name. */
 export function inviteMail(url: string, workspaceName: string, role: "admin" | "member") {
   const workspace = (oneLine(workspaceName) ?? "").slice(0, WORKSPACE_NAME_MAX);
-  return {
-    subject: text.inviteSubject(workspace),
-    body: letter(text.inviteBody(url, workspace, role)),
-  };
+  return note(text.inviteSubject(workspace), text.inviteBody(url, workspace, role));
 }
 
 /** Two-step sign-in was turned on for this account. */
-export const twoFactorOnMail = () => ({
-  subject: text.twoFactorOnSubject,
-  body: letter(text.twoFactorOnBody()),
-});
+export const twoFactorOnMail = () => note(text.twoFactorOnSubject, text.twoFactorOnBody());
 
 /** Two-step sign-in was turned off for this account. */
-export const twoFactorOffMail = (by: TwoFactorOffBy) => ({
-  subject: text.twoFactorOffSubject,
-  body: letter(text.twoFactorOffBody(by)),
-});
+export const twoFactorOffMail = (by: TwoFactorOffBy) =>
+  note(text.twoFactorOffSubject, text.twoFactorOffBody(by));
 
 /** A recovery code passed the second step or turned it off. */
-export const recoveryUsedMail = () => ({
-  subject: text.recoveryUsedSubject,
-  body: letter(text.recoveryUsedBody()),
-});
+export const recoveryUsedMail = () => note(text.recoveryUsedSubject, text.recoveryUsedBody());
 
 /** Too many wrong codes ended a session, and the account refuses codes for a while. */
-export const lockoutMail = (failures: number, minutes: number) => ({
-  subject: text.lockoutSubject,
-  body: letter(text.lockoutBody(failures, minutes)),
-});
+export const lockoutMail = (failures: number, minutes: number) =>
+  note(text.lockoutSubject, text.lockoutBody(failures, minutes));
 
 /** A person's name in another person's email: one line, and short enough for a subject. */
 const shownName = (name: string) => (oneLine(name) ?? "").slice(0, WORKSPACE_NAME_MAX);
 
 /** Someone asked to remove two-step sign-in. `url` opens the page that cancels the request. */
-export const removalRequestedMail = (url: string, waitHours: number) => ({
-  subject: text.removalRequestedSubject,
-  body: letter(text.removalRequestedBody(url, waitHours)),
-});
+export const removalRequestedMail = (url: string, waitHours: number) =>
+  note(text.removalRequestedSubject, text.removalRequestedBody(url, waitHours));
 
 /** A removal request ends in `hours`. `url` opens the page that cancels it. */
-export const removalReminderMail = (url: string, hours: number) => ({
-  subject: text.removalReminderSubject(hours),
-  body: letter(text.removalReminderBody(url, hours)),
-});
+export const removalReminderMail = (url: string, hours: number) =>
+  note(text.removalReminderSubject(hours), text.removalReminderBody(url, hours));
 
 /** A removal request stopped before its wait, because only the account's own mailbox could be warned. */
-export const removalUnconfirmedMail = () => ({
-  subject: text.removalUnconfirmedSubject,
-  body: letter(text.removalUnconfirmedBody),
-});
+export const removalUnconfirmedMail = () =>
+  note(text.removalUnconfirmedSubject, text.removalUnconfirmedBody);
 
 /** A removal request was cancelled, which most often means someone else asked for it. */
-export const removalCancelledMail = (blockDays: number) => ({
-  subject: text.removalCancelledSubject,
-  body: letter(text.removalCancelledBody(blockDays)),
-});
+export const removalCancelledMail = (blockDays: number) =>
+  note(text.removalCancelledSubject, text.removalCancelledBody(blockDays));
 
 /** To the owners and admins of an account's workspaces, which a removal request warns. No link. */
 export function teamRemovalMail(account: { name: string; email: string }, waitHours: number) {
   const name = shownName(account.name);
-  return {
-    subject: text.teamRemovalSubject(name),
-    body: letter(text.teamRemovalBody(name, account.email, waitHours)),
-  };
+  return note(text.teamRemovalSubject(name), text.teamRemovalBody(name, account.email, waitHours));
 }
 
 /** To the same owners and admins, once the request removed two-step sign-in. */
 export function teamRemovalDoneMail(account: { name: string; email: string }) {
   const name = shownName(account.name);
-  return {
-    subject: text.teamRemovalDoneSubject(name),
-    body: letter(text.teamRemovalDoneBody(name, account.email)),
-  };
+  return note(text.teamRemovalDoneSubject(name), text.teamRemovalDoneBody(name, account.email));
 }
 
 /** To a workspace's other owners, after a teammate's reset. */
 export function teamResetMail(actorName: string, account: { name: string; email: string }) {
   const name = shownName(account.name);
-  return {
-    subject: text.teamResetSubject(name),
-    body: letter(text.teamResetBody(shownName(actorName), name, account.email)),
-  };
+  return note(
+    text.teamResetSubject(name),
+    text.teamResetBody(shownName(actorName), name, account.email),
+  );
 }
 
 /** The sentence that says how long a link works, for the emails in ee/. */

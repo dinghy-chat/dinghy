@@ -69,10 +69,10 @@ let paying: App;
 /** A self-hosted install: neither setting. */
 let selfHosted: App;
 
-const mails: { to: string; subject: string; text: string }[] = [];
+const mails: { to: string; subject: string; text: string; html: string | undefined }[] = [];
 const mailer: Mailer = {
-  async send(to, subject, text) {
-    mails.push({ to, subject, text });
+  async send(to, subject, text, extras) {
+    mails.push({ to, subject, text, html: extras?.html });
   },
 };
 
@@ -86,7 +86,7 @@ async function linkFor(to: string, subject: string): Promise<string> {
     .poll(() => mails.some((mail) => mail.to === to && mail.subject === subject))
     .toBe(true);
   const sent = mails.filter((mail) => mail.to === to && mail.subject === subject).at(-1);
-  return /https?:\/\/\S+/.exec(sent?.text ?? "")?.[0] ?? "";
+  return /https?:\/\/[^\s)]+/.exec(sent?.text ?? "")?.[0] ?? "";
 }
 
 /** Asks for a signup link, from an address of its own, since link counts outlast a run. */
@@ -290,7 +290,12 @@ describe("early signup", () => {
     ).toEqual([]);
 
     expect(welcomes()).toEqual([
-      { to: created.email, subject: "Harbor is ready", text: expect.any(String) },
+      {
+        to: created.email,
+        subject: "Harbor is ready",
+        text: expect.any(String),
+        html: expect.any(String),
+      },
     ]);
     // The link proved this address before the operator typed these names, so they are safe here.
     // Only steps that work in a workspace that waits for the cloud: the widget does not run yet.
@@ -300,10 +305,14 @@ describe("early signup", () => {
         "Welcome to Dinghy! Your workspace Harbor is set up. Here's what to do next:",
         "- Invite your team from Settings, under Team.\n" +
           "- Turn on alerts there too, so you hear about new messages.",
-        `Sign in any time at ${PUBLIC_URL}`,
+        `Sign in (${PUBLIC_URL}) any time.`,
         "Questions? Write to us at hello@dinghy.chat.",
         "Cheers,\nThe Dinghy team",
       ].join("\n\n"),
+    );
+    // The HTML puts the link behind its words.
+    expect(welcomes()[0]?.html).toContain(
+      `<a href="${PUBLIC_URL}" style="color:#1d4ed8">Sign in</a>`,
     );
   });
 

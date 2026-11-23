@@ -86,8 +86,8 @@ export function ThreadHead({
 }: {
   conversation: Conversation;
   welcome: WelcomeChat | null;
-  /** Whether the visitor's panel shows, and the button that shows or hides it. Null with none. */
-  panel: { open: boolean; toggle(): void } | null;
+  /** Whether the visitor's panel shows, and the button that shows or hides it. */
+  panel: { open: boolean; toggle(): void };
   /** A widget stream of the visitor's is open, or null when unknown. */
   online: boolean | null;
   members: Member[];
@@ -178,7 +178,7 @@ export function ThreadHead({
         </div>
       </div>
       <div className="actions">
-        {!(panel?.open ?? false) && (
+        {!panel.open && (
           <>
             <HandlerSelect
               conversation={conversation}
@@ -203,19 +203,17 @@ export function ThreadHead({
         <Menu label={t("moreActions")} items={more} buttonClass="round" shortcut=".">
           <Icon name="dots" />
         </Menu>
-        {panel !== null && (
-          <button
-            type="button"
-            className="round panel-toggle"
-            aria-pressed={panel.open}
-            aria-label={panel.open ? t("hidePanel") : t("showPanel")}
-            data-shortcut="p"
-            title={withKey(panel.open ? t("hidePanel") : t("showPanel"), "p", keysOn)}
-            onClick={panel.toggle}
-          >
-            <Icon name="sidebar" />
-          </button>
-        )}
+        <button
+          type="button"
+          className="round panel-toggle"
+          aria-pressed={panel.open}
+          aria-label={panel.open ? t("hidePanel") : t("showPanel")}
+          data-shortcut="p"
+          title={withKey(panel.open ? t("hidePanel") : t("showPanel"), "p", keysOn)}
+          onClick={panel.toggle}
+        >
+          <Icon name="sidebar" />
+        </button>
       </div>
     </header>
   );

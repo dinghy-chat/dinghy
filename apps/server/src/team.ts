@@ -1048,7 +1048,7 @@ export function registerTeamRoutes(
     const mail = inviteMail(url.href, created.workspaceName, role);
     // The answer waits for the mail server, so the admin learns when the email did not go out.
     try {
-      await mailer.send(email, mail.subject, mail.body);
+      await mailer.send(email, mail.subject, mail.body, { html: mail.html });
     } catch (err) {
       logger.error(safeErrorFields(err), "could not send an invite");
       // Nobody got the link, so the invite would only hold a seat.

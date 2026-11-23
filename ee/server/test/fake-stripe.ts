@@ -5,6 +5,11 @@ import http from "node:http";
 export const STRIPE_SECRET_KEY = "sk_test_fake_key_for_tests";
 export const STRIPE_WEBHOOK_SECRET = "whsec_fake_secret_for_tests";
 export const STRIPE_PRICE_ID = "price_fake_monthly";
+const PRICE = {
+  unit_amount: 900,
+  currency: "usd",
+  recurring: { interval: "month", interval_count: 1 },
+};
 
 interface FakeSession {
   id: string;
@@ -47,6 +52,10 @@ export async function startFakeStripe() {
   const subscriptions = new Map<string, FakeSubscription>();
   const replies = new Map<string, unknown>();
   const counts = { subscriptionFetches: 0, cancels: 0 };
+  /** The subscriptions' own payment method, which tests set. Null leaves the customer's default. */
+  const paymentMethods: { subscription: unknown } = { subscription: null };
+  /** Invoices, newest last, which a payment adds. */
+  const invoices: { id: string; customer: string; created: number; status: string }[] = [];
   /** Billing portal sessions, by ID, with the customer and return URL they were made for. */
   const portals = new Map<string, URLSearchParams>();
   /** How many coming Checkout creates fail, with which status, as Stripe does at times. */
@@ -131,6 +140,22 @@ export async function startFakeStripe() {
       after?.();
       return [200, { data }];
     }
+    if (method === "GET" && path.startsWith("/v1/prices/")) {
+      return [200, PRICE];
+    }
+    if (method === "GET" && path === "/v1/invoices") {
+      const data = invoices
+        .filter((one) => one.customer === params.get("customer"))
+        .reverse()
+        .slice(0, Number(params.get("limit") ?? 10))
+        .map((one) => ({
+          ...one,
+          total: 900,
+          currency: "usd",
+          hosted_invoice_url: `${origin}/invoice/${one.id}`,
+        }));
+      return [200, { data }];
+    }
     if (method === "POST" && path === "/v1/billing_portal/sessions") {
       if (!customers.includes(params.get("customer") ?? "")) {
         return [400, { error: { type: "invalid_request_error" } }];
@@ -170,8 +195,23 @@ export async function startFakeStripe() {
     if (method === "GET" && found !== null) {
       counts.subscriptionFetches++;
       const subscription = subscriptions.get(found[1] ?? "");
-      return subscription === undefined
-        ? [404, { error: { type: "invalid_request_error" } }]
+      if (subscription === undefined) return [404, { error: { type: "invalid_request_error" } }];
+      // As Stripe answers with the expansions billing asks for: the card is the customer's default.
+      const card = { brand: "visa", last4: "4242", exp_month: 12, exp_year: 2030 };
+      const expanded = params.getAll("expand[]").length > 0;
+      return expanded
+        ? [
+            200,
+            {
+              ...subscription,
+              items: { data: [{ price: PRICE }] },
+              default_payment_method: paymentMethods.subscription,
+              customer: {
+                id: subscription.customer,
+                invoice_settings: { default_payment_method: { id: "pm_1", card } },
+              },
+            },
+          ]
         : [200, subscription];
     }
     return [404, { error: { type: "invalid_request_error" } }];
@@ -237,6 +277,7 @@ export async function startFakeStripe() {
     subscriptions,
     counts,
     portals,
+    paymentMethods,
     failures,
     hooks,
     /** Pays a session: Stripe makes a subscription with the session's metadata. */
@@ -253,6 +294,15 @@ export async function startFakeStripe() {
         metadata: { workspace_id: session.params.get("client_reference_id") ?? "" },
       };
       subscriptions.set(id, subscription);
+      invoices.push(
+        { id: `in_${++next}`, customer: subscription.customer, created: 0, status: "draft" },
+        {
+          id: `in_${++next}`,
+          customer: subscription.customer,
+          created: Math.floor(Date.now() / 1000),
+          status: "paid",
+        },
+      );
       return subscription;
     },
     /** Deletes a customer, as someone can in Stripe's dashboard. */

@@ -399,7 +399,7 @@ export function Thread({
           canGiveBack={canGiveBack}
           onGiveBack={() => void change.giveBack()}
           emailAvailable={emailAvailable}
-          panel={welcome === null ? panel : null}
+          panel={panel}
         />
         {change.confirming && (
           <Confirm
@@ -506,8 +506,7 @@ export function Thread({
           </>
         )}
       </section>
-      {/* A welcome chat's visitor is another workspace, with no visit to show. */}
-      {welcome === null && panel.shown && (
+      {panel.shown && (
         <VisitorPanel
           conversation={conversation}
           contact={contact.data}

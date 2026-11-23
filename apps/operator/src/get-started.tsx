@@ -8,15 +8,19 @@ import { type TextId, t } from "./text.ts";
 
 type StepName = Exclude<keyof Steps, "dismissed">;
 
-/** Each step, its words and the page that does it. A test chat starts on the site, from Install. */
-const STEPS: { name: StepName; text: TextId; page: SettingsPage }[] = [
+/**
+ * Each step, its words and the page that does it. A test chat starts on the site, from Install. An
+ * optional step shows in the list, but the count and the end of the steps leave it out.
+ */
+const STEPS: { name: StepName; text: TextId; page: SettingsPage; optional?: true }[] = [
   { name: "install", text: "stepInstall", page: "install" },
   { name: "logo", text: "stepLogo", page: "workspace" },
   { name: "widget", text: "stepWidget", page: "appearance" },
-  { name: "team", text: "stepTeam", page: "team" },
   { name: "notifications", text: "stepNotifications", page: "notifications" },
   { name: "chat", text: "stepChat", page: "install" },
+  { name: "team", text: "stepTeam", page: "team", optional: true },
 ];
+const REQUIRED = STEPS.filter((step) => step.optional !== true);
 
 const RING_RADIUS = 8;
 const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
@@ -26,13 +30,16 @@ function ProgressRing({ done, total }: { done: number; total: number }) {
   return (
     <svg className="progress-ring" width="20" height="20" viewBox="0 0 20 20" aria-hidden="true">
       <circle className="ring-track" cx="10" cy="10" r={RING_RADIUS} />
-      <circle
-        className="ring-fill"
-        cx="10"
-        cy="10"
-        r={RING_RADIUS}
-        strokeDasharray={`${(RING_LENGTH * done) / total} ${RING_LENGTH}`}
-      />
+      {/* At zero, a round cap would still draw a dot. */}
+      {done > 0 && (
+        <circle
+          className="ring-fill"
+          cx="10"
+          cy="10"
+          r={RING_RADIUS}
+          strokeDasharray={`${(RING_LENGTH * done) / total} ${RING_LENGTH}`}
+        />
+      )}
     </svg>
   );
 }
@@ -76,9 +83,10 @@ export function GetStarted({
 
   const state = steps.data;
   if (state === null || state.dismissed) return null;
-  const done = STEPS.filter((step) => state[step.name]).length;
-  if (done === STEPS.length) return null;
-  const total = STEPS.length;
+  const done = REQUIRED.filter((step) => state[step.name]).length;
+  const next = REQUIRED.find((step) => !state[step.name]);
+  if (next === undefined) return null;
+  const total = REQUIRED.length;
   return (
     <div className="get-started" ref={root}>
       {open && (
@@ -112,6 +120,7 @@ export function GetStarted({
                     {state[step.name] && <Icon name="check" size={14} />}
                   </span>
                   <span className="step-text">{t(step.text)}</span>
+                  {step.optional && <span className="chip">{t("stepOptional")}</span>}
                   {state[step.name] ? (
                     <span className="visually-hidden">{t("stepDone")}</span>
                   ) : (
@@ -140,7 +149,10 @@ export function GetStarted({
         onClick={() => setOpen(!open)}
       >
         <ProgressRing done={done} total={total} />
-        <span>{t("getStarted")}</span>
+        <span className="get-started-words">
+          <strong>{t("getStarted")}</strong>
+          <small>{t("getStartedNext", { step: t(next.text) })}</small>
+        </span>
         <span className="steps-count">{t("getStartedProgress", { done, total })}</span>
       </button>
     </div>

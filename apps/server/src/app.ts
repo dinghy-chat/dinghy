@@ -587,7 +587,7 @@ export function createApp({
     registerAnalyticsRoute(app, db);
     registerOperatorPresence(app, db, presence);
     registerModerationRoutes(app, db, live);
-    registerContactRoutes(app, { db, live, visitorPresence });
+    registerContactRoutes(app, { db, live, visitorPresence, founderPicture });
     registerContactFieldRoutes(app, { db });
     registerOutboundRoutes(app, { outbound, rateLimit });
     registerCampaignRoutes(app, { campaigns, rateLimit });

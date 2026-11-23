@@ -759,6 +759,7 @@ async function twoFactorResetCommand(db: Database, config: Config, email: string
         found.email,
         mail.subject,
         mail.body,
+        { html: mail.html },
       );
     } catch (err) {
       console.error("The email that tells the operator could not be sent:", safeErrorFields(err));

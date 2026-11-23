@@ -7,7 +7,9 @@ import type { App } from "../../apps/server/src/app.ts";
 import type { lifecycleEmailKind } from "../../apps/server/src/db/schema.ts";
 import { workspaceMember } from "../../apps/server/src/db/schema.ts";
 import { type Database, withWorkspace } from "../../apps/server/src/db/tenant.ts";
+import { link, type Paragraph, plainLetterHtml } from "../../apps/server/src/letter.ts";
 import { limitByIp, type RateLimit } from "../../apps/server/src/rate-limit.ts";
+import { escapeHtml } from "../../packages/widget/src/markdown.ts";
 
 /** The founder signs the cloud's lifecycle emails, and replies reach the founder too. */
 export const LIFECYCLE_SIGN_OFF = "Cheers,\nJulien from Dinghy";
@@ -18,11 +20,14 @@ const INSTALL_DOCS_URL = "https://dinghy.chat/docs/add-to-your-site";
 
 type Kind = (typeof lifecycleEmailKind.enumValues)[number];
 
+/** The Settings pages that the emails link to. */
+type SettingsPage = "install" | "team" | "notifications" | "billing" | "workspace";
+
 /** What an email may name. The dates come from the occurrence, so a retry says the same. */
 export interface MailContext {
   name: string;
-  /** Opens the workspace, where Settings has Billing, Export and the install code. */
-  settingsUrl: string;
+  /** Opens one page of the workspace's Settings. */
+  settingsUrl: (page: SettingsPage) => string;
   signInUrl: string;
   /** The owner's own stop link, in onboarding emails only. */
   stopUrl: string | undefined;
@@ -45,36 +50,50 @@ const date = (value: Date | null) =>
 // writing to one person: short, warm, exact about dates, and never pushy.
 const text = {
   readySubject: (name: string) => `${name} is ready`,
-  readyBody: (c: MailContext) => [
+  readyBody: (c: MailContext): Paragraph[] => [
     `Thanks for subscribing. ${c.name} is all set.`,
-    "To put the chat on your site, open Settings, add your site under Allowed sites, then paste " +
-      `the code from Install the chat into your pages: ${c.settingsUrl}`,
-    `If you get stuck, the steps are here: ${INSTALL_DOCS_URL}`,
+    [
+      "To put the chat on your site, add your site under Allowed sites, then paste the code into " +
+        "your pages. Both are on ",
+      link("the Install page", c.settingsUrl("install")),
+      ".",
+    ],
+    ["If you get stuck, ", link("the setup guide", INSTALL_DOCS_URL), " walks you through it."],
   ],
   installSubject: "Need a hand adding the chat?",
-  installBody: (c: MailContext) => [
+  installBody: (c: MailContext): Paragraph[] => [
     `In case you haven't added the chat for ${c.name} yet, it only takes a minute.`,
-    "Add your site in Settings under Allowed sites, then paste the code from Install the chat " +
-      `into your pages: ${c.settingsUrl}`,
-    `The steps are here too: ${INSTALL_DOCS_URL}`,
+    [
+      "Add your site under Allowed sites, then paste the code into your pages. Both are on ",
+      link("the Install page", c.settingsUrl("install")),
+      ".",
+    ],
+    ["The steps are in ", link("the setup guide", INSTALL_DOCS_URL), " too."],
     "If something doesn't work, just reply and I'll help.",
   ],
   teamSubject: "Working with someone?",
-  teamBody: (c: MailContext) => [
-    `If someone helps you answer messages in ${c.name}, you can invite them in Settings under ` +
-      `Team: ${c.settingsUrl}`,
-    "You can also turn on alerts there, so you hear about new messages when the inbox is closed.",
+  teamBody: (c: MailContext): Paragraph[] => [
+    [
+      `If someone helps you answer messages in ${c.name}, you can `,
+      link("invite them to your team", c.settingsUrl("team")),
+      ".",
+    ],
+    [
+      "You can also ",
+      link("turn on alerts", c.settingsUrl("notifications")),
+      ", so you hear about new messages when the inbox is closed.",
+    ],
     "Working alone? Then you can skip this one.",
   ],
   checkInSubject: "How's it going?",
-  checkInBody: (c: MailContext) => [
+  checkInBody: (c: MailContext): Paragraph[] => [
     `It's been a week with ${c.name}, so I wanted to check in.`,
     "Is anything confusing, missing or just annoying? I'd really like to know, and good news is " +
       "welcome too.",
     "Just hit reply. I read every answer myself. And if you're busy, no need to write.",
   ],
   feedbackSubject: "What would you change?",
-  feedbackBody: (c: MailContext) => [
+  feedbackBody: (c: MailContext): Paragraph[] => [
     `It's been a month with ${c.name}. If you could change one thing about Dinghy, what would ` +
       "it be?",
     "Just reply. I read every answer myself. And if you'd rather skip it, that's fine.",
@@ -83,80 +102,93 @@ const text = {
   stopLink: "Unsubscribe",
   cancellationSubject: (name: string, endsOn: Date | null) =>
     `${name} stays on until ${date(endsOn)}`,
-  cancellationBody: (c: MailContext) => [
+  cancellationBody: (c: MailContext): Paragraph[] => [
     `We got your cancellation for ${c.name}. Everything keeps working until ${date(c.endsOn)}.`,
     `After that, the chat goes off and the workspace stays read-only for ${c.days.readOnly} days, ` +
       "so your team can still read conversations and download an export. Then we delete it.",
-    `Changed your mind? You can renew any time in Settings under Billing: ${c.settingsUrl}`,
+    ["Changed your mind? You can ", link("renew any time", c.settingsUrl("billing")), "."],
     "And if you have a minute, I'd love to know why you're leaving. Just reply.",
   ],
   endingSoonSubject: (name: string, endsOn: Date | null) => `${name} ends on ${date(endsOn)}`,
-  endingSoonBody: (c: MailContext) => [
+  endingSoonBody: (c: MailContext): Paragraph[] => [
     `A quick reminder that your plan for ${c.name} ends on ${date(c.endsOn)}. The chat goes ` +
       "off then, and nobody can reply.",
-    `To keep it running, renew in Settings under Billing: ${c.settingsUrl}`,
+    ["To keep it running, ", link("renew your plan", c.settingsUrl("billing")), "."],
     `If you're done with it, no problem. You can still download an export for ${c.days.readOnly} ` +
       "days after that.",
   ],
   paymentFailedSubject: (name: string) => `The payment for ${name} didn't go through`,
-  paymentFailedBody: (c: MailContext) => [
+  paymentFailedBody: (c: MailContext): Paragraph[] => [
     `The last payment for ${c.name} didn't go through. It happens, often because a card expired.`,
     `Everything keeps working until ${date(c.payUntil)}, and Stripe tries again on its own. ` +
       "If no payment clears by then, the chat goes off and the workspace turns read-only.",
-    `You can update the card in Settings under Billing: ${c.settingsUrl}`,
+    ["You can ", link("update the card", c.settingsUrl("billing")), " in a minute."],
   ],
   paymentReminderSubject: (name: string, payUntil: Date) =>
     `${name} keeps working until ${date(payUntil)}`,
-  paymentReminderBody: (c: MailContext) => [
+  paymentReminderBody: (c: MailContext): Paragraph[] => [
     `The payment for ${c.name} still hasn't gone through.`,
     `Everything keeps working until ${date(c.payUntil)}. After that, the chat goes off and the ` +
       "workspace turns read-only.",
-    `Updating the card in Settings under Billing fixes it: ${c.settingsUrl}`,
+    [link("Updating the card", c.settingsUrl("billing")), " fixes it."],
   ],
   paymentLastDaySubject: (name: string, payUntil: Date) =>
     `${name} turns read-only on ${date(payUntil)}`,
-  paymentLastDayBody: (c: MailContext) => [
+  paymentLastDayBody: (c: MailContext): Paragraph[] => [
     `The payment for ${c.name} still hasn't gone through, so on ${date(c.payUntil)} the chat ` +
       "goes off and the workspace turns read-only.",
-    `Updating the card in Settings under Billing keeps it running: ${c.settingsUrl}`,
+    [link("Updating the card", c.settingsUrl("billing")), " keeps it running."],
     "If something's wrong on our side, just reply and I'll sort it out.",
   ],
   paymentRecoveredSubject: (name: string) => `All good with ${name}`,
-  paymentRecoveredBody: (c: MailContext) => [
+  paymentRecoveredBody: (c: MailContext): Paragraph[] => [
     `Thanks, the payment for ${c.name} went through, and everything is back to normal.`,
-    `Your invoices are in Settings under Billing: ${c.settingsUrl}`,
+    ["Your invoices are on ", link("the Billing page", c.settingsUrl("billing")), "."],
   ],
   readOnlySubject: (name: string) => `${name} is now read-only`,
-  readOnlyBody: (c: MailContext) => [
+  readOnlyBody: (c: MailContext): Paragraph[] => [
     `${c.name} no longer has a paid plan, so it's read-only now. The chat is off, and nobody ` +
       "can reply.",
-    "Your team can still sign in, read every conversation and download an export in Settings " +
-      `under Export: ${c.settingsUrl}`,
-    "Subscribe again in Settings under Billing and everything comes back, with all its data. " +
-      `If not, we delete the workspace on ${date(c.deleteOn)}.`,
+    [
+      "Your team can still sign in, read every conversation and ",
+      link("download an export", c.settingsUrl("workspace")),
+      ".",
+    ],
+    [
+      link("Subscribe again", c.settingsUrl("billing")),
+      " and everything comes back, with all its data. If not, we delete the workspace on " +
+        `${date(c.deleteOn)}.`,
+    ],
   ],
   welcomeBackSubject: (name: string) => `Welcome back to ${name}`,
-  welcomeBackBody: (c: MailContext) => [
+  welcomeBackBody: (c: MailContext): Paragraph[] => [
     `Thanks for subscribing again. ${c.name} is active, with all its conversations and settings.`,
     "Your team can reply again, and the chat works on your site again.",
-    `Your billing is in Settings under Billing: ${c.settingsUrl}`,
+    ["Your plan and invoices are on ", link("the Billing page", c.settingsUrl("billing")), "."],
   ],
   deletionLaterSubject: (name: string, deleteOn: Date) =>
     `${name} will be deleted on ${date(deleteOn)}`,
   deletionSubject: (name: string, deleteOn: Date) =>
     `Last reminder: ${name} will be deleted on ${date(deleteOn)}`,
-  deletionBody: (c: MailContext) => [
+  deletionBody: (c: MailContext): Paragraph[] => [
     `${c.name} is still read-only. On ${date(c.deleteOn)}, we delete it with all its ` +
       "conversations, images and files.",
-    `To keep it, subscribe again in Settings under Billing: ${c.settingsUrl}`,
-    "Or, to keep a copy, download an export in Settings under Export before then.",
+    ["To keep it, ", link("subscribe again", c.settingsUrl("billing")), "."],
+    [
+      "Or, to keep a copy, ",
+      link("download an export", c.settingsUrl("workspace")),
+      " before then.",
+    ],
   ],
   deletedSubject: (name: string) => `${name} has been deleted`,
-  deletedBody: (c: MailContext) => [
+  deletedBody: (c: MailContext): Paragraph[] => [
     `${c.name} was read-only for ${c.days.readOnly} days, so we've now closed it. Its ` +
       "conversations, images and files are being removed, and backup copies expire within 30 days.",
-    `Your Dinghy account stays. If you ever want to start again, sign in and add a workspace: ` +
-      `${c.signInUrl}`,
+    [
+      "Your Dinghy account stays. If you ever want to start again, ",
+      link("sign in", c.signInUrl),
+      " and add a workspace.",
+    ],
     "Thanks for giving Dinghy a try.",
   ],
   stopTitle: "Stop these emails",
@@ -168,7 +200,7 @@ const text = {
 
 interface Mail {
   subject: string;
-  body: string[];
+  body: Paragraph[];
 }
 
 const MAILS: Record<Kind, (c: MailContext) => Mail> = {
@@ -218,7 +250,10 @@ const MAILS: Record<Kind, (c: MailContext) => Mail> = {
   deleted: (c) => ({ subject: text.deletedSubject(c.name), body: text.deletedBody(c) }),
 };
 
-/** One email's subject, paragraphs, footer and headers. An onboarding email's footer unsubscribes. */
+/**
+ * One email's subject, its paragraphs, the footer and the headers. An onboarding email's footer
+ * unsubscribes.
+ */
 export function lifecycleMail(kind: Kind, context: MailContext) {
   const { subject, body } = MAILS[kind](context);
   const { stopUrl } = context;
@@ -239,36 +274,21 @@ export function lifecycleMail(kind: Kind, context: MailContext) {
   };
 }
 
-const escapeHtml = (value: string) =>
-  value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-
 /**
- * The HTML version of a signed lifecycle email. It looks like the plain text, with links that
- * open, and an onboarding email ends with a small Unsubscribe link instead of the bare address.
- * Every word is escaped, so a workspace name cannot add markup.
+ * The HTML version of a lifecycle email to one owner. It looks like the plain text, and an
+ * onboarding email ends with a small Unsubscribe link instead of the address.
  */
-export function lifecycleHtml(signed: string, stopUrl: string | undefined): string {
-  const paragraphs = signed.split("\n\n").map((paragraph) => {
-    const escaped = escapeHtml(paragraph).replace(
-      /https?:\/\/[^\s<]+/g,
-      (url) => `<a href="${url}" style="color:#1d4ed8">${url}</a>`,
-    );
-    return `<p style="margin:0 0 14px">${escaped.replaceAll("\n", "<br>")}</p>`;
-  });
+export function lifecycleHtml(
+  body: Paragraph[],
+  ownerName: string,
+  stopUrl: string | undefined,
+): string {
   const footer =
     stopUrl === undefined
       ? ""
       : `<p style="margin:28px 0 0;font-size:11px;color:#8a8f98"><a href="${escapeHtml(stopUrl)}" ` +
         `style="color:#8a8f98">${text.stopLink}</a></p>`;
-  return (
-    '<!doctype html><html><body style="margin:0;padding:16px;font-family:-apple-system,' +
-    "BlinkMacSystemFont,Segoe UI,Helvetica,Arial,sans-serif;font-size:15px;line-height:1.55;" +
-    `color:#1d2433">${paragraphs.join("")}${footer}</body></html>`
-  );
+  return plainLetterHtml(body, { name: ownerName, signOff: LIFECYCLE_SIGN_OFF, footer });
 }
 
 /** Signs the stop link, so nobody can stop the emails of another owner. */

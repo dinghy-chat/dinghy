@@ -1,4 +1,5 @@
 /** @jsxImportSource react */
+import { BillingPage } from "../../../ee/operator/billing.tsx";
 import type { BillingState, Me, Member, Role, WorkspaceApi } from "./api.ts";
 import { AppearancePage } from "./appearance.tsx";
 import { BusinessHoursPage } from "./business-hours.tsx";
@@ -13,12 +14,13 @@ import { SavedRepliesPage } from "./saved-replies.tsx";
 import { TeamPage, useTeam } from "./team.tsx";
 import { type TextId, t } from "./text.ts";
 import { AppLink, Loading, Page } from "./ui.tsx";
-import { WorkspacePage } from "./workspace.tsx";
+import { PlanRow, WorkspacePage } from "./workspace.tsx";
 
 const PAGES = [
   "profile",
   "notifications",
   "workspace",
+  "billing",
   "team",
   "saved-replies",
   "labels",
@@ -33,7 +35,10 @@ export type SettingsPage = (typeof PAGES)[number];
 /** The list on the left of Settings, in groups, in this order. */
 const GROUPS: { label: TextId; pages: SettingsPage[] }[] = [
   { label: "settingsGroupYou", pages: ["profile", "notifications"] },
-  { label: "settingsGroupWorkspace", pages: ["workspace", "team", "saved-replies", "labels"] },
+  {
+    label: "settingsGroupWorkspace",
+    pages: ["workspace", "billing", "team", "saved-replies", "labels"],
+  },
   { label: "settingsGroupWidget", pages: ["appearance", "business-hours", "install"] },
   { label: "settingsGroupDevelopers", pages: ["developers"] },
 ];
@@ -42,6 +47,7 @@ const PAGE_TEXT: Record<SettingsPage, TextId> = {
   profile: "pageProfile",
   notifications: "pageNotifications",
   workspace: "pageWorkspace",
+  billing: "pageBilling",
   team: "pageTeam",
   "saved-replies": "pageSavedReplies",
   labels: "pageLabels",
@@ -52,7 +58,7 @@ const PAGE_TEXT: Record<SettingsPage, TextId> = {
 };
 
 /** The pages that read the workspace's settings: its usage, its delete's counts or its code. */
-const SETTINGS_READERS: readonly SettingsPage[] = ["workspace", "team", "install"];
+const SETTINGS_READERS: readonly SettingsPage[] = ["workspace", "billing", "team", "install"];
 
 /** A member reads the team and the widget, changes their own settings, and the saved replies. */
 const MEMBER_PAGES: readonly SettingsPage[] = [
@@ -181,7 +187,10 @@ export function Settings({
   onAccountDeleted(): void;
 }) {
   const team = useTeam(api, role, members, onMembersChanged);
-  const pages = role === "member" ? MEMBER_PAGES : PAGES;
+  // Only an owner pays, and only on a server that takes payments.
+  const hasBilling = me.billing && role === "owner";
+  const pages =
+    role === "member" ? MEMBER_PAGES : PAGES.filter((page) => page !== "billing" || hasBilling);
   const current = page !== null && pages.includes(page) ? page : null;
   const shown = current ?? "profile";
   // Owners and admins read them, and only on a page that shows them.
@@ -219,11 +228,18 @@ export function Settings({
             logoUrl={logoUrl}
             endsSubscription={billing !== null && billing.state !== "free"}
             deletion={settings.data?.deletion ?? null}
-            usage={usage}
-            billing={billing}
-            workspaceId={workspaceId}
+            usage={hasBilling ? null : usage}
             team={team}
             onDeleted={() => onWorkspaceDeleted(workspaceName)}
+          />
+        );
+      case "billing":
+        return (
+          <BillingPage
+            api={api}
+            workspaceId={workspaceId}
+            inboxBilling={billing}
+            usage={usage !== null && <PlanRow usage={usage} />}
           />
         );
       case "team":

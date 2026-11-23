@@ -7,7 +7,7 @@ import {
   redeemJoinLink,
   redeemSignInLink,
 } from "./api.ts";
-import { navigate } from "./nav.ts";
+import { ADD_WORKSPACE_ADDRESS, navigate } from "./nav.ts";
 import { AuthPage } from "./scene.tsx";
 import { readStored, store } from "./stored.ts";
 import { type TextId, t } from "./text.ts";
@@ -215,7 +215,7 @@ export function LinkPage({ purpose, token }: { purpose: string; token: string })
         return;
       }
       await redeemSignInLink(token);
-      navigate(kind === "add-workspace" ? "/signup" : (takeReturn() ?? "/"));
+      navigate(kind === "add-workspace" ? ADD_WORKSPACE_ADDRESS : (takeReturn() ?? "/"));
     } catch (failure) {
       setBusy(false);
       setError(failureText(failure, { 400: "linkInvalid", 404: "inviteInvalid" }));

@@ -20,10 +20,11 @@ export interface Mailer {
   send(to: string, subject: string, text: string, extras?: MailExtras): Promise<void>;
 }
 
-/** One plain-text email, as the builders in letter.ts make them. */
+/** One email, as the builders in letter.ts make them: its text, and the same in HTML. */
 export interface Mail {
   subject: string;
   body: string;
+  html: string;
 }
 
 /**
@@ -36,7 +37,7 @@ export function sendQuietly(
   to: string,
   mail: Mail,
 ): void {
-  mailer?.send(to, mail.subject, mail.body).catch((err: unknown) => {
+  mailer?.send(to, mail.subject, mail.body, { html: mail.html }).catch((err: unknown) => {
     logger.error(safeErrorFields(err), "could not send an email");
   });
 }

@@ -365,6 +365,8 @@ export interface Contact extends VisitorIdentity {
   createdAt: string;
   conversationCount: number;
   blocked: boolean;
+  /** Only the founder of Dinghy Cloud has one, in a new workspace's welcome chat. */
+  pictureUrl: string | null;
 }
 
 export interface ContactDetail extends Contact {
@@ -660,6 +662,26 @@ export interface BillingState {
   /** Renews, ends, becomes read-only or is deleted on this date, by state. */
   date: string | null;
   payWith: "checkout" | "portal";
+}
+
+/** An amount in the currency's smallest unit, such as cents. */
+export interface Money {
+  amount: number;
+  currency: string;
+}
+
+/** The plan's price, the card and the newest invoices, read from Stripe. */
+export interface BillingDetails {
+  /** What the subscription costs per `intervalCount` intervals. Null with no flat amount. */
+  price: (Money & { interval: string; intervalCount: number }) | null;
+  card: { brand: string; last4: string; expMonth: number; expYear: number } | null;
+  invoices: (Money & {
+    id: string;
+    date: string;
+    status: "open" | "paid" | "void" | "uncollectible";
+    /** Stripe's page for the invoice, with its PDF. */
+    url: string | null;
+  })[];
 }
 
 export class ApiError extends Error {
@@ -1045,6 +1067,7 @@ export function workspaceApi(workspaceId: string) {
         {},
       ),
     billing: () => call<BillingState>(`${base}/billing`),
+    billingDetails: () => call<BillingDetails>(`${base}/billing/details`),
     analytics: (days: AnalyticsDays, timeZone: string) =>
       call<Analytics>(`${base}/analytics?days=${days}&tz=${encodeURIComponent(timeZone)}`),
     billingPortal: () => post<{ url: string }>(`${base}/billing-portal`, {}),

@@ -225,22 +225,29 @@ const SPARK_HEIGHT = 32;
 /** What a point of a Sparkline shows under the pointer: its number and its time. */
 export type SparkTip = { value: string; label: string };
 
+/** A gentle rise drawn in grey while every value is zero, so an empty chart still reads as one. */
+const PLACEHOLDER_VALUES = [3, 5, 4, 6, 5, 8, 7, 9];
+
 /**
  * The values as a small line over its own area, oldest first. With a label it is an image that
  * screen readers name; without, the numbers beside it say the same. With tips, one per value,
  * each point has a column that shows its tip in the Tipped card and a guide down to the floor.
+ * With nothing to show, it draws a grey placeholder with no tips.
  */
 export function Sparkline({
-  values,
+  values: counted,
   className = "spark",
   label,
-  tips,
+  tips: countedTips,
 }: {
   values: number[];
   className?: string;
   label?: string | undefined;
   tips?: SparkTip[] | undefined;
 }) {
+  const isEmpty = counted.every((value) => value === 0);
+  const values = isEmpty ? PLACEHOLDER_VALUES : counted;
+  const tips = isEmpty ? undefined : countedTips;
   const most = Math.max(1, ...values);
   const last = Math.max(1, values.length - 1);
   const step = SPARK_WIDTH / last;
@@ -249,7 +256,7 @@ export function Sparkline({
   const line = `M${values.map((value, index) => `${xOf(index)},${yOf(value)}`).join("L")}`;
   return (
     <svg
-      className={className}
+      className={isEmpty ? `${className} spark-empty` : className}
       viewBox={`0 0 ${SPARK_WIDTH} ${SPARK_HEIGHT}`}
       preserveAspectRatio="none"
       role="img"

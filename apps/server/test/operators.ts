@@ -98,6 +98,7 @@ export interface SentMail {
   to: string;
   subject: string;
   text: string;
+  html: string | undefined;
 }
 
 /** A mailer that keeps what it sends, so a test reads a link the way a person would. */
@@ -111,14 +112,14 @@ export function captureMail(): Mailer & {
   const to = (address: string) => sent.filter((mail) => mail.to === address);
   return {
     sent,
-    async send(address, subject, text) {
-      sent.push({ to: address, subject, text });
+    async send(address, subject, text, extras) {
+      sent.push({ to: address, subject, text, html: extras?.html });
     },
     countTo: (address) => to(address).length,
     async linkTo(address, index = 0) {
       // Links go out after the answer, so the email can arrive a moment later.
       for (let waited = 0; waited < 5000; waited += 20) {
-        const link = to(address)[index]?.text.match(/https?:\/\/\S+/)?.[0];
+        const link = to(address)[index]?.text.match(/https?:\/\/[^\s)]+/)?.[0];
         if (link !== undefined) return link;
         await delay(20);
       }

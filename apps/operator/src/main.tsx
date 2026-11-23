@@ -37,6 +37,15 @@ const ACCOUNT_PATHS = new Set([
 ]);
 const here = () => `${location.pathname}${location.search}`;
 
+/** Leaves a page that does not apply to this operator for the app, in its place in the history. */
+function OpenApp() {
+  useEffect(() => {
+    replaceAddress("/");
+    dispatchEvent(new Event(NAVIGATE_EVENT));
+  }, []);
+  return <ShellLoading />;
+}
+
 function App() {
   const [me, setMe] = useState<Me | null | "loading">("loading");
   const [picked, setPicked] = useState<string | null>(null);
@@ -144,8 +153,10 @@ function App() {
     return <BillingReturn workspaceId={returnWorkspace} />;
   }
   if (path === "/signup" && meta.signup !== null) {
-    // A signed-in operator who signs up again adds a workspace.
     if (me === null) return <Signup early={meta.signup === "early"} />;
+    // The site's signup buttons lead here, and an operator with a workspace has signed up already.
+    // The workspace menu adds another one.
+    if (me.workspaces.length > 0 && !query.has("add")) return <OpenApp />;
     return (
       <Onboarding
         early={meta.signup === "early"}
@@ -156,7 +167,16 @@ function App() {
       />
     );
   }
-  if (me === null) return <SignIn emailAvailable={meta.email} signup={meta.signup !== null} />;
+  if (me === null) {
+    // An email's link to a page, such as Settings > Billing, opens that page after sign-in.
+    return (
+      <SignIn
+        emailAvailable={meta.email}
+        signup={meta.signup !== null}
+        {...(path !== "/" && { returnTo: `${path}${address.search}` })}
+      />
+    );
+  }
   // A notification's link names its workspace, and otherwise the last one in use opens.
   const wanted = picked ?? query.get("workspace") ?? rememberedWorkspace();
   // With no choice, a workspace that opens before one that waits for payment.

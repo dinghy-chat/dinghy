@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 
 import { type Me, type Role, setAway, signOut } from "./api.ts";
 import { Icon, type IconName } from "./icons.tsx";
-import { leave, navigate } from "./nav.ts";
+import { ADD_WORKSPACE_ADDRESS, leave, navigate } from "./nav.ts";
 import { leaveDevice } from "./notifications.tsx";
 import { Menu, type MenuItem } from "./popup.tsx";
 import { Logo } from "./scene.tsx";
@@ -101,7 +101,7 @@ function WorkspaceSwitcher({
       label: t("createWorkspace"),
       lead: <Icon name="plusCircle" size={18} />,
       divider: true,
-      onSelect: () => navigate("/signup"),
+      onSelect: () => navigate(ADD_WORKSPACE_ADDRESS),
     });
   }
   if (onBotsPaused !== null) {

@@ -24,10 +24,16 @@ test("a new workspace shows Get started, whose steps open settings, until it is 
 }) => {
   await openLink(page, await server.signInLink("new@example.com"));
   const button = page.getByRole("button", { name: /^Get started/ });
-  await expect(button).toContainText("0/6");
+  await expect(button).toContainText("0/5");
+  // The button names the next step, so it says what to do.
+  await expect(button).toContainText("Next: Install the widget");
   await button.click();
   const steps = page.getByRole("region", { name: "Get started" });
   await expect(steps).toBeVisible();
+  // Inviting a teammate is optional, so the count of 5 leaves it out.
+  await expect(steps.getByRole("listitem").filter({ hasText: "Invite a teammate" })).toContainText(
+    "Optional",
+  );
 
   const list = page.getByRole("navigation", { name: "Settings" });
   await steps.getByRole("button", { name: "Install the widget" }).click();
@@ -48,7 +54,7 @@ test("a new workspace shows Get started, whose steps open settings, until it is 
   const mark = done.locator(".step-mark");
   await expect(mark).toHaveCSS("border-radius", "50%");
   await expect(mark).not.toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
-  await expect(button).toContainText("1/6");
+  await expect(button).toContainText("1/5");
 
   await steps.getByRole("button", { name: "Hide for good" }).click();
   await expect(button).toHaveCount(0);
@@ -61,6 +67,17 @@ test("a new workspace shows Get started, whose steps open settings, until it is 
     page.getByRole("heading", { name: "Send yourself the first message." }),
   ).toBeVisible();
   await expect(button).toHaveCount(0);
+});
+
+test("a new workspace's charts show a grey placeholder until something is counted", async ({
+  page,
+}) => {
+  await openLink(page, await server.signInLink("new@example.com"));
+  const menu = page.getByRole("navigation", { name: "Main menu" });
+  await menu.getByRole("button", { name: /^Visitors/ }).click();
+  await expect(page.locator(".live-spark.spark-empty")).toBeVisible();
+  // An empty chart has nothing to point at.
+  await expect(page.locator(".live-spark .spark-point")).toHaveCount(0);
 });
 
 test("a logo uploaded in Workspace shows there, in the sidebar and in the chat's header", async ({
@@ -111,7 +128,7 @@ test("a workspace whose conversations are all closed has its test chat done", as
     page
       .getByRole("region", { name: "Get started" })
       .getByRole("listitem")
-      .filter({ hasText: "Send a test chat" }),
+      .filter({ hasText: "Send yourself a message" }),
   ).toHaveClass("done");
 });
 

@@ -254,14 +254,14 @@ export function registerOperatorRoutes(
       // only its operators, so nobody can make it write to strangers.
       if (!signup) return;
       const mail = noAccountMail(`${publicOrigin}/signup`);
-      await mailer.send(email, mail.subject, mail.body);
+      await mailer.send(email, mail.subject, mail.body, { html: mail.html });
       audit(logger, "sign_in.no_account", { account: emailAddressHash(email).slice(0, 16), ip });
       return;
     }
     await deliverLinks(
       ({ token }) => {
         const mail = signInMail(confirmUrl(publicOrigin, "sign-in", token));
-        return mailer.send(email, mail.subject, mail.body);
+        return mailer.send(email, mail.subject, mail.body, { html: mail.html });
       },
       () => auth.api.signInMagicLink({ body: { email }, headers: new Headers() }),
     );

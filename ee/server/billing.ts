@@ -134,6 +134,51 @@ const billingStateRoute = createRoute({
   },
 });
 
+/** How many invoices the billing page lists, newest first, drafts included before the filter. */
+const INVOICE_LIMIT = 24;
+
+const money = z.object({ amount: z.number().int(), currency: z.string() });
+
+const billingDetails = z
+  .object({
+    // What the subscription costs, or the plan's price before one, in the currency's smallest
+    // unit, per `intervalCount` intervals. Null if Stripe gives no flat amount.
+    price: money.extend({ interval: z.string(), intervalCount: z.number().int() }).nullable(),
+    // The card that pays the subscription, or null before the first payment or without a card.
+    card: z
+      .object({
+        brand: z.string(),
+        last4: z.string(),
+        expMonth: z.number().int(),
+        expYear: z.number().int(),
+      })
+      .nullable(),
+    invoices: z.array(
+      money.extend({
+        id: z.string(),
+        date: z.string(),
+        status: z.enum(["open", "paid", "void", "uncollectible"]),
+        url: z.string().nullable(),
+      }),
+    ),
+  })
+  .openapi("BillingDetails");
+
+const billingDetailsRoute = createRoute({
+  method: "get",
+  path: "/v1/operator/workspaces/{workspaceId}/billing/details",
+  summary: "Get a workspace's price, card and invoices from Stripe",
+  request: { params: workspaceParams },
+  responses: {
+    200: {
+      description: "The price, the card and the newest invoices",
+      content: { "application/json": { schema: billingDetails } },
+    },
+    403: errorAnswer("Not the owner"),
+    429: errorAnswer("Too many attempts"),
+  },
+});
+
 const STRIPE_ID = /^[A-Za-z0-9_]{1,255}$/;
 
 const webhookEvent = z.object({
@@ -176,6 +221,61 @@ const stripeSubscription = z.object({
   metadata: z.record(z.string(), z.string()).optional(),
 });
 type StripeSubscription = z.infer<typeof stripeSubscription>;
+
+const stripePrice = z.object({
+  unit_amount: z.number().int().nullable(),
+  currency: z.string(),
+  recurring: z.object({ interval: z.string(), interval_count: z.number().int() }).nullable(),
+});
+type StripePrice = z.infer<typeof stripePrice>;
+
+const stripeCard = z.object({
+  card: z
+    .object({
+      brand: z.string(),
+      last4: z.string(),
+      exp_month: z.number().int(),
+      exp_year: z.number().int(),
+    })
+    .nullish(),
+});
+
+/**
+ * A subscription with its price and the cards that may pay it. Stripe charges the subscription's
+ * own payment method first, then the customer's default for invoices.
+ */
+const stripeSubscriptionDetails = z.object({
+  items: z.object({ data: z.array(z.object({ price: stripePrice })) }),
+  default_payment_method: stripeCard.nullish(),
+  customer: z.object({
+    invoice_settings: z.object({ default_payment_method: stripeCard.nullish() }).nullish(),
+  }),
+});
+
+const stripeInvoices = z.object({
+  data: z.array(
+    z.object({
+      id: z.string(),
+      created: z.number(),
+      total: z.number().int(),
+      currency: z.string(),
+      status: z.string().nullish(),
+      hosted_invoice_url: z.string().nullish(),
+    }),
+  ),
+});
+const SHOWN_INVOICE = billingDetails.shape.invoices.element.shape.status;
+
+/** A recurring price with one amount, or null for a metered or tiered one. */
+function flatPrice({ unit_amount: amount, currency, recurring }: StripePrice) {
+  if (amount === null || recurring === null) return null;
+  return {
+    amount,
+    currency,
+    interval: recurring.interval,
+    intervalCount: recurring.interval_count,
+  };
+}
 
 /** Checks Stripe's signature over the exact bytes it sent. */
 export function verifyStripeSignature(
@@ -664,6 +764,74 @@ export function registerBillingRoutes(
     return c.json(billingState(row.active, row.subscription, client.now()), 200);
   });
 
+  /** The price, the card and the newest invoices, read from Stripe on each view. */
+  async function details(customerId: string | null, subscriptionId: string | null) {
+    const [subscribed, invoices] = await Promise.all([
+      subscriptionId === null
+        ? null
+        : stripe(
+            "GET",
+            `/v1/subscriptions/${encodeURIComponent(subscriptionId)}` +
+              "?expand[]=default_payment_method" +
+              "&expand[]=customer.invoice_settings.default_payment_method",
+          ).then((found) => stripeSubscriptionDetails.parse(found)),
+      customerId === null
+        ? []
+        : stripe(
+            "GET",
+            `/v1/invoices?customer=${encodeURIComponent(customerId)}&limit=${INVOICE_LIMIT}`,
+          ).then((found) => stripeInvoices.parse(found).data),
+    ]);
+    // A subscriber pays the price of their subscription, which may differ from today's plan.
+    const price =
+      subscribed?.items.data[0]?.price ??
+      stripePrice.parse(await stripe("GET", `/v1/prices/${encodeURIComponent(billing.priceId)}`));
+    // The method Stripe charges, and only then its card: a bank debit has none to show.
+    const method =
+      subscribed?.default_payment_method ??
+      subscribed?.customer.invoice_settings?.default_payment_method;
+    const card = method?.card ?? null;
+    return {
+      price: flatPrice(price),
+      card:
+        card === null
+          ? null
+          : {
+              brand: card.brand,
+              last4: card.last4,
+              expMonth: card.exp_month,
+              expYear: card.exp_year,
+            },
+      // A draft is not billed yet, so the owner sees only the ones Stripe finalized.
+      invoices: invoices.flatMap((invoice) => {
+        const status = SHOWN_INVOICE.safeParse(invoice.status);
+        if (!status.success) return [];
+        return [
+          {
+            id: invoice.id,
+            date: new Date(invoice.created * 1000).toISOString(),
+            amount: invoice.total,
+            currency: invoice.currency,
+            status: status.data,
+            url: invoice.hosted_invoice_url ?? null,
+          },
+        ];
+      }),
+    };
+  }
+
+  app.openapi(billingDetailsRoute, async (c) => {
+    if (c.get("memberRole") !== "owner") return c.json(FORBIDDEN, 403);
+    const wait = await rateLimit.hit("billing-details", c.get("operatorId"), 30, 60);
+    if (wait !== null) return tooManyRequests(c, wait);
+    const row = await billingRow(c.get("memberWorkspaceId"));
+    const stored = row?.subscription ?? null;
+    return c.json(
+      await details(stored?.stripeCustomerId ?? null, stored?.stripeSubscriptionId ?? null),
+      200,
+    );
+  });
+
   app.openapi(portalRoute, async (c) => {
     if (c.get("memberRole") !== "owner") return c.json(FORBIDDEN, 403);
     const wait = await rateLimit.hit("billing-portal", c.get("operatorId"), 10, 60);
@@ -674,7 +842,7 @@ export function registerBillingRoutes(
     const session = z.object({ url: z.url() }).parse(
       await stripe("POST", "/v1/billing_portal/sessions", {
         customer: customerId,
-        return_url: `${publicUrl.replace(/\/$/, "")}/?workspace=${id}`,
+        return_url: `${publicUrl.replace(/\/$/, "")}/settings/billing?workspace=${id}`,
       }),
     );
     return c.json({ url: session.url }, 200);

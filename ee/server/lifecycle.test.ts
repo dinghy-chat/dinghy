@@ -20,6 +20,7 @@ import {
   workspaceMember,
 } from "../../apps/server/src/db/schema.ts";
 import { type Database, withWorkspace } from "../../apps/server/src/db/tenant.ts";
+import { letter } from "../../apps/server/src/letter.ts";
 import { createSignals } from "../../apps/server/src/live.ts";
 import type { MailExtras, Mailer } from "../../apps/server/src/mailer.ts";
 import { appendMessage } from "../../apps/server/src/messages.ts";
@@ -46,7 +47,7 @@ import {
   READ_ONLY_DAYS,
   runLifecycle,
 } from "./lifecycle.ts";
-import { lifecycleHtml } from "./lifecycle-emails.ts";
+import { lifecycleHtml, lifecycleMail } from "./lifecycle-emails.ts";
 import {
   type FakeStripe,
   STRIPE_PRICE_ID,
@@ -499,19 +500,30 @@ describe("the rules", () => {
 });
 
 describe("the HTML version of a lifecycle email", () => {
-  test("escapes every word, opens links, and ends with an Unsubscribe link", () => {
-    const html = lifecycleHtml(
-      'Hi <b>Bob</b>,\n\nOpen "Settings": https://app.dinghy.chat/?workspace=1&x=2\n\nCheers,\nJulien',
-      "https://app.dinghy.chat/v1/onboarding-stop/a/b?signature=s",
-    );
-    expect(html).toContain("Hi &lt;b&gt;Bob&lt;/b&gt;,");
-    expect(html).toContain("Open &quot;Settings&quot;:");
+  test("escapes every word, puts each link behind its words, and ends with an Unsubscribe link", () => {
+    const mail = lifecycleMail("ready", {
+      name: '<b>"Acme"</b>',
+      settingsUrl: (page) => `https://app.dinghy.chat/settings/${page}?workspace=1&x=2`,
+      signInUrl: "https://app.dinghy.chat",
+      stopUrl: undefined,
+      days: { readOnly: 90 },
+      payUntil: new Date(),
+      deleteOn: new Date(),
+      endsOn: null,
+    });
+    const install = "https://app.dinghy.chat/settings/install?workspace=1&x=2";
+    // The plain text keeps the address after the words.
+    expect(letter(mail.body)).toContain(`the Install page (${install})`);
+    const html = lifecycleHtml(mail.body, "<i>Bob</i>", "https://app.dinghy.chat/stop?s=1");
+    expect(html).toContain("Hi &lt;i&gt;Bob&lt;/i&gt;,");
+    expect(html).toContain("&lt;b&gt;&quot;Acme&quot;&lt;/b&gt; is all set.");
     expect(html).toContain(
-      '<a href="https://app.dinghy.chat/?workspace=1&amp;x=2" style="color:#1d4ed8">',
+      `<a href="${install.replace("&", "&amp;")}" style="color:#1d4ed8">the Install page</a>`,
     );
-    expect(html).toContain("Cheers,<br>Julien");
+    expect(html).not.toContain(">https://");
+    expect(html).toContain("Cheers,<br>Julien from Dinghy");
     expect(html).toContain(">Unsubscribe</a></p></body></html>");
-    expect(lifecycleHtml("Hi,\n\nCheers", undefined)).not.toContain("Unsubscribe");
+    expect(lifecycleHtml(mail.body, "Bob", undefined)).not.toContain("Unsubscribe");
   });
 });
 
@@ -561,7 +573,7 @@ describe("the subscription lifecycle", () => {
     const text = mailsAbout(paid.name)[1]?.text ?? "";
     expect(text.startsWith("Hi Owner,\n\n")).toBe(true);
     expect(text.endsWith("\n\nCheers,\nJulien from Dinghy")).toBe(true);
-    expect(text).toContain(`${PUBLIC_URL}/?workspace=${paid.workspaceId}`);
+    expect(text).toContain(`${PUBLIC_URL}/settings/billing?workspace=${paid.workspaceId}`);
     expect(text).toContain(day(new Date(clock.getTime() + READ_ONLY_DAYS * DAY_MS)));
     // A later pass sends nothing again.
     await lifecycle();
@@ -1086,7 +1098,9 @@ describe("the lifecycle emails", () => {
     await lifecycle();
     expect(subjectsTo(paid.email)).toEqual([ready(paid)]);
     const [readyMail] = mails;
-    expect(readyMail?.text).toContain(`${PUBLIC_URL}/?workspace=${paid.workspaceId}`);
+    expect(readyMail?.text).toContain(
+      `${PUBLIC_URL}/settings/install?workspace=${paid.workspaceId}`,
+    );
     expect(readyMail?.text).toContain("https://dinghy.chat/docs/add-to-your-site");
     // Billing emails have no stop link.
     expect(readyMail?.headers).toEqual({ "reply-to": "support@dinghy.chat" });
@@ -1125,7 +1139,7 @@ describe("the lifecycle emails", () => {
     }
     // Every lifecycle email takes replies, so an answer always reaches a person.
     for (const mail of sent) expect(mail.headers?.["reply-to"]).toBe("support@dinghy.chat");
-    expect(sent[1]?.text).toContain(`${PUBLIC_URL}/?workspace=${paid.workspaceId}`);
+    expect(sent[1]?.text).toContain(`${PUBLIC_URL}/settings/team?workspace=${paid.workspaceId}`);
     expect(sent[3]?.text).toContain("Just reply");
   });
 
@@ -1275,7 +1289,9 @@ describe("the lifecycle emails", () => {
     later(READ_ONLY_DAYS);
     await lifecycle();
     expect(subjectsTo(paid.email)).toHaveLength(2);
-    expect(textsTo(paid.email)[0]).toContain("Settings under Export");
+    expect(textsTo(paid.email)[0]).toContain(
+      `download an export (${PUBLIC_URL}/settings/workspace?workspace=${paid.workspaceId})`,
+    );
   });
 
   test("two workers that send at once send each email once", async () => {
