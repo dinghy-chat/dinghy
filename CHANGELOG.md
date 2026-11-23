@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.54.0] - 2026-11-23
+
 ### Changed
 
 - `GET /v1/operator/me` answers `deleteConfirmation`: `email` when a link sent to the account confirms its delete, or `typed` when the delete happens at once after the operator types their email. The app and the web app read it, so the app review account's delete no longer offers an email link.
@@ -811,7 +813,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.53.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.54.0...HEAD
+[0.54.0]: https://github.com/dinghy-chat/dinghy/compare/v0.53.0...v0.54.0
 [0.53.0]: https://github.com/dinghy-chat/dinghy/compare/v0.52.0...v0.53.0
 [0.52.0]: https://github.com/dinghy-chat/dinghy/compare/v0.51.0...v0.52.0
 [0.51.0]: https://github.com/dinghy-chat/dinghy/compare/v0.50.0...v0.51.0
