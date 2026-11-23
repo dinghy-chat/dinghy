@@ -79,11 +79,27 @@ test("a write refused as read-only shows the banner, when the page missed the ch
   await expect(banner).toBeVisible();
 });
 
-test("the owner sees the Billing section and opens Stripe's portal", async ({ page }) => {
+test("the owner's Billing page shows the plan, the card and the invoices, and opens Stripe's portal", async ({
+  page,
+}) => {
   await paidWorkspace(page, "Busy Shop");
+  await openSettings(page, "Billing");
+  const plan = page.getByRole("region", { name: "Dinghy Cloud" });
+  await expect(plan).toContainText("Active");
+  await expect(plan).toContainText("$9");
+  await expect(plan.getByText(/^Active\. Renews on /)).toBeVisible();
+  await expect(page.getByText("Visa ending in 4242")).toBeVisible();
+  const invoices = page.getByRole("table");
+  await expect(invoices.getByRole("row")).toHaveCount(2);
+  await expect(invoices).toContainText("Paid");
+  await expect(invoices.getByRole("link", { name: /^View the invoice of / })).toHaveAttribute(
+    "href",
+    /\/invoice\/in_/,
+  );
+  // The Workspace page no longer shows billing.
   await openSettings(page, "Workspace");
-  await expect(page.getByRole("heading", { name: "Billing" })).toBeVisible();
-  await expect(page.getByText(/^Active\. Renews on /)).toBeVisible();
+  await expect(page.getByRole("button", { name: "Manage billing" })).toHaveCount(0);
+  await openSettings(page, "Billing");
   await page.getByRole("button", { name: "Manage billing" }).click();
   await expect(page.getByRole("heading", { name: "Fake billing portal" })).toBeVisible();
 });

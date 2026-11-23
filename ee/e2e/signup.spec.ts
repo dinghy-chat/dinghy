@@ -238,6 +238,8 @@ test.describe("with early signup and no Stripe keys", () => {
     await expect(
       page.getByText("Hi, I'm Julien, the founder of Dinghy.", { exact: false }),
     ).toHaveCount(2);
+    // The founder is a contact of the workspace, so the panel beside the chat shows them.
+    await expect(page.locator(".visitor-panel")).toBeVisible();
     const reply = page.getByRole("textbox", { name: "Your reply" });
     await reply.fill("Thanks, got it!");
     await reply.press("Enter");

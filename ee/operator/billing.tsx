@@ -1,14 +1,24 @@
 // Licensed under the Dinghy Enterprise License. See ee/LICENSE.
 /** @jsxImportSource react */
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import {
+  type BillingDetails,
   type BillingState,
+  type Money,
   startCheckout,
   type WorkspaceApi,
 } from "../../apps/operator/src/api.ts";
+import { Icon } from "../../apps/operator/src/icons.tsx";
 import { useLoad } from "../../apps/operator/src/load.ts";
 import { type TextId, t } from "../../apps/operator/src/text.ts";
-import { ErrorNote, failureText, PageRow } from "../../apps/operator/src/ui.tsx";
+import {
+  DocLink,
+  ErrorNote,
+  failureText,
+  Loading,
+  Page,
+  PageRow,
+} from "../../apps/operator/src/ui.tsx";
 
 // The states come from the server's leaf module, which has no Node code, so the app can name them.
 export type { BillingStateName } from "../server/billing-states.ts";
@@ -170,37 +180,240 @@ export function BillingBanner({
   );
 }
 
-/** The owner's view of the subscription, with Stripe's portal. */
-export function BillingRow({
+/** The words on the plan's status chip, and its color. */
+const STATE_CHIP: Record<BillingState["state"], { text: TextId; tone: string }> = {
+  pending: { text: "billingChipPending", tone: "warn" },
+  free: { text: "billingChipFree", tone: "open" },
+  active: { text: "billingChipActive", tone: "open" },
+  ending: { text: "billingChipEnding", tone: "warn" },
+  payment_failed: { text: "billingChipFailed", tone: "bad" },
+  read_only: { text: "billingChipReadOnly", tone: "bad" },
+};
+
+const INVOICE_TEXT: Record<BillingDetails["invoices"][number]["status"], TextId> = {
+  paid: "invoicePaid",
+  open: "invoiceOpen",
+  void: "invoiceVoid",
+  uncollectible: "invoiceUnpaid",
+};
+
+/** An amount in the currency's smallest unit, as people write it, such as $9 or $9.50. */
+function formatMoney({ amount, currency }: Money): string {
+  const format = (digits: number) =>
+    new Intl.NumberFormat(undefined, {
+      style: "currency",
+      currency,
+      minimumFractionDigits: digits,
+    });
+  const digits = format(2).resolvedOptions().maximumFractionDigits ?? 2;
+  const value = amount / 10 ** digits;
+  return format(Number.isInteger(value) ? 0 : digits).format(value);
+}
+
+const day = (date: string) =>
+  new Date(date).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+
+/** What the owner can do about the plan now: manage it, fix the card or pay again. */
+function planAction(
+  billing: BillingState,
+): { label: TextId; payWith: BillingState["payWith"] } | null {
+  switch (billing.state) {
+    case "active":
+    case "ending":
+      return { label: "billingManage", payWith: "portal" };
+    case "payment_failed":
+      return { label: "updateCard", payWith: "portal" };
+    case "read_only":
+      return {
+        label: billing.payWith === "checkout" ? "payAgain" : "updateCard",
+        payWith: billing.payWith,
+      };
+    case "pending":
+    case "free":
+      return null;
+  }
+}
+
+/** The plan at the top of the page: its price, its state and what to do about it. */
+function PlanCard({
   api,
   workspaceId,
   billing,
+  price,
 }: {
   api: WorkspaceApi;
   workspaceId: string;
-  billing: BillingState | null;
+  billing: BillingState;
+  price: BillingDetails["price"];
 }) {
-  if (billing === null) return null;
-  // Neither has a Stripe customer, so the portal has nothing to show.
-  const noPortal = billing.state === "pending" || billing.state === "free";
+  const chip = STATE_CHIP[billing.state];
+  const action = planAction(billing);
   return (
-    <PageRow
-      title={t("billingTitle")}
-      {...(!noPortal && { help: t("billingHelp") })}
-      docs={[{ path: "operator-guide#billing", text: "billingDocsLink" }]}
-    >
-      <p>{withDate(STATE_TEXT[billing.state], billing.date)}</p>
-      {!noPortal && (
+    <section className="plan-card" aria-labelledby="plan-name">
+      <div className="plan-top">
+        <div>
+          <p className="plan-eyebrow">{t("billingPlanLabel")}</p>
+          <h3 id="plan-name">{t("billingPlanName")}</h3>
+        </div>
+        <span className={`chip ${chip.tone}`}>{t(chip.text)}</span>
+      </div>
+      {billing.state !== "free" && price !== null && (
+        <p className="plan-price">
+          <strong className="plan-amount">{formatMoney(price)}</strong>
+          <span>{t(price.interval === "year" ? "billingPerYear" : "billingPerMonth")}</span>
+        </p>
+      )}
+      <p className="plan-state">{withDate(STATE_TEXT[billing.state], billing.date)}</p>
+      {action !== null && (
         <div className="actions">
           <PayButton
             api={api}
             workspaceId={workspaceId}
-            billing={{ ...billing, payWith: "portal" }}
-            label="billingManage"
-            className="btn navy small"
+            billing={{ ...billing, payWith: action.payWith }}
+            label={action.label}
+            className="pill dark"
           />
         </div>
       )}
+    </section>
+  );
+}
+
+/** The card on file, with a way to change it on Stripe. */
+function CardRow({
+  api,
+  workspaceId,
+  billing,
+  card,
+}: {
+  api: WorkspaceApi;
+  workspaceId: string;
+  billing: BillingState;
+  card: NonNullable<BillingDetails["card"]>;
+}) {
+  const brand = card.brand.charAt(0).toUpperCase() + card.brand.slice(1);
+  const expires = `${String(card.expMonth).padStart(2, "0")}/${String(card.expYear).slice(-2)}`;
+  return (
+    <PageRow title={t("billingCardTitle")} help={t("billingCardHelp")}>
+      <div>
+        <p className="card-number">{t("billingCardEnding", { brand, last4: card.last4 })}</p>
+        <p className="hint">{t("billingCardExpires", { date: expires })}</p>
+      </div>
+      <div className="actions">
+        <PayButton
+          api={api}
+          workspaceId={workspaceId}
+          billing={{ ...billing, payWith: "portal" }}
+          label="billingCardChange"
+          className="pill"
+        />
+      </div>
     </PageRow>
+  );
+}
+
+/** The newest invoices, each with a link to Stripe's page and its PDF. */
+function InvoicesRow({ invoices }: { invoices: BillingDetails["invoices"] }) {
+  return (
+    <PageRow title={t("billingInvoicesTitle")} help={t("billingInvoicesHelp")}>
+      {invoices.length === 0 ? (
+        <p className="hint">{t("billingNoInvoices")}</p>
+      ) : (
+        <table className="invoices">
+          <thead>
+            <tr>
+              <th scope="col">{t("invoiceDate")}</th>
+              <th scope="col">{t("invoiceAmount")}</th>
+              <th scope="col">{t("invoiceStatus")}</th>
+              <th scope="col" className="end-cell">
+                <span className="visually-hidden">{t("invoiceOpenLink")}</span>
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {invoices.map((invoice) => (
+              <tr key={invoice.id}>
+                <td>{day(invoice.date)}</td>
+                <td className="invoice-amount">{formatMoney(invoice)}</td>
+                <td>
+                  <span className={invoice.status === "paid" ? "chip open" : "chip warn"}>
+                    {t(INVOICE_TEXT[invoice.status])}
+                  </span>
+                </td>
+                <td className="end-cell">
+                  {invoice.url !== null && (
+                    <a
+                      className="text-button"
+                      href={invoice.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label={t("invoiceOpenNamed", { date: day(invoice.date) })}
+                    >
+                      {t("invoiceOpenLink")}
+                      <Icon name="arrowUpRight" size={14} />
+                    </a>
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </PageRow>
+  );
+}
+
+/**
+ * Settings > Billing, for an owner on Dinghy Cloud: the plan and its state, the usage, the card
+ * and the invoices. Stripe's portal changes the card or cancels.
+ */
+export function BillingPage({
+  api,
+  workspaceId,
+  billing,
+  usage,
+}: {
+  api: WorkspaceApi;
+  workspaceId: string;
+  billing: BillingState | null;
+  usage: ReactNode;
+}) {
+  const details = useLoad(() => api.billingDetails(), [api]);
+  return (
+    <Page
+      title={t("pageBilling")}
+      context={
+        <>
+          {t("billingContext")} <DocLink path="operator-guide#billing" text="billingDocsLink" />
+        </>
+      }
+    >
+      {billing === null ? (
+        <Loading />
+      ) : (
+        <PlanCard
+          api={api}
+          workspaceId={workspaceId}
+          billing={billing}
+          price={details.data?.price ?? null}
+        />
+      )}
+      {usage}
+      {details.data === null ? (
+        <ErrorNote text={details.failure} />
+      ) : (
+        <>
+          {billing !== null && details.data.card !== null && (
+            <CardRow
+              api={api}
+              workspaceId={workspaceId}
+              billing={billing}
+              card={details.data.card}
+            />
+          )}
+          <InvoicesRow invoices={details.data.invoices} />
+        </>
+      )}
+    </Page>
   );
 }

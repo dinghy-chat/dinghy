@@ -737,6 +737,52 @@ describe("the webhook", () => {
   });
 });
 
+describe("the billing page", () => {
+  const details = (workspaceId: string, cookie: string) =>
+    request(app, "GET", `/v1/operator/workspaces/${workspaceId}/billing/details`, { cookie });
+
+  test("a free workspace shows the price and no card or invoice", async () => {
+    const created = await signup();
+    const admin = new pg.Client({ connectionString: database.adminUrl() });
+    await admin.connect();
+    await freeWorkspace(admin, created.workspaceId).finally(() => admin.end());
+    const response = await details(created.workspaceId, created.cookie);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({
+      price: { amount: 900, currency: "usd", interval: "month" },
+      card: null,
+      invoices: [],
+    });
+  });
+
+  test("after a payment, shows the card and the finalized invoices, without drafts", async () => {
+    const created = await activeSignup();
+    const response = await details(created.workspaceId, created.cookie);
+    const body = (await response.json()) as {
+      card: unknown;
+      invoices: { status: string; amount: number; url: string | null }[];
+    };
+    expect(body.card).toEqual({ brand: "visa", last4: "4242", expMonth: 12, expYear: 2030 });
+    expect(body.invoices).toHaveLength(1);
+    expect(body.invoices[0]).toMatchObject({ status: "paid", amount: 900 });
+    expect(body.invoices[0]?.url).toMatch(/\/invoice\/in_/);
+  });
+
+  test("Stripe's portal returns to the billing page", async () => {
+    const created = await activeSignup();
+    const response = await request(
+      app,
+      "POST",
+      `/v1/operator/workspaces/${created.workspaceId}/billing-portal`,
+      { cookie: created.cookie },
+    );
+    const { url } = (await response.json()) as { url: string };
+    expect(stripe.portals.get(url.split("/").at(-1) ?? "")?.get("return_url")).toBe(
+      `${ORIGIN}/settings/billing?workspace=${created.workspaceId}`,
+    );
+  });
+});
+
 describe("a self-hosted install with no keys", () => {
   test("shows no billing", async () => {
     expect(
@@ -871,6 +917,7 @@ async function strangerStop(method: string) {
  */
 const CLOUD_ATTACKS: Record<string, () => Promise<void>> = {
   "GET /v1/operator/workspaces/:workspaceId/billing": ownerOnly("GET", "billing"),
+  "GET /v1/operator/workspaces/:workspaceId/billing/details": ownerOnly("GET", "billing/details"),
   "POST /v1/operator/workspaces/:workspaceId/billing-portal": ownerOnly("POST", "billing-portal"),
   "POST /v1/operator/workspaces/:workspaceId/checkout": ownerOnly("POST", "checkout", {
     paid: false,

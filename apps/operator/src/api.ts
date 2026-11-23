@@ -662,6 +662,27 @@ export interface BillingState {
   payWith: "checkout" | "portal";
 }
 
+/** An amount in the currency's smallest unit, such as cents. */
+export interface Money {
+  amount: number;
+  currency: string;
+}
+
+/** The plan's price, the card and the newest invoices, read from Stripe. */
+export interface BillingDetails {
+  /** Null when Stripe gives the price no flat amount. */
+  price: (Money & { interval: string }) | null;
+  card: { brand: string; last4: string; expMonth: number; expYear: number } | null;
+  invoices: (Money & {
+    id: string;
+    number: string | null;
+    date: string;
+    status: "open" | "paid" | "void" | "uncollectible";
+    /** Stripe's page for the invoice, with its PDF. */
+    url: string | null;
+  })[];
+}
+
 export class ApiError extends Error {
   readonly status: number;
   /** The server's error code, such as operator_limit, when its answer had one. */
@@ -1045,6 +1066,7 @@ export function workspaceApi(workspaceId: string) {
         {},
       ),
     billing: () => call<BillingState>(`${base}/billing`),
+    billingDetails: () => call<BillingDetails>(`${base}/billing/details`),
     analytics: (days: AnalyticsDays, timeZone: string) =>
       call<Analytics>(`${base}/analytics?days=${days}&tz=${encodeURIComponent(timeZone)}`),
     billingPortal: () => post<{ url: string }>(`${base}/billing-portal`, {}),

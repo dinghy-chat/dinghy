@@ -1392,30 +1392,64 @@ button.workspace[aria-expanded="true"],
   margin-top: 8px;
 }
 .get-started-button {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
+  gap: 1px 10px;
   width: 100%;
-  min-height: 44px;
-  padding: 8px 12px 8px 10px;
+  min-height: 52px;
+  padding: 9px 12px 9px 11px;
   border-radius: 14px;
+  background: var(--surface);
+  box-shadow:
+    inset 0 0 0 1px var(--line),
+    0 2px 8px var(--raised-shadow);
   color: var(--navy);
-  font-weight: 650;
   text-align: left;
-  transition: background-color 0.15s;
+  transition:
+    box-shadow 0.15s,
+    transform 0.15s;
 }
 .get-started-button:hover,
 .get-started-button[aria-expanded="true"] {
-  background: var(--side-tint-hover);
+  box-shadow:
+    inset 0 0 0 1.5px var(--blue),
+    0 4px 14px var(--raised-shadow);
+}
+.get-started-button:active {
+  transform: translateY(1px);
+}
+/* The ring, the title and the count on the first line, and the next step under them, full width. */
+.get-started-words {
+  display: contents;
+}
+.get-started-words strong {
+  grid-column: 2;
+  grid-row: 1;
+  font-weight: 650;
+}
+.get-started-words small {
+  grid-column: 2 / 4;
+  grid-row: 2;
+  overflow: hidden;
+  color: var(--mute);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .steps-count {
-  margin-left: auto;
-  color: var(--mute);
+  grid-column: 3;
+  grid-row: 1;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--blue) 12%, transparent);
+  color: var(--blue-deep);
+  font-size: 13px;
   font-variant-numeric: tabular-nums;
-  font-weight: 600;
+  font-weight: 700;
 }
 .progress-ring {
-  flex: none;
+  grid-row: 1 / 3;
   transform: rotate(-90deg);
 }
 .progress-ring circle {
@@ -1423,7 +1457,7 @@ button.workspace[aria-expanded="true"],
   stroke-width: 3;
 }
 .ring-track {
-  stroke: var(--line);
+  stroke: color-mix(in srgb, var(--blue) 22%, transparent);
 }
 .ring-fill {
   stroke: var(--blue);
@@ -1698,6 +1732,10 @@ button.workspace[aria-expanded="true"],
 .chip.open {
   background: color-mix(in srgb, var(--green) 14%, transparent);
   color: var(--green);
+}
+.chip.bad {
+  background: var(--bad-soft);
+  color: var(--bad);
 }
 
 /* The header of a page and of the inbox list. */
@@ -5894,10 +5932,12 @@ button.quote:hover {
     margin: 0;
   }
   .get-started-button {
+    display: flex;
     min-height: 40px;
     width: auto;
   }
   .get-started-button > span:not(.steps-count) {
+    display: block;
     position: absolute;
     width: 1px;
     height: 1px;
@@ -9086,4 +9126,81 @@ button.quote:hover {
   display: grid;
   gap: 8px;
   margin-top: 20px;
+}
+
+/* Settings > Billing: the plan on a tinted card, then the usage, the card and the invoices. */
+.plan-card {
+  display: grid;
+  gap: 10px;
+  margin: 14px 0 8px;
+  padding: 22px 24px;
+  border-radius: 20px;
+  background: var(--tile-blue);
+}
+.plan-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.plan-eyebrow {
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 600;
+}
+.plan-card h3 {
+  font: 700 24px / 1.2 var(--display);
+}
+.plan-price {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  color: var(--text-strong);
+}
+.plan-amount {
+  color: var(--navy);
+  font: 700 38px / 1 var(--display);
+  font-variant-numeric: tabular-nums;
+}
+.plan-state {
+  max-width: 560px;
+  color: var(--text-strong);
+}
+.plan-card .actions {
+  margin-top: 6px;
+}
+.card-number {
+  color: var(--navy);
+  font-weight: 650;
+}
+.invoices {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14.5px;
+}
+.invoices th {
+  padding: 0 10px 8px 0;
+  color: var(--text-strong);
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+}
+.invoices td {
+  padding: 10px 10px 10px 0;
+  border-top: 1px solid var(--line);
+  color: var(--navy);
+  white-space: nowrap;
+}
+.invoices .end-cell {
+  padding-right: 0;
+  text-align: right;
+}
+.invoices .invoice-amount {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+.invoices .text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
 }

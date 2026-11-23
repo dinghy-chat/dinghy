@@ -134,6 +134,51 @@ const billingStateRoute = createRoute({
   },
 });
 
+/** How many invoices the billing page lists, newest first: two years of monthly ones. */
+const INVOICE_LIMIT = 24;
+
+const money = z.object({ amount: z.number().int(), currency: z.string() });
+
+const billingDetails = z
+  .object({
+    // The plan's price, in the currency's smallest unit, or null if Stripe gives no flat amount.
+    price: money.extend({ interval: z.string() }).nullable(),
+    // The card that pays the subscription, or null before the first payment or without a card.
+    card: z
+      .object({
+        brand: z.string(),
+        last4: z.string(),
+        expMonth: z.number().int(),
+        expYear: z.number().int(),
+      })
+      .nullable(),
+    invoices: z.array(
+      money.extend({
+        id: z.string(),
+        number: z.string().nullable(),
+        date: z.string(),
+        status: z.enum(["open", "paid", "void", "uncollectible"]),
+        url: z.string().nullable(),
+      }),
+    ),
+  })
+  .openapi("BillingDetails");
+
+const billingDetailsRoute = createRoute({
+  method: "get",
+  path: "/v1/operator/workspaces/{workspaceId}/billing/details",
+  summary: "Get a workspace's price, card and invoices from Stripe",
+  request: { params: workspaceParams },
+  responses: {
+    200: {
+      description: "The price, the card and the newest invoices",
+      content: { "application/json": { schema: billingDetails } },
+    },
+    403: errorAnswer("Not the owner"),
+    429: errorAnswer("Too many attempts"),
+  },
+});
+
 const STRIPE_ID = /^[A-Za-z0-9_]{1,255}$/;
 
 const webhookEvent = z.object({
@@ -176,6 +221,43 @@ const stripeSubscription = z.object({
   metadata: z.record(z.string(), z.string()).optional(),
 });
 type StripeSubscription = z.infer<typeof stripeSubscription>;
+
+const stripePrice = z.object({
+  unit_amount: z.number().int().nullable(),
+  currency: z.string(),
+  recurring: z.object({ interval: z.string() }).nullable(),
+});
+
+/** A subscription with its payment method expanded. Only a card has details to show. */
+const stripeSubscriptionCard = z.object({
+  default_payment_method: z
+    .object({
+      card: z
+        .object({
+          brand: z.string(),
+          last4: z.string(),
+          exp_month: z.number().int(),
+          exp_year: z.number().int(),
+        })
+        .nullish(),
+    })
+    .nullish(),
+});
+
+const stripeInvoices = z.object({
+  data: z.array(
+    z.object({
+      id: z.string(),
+      number: z.string().nullish(),
+      created: z.number(),
+      total: z.number().int(),
+      currency: z.string(),
+      status: z.string().nullish(),
+      hosted_invoice_url: z.string().nullish(),
+    }),
+  ),
+});
+const SHOWN_INVOICE = billingDetails.shape.invoices.element.shape.status;
 
 /** Checks Stripe's signature over the exact bytes it sent. */
 export function verifyStripeSignature(
@@ -664,6 +746,75 @@ export function registerBillingRoutes(
     return c.json(billingState(row.active, row.subscription, client.now()), 200);
   });
 
+  /** The plan's price, the card and the newest invoices, read from Stripe on each view. */
+  async function details(customerId: string | null, subscriptionId: string | null) {
+    const [price, paidWith, invoices] = await Promise.all([
+      stripe("GET", `/v1/prices/${encodeURIComponent(billing.priceId)}`).then((found) =>
+        stripePrice.parse(found),
+      ),
+      subscriptionId === null
+        ? null
+        : stripe(
+            "GET",
+            `/v1/subscriptions/${encodeURIComponent(subscriptionId)}?expand[]=default_payment_method`,
+          ).then((found) => stripeSubscriptionCard.parse(found)),
+      customerId === null
+        ? []
+        : stripe(
+            "GET",
+            `/v1/invoices?customer=${encodeURIComponent(customerId)}&limit=${INVOICE_LIMIT}`,
+          ).then((found) => stripeInvoices.parse(found).data),
+    ]);
+    const card = paidWith?.default_payment_method?.card ?? null;
+    return {
+      price:
+        price.unit_amount === null || price.recurring === null
+          ? null
+          : {
+              amount: price.unit_amount,
+              currency: price.currency,
+              interval: price.recurring.interval,
+            },
+      card:
+        card === null
+          ? null
+          : {
+              brand: card.brand,
+              last4: card.last4,
+              expMonth: card.exp_month,
+              expYear: card.exp_year,
+            },
+      // A draft is not billed yet, so the owner sees only the ones Stripe finalized.
+      invoices: invoices.flatMap((invoice) => {
+        const status = SHOWN_INVOICE.safeParse(invoice.status);
+        if (!status.success) return [];
+        return [
+          {
+            id: invoice.id,
+            number: invoice.number ?? null,
+            date: new Date(invoice.created * 1000).toISOString(),
+            amount: invoice.total,
+            currency: invoice.currency,
+            status: status.data,
+            url: invoice.hosted_invoice_url ?? null,
+          },
+        ];
+      }),
+    };
+  }
+
+  app.openapi(billingDetailsRoute, async (c) => {
+    if (c.get("memberRole") !== "owner") return c.json(FORBIDDEN, 403);
+    const wait = await rateLimit.hit("billing-details", c.get("operatorId"), 30, 60);
+    if (wait !== null) return tooManyRequests(c, wait);
+    const row = await billingRow(c.get("memberWorkspaceId"));
+    const stored = row?.subscription ?? null;
+    return c.json(
+      await details(stored?.stripeCustomerId ?? null, stored?.stripeSubscriptionId ?? null),
+      200,
+    );
+  });
+
   app.openapi(portalRoute, async (c) => {
     if (c.get("memberRole") !== "owner") return c.json(FORBIDDEN, 403);
     const wait = await rateLimit.hit("billing-portal", c.get("operatorId"), 10, 60);
@@ -674,7 +825,7 @@ export function registerBillingRoutes(
     const session = z.object({ url: z.url() }).parse(
       await stripe("POST", "/v1/billing_portal/sessions", {
         customer: customerId,
-        return_url: `${publicUrl.replace(/\/$/, "")}/?workspace=${id}`,
+        return_url: `${publicUrl.replace(/\/$/, "")}/settings/billing?workspace=${id}`,
       }),
     );
     return c.json({ url: session.url }, 200);

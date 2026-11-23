@@ -30,9 +30,9 @@ test("the operator sees the visitor's draft, the read receipt and the visitor's 
   await expect(steps.getByRole("listitem").filter({ hasText: "Install the widget" })).toHaveClass(
     "done",
   );
-  await expect(steps.getByRole("listitem").filter({ hasText: "Send a test chat" })).toHaveClass(
-    "done",
-  );
+  await expect(
+    steps.getByRole("listitem").filter({ hasText: "Send yourself a message" }),
+  ).toHaveClass("done");
   await picture(operator, "get-started");
   await operator.keyboard.press("Escape");
   await expect(steps).toHaveCount(0);
