@@ -786,10 +786,11 @@ export function registerBillingRoutes(
     const price =
       subscribed?.items.data[0]?.price ??
       stripePrice.parse(await stripe("GET", `/v1/prices/${encodeURIComponent(billing.priceId)}`));
-    const card =
-      subscribed?.default_payment_method?.card ??
-      subscribed?.customer.invoice_settings?.default_payment_method?.card ??
-      null;
+    // The method Stripe charges, and only then its card: a bank debit has none to show.
+    const method =
+      subscribed?.default_payment_method ??
+      subscribed?.customer.invoice_settings?.default_payment_method;
+    const card = method?.card ?? null;
     return {
       price: flatPrice(price),
       card:

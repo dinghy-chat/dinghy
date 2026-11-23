@@ -37,9 +37,12 @@ const ACCOUNT_PATHS = new Set([
 ]);
 const here = () => `${location.pathname}${location.search}`;
 
-/** Leaves a page that does not apply to this operator for the app. */
+/** Leaves a page that does not apply to this operator for the app, in its place in the history. */
 function OpenApp() {
-  useEffect(() => navigate("/"), []);
+  useEffect(() => {
+    replaceAddress("/");
+    dispatchEvent(new Event(NAVIGATE_EVENT));
+  }, []);
   return <ShellLoading />;
 }
 

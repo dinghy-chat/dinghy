@@ -197,11 +197,19 @@ const INVOICE_TEXT: Record<BillingDetails["invoices"][number]["status"], TextId>
   uncollectible: "invoiceUnpaid",
 };
 
-/** "per month", "per year", or "every 3 months" for a longer period. */
+/** How often the price is charged, by Stripe's interval: once each, or every so many. */
+const PERIOD_TEXT: Partial<Record<string, { one: TextId; many: TextId }>> = {
+  day: { one: "billingPerDay", many: "billingEveryDays" },
+  week: { one: "billingPerWeek", many: "billingEveryWeeks" },
+  month: { one: "billingPerMonth", many: "billingEveryMonths" },
+  year: { one: "billingPerYear", many: "billingEveryYears" },
+};
+
+/** "per month", or "every 3 months" for a longer period. */
 function perPeriod({ interval, intervalCount }: NonNullable<BillingDetails["price"]>): string {
-  if (intervalCount === 1 && interval === "month") return t("billingPerMonth");
-  if (intervalCount === 1 && interval === "year") return t("billingPerYear");
-  return t("billingEvery", { count: String(intervalCount), interval });
+  const text = PERIOD_TEXT[interval] ?? PERIOD_TEXT.month;
+  if (text === undefined) return "";
+  return intervalCount === 1 ? t(text.one) : t(text.many, { count: String(intervalCount) });
 }
 
 const day = (date: string) =>
@@ -369,12 +377,15 @@ export function BillingPage({
 }: {
   api: WorkspaceApi;
   workspaceId: string;
-  /** The inbox's copy of the billing state. A change loads the page's own again. */
+  /** The inbox's copy of the billing state, kept fresh by its live events. Null until it loads. */
   version: BillingState | null;
   usage: ReactNode;
 }) {
-  // biome-ignore lint/correctness/useExhaustiveDependencies: a new state from the inbox asks for a load.
-  const billing = useLoad(() => api.billing(), [api, version]);
+  // The inbox keeps the state fresh. The page loads it only while the inbox has none, so a
+  // failure shows here rather than an old answer.
+  const isMissing = version === null;
+  const loaded = useLoad(() => (isMissing ? api.billing() : null), [api, isMissing]);
+  const billing = { data: version ?? loaded.data, failure: loaded.failure };
   const details = useLoad(() => api.billingDetails(), [api]);
   return (
     <Page

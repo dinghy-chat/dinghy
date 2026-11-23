@@ -522,7 +522,13 @@ export async function deleteContacts(
  * The founder's contact in a new workspace, from its welcome chat, and their picture. Null on a
  * server without the cloud, in a workspace without a welcome chat, or with no picture.
  */
-async function founderFace(tx: Transaction, workspaceId: string, founderPicture: FounderPicture) {
+async function founderFace(
+  tx: Transaction,
+  workspaceId: string,
+  founderPicture: FounderPicture | undefined,
+) {
+  // A server without the cloud has no welcome chats to look for.
+  if (founderPicture === undefined) return null;
   const [found] = await tx
     .select({ visitorId: conversation.visitorId })
     .from(welcomeLink)
@@ -554,7 +560,7 @@ export function registerContactRoutes(
     db,
     live,
     visitorPresence,
-    founderPicture = async () => null,
+    founderPicture,
   }: {
     db: Database;
     live: Live;
