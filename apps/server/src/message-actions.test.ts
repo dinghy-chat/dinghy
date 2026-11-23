@@ -275,7 +275,8 @@ describe("a reply with a quote", () => {
     // The widget's history comes in change order, so the delete sends the quoted row last.
     const widgetReply = (await widgetLines(token)).messages.find((line) => line.replyTo !== null);
     expect(widgetReply?.replyTo).toMatchObject(deleted);
-    expect(JSON.stringify(await operatorLines(conversationId))).not.toContain("4242");
+    // The whole number, as a random ID can hold "4242".
+    expect(JSON.stringify(await operatorLines(conversationId))).not.toContain("4242 4242");
   });
 
   test("a list reads every quote in its one statement", async () => {

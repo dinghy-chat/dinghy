@@ -285,6 +285,9 @@ function EditSheet({
   );
 }
 
+/** A word too long for one line of a bubble. */
+const LONG_WORD = /\S{40,}/;
+
 const replyThreshold = 64;
 const replyMax = 96;
 const backEdge = Platform.OS === "ios" ? conversationBackEdge : 24;
@@ -292,12 +295,15 @@ const backEdge = Platform.OS === "ios" ? conversationBackEdge : 24;
 function SwipeReply({
   children,
   enabled,
+  full,
   outgoing,
   onReply,
   palette,
 }: {
   children: React.ReactNode;
   enabled: boolean;
+  /** The row takes its whole width instead of its content's. */
+  full: boolean;
   outgoing: boolean;
   onReply(): void;
   palette: Palette;
@@ -373,7 +379,11 @@ function SwipeReply({
     >
       <Animated.View
         {...pan.panHandlers}
-        style={[messageStyles.swipeRow, { transform: [{ translateX: offset }] }]}
+        style={[
+          messageStyles.swipeRow,
+          full && messageStyles.fullRow,
+          { transform: [{ translateX: offset }] },
+        ]}
       >
         {enabled && (
           <Animated.View
@@ -457,6 +467,10 @@ export function ThreadMessage({
   const outgoing = !message.fromVisitor;
   const isNote = message.kind === "note";
   const mayReply = canReply && !message.deleted && !isNote;
+  // iOS measures a bubble that fits its text at a narrower width than it draws, and text broken
+  // inside a long word, such as a DKIM key, then leaves empty lines at the bottom. Such text fills
+  // the row anyway, so its bubble takes the row's width and is measured at its final width.
+  const unbroken = !message.deleted && LONG_WORD.test(message.body ?? "");
   const copyable = !message.deleted && (message.kind === "text" || isNote) && Boolean(message.body);
   const links = copyable ? markdownLinks(message.body ?? "") : [];
   const availability = editAvailability(message, meId, receipts, canWrite);
@@ -529,7 +543,13 @@ export function ThreadMessage({
     <MessageQuote palette={palette} quote={message.replyTo} visitorName={visitorName} />
   );
   const bubble = isNote ? (
-    <View style={[messageStyles.note, { backgroundColor: palette.note }]}>
+    <View
+      style={[
+        messageStyles.note,
+        unbroken && messageStyles.fullBubble,
+        { backgroundColor: palette.note },
+      ]}
+    >
       <View style={messageStyles.noteHead}>
         <Icon color={palette.noteInk} name="lock" size={13} />
         <Text
@@ -576,6 +596,7 @@ export function ThreadMessage({
       style={[
         messageStyles.bubble,
         outgoing ? messageStyles.out : messageStyles.in,
+        unbroken && messageStyles.fullBubble,
         { backgroundColor: outgoing ? palette.tint : palette.wash },
       ]}
     >
@@ -633,6 +654,7 @@ export function ThreadMessage({
     <>
       <SwipeReply
         enabled={mayReply}
+        full={unbroken}
         onReply={() => onReply(message)}
         outgoing={outgoing}
         palette={palette}
@@ -743,6 +765,8 @@ const messageStyles = StyleSheet.create({
   sideIn: { alignItems: "flex-start" },
   sideOut: { alignItems: "flex-end" },
   swipeRow: { maxWidth: "88%" },
+  fullRow: { width: "88%" },
+  fullBubble: { alignSelf: "stretch" },
   swipeHint: {
     position: "absolute",
     left: -36,

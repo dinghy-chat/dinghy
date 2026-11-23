@@ -36,6 +36,9 @@ import { type Rect, visitorContext } from "./thread-logic";
 import { MessageQuote, ThreadMessage } from "./thread-message";
 import type { Conversation, Member, Message, Thread, Workspace } from "./types";
 
+/** How close to the newest message, in points, still counts as reading it. */
+const NEWEST_SLACK = 80;
+
 function SheetTools({ onClose, palette }: { onClose(): void; palette: Palette }) {
   return (
     <View style={screenStyles.sheetTools}>
@@ -565,6 +568,13 @@ export function ThreadScreen({
   const input = useRef<EnrichedTextInputInstance>(null);
   const moreButton = useRef<ComponentRef<typeof View>>(null);
   const list = useRef<FlatList<Message | PendingReply>>(null);
+  // The log keeps to its newest message while the operator is near it. It scrolls there again when
+  // its content or its own height changes: the first layout, a new message, the keyboard or the
+  // composer. Once the operator scrolls up to read, it stays where they are.
+  const atNewest = useRef(true);
+  const keepNewest = () => {
+    if (atNewest.current) list.current?.scrollToEnd({ animated: false });
+  };
   const current = thread?.conversation ?? conversation;
   const isClosed = current.status === "closed";
   const name = visitorName(current);
@@ -929,7 +939,13 @@ export function ThreadScreen({
             tintColor={palette.blue}
           />
         }
-        onContentSizeChange={() => list.current?.scrollToEnd({ animated: false })}
+        onContentSizeChange={keepNewest}
+        onLayout={keepNewest}
+        onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
+          atNewest.current =
+            contentSize.height - contentOffset.y - layoutMeasurement.height < NEWEST_SLACK;
+        }}
+        scrollEventThrottle={100}
         renderItem={({ item, index }) => {
           if (isPending(item)) {
             const quoted = messages.find((message) => message.id === item.replyToMessageId);
@@ -1032,7 +1048,11 @@ export function ThreadScreen({
             setReplyingTo(null);
             onReload();
           }}
-          onSend={onSend}
+          onSend={(body, replyToMessageId) => {
+            // A reply the operator sends shows at once, also after they scrolled up.
+            atNewest.current = true;
+            return onSend(body, replyToMessageId);
+          }}
           palette={palette}
           replyingTo={replyingTo}
         />
