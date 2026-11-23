@@ -883,7 +883,8 @@ export function messageView(
 type MessageView = ReturnType<typeof messageView>;
 
 /** The founder's picture's address, or null with none or off Dinghy Cloud. */
-type FounderPicture = (tx: Transaction) => Promise<string | null>;
+/** The founder's picture on Dinghy Cloud, for a new workspace's welcome chat and contact. */
+export type FounderPicture = (tx: Transaction) => Promise<string | null>;
 
 /**
  * The founder's picture for the new workspace's side of each listed welcome chat, by conversation.

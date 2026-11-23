@@ -5,6 +5,11 @@ import http from "node:http";
 export const STRIPE_SECRET_KEY = "sk_test_fake_key_for_tests";
 export const STRIPE_WEBHOOK_SECRET = "whsec_fake_secret_for_tests";
 export const STRIPE_PRICE_ID = "price_fake_monthly";
+const PRICE = {
+  unit_amount: 900,
+  currency: "usd",
+  recurring: { interval: "month", interval_count: 1 },
+};
 
 interface FakeSession {
   id: string;
@@ -134,7 +139,7 @@ export async function startFakeStripe() {
       return [200, { data }];
     }
     if (method === "GET" && path.startsWith("/v1/prices/")) {
-      return [200, { unit_amount: 900, currency: "usd", recurring: { interval: "month" } }];
+      return [200, PRICE];
     }
     if (method === "GET" && path === "/v1/invoices") {
       const data = invoices
@@ -143,7 +148,6 @@ export async function startFakeStripe() {
         .slice(0, Number(params.get("limit") ?? 10))
         .map((one) => ({
           ...one,
-          number: `INV-${one.id}`,
           total: 900,
           currency: "usd",
           hosted_invoice_url: `${origin}/invoice/${one.id}`,
@@ -190,9 +194,22 @@ export async function startFakeStripe() {
       counts.subscriptionFetches++;
       const subscription = subscriptions.get(found[1] ?? "");
       if (subscription === undefined) return [404, { error: { type: "invalid_request_error" } }];
+      // As Stripe answers with the expansions billing asks for: the card is the customer's default.
       const card = { brand: "visa", last4: "4242", exp_month: 12, exp_year: 2030 };
-      return params.getAll("expand[]").includes("default_payment_method")
-        ? [200, { ...subscription, default_payment_method: { id: "pm_1", card } }]
+      const expanded = params.getAll("expand[]").length > 0;
+      return expanded
+        ? [
+            200,
+            {
+              ...subscription,
+              items: { data: [{ price: PRICE }] },
+              default_payment_method: null,
+              customer: {
+                id: subscription.customer,
+                invoice_settings: { default_payment_method: { id: "pm_1", card } },
+              },
+            },
+          ]
         : [200, subscription];
     }
     return [404, { error: { type: "invalid_request_error" } }];

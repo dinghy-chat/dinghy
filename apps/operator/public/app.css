@@ -4161,6 +4161,13 @@ button.quote:hover {
   stroke-linejoin: round;
   vector-effect: non-scaling-stroke;
 }
+/* Nothing counted yet: the same shape in grey. */
+.spark-empty .spark-area {
+  fill: color-mix(in srgb, var(--mute) 10%, transparent);
+}
+.spark-empty .spark-line {
+  stroke: color-mix(in srgb, var(--mute) 45%, transparent);
+}
 /* A point's column takes the pointer, and its guide drops from the line to the floor. */
 .spark-point rect {
   fill: transparent;

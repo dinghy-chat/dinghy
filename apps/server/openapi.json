@@ -2343,6 +2343,9 @@
           },
           "blocked": {
             "type": "boolean"
+          },
+          "pictureUrl": {
+            "type": ["string", "null"]
           }
         },
         "required": [
@@ -2359,7 +2362,8 @@
           "lastSeenAt",
           "createdAt",
           "conversationCount",
-          "blocked"
+          "blocked",
+          "pictureUrl"
         ]
       },
       "ContactDetail": {

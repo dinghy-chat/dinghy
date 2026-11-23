@@ -69,6 +69,17 @@ test("a new workspace shows Get started, whose steps open settings, until it is 
   await expect(button).toHaveCount(0);
 });
 
+test("a new workspace's charts show a grey placeholder until something is counted", async ({
+  page,
+}) => {
+  await openLink(page, await server.signInLink("new@example.com"));
+  const menu = page.getByRole("navigation", { name: "Main menu" });
+  await menu.getByRole("button", { name: /^Visitors/ }).click();
+  await expect(page.locator(".live-spark.spark-empty")).toBeVisible();
+  // An empty chart has nothing to point at.
+  await expect(page.locator(".live-spark .spark-point")).toHaveCount(0);
+});
+
 test("a logo uploaded in Workspace shows there, in the sidebar and in the chat's header", async ({
   page,
 }) => {

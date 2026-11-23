@@ -238,7 +238,7 @@ export function Settings({
           <BillingPage
             api={api}
             workspaceId={workspaceId}
-            billing={billing}
+            version={billing}
             usage={usage !== null && <PlanRow usage={usage} />}
           />
         );

@@ -10,7 +10,7 @@ import {
   toSql,
 } from "./conditions.ts";
 import { upsertContactAndRecheck } from "./contact-checks.ts";
-import { CHAT_KINDS, conversation, outboundMessage, visitor } from "./db/schema.ts";
+import { CHAT_KINDS, conversation, outboundMessage, visitor, welcomeLink } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import {
   errorAnswer,
@@ -24,6 +24,7 @@ import {
   okContent,
   ROLE_WRITE_ERRORS,
 } from "./errors.ts";
+import type { FounderPicture } from "./inbox.ts";
 import { ContactFields, UserId } from "./inputs.ts";
 import { forgetVisitor, PageContextSchema, visitorPages } from "./journey.ts";
 import { type Live, OPERATORS } from "./live.ts";
@@ -66,6 +67,8 @@ const ContactSchema = z
     createdAt: z.string(),
     conversationCount: z.number().int(),
     blocked: z.boolean(),
+    // Only the founder of Dinghy Cloud has one, in a new workspace's welcome chat.
+    pictureUrl: z.string().nullable(),
   })
   .openapi("Contact");
 
@@ -515,20 +518,72 @@ export async function deleteContacts(
   return deleted.length;
 }
 
+/**
+ * The founder's contact in a new workspace, from its welcome chat, and their picture. Null on a
+ * server without the cloud, in a workspace without a welcome chat, or with no picture.
+ */
+async function founderFace(tx: Transaction, workspaceId: string, founderPicture: FounderPicture) {
+  const [found] = await tx
+    .select({ visitorId: conversation.visitorId })
+    .from(welcomeLink)
+    .innerJoin(
+      conversation,
+      and(
+        eq(conversation.workspaceId, welcomeLink.customerWorkspaceId),
+        eq(conversation.id, welcomeLink.customerConversationId),
+      ),
+    )
+    .where(eq(welcomeLink.customerWorkspaceId, workspaceId))
+    .limit(1);
+  if (found === undefined) return null;
+  const url = await founderPicture(tx);
+  return url === null ? null : { visitorId: found.visitorId, url };
+}
+
+/** Adds each contact's picture: the founder's, or none. */
+const withPicture =
+  (face: Awaited<ReturnType<typeof founderFace>>) =>
+  <T extends { id: string }>(contact: T) => ({
+    ...contact,
+    pictureUrl: face?.visitorId === contact.id ? face.url : null,
+  });
+
 export function registerContactRoutes(
   app: App,
-  { db, live, visitorPresence }: { db: Database; live: Live; visitorPresence: VisitorPresence },
+  {
+    db,
+    live,
+    visitorPresence,
+    founderPicture = async () => null,
+  }: {
+    db: Database;
+    live: Live;
+    visitorPresence: VisitorPresence;
+    founderPicture?: FounderPicture | undefined;
+  },
 ): void {
+  /** One contact as the API shows it, or null when it is gone. */
+  const readShown = async (tx: Transaction, workspaceId: string, visitorId: string) => {
+    const found = await readContact(tx, workspaceId, visitorId);
+    if (found === null) return null;
+    return withPicture(await founderFace(tx, workspaceId, founderPicture))(found);
+  };
+
   /** The contact with whether they are on the site now, which Valkey knows, not Postgres. */
   const withPresence = async (
     workspaceId: string,
-    found: NonNullable<Awaited<ReturnType<typeof readContact>>>,
+    found: NonNullable<Awaited<ReturnType<typeof readShown>>>,
   ) => ({ ...found, online: await visitorPresence.online(workspaceId, found.id) });
 
   app.openapi(listRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
     const options = c.req.valid("query");
-    return c.json(await withWorkspace(db, id, (tx) => listContacts(tx, id, options)), 200);
+    const page = await withWorkspace(db, id, async (tx) => {
+      const listed = await listContacts(tx, id, options);
+      const face = await founderFace(tx, id, founderPicture);
+      return { ...listed, contacts: listed.contacts.map(withPicture(face)) };
+    });
+    return c.json(page, 200);
   });
 
   app.openapi(exportRoute, async (c) => {
@@ -566,7 +621,7 @@ export function registerContactRoutes(
   app.openapi(readRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
     const { visitorId } = c.req.valid("param");
-    const found = await withWorkspace(db, id, (tx) => readContact(tx, id, visitorId));
+    const found = await withWorkspace(db, id, (tx) => readShown(tx, id, visitorId));
     if (found === null) return c.json(NOT_FOUND, 404);
     return c.json(await withPresence(id, found), 200);
   });
@@ -594,7 +649,7 @@ export function registerContactRoutes(
           .set(change)
           .where(and(eq(visitor.workspaceId, id), eq(visitor.id, visitorId)));
       }
-      return readContact(tx, id, visitorId);
+      return readShown(tx, id, visitorId);
     });
     if (result === "missing" || result === null) return c.json(NOT_FOUND, 404);
     if (result === "signed_in") return c.json(SIGNED_IN, 409);
@@ -607,7 +662,7 @@ export function registerContactRoutes(
     const { visitorId, created } = await withWorkspace(db, id, (tx) =>
       upsertContactAndRecheck(tx, id, userId, c.req.valid("json"), Date.now()),
     );
-    const found = await withWorkspace(db, id, (tx) => readContact(tx, id, visitorId));
+    const found = await withWorkspace(db, id, (tx) => readShown(tx, id, visitorId));
     if (found === null) return c.json(NOT_FOUND, 404);
     live.wake(id, OPERATORS);
     return c.json(await withPresence(id, found), created ? 201 : 200);

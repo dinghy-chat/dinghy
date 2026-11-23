@@ -749,13 +749,13 @@ describe("the billing page", () => {
     const response = await details(created.workspaceId, created.cookie);
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
-      price: { amount: 900, currency: "usd", interval: "month" },
+      price: { amount: 900, currency: "usd", interval: "month", intervalCount: 1 },
       card: null,
       invoices: [],
     });
   });
 
-  test("after a payment, shows the card and the finalized invoices, without drafts", async () => {
+  test("after a payment, shows the customer's default card and the finalized invoices, without drafts", async () => {
     const created = await activeSignup();
     const response = await details(created.workspaceId, created.cookie);
     const body = (await response.json()) as {

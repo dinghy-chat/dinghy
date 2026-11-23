@@ -342,6 +342,24 @@ function GullScene({
   );
 }
 
+/** Analytics before its first numbers: the gull watches pilings rise and fall like a chart's bars. */
+export function ChartGull({ title, hint }: { title: string; hint: string }) {
+  const pane = useRef<HTMLDivElement>(null);
+  const scale = useFitScale(pane);
+  const { canvas, perch } = useGull("big", scale);
+  useMode(perch, "idle", "chart");
+  return (
+    // Placed as the page's empty state, so it takes the room under the tabs.
+    <div className="gull-pane empty-boat" ref={pane}>
+      <div className="gull-stage">
+        <canvas ref={canvas} role="img" aria-label={t("gullChart")} />
+      </div>
+      <h3>{title}</h3>
+      <p className="gull-sub">{hint}</p>
+    </div>
+  );
+}
+
 /** The list has rows and none is open: the words, and the small gull on its post in the corner. */
 function CornerGull() {
   const { canvas } = useGull("small", SMALL_SCALE);

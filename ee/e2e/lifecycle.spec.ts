@@ -83,6 +83,10 @@ test("the owner's Billing page shows the plan, the card and the invoices, and op
   page,
 }) => {
   await paidWorkspace(page, "Busy Shop");
+  // The site's signup button opens the app for an owner who has signed up already.
+  await page.goto(`${server.apiOrigin}/signup`);
+  await expect(page.getByRole("heading", { name: "Busy Shop" })).toBeVisible();
+  await expect(page).toHaveURL(`${server.apiOrigin}/`);
   await openSettings(page, "Billing");
   const plan = page.getByRole("region", { name: "Dinghy Cloud" });
   await expect(plan).toContainText("Active");

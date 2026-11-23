@@ -34,6 +34,9 @@ export function pushAddress(address: string) {
 }
 
 /** Changes the address in place, such as for a filter, so Back skips it. */
+/** Signup for a signed-in operator, who adds a workspace. A bare /signup opens the app instead. */
+export const ADD_WORKSPACE_ADDRESS = "/signup?add";
+
 export function replaceAddress(address: string) {
   history.replaceState(history.state, "", address);
 }

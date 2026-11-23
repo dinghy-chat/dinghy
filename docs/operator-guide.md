@@ -289,7 +289,7 @@ This applies to Dinghy Cloud only. A self-hosted server has no billing.
 
 Dinghy Cloud costs $9 a month per workspace, and Stripe takes the payment. You pay when you create the workspace: after you name it, Dinghy opens Stripe's checkout, and the workspace opens once Stripe confirms the payment. Only an owner pays. A member who opens an unpaid workspace sees that it waits for an owner. The subscription renews each month.
 
-An owner has a **Billing** page in **Settings**. It shows the plan, its price and its state, such as the date it renews, then the usage, the card that pays, and the invoices of the last two years. **View** opens an invoice on Stripe, with its PDF. **Manage billing** and **Change the card** open Stripe, where you change the card or cancel. When you leave Stripe, you come back to the Billing page. A canceled subscription keeps the workspace working until the end of the month you paid for, and the owners get an email 3 days before that end.
+An owner has a **Billing** page in **Settings**. It shows the plan, its price and its state, such as the date it renews, then the usage, the card that pays, and the recent invoices. **View** opens an invoice on Stripe, with its PDF. **Manage billing** and **Change the card** open Stripe, where you change the card or cancel. When you leave Stripe, you come back to the Billing page. A canceled subscription keeps the workspace working until the end of the month you paid for, and the owners get an email 3 days before that end.
 
 If a payment fails, the workspace keeps working for 7 days, and the owners get emails about it. A banner asks the owner to update the card. If no payment succeeds in those 7 days, Dinghy ends the subscription.
 

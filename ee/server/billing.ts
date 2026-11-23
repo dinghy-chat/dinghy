@@ -134,15 +134,16 @@ const billingStateRoute = createRoute({
   },
 });
 
-/** How many invoices the billing page lists, newest first: two years of monthly ones. */
+/** How many invoices the billing page lists, newest first, drafts included before the filter. */
 const INVOICE_LIMIT = 24;
 
 const money = z.object({ amount: z.number().int(), currency: z.string() });
 
 const billingDetails = z
   .object({
-    // The plan's price, in the currency's smallest unit, or null if Stripe gives no flat amount.
-    price: money.extend({ interval: z.string() }).nullable(),
+    // What the subscription costs, or the plan's price before one, in the currency's smallest
+    // unit, per `intervalCount` intervals. Null if Stripe gives no flat amount.
+    price: money.extend({ interval: z.string(), intervalCount: z.number().int() }).nullable(),
     // The card that pays the subscription, or null before the first payment or without a card.
     card: z
       .object({
@@ -155,7 +156,6 @@ const billingDetails = z
     invoices: z.array(
       money.extend({
         id: z.string(),
-        number: z.string().nullable(),
         date: z.string(),
         status: z.enum(["open", "paid", "void", "uncollectible"]),
         url: z.string().nullable(),
@@ -225,30 +225,37 @@ type StripeSubscription = z.infer<typeof stripeSubscription>;
 const stripePrice = z.object({
   unit_amount: z.number().int().nullable(),
   currency: z.string(),
-  recurring: z.object({ interval: z.string() }).nullable(),
+  recurring: z.object({ interval: z.string(), interval_count: z.number().int() }).nullable(),
 });
+type StripePrice = z.infer<typeof stripePrice>;
 
-/** A subscription with its payment method expanded. Only a card has details to show. */
-const stripeSubscriptionCard = z.object({
-  default_payment_method: z
+const stripeCard = z.object({
+  card: z
     .object({
-      card: z
-        .object({
-          brand: z.string(),
-          last4: z.string(),
-          exp_month: z.number().int(),
-          exp_year: z.number().int(),
-        })
-        .nullish(),
+      brand: z.string(),
+      last4: z.string(),
+      exp_month: z.number().int(),
+      exp_year: z.number().int(),
     })
     .nullish(),
+});
+
+/**
+ * A subscription with its price and the cards that may pay it. Stripe charges the subscription's
+ * own payment method first, then the customer's default for invoices.
+ */
+const stripeSubscriptionDetails = z.object({
+  items: z.object({ data: z.array(z.object({ price: stripePrice })) }),
+  default_payment_method: stripeCard.nullish(),
+  customer: z.object({
+    invoice_settings: z.object({ default_payment_method: stripeCard.nullish() }).nullish(),
+  }),
 });
 
 const stripeInvoices = z.object({
   data: z.array(
     z.object({
       id: z.string(),
-      number: z.string().nullish(),
       created: z.number(),
       total: z.number().int(),
       currency: z.string(),
@@ -258,6 +265,17 @@ const stripeInvoices = z.object({
   ),
 });
 const SHOWN_INVOICE = billingDetails.shape.invoices.element.shape.status;
+
+/** A recurring price with one amount, or null for a metered or tiered one. */
+function flatPrice({ unit_amount: amount, currency, recurring }: StripePrice) {
+  if (amount === null || recurring === null) return null;
+  return {
+    amount,
+    currency,
+    interval: recurring.interval,
+    intervalCount: recurring.interval_count,
+  };
+}
 
 /** Checks Stripe's signature over the exact bytes it sent. */
 export function verifyStripeSignature(
@@ -746,18 +764,17 @@ export function registerBillingRoutes(
     return c.json(billingState(row.active, row.subscription, client.now()), 200);
   });
 
-  /** The plan's price, the card and the newest invoices, read from Stripe on each view. */
+  /** The price, the card and the newest invoices, read from Stripe on each view. */
   async function details(customerId: string | null, subscriptionId: string | null) {
-    const [price, paidWith, invoices] = await Promise.all([
-      stripe("GET", `/v1/prices/${encodeURIComponent(billing.priceId)}`).then((found) =>
-        stripePrice.parse(found),
-      ),
+    const [subscribed, invoices] = await Promise.all([
       subscriptionId === null
         ? null
         : stripe(
             "GET",
-            `/v1/subscriptions/${encodeURIComponent(subscriptionId)}?expand[]=default_payment_method`,
-          ).then((found) => stripeSubscriptionCard.parse(found)),
+            `/v1/subscriptions/${encodeURIComponent(subscriptionId)}` +
+              "?expand[]=default_payment_method" +
+              "&expand[]=customer.invoice_settings.default_payment_method",
+          ).then((found) => stripeSubscriptionDetails.parse(found)),
       customerId === null
         ? []
         : stripe(
@@ -765,16 +782,16 @@ export function registerBillingRoutes(
             `/v1/invoices?customer=${encodeURIComponent(customerId)}&limit=${INVOICE_LIMIT}`,
           ).then((found) => stripeInvoices.parse(found).data),
     ]);
-    const card = paidWith?.default_payment_method?.card ?? null;
+    // A subscriber pays the price of their subscription, which may differ from today's plan.
+    const price =
+      subscribed?.items.data[0]?.price ??
+      stripePrice.parse(await stripe("GET", `/v1/prices/${encodeURIComponent(billing.priceId)}`));
+    const card =
+      subscribed?.default_payment_method?.card ??
+      subscribed?.customer.invoice_settings?.default_payment_method?.card ??
+      null;
     return {
-      price:
-        price.unit_amount === null || price.recurring === null
-          ? null
-          : {
-              amount: price.unit_amount,
-              currency: price.currency,
-              interval: price.recurring.interval,
-            },
+      price: flatPrice(price),
       card:
         card === null
           ? null
@@ -791,7 +808,6 @@ export function registerBillingRoutes(
         return [
           {
             id: invoice.id,
-            number: invoice.number ?? null,
             date: new Date(invoice.created * 1000).toISOString(),
             amount: invoice.total,
             currency: invoice.currency,

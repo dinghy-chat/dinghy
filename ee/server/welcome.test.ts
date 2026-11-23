@@ -350,6 +350,29 @@ describe("the founder's picture", () => {
       conversations: { visitor: { pictureUrl: string | null } }[];
     };
     expect(founderRows.conversations.every((one) => one.visitor.pictureUrl === null)).toBe(true);
+    // The founder's contact in the new workspace carries it too, in the list and on its page.
+    const contacts = await request(early, "GET", inWorkspace(acme.workspaceId, "/contacts"), {
+      cookie: acme.cookie,
+    });
+    const [founder] = (
+      (await contacts.json()) as {
+        contacts: { id: string; pictureUrl: string | null }[];
+      }
+    ).contacts;
+    expect(founder?.pictureUrl).toBe(pictureUrl);
+    const page = await request(
+      early,
+      "GET",
+      inWorkspace(acme.workspaceId, `/contacts/${founder?.id}`),
+      { cookie: acme.cookie },
+    );
+    expect(((await page.json()) as { pictureUrl: string | null }).pictureUrl).toBe(pictureUrl);
+    // Dinghy's own contacts are new workspaces, with no picture.
+    const founderContacts = await request(early, "GET", inWorkspace(dinghy.id, "/contacts"), {
+      cookie: julien.cookie,
+    });
+    const theirs = (await founderContacts.json()) as { contacts: { pictureUrl: string | null }[] };
+    expect(theirs.contacts.every((one) => one.pictureUrl === null)).toBe(true);
   });
 });
 

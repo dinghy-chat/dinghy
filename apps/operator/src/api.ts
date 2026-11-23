@@ -365,6 +365,8 @@ export interface Contact extends VisitorIdentity {
   createdAt: string;
   conversationCount: number;
   blocked: boolean;
+  /** Only the founder of Dinghy Cloud has one, in a new workspace's welcome chat. */
+  pictureUrl: string | null;
 }
 
 export interface ContactDetail extends Contact {
@@ -670,12 +672,11 @@ export interface Money {
 
 /** The plan's price, the card and the newest invoices, read from Stripe. */
 export interface BillingDetails {
-  /** Null when Stripe gives the price no flat amount. */
-  price: (Money & { interval: string }) | null;
+  /** What the subscription costs per `intervalCount` intervals. Null with no flat amount. */
+  price: (Money & { interval: string; intervalCount: number }) | null;
   card: { brand: string; last4: string; expMonth: number; expYear: number } | null;
   invoices: (Money & {
     id: string;
-    number: string | null;
     date: string;
     status: "open" | "paid" | "void" | "uncollectible";
     /** Stripe's page for the invoice, with its PDF. */

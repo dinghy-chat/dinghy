@@ -2,8 +2,8 @@
 import { type ReactNode, useEffect, useState } from "react";
 import type { Analytics, AnalyticsDays, VisitorStats, WorkspaceApi } from "./api.ts";
 import { browserTimeZone, dayAndTime, duration, weekdayNames } from "./format.ts";
+import { ChartGull } from "./gull.tsx";
 import { LabelDot } from "./labels.tsx";
-import { Pond } from "./scene.tsx";
 import { AnalyticsSkeleton, SiteSkeleton } from "./skeleton.tsx";
 import {
   Change,
@@ -602,11 +602,7 @@ export function AnalyticsPage({ api }: { api: WorkspaceApi }) {
           <AnalyticsSkeleton />
         </Loading>
       ) : numbers.started === 0 ? (
-        <div className="nothing empty-boat">
-          <Pond />
-          <b>{t("analyticsEmpty", { days })}</b>
-          {t("analyticsEmptyHint")}
-        </div>
+        <ChartGull title={t("analyticsEmpty", { days })} hint={t("analyticsEmptyHint")} />
       ) : (
         <Tipped className="analytics">
           <Support numbers={numbers} days={days} />

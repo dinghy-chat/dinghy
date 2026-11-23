@@ -8485,6 +8485,7 @@ export interface components {
       createdAt: string;
       conversationCount: number;
       blocked: boolean;
+      pictureUrl: string | null;
     };
     ContactDetail: components["schemas"]["Contact"] & {
       online: boolean | null;

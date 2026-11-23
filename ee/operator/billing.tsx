@@ -4,7 +4,6 @@ import { type ReactNode, useState } from "react";
 import {
   type BillingDetails,
   type BillingState,
-  type Money,
   startCheckout,
   type WorkspaceApi,
 } from "../../apps/operator/src/api.ts";
@@ -19,6 +18,7 @@ import {
   Page,
   PageRow,
 } from "../../apps/operator/src/ui.tsx";
+import { formatMoney } from "./money.ts";
 
 // The states come from the server's leaf module, which has no Node code, so the app can name them.
 export type { BillingStateName } from "../server/billing-states.ts";
@@ -197,17 +197,11 @@ const INVOICE_TEXT: Record<BillingDetails["invoices"][number]["status"], TextId>
   uncollectible: "invoiceUnpaid",
 };
 
-/** An amount in the currency's smallest unit, as people write it, such as $9 or $9.50. */
-function formatMoney({ amount, currency }: Money): string {
-  const format = (digits: number) =>
-    new Intl.NumberFormat(undefined, {
-      style: "currency",
-      currency,
-      minimumFractionDigits: digits,
-    });
-  const digits = format(2).resolvedOptions().maximumFractionDigits ?? 2;
-  const value = amount / 10 ** digits;
-  return format(Number.isInteger(value) ? 0 : digits).format(value);
+/** "per month", "per year", or "every 3 months" for a longer period. */
+function perPeriod({ interval, intervalCount }: NonNullable<BillingDetails["price"]>): string {
+  if (intervalCount === 1 && interval === "month") return t("billingPerMonth");
+  if (intervalCount === 1 && interval === "year") return t("billingPerYear");
+  return t("billingEvery", { count: String(intervalCount), interval });
 }
 
 const day = (date: string) =>
@@ -260,7 +254,7 @@ function PlanCard({
       {billing.state !== "free" && price !== null && (
         <p className="plan-price">
           <strong className="plan-amount">{formatMoney(price)}</strong>
-          <span>{t(price.interval === "year" ? "billingPerYear" : "billingPerMonth")}</span>
+          <span>{perPeriod(price)}</span>
         </p>
       )}
       <p className="plan-state">{withDate(STATE_TEXT[billing.state], billing.date)}</p>
@@ -370,14 +364,17 @@ function InvoicesRow({ invoices }: { invoices: BillingDetails["invoices"] }) {
 export function BillingPage({
   api,
   workspaceId,
-  billing,
+  version,
   usage,
 }: {
   api: WorkspaceApi;
   workspaceId: string;
-  billing: BillingState | null;
+  /** The inbox's copy of the billing state. A change loads the page's own again. */
+  version: BillingState | null;
   usage: ReactNode;
 }) {
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a new state from the inbox asks for a load.
+  const billing = useLoad(() => api.billing(), [api, version]);
   const details = useLoad(() => api.billingDetails(), [api]);
   return (
     <Page
@@ -388,13 +385,13 @@ export function BillingPage({
         </>
       }
     >
-      {billing === null ? (
-        <Loading />
+      {billing.data === null ? (
+        <Loading failure={billing.failure} />
       ) : (
         <PlanCard
           api={api}
           workspaceId={workspaceId}
-          billing={billing}
+          billing={billing.data}
           price={details.data?.price ?? null}
         />
       )}
@@ -403,11 +400,11 @@ export function BillingPage({
         <ErrorNote text={details.failure} />
       ) : (
         <>
-          {billing !== null && details.data.card !== null && (
+          {billing.data !== null && details.data.card !== null && (
             <CardRow
               api={api}
               workspaceId={workspaceId}
-              billing={billing}
+              billing={billing.data}
               card={details.data.card}
             />
           )}
