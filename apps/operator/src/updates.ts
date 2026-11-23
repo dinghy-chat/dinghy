@@ -76,7 +76,7 @@ export const UPDATES: Update[] = [
     date: "2026-11-16",
     kind: "feature",
     title: "The attributes and events your app sends",
-    text: "Contacts > Attributes and events lists what your app sends about your contacts, how many contacts have each one, and the campaigns that read it.",
+    text: "Contacts > Attributes and events lists what your app sends about the 1,000 contacts seen last, how many of them have each one, and the campaigns that read it.",
   },
   {
     id: "campaigns",
@@ -155,7 +155,7 @@ export const UPDATES: Update[] = [
     date: "2026-11-13",
     kind: "feature",
     title: "Visitors reply by email",
-    text: "A visitor's answer to a reply email goes into the conversation, and reopens it when it was closed.",
+    text: "On a server set up for it, a visitor's answer to a reply email goes into the conversation, and reopens it when it was closed.",
   },
   {
     id: "two-factor",
@@ -283,7 +283,7 @@ export const UPDATES: Update[] = [
     date: "2026-11-12",
     kind: "feature",
     title: "Transcripts by email",
-    text: "When a conversation closes, a visitor who gave an email gets the whole conversation 5 minutes later. Settings > Appearance turns it off.",
+    text: "When a conversation that your team answered closes, a visitor who gave an email gets it by email 5 minutes later. Settings > Appearance turns it off.",
   },
   {
     id: "get-started",
@@ -304,7 +304,7 @@ export const UPDATES: Update[] = [
     date: "2026-11-11",
     kind: "feature",
     title: "Change the chat's look without code",
-    text: "Settings > Appearance sets the logo, the words, the colors, the side, the theme and the chat button, with a live preview.",
+    text: "Settings > Appearance sets the words, the colors, the side, the theme and the chat button, with a live preview.",
   },
   {
     id: "pictures",
@@ -326,7 +326,7 @@ export const UPDATES: Update[] = [
     date: "2026-11-10",
     kind: "feature",
     title: "Invite by email",
-    text: "Invite a teammate with their email address. Dinghy emails the invite, and they join with only their name.",
+    text: "Invite a teammate with their email address. Someone new joins with only their name.",
   },
   {
     id: "dark-theme",
@@ -351,13 +351,14 @@ export const UPDATES: Update[] = [
   },
 ];
 
-const SEEN_KEY = "dinghy.updates.seen";
+/** Each operator has their own, as two can share one browser. */
+const seenKey = (operatorId: string) => `dinghy.updates.seen.${operatorId}`;
 
 /**
- * How many updates came after the newest one this browser saw. An operator who never opened the
- * list has seen nothing yet, and one whose seen entry is gone has seen them all.
+ * How many updates came after the one with `seenId`. Nothing seen yet means all of them. An ID
+ * this list does not have counts as all seen: it is gone, or a newer app in another tab saved it.
  */
-export function unseenCount(seenId = readStored(SEEN_KEY)): number {
+export function updatesAfter(seenId: string | null): number {
   if (seenId === null) return UPDATES.length;
   return Math.max(
     0,
@@ -365,7 +366,21 @@ export function unseenCount(seenId = readStored(SEEN_KEY)): number {
   );
 }
 
-export function markUpdatesSeen(): void {
+export const unseenCount = (operatorId: string) => updatesAfter(readStored(seenKey(operatorId)));
+
+/** Saves the newest update as seen, unless a newer app already saved one this list lacks. */
+export function markUpdatesSeen(operatorId: string): void {
+  const saved = readStored(seenKey(operatorId));
   const newest = UPDATES[0];
-  if (newest) store(SEEN_KEY, newest.id);
+  if (newest && (saved === null || UPDATES.some((update) => update.id === saved)))
+    store(seenKey(operatorId), newest.id);
+}
+
+/** Calls `onChange` when another tab saves what an operator has seen. */
+export function onSeenElsewhere(operatorId: string, onChange: () => void): () => void {
+  const listener = (event: StorageEvent) => {
+    if (event.key === seenKey(operatorId)) onChange();
+  };
+  addEventListener("storage", listener);
+  return () => removeEventListener("storage", listener);
 }

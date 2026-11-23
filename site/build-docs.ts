@@ -204,7 +204,8 @@ function contentPages(): Page[] {
         description: meta.description,
         title: meta.title,
         date: meta.date,
-        updated: meta.updated ?? meta.date,
+        // The changelog changes with its newest update.
+        updated: folder === "changelog" ? UPDATES[0]?.date : (meta.updated ?? meta.date),
         priceChecked: meta.priceChecked,
         card: meta.card,
         stat: meta.stat,

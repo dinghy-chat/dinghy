@@ -1,11 +1,18 @@
 /** @jsxImportSource react */
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 import { dayName } from "./analytics.tsx";
 import { Icon } from "./icons.tsx";
 import { type TextId, t } from "./text.ts";
 import { DocLink, Modal } from "./ui.tsx";
-import { markUpdatesSeen, UPDATES, type Update, type UpdateKind, unseenCount } from "./updates.ts";
+import {
+  markUpdatesSeen,
+  onSeenElsewhere,
+  UPDATES,
+  type Update,
+  type UpdateKind,
+  unseenCount,
+} from "./updates.ts";
 
 const CHANGELOG_URL = "https://dinghy.chat/changelog/";
 
@@ -89,13 +96,17 @@ function UpdatesDialog({ freshCount, onClose }: { freshCount: number; onClose():
 }
 
 /** What's new, above Help, with a red dot until the operator opens the newest updates. */
-export function WhatsNew() {
-  const [unseen, setUnseen] = useState(unseenCount);
+export function WhatsNew({ operatorId }: { operatorId: string }) {
+  const [unseen, setUnseen] = useState(() => unseenCount(operatorId));
   // Null while closed. An operator who never opened it sees no New tags, as all would have one.
   const [freshCount, setFreshCount] = useState<number | null>(null);
+  useEffect(() => {
+    setUnseen(unseenCount(operatorId));
+    return onSeenElsewhere(operatorId, () => setUnseen(unseenCount(operatorId)));
+  }, [operatorId]);
   const openUpdates = () => {
     setFreshCount(unseen < UPDATES.length ? unseen : 0);
-    markUpdatesSeen();
+    markUpdatesSeen(operatorId);
     setUnseen(0);
   };
   return (

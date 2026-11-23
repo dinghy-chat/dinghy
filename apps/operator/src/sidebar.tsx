@@ -345,7 +345,7 @@ export function Sidebar({
           {waitingText}
         </span>
       )}
-      <WhatsNew />
+      <WhatsNew operatorId={me.id} />
       <HelpMenu onShortcuts={onShortcuts} />
       {steps}
       <UserMenu
