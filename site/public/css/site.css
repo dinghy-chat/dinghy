@@ -366,7 +366,7 @@ main {
   isolation: isolate;
   overflow: hidden;
   margin-bottom: clamp(68px, 8.6vw, 124px);
-  padding-top: clamp(36px, 4.6vw, 64px);
+  padding-top: clamp(24px, 3vw, 40px);
   background: var(--yellow);
 }
 
@@ -378,16 +378,36 @@ main {
 }
 
 .hero-text h1 {
-  max-width: 13em;
+  max-width: 15em;
   margin-inline: auto;
+  font-size: clamp(36px, 4.6vw, 64px);
 }
 
 .hero-text .lede {
-  margin-top: 20px;
+  margin-top: 14px;
+  font-size: clamp(19px, 1.6vw, 23px);
 }
 
 .hero-text .btn {
-  margin-top: 28px;
+  margin-top: 22px;
+}
+
+.hero-line {
+  display: inline-block;
+  white-space: nowrap;
+}
+
+/* A competitor's logo set in the headline, sized to the text. */
+.hero-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: .18em;
+}
+
+.hero-brand img {
+  width: .82em;
+  height: .82em;
+  border-radius: .2em;
 }
 
 .sky {
@@ -3914,6 +3934,10 @@ main:has(> .lost) {
 }
 
 @media (max-width: 640px) {
+  .hero-text h1 {
+    font-size: 7.4vw;
+  }
+
   .doc {
     font-size: 16.5px;
     line-height: 1.62;

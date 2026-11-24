@@ -3,8 +3,8 @@ title: Crisp chat alternative with one flat price: Dinghy vs Crisp | Dinghy
 nav: Dinghy vs Crisp
 description: Crisp has a free plan and a $45 Mini plan. Dinghy is open source and free to self-host, and Dinghy Cloud is $9 a month for up to 5 people.
 date: 2026-11-08
-updated: 2026-11-22
-priceChecked: 2026-11-22
+updated: 2026-11-24
+priceChecked: 2026-11-24
 order: 3
 card: Both priced per workspace. Crisp Mini is $45, Dinghy Cloud $9
 stat: Free, then $45
@@ -25,6 +25,8 @@ Stay on Crisp Free if you're one or two people with under 100 contacts. Pay for 
 | 1 to 2 people | $9 a month | $0 on Free, with 100 contacts |
 | 3 to 4 people | $9 a month | $45 a month on Mini |
 | 5 people | $9 a month | $95 a month on Essentials |
+| Screenshots and files in chat | Included | From Mini, $45 a month |
+| Webhooks | Included | From Essentials, $95 a month |
 | AI | None built in. Bring your own agent, no AI fee | AI chatbot on higher plans |
 | Self-hosting | Free, open source | Not possible |
 
@@ -39,6 +41,8 @@ Crisp prices are from [Crisp’s pricing page](https://crisp.chat/en/pricing/). 
 - A marketplace of integrations. Dinghy has an API, webhooks and an MCP server instead.
 
 ## What Dinghy does differently
+
+On Crisp Free, visitors can't send a screenshot or a file, and webhooks start at Essentials. Dinghy includes both, on the cloud and on your own server.
 
 Crisp's plans count your contacts. Dinghy doesn't bill by contact. Dinghy Cloud is $9 a month for up to 5 people, no per-person add-ons.
 
