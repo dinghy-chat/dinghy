@@ -14,6 +14,7 @@ import {
   apiKeyCredential,
   operator,
   REPLY_MODES,
+  type ReplyMode,
 } from "./db/schema.ts";
 import {
   type Database,
@@ -65,6 +66,9 @@ export type Actor =
       name: string;
       /** Conversations, or Setup, which also reaches the webhooks. */
       level: ApiKeyLevel;
+      /** As the request came in. A send reads it again, so a change applies at once. */
+      replyMode: ReplyMode;
+      rewritesDrafts: boolean;
       workspaceId: string;
       /** The workspace's access when the request came in. */
       access: WorkspaceAccess;
@@ -80,6 +84,10 @@ export const actorFields = (actor: Actor) =>
   actor.kind === "operator" ? { operatorId: actor.operatorId } : { apiKeyId: actor.apiKeyId };
 
 const KEY_INVALID = failure("unauthorized", "This API key is not valid or was revoked.");
+const KEY_MISSING = failure(
+  "unauthorized",
+  "Send an API key or an OAuth access token in the Authorization header, as Bearer <token>.",
+);
 
 /**
  * The bearer token in an `Authorization` header: a static key, `dk_...`, or an OAuth access token,
@@ -94,6 +102,8 @@ const keyColumns = {
   id: apiKey.id,
   name: apiKey.name,
   level: apiKey.level,
+  replyMode: apiKey.replyMode,
+  rewritesDrafts: apiKey.rewritesDrafts,
   lastUsedAt: apiKey.lastUsedAt,
 };
 
@@ -144,7 +154,9 @@ export async function authenticateRequest(
   db: Database,
   rateLimit: RateLimit,
 ): Promise<KeyActor | Response> {
-  const token = apiKeyToken(c.req.header("authorization"));
+  const authorization = c.req.header("authorization");
+  if (authorization === undefined) return c.json(KEY_MISSING, 401);
+  const token = apiKeyToken(authorization);
   const actor = token === null ? null : await authenticateApiKey(db, token);
   if (actor === null) return c.json(KEY_INVALID, 401);
   const wait = await rateLimit.hit(
@@ -185,6 +197,8 @@ async function authenticateApiKey(db: Database, token: string): Promise<KeyActor
       apiKeyId: row.id,
       name: row.name,
       level: row.level,
+      replyMode: row.replyMode,
+      rewritesDrafts: row.rewritesDrafts,
       workspaceId,
       access,
     };

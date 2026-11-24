@@ -40,6 +40,8 @@ A bot on a server, or a job in CI, has no browser. Give it an API key instead. A
 claude mcp add --transport http dinghy https://chat.example.com/v1/mcp --header "Authorization: Bearer dk_..."
 ```
 
+When it connects, the agent reads the server's instructions: the connection's name, its access, whether its replies are drafts, how to answer chats and, with Full access, how to install. A tool call with bad arguments answers every problem at once, such as `clientId: Required. reason: Required.`, and a Full access tool called on a Chats connection says that it needs Full access.
+
 A key and an OAuth connection do the same things at the same access level. Visitors see the key's or the app's name on its replies, with a bot icon.
 
 ## Set up the chat on a site
@@ -55,9 +57,13 @@ Connect with **Full access**, then ask your coding agent to add Dinghy to the si
 7. Optional: `create_webhook` and `get_webhook_verification`, if your server should get events.
 8. `send_test_message` to send a test chat, then `delete_test_visitors` to clean up. See [Test a bot](#test-a-bot).
 
+The server also gives these steps as the MCP prompt `install`, with the optional arguments `framework` and `site`. Claude Code shows it as `/mcp__dinghy__install`. A Chats connection does not list it.
+
 The **Install** page in the operator app has a "Set up with an agent" row with a prompt to copy, in the words of Claude Code, Cursor or another MCP client. It holds these steps. To keep the agent careful later, add the block in [Tell your agent about Dinghy](#tell-your-agent-about-dinghy) to your site's `AGENTS.md` yourself.
 
 ## Answer chats
+
+The MCP prompt `answer_chats` starts the loop below, in Claude Code as `/mcp__dinghy__answer_chats`. Every connection lists it.
 
 Your bot reads new visitor messages, reads the conversation, and replies. Pick the way it hears about new messages:
 

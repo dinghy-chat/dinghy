@@ -47,7 +47,7 @@ Tell Claude Code to add Dinghy to your site. It calls the tools in this order:
 
 After that, `send_test_message` sends a chat as a test visitor, and `delete_test_visitors` cleans up. Check the visitors selected for deletion before you confirm the cleanup.
 
-In the operator app, the Install page has a "Set up with an agent" row with a prompt to copy.
+You can also type `/mcp__dinghy__install` in Claude Code: the same steps come from Dinghy as a prompt. In the operator app, the Install page has a "Set up with an agent" row with a prompt to copy.
 
 ### Show who is chatting
 

@@ -7,11 +7,12 @@ import { WEBHOOK_EVENTS } from "./db/schema.ts";
 import { type Database, withWorkspace, writable } from "./db/tenant.ts";
 import { errorAnswer, failure, NOT_FOUND, RATE_LIMITED, WRONG_ORIGIN } from "./errors.ts";
 import { type Inbox, parseSnooze, SNOOZE_CLOSED, type SnoozeOutcome } from "./inbox.ts";
-import { conversationId, labelId, UNTRUSTED_TEXT, webhookId } from "./inputs.ts";
+import { conversationId, labelId, webhookId } from "./inputs.ts";
 import { labelConversation, listLabels } from "./labels.ts";
 import type { Live } from "./live.ts";
 import { campaignTools } from "./mcp-campaign-tools.ts";
 import { type ChatToolsOptions, chatTools } from "./mcp-chat-tools.ts";
+import { instructions, listedPrompt, promptsFor } from "./mcp-guide.ts";
 import { mcpSetupTools, type SetupToolOptions } from "./mcp-setup-tools.ts";
 import { closedFailure } from "./member.ts";
 import type { RateLimit } from "./rate-limit.ts";
@@ -39,8 +40,13 @@ const METHOD_NOT_FOUND = -32601;
 const INVALID_PARAMS = -32602;
 const HEADER_MISMATCH = -32020;
 const UNSUPPORTED_VERSION = -32022;
-/** How long a client may keep the tool list. It depends on the key's level, so it is private. */
-const TOOLS_TTL_MS = 5 * 60_000;
+/** How long a client may keep the tool and prompt lists. They depend on the key, so they are private. */
+const LIST_TTL_MS = 5 * 60_000;
+const NO_SUCH_TOOL = "There is no tool with this name. tools/list lists this connection's tools.";
+const NEEDS_FULL_ACCESS =
+  "This tool needs a Full access connection, and this one has Chats access. Connect again and pick Full access, or ask an owner or admin for a Full access key.";
+const NO_SUCH_PROMPT =
+  "There is no prompt with this name. prompts/list lists this connection's prompts.";
 
 const RpcMessage = z.object({
   jsonrpc: z.literal("2.0"),
@@ -78,6 +84,34 @@ export interface Tool {
   call(args: unknown, context: Context): Promise<Outcome>;
 }
 
+/** A missing argument reads as such, not as Zod's "expected string, received undefined". */
+const missingIsRequired = (issue: { code: string; input?: unknown }) =>
+  issue.code === "invalid_type" && issue.input === undefined ? "Required" : undefined;
+
+/** Every problem with a tool's arguments at once, so an agent fixes them in one retry. */
+function invalidArguments(error: z.ZodError) {
+  const problems = error.issues.map(
+    (issue) => `${issue.path.join(".") || "arguments"}: ${issue.message.replace(/\.$/, "")}`,
+  );
+  return failure("invalid_request", `Fix these arguments. ${problems.join(". ")}.`);
+}
+
+/**
+ * The JSON Schema without the long regex that Zod writes beside a `format`, such as `uuid` or
+ * `email`. The format says the same to an agent in a few tokens, and Zod still checks the input.
+ */
+function withoutFormatPatterns(schema: unknown): Record<string, unknown> {
+  const strip = (node: unknown): unknown => {
+    if (Array.isArray(node)) return node.map(strip);
+    if (typeof node !== "object" || node === null) return node;
+    const entries = Object.entries(node).filter(
+      ([key, value]) => !(key === "pattern" && typeof value === "string" && "format" in node),
+    );
+    return Object.fromEntries(entries.map(([key, value]) => [key, strip(value)]));
+  };
+  return strip(schema) as Record<string, unknown>;
+}
+
 /** A tool whose input is checked with its Zod schema, which also gives the JSON Schema it lists. */
 export function tool<S extends z.ZodType>(spec: {
   name: string;
@@ -90,7 +124,9 @@ export function tool<S extends z.ZodType>(spec: {
   destructive?: boolean;
   run(input: z.output<S>, context: Context): Promise<Outcome>;
 }): Tool {
-  const { $schema: _dialect, ...inputSchema } = z.toJSONSchema(spec.input, { io: "input" });
+  const { $schema: _dialect, ...inputSchema } = withoutFormatPatterns(
+    z.toJSONSchema(spec.input, { io: "input" }),
+  );
   return {
     name: spec.name,
     title: spec.title,
@@ -102,11 +138,8 @@ export function tool<S extends z.ZodType>(spec: {
       idempotentHint: spec.readOnly === true || spec.idempotent === true,
     },
     async call(args, context) {
-      const parsed = spec.input.safeParse(args ?? {});
-      if (!parsed.success) {
-        const where = parsed.error.issues[0]?.path.join(".") || "arguments";
-        return { error: failure("invalid_request", `The ${where} are not valid.`) };
-      }
+      const parsed = spec.input.safeParse(args ?? {}, { error: missingIsRequired });
+      if (!parsed.success) return { error: invalidArguments(parsed.error) };
       // The same refusals as the HTTP API's member check: nothing while the workspace waits for
       // payment, and no write while it is read-only or suspended.
       const { access } = context.actor;
@@ -118,8 +151,6 @@ export function tool<S extends z.ZodType>(spec: {
   };
 }
 
-/** What every client reads first: visitor text is untrusted, and each job has its own connection. */
-const INSTRUCTIONS_SAFETY = `${UNTRUSTED_TEXT} A Setup connection is for installing Dinghy on a site. Give the bot that answers chats its own Conversations connection.`;
 const CURSOR = /^(\d{4}-\d{2}-\d{2}T[\d:.]+Z)\|([0-9a-f-]{36})$/;
 
 const snoozeAnswer = (outcome: SnoozeOutcome): Outcome => {
@@ -371,6 +402,16 @@ interface McpOptions {
 
 type Params = Record<string, unknown>;
 
+/** A prompt's arguments, which MCP sends as strings. Any other value is left out. */
+const stringArguments = (value: unknown): Record<string, string> =>
+  typeof value === "object" && value !== null
+    ? Object.fromEntries(
+        Object.entries(value).filter(
+          (entry): entry is [string, string] => typeof entry[1] === "string",
+        ),
+      )
+    : {};
+
 /** The `_meta` of a request's params, where a 2026-07-28 request names its version. */
 const metaOf = (params: Params): Params => {
   const meta = params._meta;
@@ -396,7 +437,7 @@ function headerMismatch(
     return true;
   }
   if (method !== undefined && headers.method !== method) return true;
-  return method === "tools/call" && headers.name !== params.name;
+  return (method === "tools/call" || method === "prompts/get") && headers.name !== params.name;
 }
 
 /** The protocol version a request asks for: its body's, or else its header's. */
@@ -430,26 +471,37 @@ export function registerMcp(
 ): void {
   const forCampaigns = campaignTools(campaigns);
   const everyKey = [...tools(inbox, db, live), ...chatTools(chat), ...forCampaigns.everyKey];
-  const setupOnly = [...setupTools(webhooks), ...mcpSetupTools(setup), ...forCampaigns.setupOnly];
-  /** A Conversations key does not see the Setup tools at all. */
+  const install = [...mcpSetupTools(setup), ...setupTools(webhooks)];
+  const setupOnly = [...install, ...forCampaigns.setupOnly];
+  /**
+   * A Conversations key does not see the Setup tools at all. A Setup key lists the install tools
+   * first, because a client such as Cursor gives its agent only the first 40 tools.
+   */
   const toolsFor = (actor: KeyActor) =>
-    actor.level === "setup" ? [...everyKey, ...setupOnly] : everyKey;
+    actor.level === "setup" ? [...install, ...everyKey, ...forCampaigns.setupOnly] : everyKey;
   const serverInfo = { name: "dinghy", title: "Dinghy", version };
-  const capabilities = { tools: { listChanged: false } };
-  const instructions = (actor: KeyActor) =>
-    `${
-      actor.level === "setup"
-        ? "Dinghy is a live support chat. These tools read and answer the conversations of one workspace, the key's, add notes that only the team sees, and install Dinghy on a site: the snippet, allowed sites, appearance, webhooks and test visitors. Replies and notes show the key's name as their author."
-        : "Dinghy is a live support chat. These tools read and answer the conversations of one workspace, the key's, and add notes that only the team sees. Replies and notes show the key's name as their author."
-    } ${INSTRUCTIONS_SAFETY}`;
+  const capabilities = { tools: { listChanged: false }, prompts: { listChanged: false } };
   const listTools = (actor: KeyActor) =>
     toolsFor(actor).map(({ call: _call, ...listed }) => listed);
   const callTool = async (id: RpcId, params: Params, actor: KeyActor) => {
     const found = toolsFor(actor).find((one) => one.name === params.name);
-    if (found === undefined)
-      return rpcError(id, INVALID_PARAMS, "There is no tool with this name.");
+    if (found === undefined) {
+      const needsSetup = setupOnly.some((one) => one.name === params.name);
+      return rpcError(id, INVALID_PARAMS, needsSetup ? NEEDS_FULL_ACCESS : NO_SUCH_TOOL);
+    }
     const outcome = await found.call(params.arguments, { workspaceId: actor.workspaceId, actor });
     return rpcResult(id, toolResult(outcome));
+  };
+  const listPrompts = (actor: KeyActor) => promptsFor(actor).map(listedPrompt);
+  const getPrompt = (id: RpcId, params: Params, actor: KeyActor) => {
+    const found = promptsFor(actor).find((one) => one.name === params.name);
+    if (found === undefined) return rpcError(id, INVALID_PARAMS, NO_SUCH_PROMPT);
+    const text = found.text(stringArguments(params.arguments));
+    if (text === null) return rpcError(id, INVALID_PARAMS, "These prompt arguments are not valid.");
+    return rpcResult(id, {
+      description: found.description,
+      messages: [{ role: "user", content: { type: "text", text } }],
+    });
   };
 
   /** Answers one request of the versions with a session handshake. */
@@ -469,6 +521,8 @@ export function registerMcp(
     if (method === "ping") return rpcResult(id, {});
     if (method === "tools/list") return rpcResult(id, { tools: listTools(actor) });
     if (method === "tools/call") return callTool(id, params, actor);
+    if (method === "prompts/list") return rpcResult(id, { prompts: listPrompts(actor) });
+    if (method === "prompts/get") return getPrompt(id, params, actor);
     return rpcError(id, METHOD_NOT_FOUND, "This method does not exist.");
   };
 
@@ -490,11 +544,15 @@ export function registerMcp(
     }
     if (method === "ping") return complete({});
     if (method === "tools/list") {
-      return complete({ tools: listTools(actor), ttlMs: TOOLS_TTL_MS, cacheScope: "private" });
+      return complete({ tools: listTools(actor), ttlMs: LIST_TTL_MS, cacheScope: "private" });
     }
-    if (method === "tools/call") {
-      const answer = await callTool(id, params, actor);
+    if (method === "tools/call" || method === "prompts/get") {
+      const answer =
+        method === "tools/call" ? await callTool(id, params, actor) : getPrompt(id, params, actor);
       return "result" in answer ? complete(answer.result) : answer;
+    }
+    if (method === "prompts/list") {
+      return complete({ prompts: listPrompts(actor), ttlMs: LIST_TTL_MS, cacheScope: "private" });
     }
     return null;
   };
@@ -564,7 +622,7 @@ export function registerMcp(
     security: API_KEY,
     summary: "MCP (Model Context Protocol) over Streamable HTTP, stateless, with JSON answers",
     description:
-      "One JSON-RPC 2.0 message per request. Protocol 2026-07-28 is stateless: each request names its version in `params._meta[\"io.modelcontextprotocol/protocolVersion\"]`, its `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` headers must match the body (400, -32020 otherwise), and its methods are `server/discover`, `ping`, `tools/list` and `tools/call`. The versions 2025-11-25, 2025-06-18 and 2025-03-26 use `initialize`, `notifications/initialized`, `ping`, `tools/list` and `tools/call`. An unknown version answers 400 with -32022 and the supported list. Every key gets `list_conversations`, `search_conversations`, `get_conversation`, `reply`, `close_conversation`, `reopen_conversation`, `snooze_conversation`, `unsnooze_conversation`, `assign_conversation`, `add_note`, `list_drafts`, `hand_off`, `list_members`, `list_saved_replies`, `set_typing`, `wait_for_events`, `get_contact`, `list_contacts`, `search_contacts`, `get_live_visitors` and `get_analytics`, in the key's workspace. A Setup key also gets the webhook, install, allowed site, appearance and test visitor tools. A notification gets 202 with no body. A tool that fails answers with `isError: true` and the error's stable code. `GET` answers 405, because there is no event stream.",
+      "One JSON-RPC 2.0 message per request. Protocol 2026-07-28 is stateless: each request names its version in `params._meta[\"io.modelcontextprotocol/protocolVersion\"]`, its `MCP-Protocol-Version`, `Mcp-Method` and `Mcp-Name` headers must match the body (400, -32020 otherwise), and its methods are `server/discover`, `ping`, `tools/list`, `tools/call`, `prompts/list` and `prompts/get`. The versions 2025-11-25, 2025-06-18 and 2025-03-26 start with `initialize` and `notifications/initialized`, then use the same methods but `server/discover`. An unknown version answers 400 with -32022 and the supported list. `tools/list` gives the tools of the key's level: a Chats key reads and answers conversations, and a Setup key also installs Dinghy on a site. `prompts/list` gives `answer_chats`, and `install` to a Setup key. Calling a Setup tool with a Chats key answers -32602 and says so. A notification gets 202 with no body. A tool that fails answers with `isError: true` and the error's stable code. `GET` answers 405, because there is no event stream.",
     request: {
       body: {
         required: true,

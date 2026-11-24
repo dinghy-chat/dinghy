@@ -4,6 +4,19 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- The MCP server has prompts: `install`, for a Full access connection, with the optional arguments `framework` and `site`, and `answer_chats`, for every connection. Claude Code shows them as `/mcp__dinghy__install` and `/mcp__dinghy__answer_chats`.
+
+### Changed
+
+- The MCP server's instructions name the connection, its access and whether its replies are drafts, and say how to answer chats and, with Full access, how to install.
+- An MCP tool call with bad arguments answers every problem at once, such as `clientId: Required. reason: Required.`, instead of only the first field.
+- A Full access tool called with a Chats connection answers that it needs Full access, instead of that the tool does not exist.
+- A Full access connection lists the install and webhook tools first, so a client that keeps only the first 40 tools, such as Cursor, keeps them.
+- The MCP tool list is about 20% shorter: a schema with a `format`, such as `uuid` or `email`, no longer repeats it as a long `pattern`.
+- A request to `/v1/mcp` or `/v1/events` with no `Authorization` header answers 401 with a message that asks for one, instead of saying the key is not valid.
+
 ## [0.55.0] - 2026-11-24
 
 ### Changed
