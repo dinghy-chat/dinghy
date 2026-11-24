@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.54.1] - 2026-11-24
+
 ### Fixed
 
 - The sign-in email and the other plain emails use near-black text at 14px with the mail app's own paragraph spacing. Before, their navy text showed as pale blue in dark mode.
@@ -817,7 +819,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.54.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.54.1...HEAD
+[0.54.1]: https://github.com/dinghy-chat/dinghy/compare/v0.54.0...v0.54.1
 [0.54.0]: https://github.com/dinghy-chat/dinghy/compare/v0.53.0...v0.54.0
 [0.53.0]: https://github.com/dinghy-chat/dinghy/compare/v0.52.0...v0.53.0
 [0.52.0]: https://github.com/dinghy-chat/dinghy/compare/v0.51.0...v0.52.0
