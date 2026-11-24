@@ -5,6 +5,7 @@ import {
   AMSTERDAM,
   BERLIN,
   type ConversationSeed,
+  type DemoData,
   daysAgo,
   LONDON,
   MADRID,
@@ -16,7 +17,6 @@ import {
   type RoutineChat,
   routineHistory,
   SAO_PAULO,
-  type SeedData,
   SF,
   STOCKHOLM,
   SYDNEY,
@@ -25,7 +25,7 @@ import {
   TORONTO,
   type VisitorSeed,
   visitor,
-} from "./seed-shared.ts";
+} from "../src/demo-data.ts";
 
 export const SITE = "https://acme.example";
 export const WORKSPACE_NAME = "Acme";
@@ -97,7 +97,7 @@ const NOAH = visitor(...TORONTO, "Chrome on Windows", ["/app/reports", "/changel
 });
 
 /** The visitors who are on the site now, and the tabs the Visitors screen lists. */
-export const LIVE: SeedData["LIVE"] = {
+export const LIVE: DemoData["LIVE"] = {
   chatting: [
     { conversation: 0, title: "Billing · Acme" },
     { conversation: 2, title: "Exports · Acme Docs" },

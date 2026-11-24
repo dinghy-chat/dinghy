@@ -15,7 +15,7 @@ import pg from "pg";
 import { pino } from "pino";
 import { generateVAPIDKeys } from "web-push";
 import { z } from "zod";
-import { freeWorkspace, signupsCsv } from "../../../ee/server/index.ts";
+import { freeWorkspace, MAX_OPERATORS, signupsCsv } from "../../../ee/server/index.ts";
 import { BadArchiveError } from "./archive.ts";
 import { audit } from "./audit.ts";
 import { type Auth, createAuth, LINK_MINUTES, signInLink } from "./auth.ts";
@@ -40,6 +40,7 @@ import {
 import { ROLES, type RoleName } from "./db/roles.ts";
 import * as schema from "./db/schema.ts";
 import { type Database, enterWorkspace, lockAccount, withWorkspace } from "./db/tenant.ts";
+import { demoCommand } from "./demo-command.ts";
 import { safeErrorFields } from "./errors.ts";
 import { normalizeOrigin } from "./identity.ts";
 import { runInit, type SetupAnswers, widgetSnippet, writePushKeys } from "./install.ts";
@@ -101,6 +102,12 @@ const USAGE = `Usage:
   chat free <workspace-id>
       For the cloud: turns on a workspace that never pays, with no Stripe subscription. It keeps
       the plan's limits. It refuses a workspace that has a subscription.
+  chat demo <workspace-id> [--yes]
+      For the cloud's app review account: replaces the workspace's conversations, visitors,
+      contacts, labels and saved replies with the Harbor Coffee demo, and adds its teammates within
+      the operator limit. The workspace's owner plays the demo's owner. It sends no email, push or
+      webhook. Without --yes, it only prints what it would do. Run it with the same settings as
+      chat migrate.
   chat push-keys
       For development: prints new VAPID keys for web push. Changing the keys ends every device's
       subscription, so make them once.
@@ -189,7 +196,8 @@ async function operate(
     | "workspaces"
     | "suspend"
     | "unsuspend"
-    | "free",
+    | "free"
+    | "demo",
   args: string[],
 ): Promise<number> {
   const admin = await adminSettings();
@@ -209,6 +217,8 @@ async function operate(
       return suspendCommand(admin, args, command === "suspend");
     case "free":
       return freeCommand(admin, args);
+    case "demo":
+      return demoCliCommand(admin, args);
     case "backup-key":
       return backupKeyCommand(admin);
     case "backup":
@@ -285,6 +295,27 @@ async function freeCommand({ withAdmin }: AdminSettings, args: string[]): Promis
   }
   console.log(`${workspaceId} is on, for free.`);
   return 0;
+}
+
+/** Runs as the app's role, so row-level security keeps every write in the one workspace. */
+async function demoCliCommand(
+  { adminUrl, passwords }: AdminSettings,
+  args: string[],
+): Promise<number> {
+  const [workspaceId, ...extra] = args.filter((arg) => arg !== "--yes");
+  if (workspaceId === undefined || extra.length > 0 || !z.uuid().safeParse(workspaceId).success) {
+    console.error(USAGE);
+    return 2;
+  }
+  const pool = new pg.Pool({ connectionString: roleUrl(adminUrl, "app", passwords.app), max: 2 });
+  try {
+    return await demoCommand(drizzle(pool, { schema }), workspaceId, {
+      write: args.includes("--yes"),
+      maxOperators: MAX_OPERATORS,
+    });
+  } finally {
+    await pool.end();
+  }
 }
 
 async function backupKeyCommand({ withAdmin }: AdminSettings): Promise<number> {
@@ -819,7 +850,8 @@ async function main(): Promise<number> {
     command === "workspaces" ||
     command === "suspend" ||
     command === "unsuspend" ||
-    command === "free"
+    command === "free" ||
+    command === "demo"
   ) {
     return operate(command, args);
   }

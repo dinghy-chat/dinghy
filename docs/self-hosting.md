@@ -288,6 +288,7 @@ To grow, run more `web` instances behind one load balancer, and one or more `wor
 | Import a workspace | `docker compose cp -a export.tar app:/tmp/export.tar`, then `docker compose exec app chat import /tmp/export.tar` |
 | Suspend a workspace | `docker compose run --rm migrate chat suspend <workspace-id> [reason]` |
 | Lift a suspension | `docker compose run --rm migrate chat unsuspend <workspace-id>` |
+| Fill a workspace with demo data | `docker compose run --rm -T migrate chat demo <workspace-id> --yes` |
 
 `chat workspaces` prints each workspace's ID, public key, state and name. The state is `active`, `suspended`, `read_only`, `waiting_payment` or `waiting_cloud`, the last three only on Dinghy Cloud. `chat setup` also prints the ID of the workspace it creates.
 
@@ -296,6 +297,8 @@ To grow, run more `web` instances behind one load balancer, and one or more `wor
 The audit lines of a removal request are `two_factor.removal_requested`, `two_factor.removal_cancelled`, with `by` as `link`, `session` or `code`, and `two_factor.removal_completed`. A teammate's reset writes `two_factor.reset_by_member`, with the workspace and `targetId`.
 
 The secrets of two-step sign-in are encrypted with a key derived from `AUTH_SECRET`. If you change `AUTH_SECRET`, they no longer open: an operator who has it on sees **This server cannot read your two-step sign-in** at the code page, and the API answers 500 `two_factor_unreadable`. Run `chat two-factor-reset <email>` for each of them, and they can turn it on again.
+
+`chat demo` is for a demo or app review account. It deletes the workspace's conversations, visitors, contacts, labels and saved replies, then writes Harbor Coffee, a coffee roaster with about 55 conversations from the last 30 days. The workspace's owner plays the roaster's owner, and up to three teammates join on `harborcoffee.example` addresses, as far as the operator limit allows. It turns off chat transcripts and sends no email, push or webhook, and it refuses a workspace with a webhook that is on. Without `--yes`, it prints what it would do and changes nothing. Other workspaces and operators' accounts stay as they are.
 
 A suspended workspace cannot send messages or images, its widget answers as if it did not exist, and its open chats close at once. Its operators can still sign in, read and export, and a banner tells them it is suspended. The reason is for you, and they do not see it.
 

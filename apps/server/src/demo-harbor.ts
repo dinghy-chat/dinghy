@@ -1,5 +1,5 @@
-// The demo workspace that `bun run seed -- --harbor` writes: Harbor Coffee, a small specialty coffee
-// roaster with an online shop, for the app's store screenshots and its review account.
+// The demo workspace that `bun run seed -- --harbor` and `chat demo` write: Harbor Coffee, a small
+// specialty coffee roaster with an online shop, for the app's store screenshots and its review account.
 // Times are relative to the moment the seed runs, so the inbox always shows people waiting now.
 import {
   AMSTERDAM,
@@ -8,6 +8,7 @@ import {
   COPENHAGEN,
   type ConversationSeed,
   DENVER,
+  type DemoData,
   DUBLIN,
   daysAgo,
   LONDON,
@@ -18,7 +19,6 @@ import {
   PORTLAND,
   type RoutineChat,
   routineHistory,
-  type SeedData,
   SF,
   SYDNEY,
   type TeamMember,
@@ -26,7 +26,7 @@ import {
   VANCOUVER,
   type VisitorSeed,
   visitor,
-} from "./seed-shared.ts";
+} from "./demo-data.ts";
 
 export const SITE = "https://harborcoffee.example";
 export const WORKSPACE_NAME = "Harbor Coffee";
@@ -96,7 +96,7 @@ const HANNAH = visitor(...VANCOUVER, "Chrome on macOS", ["/shop", "/shop/brewing
   plan: "Subscriber",
 });
 
-export const LIVE: SeedData["LIVE"] = {
+export const LIVE: DemoData["LIVE"] = {
   chatting: [
     { conversation: 0, title: "Wholesale · Harbor Coffee" },
     { conversation: 2, title: "Coffee subscription · Harbor Coffee" },

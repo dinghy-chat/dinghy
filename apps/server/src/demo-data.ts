@@ -1,6 +1,7 @@
-// The shape of a demo workspace for `bun run seed`, and the helpers its data modules share.
-// seed-data.ts holds Acme, the default, and seed-harbor.ts holds Harbor Coffee.
-import type { LABEL_COLORS } from "../src/db/schema.ts";
+// The shape of a demo workspace, and the helpers its data modules share. demo-harbor.ts holds Harbor
+// Coffee, which `bun run seed -- --harbor` and `chat demo` write, and scripts/seed-data.ts holds Acme.
+import type { LABEL_COLORS } from "./db/schema.ts";
+import { DAY_MS, MINUTE_MS } from "./time.ts";
 
 export interface TeamMember {
   name: string;
@@ -35,8 +36,8 @@ export interface ConversationSeed<
   labels?: LabelName[];
 }
 
-/** What seed.ts reads from a data module. */
-export interface SeedData {
+/** What the seed and `chat demo` read from a data module. */
+export interface DemoData {
   SITE: string;
   WORKSPACE_NAME: string;
   TEAM: Record<string, TeamMember>;
@@ -64,9 +65,6 @@ export interface SeedData {
   CONVERSATIONS: ConversationSeed[];
   ROUTINE_CONVERSATIONS: ConversationSeed[];
 }
-
-const MINUTE_MS = 60_000;
-const DAY_MS = 24 * 60 * MINUTE_MS;
 
 /** `minutes` before the seed runs. */
 export const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * MINUTE_MS);
