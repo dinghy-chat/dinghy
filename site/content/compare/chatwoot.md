@@ -1,5 +1,5 @@
 ---
-title: Chatwoot alternative, lighter to self-host: Dinghy vs Chatwoot | Dinghy
+title: Lighter Chatwoot alternative: Dinghy vs Chatwoot
 nav: Dinghy vs Chatwoot
 description: Compare Dinghy and Chatwoot for self-hosted chat: server requirements, channels, campaigns, AI and the cost for a small team.
 date: 2026-11-08

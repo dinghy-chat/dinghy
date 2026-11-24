@@ -372,7 +372,7 @@ main {
 
 .hero-text {
   position: relative;
-  z-index: 2;
+  z-index: 4;
   padding-inline: var(--wide-gutter);
   text-align: center;
 }
@@ -395,6 +395,106 @@ main {
 .hero-line {
   display: inline-block;
   white-space: nowrap;
+}
+
+.hero-agent {
+  margin-top: 8px;
+}
+
+/* The whole line copies the agent prompt. A bubble then says what to do with it. */
+.hero-agent-copy {
+  position: relative;
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  min-height: 36px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: none;
+  color: #2b3f57;
+  font: 400 15px/1 var(--body);
+  cursor: pointer;
+}
+
+.hero-agent-copy:hover {
+  background: rgb(11 34 57 / .08);
+  color: var(--navy);
+}
+
+.hero-agent-icon {
+  display: grid;
+  color: var(--navy);
+}
+
+.hero-agent-icon svg {
+  grid-area: 1 / 1;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.hero-agent-copy .icon-done,
+.hero-agent-copy.is-done .icon-copy {
+  visibility: hidden;
+}
+
+.hero-agent-copy.is-done .icon-done {
+  visibility: visible;
+}
+
+.hero-agent-tip {
+  position: absolute;
+  top: calc(100% + 12px);
+  left: 50%;
+  z-index: 5;
+  width: max-content;
+  max-width: min(320px, calc(100vw - 32px));
+  padding: .6em .85em;
+  border-radius: 1em;
+  background: #fff;
+  color: var(--navy);
+  font: 600 15px/1.3 var(--display);
+  text-align: center;
+  box-shadow: 0 8px 20px rgb(11 34 57 / .16);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -4px);
+  transition: opacity .2s, transform .2s var(--spring);
+}
+
+.hero-agent-tip::before {
+  content: "";
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  margin-left: -8px;
+  border: 8px solid transparent;
+  border-top: 0;
+  border-bottom-color: #fff;
+}
+
+.hero-agent-copy.is-done .hero-agent-tip {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* A tool's logo set in the lede, before its name. */
+.hero-ai-item {
+  color: var(--navy);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.hero-ai-item svg {
+  width: .9em;
+  height: .9em;
+  margin-right: .25em;
+  vertical-align: -.1em;
 }
 
 /* A competitor's logo set in the headline, sized to the text. */
@@ -503,7 +603,7 @@ main {
 
 .hero-water {
   z-index: 3;
-  height: 190px;
+  height: 150px;
   margin-top: clamp(70px, 6.4vw, 92px);
   pointer-events: none;
 }
@@ -586,7 +686,7 @@ main {
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='260' height='90'%3E%3Cpath d='M0 8C43 0 87 0 130 8S217 16 260 8V90H0Z' fill='%230f47b4'/%3E%3C/svg%3E"),
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='130'%3E%3Cpath d='M0 8C30 0 60 0 90 8S150 16 180 8V130H0Z' fill='%232f7dff'/%3E%3C/svg%3E"),
     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='130'%3E%3Cpath d='M0 6C37 0 73 0 110 6S183 12 220 6V130H0Z' fill='%238fc5ff'/%3E%3C/svg%3E");
-  background-position: 0 179px, 0 148px, 0 104px, 0 82px;
+  background-position: 0 141px, 0 117px, 0 82px, 0 65px;
 }
 
 .footer-water::after {

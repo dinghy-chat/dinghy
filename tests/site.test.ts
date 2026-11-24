@@ -169,6 +169,16 @@ test("llms-full.txt holds every doc, with its page's address", () => {
   expect(full).not.toMatch(/\]\((?!https?:|mailto:|#)/);
 });
 
+test("each doc page has its Markdown at the same address plus .md", () => {
+  for (const page of pages.filter((page) => page.startsWith("docs/"))) {
+    const path = `/${page.replace(/(^|\/)index\.html$/, "$1").replace(/\.html$/, "")}`;
+    const markdown = readFileSync(join(PUBLIC, page.replace(/\.html$/, ".md")), "utf8");
+    expect(markdown, page).toMatch(/^# /);
+    expect(markdown, page).toContain(`\n\nSource: https://dinghy.chat${path}\n`);
+    expect(markdown, page).not.toMatch(/\]\((?!https?:|mailto:|#)/);
+  }
+});
+
 test("the sitemap lists every page, and robots.txt points to it", () => {
   const sitemap = readFileSync(join(PUBLIC, "sitemap.xml"), "utf8");
   for (const page of pages.filter((page) => page !== "404.html")) {

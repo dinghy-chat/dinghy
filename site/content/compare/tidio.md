@@ -1,10 +1,10 @@
 ---
-title: Tidio alternative with no conversation cap: Dinghy vs Tidio | Dinghy
+title: Tidio alternative with no conversation cap: Dinghy vs Tidio
 nav: Dinghy vs Tidio
 description: Tidio plans have a conversation quota. Compare its human-only and Lyro plans with Dinghy Cloud at $9 a month, or free self-hosting.
 date: 2026-11-08
-updated: 2026-11-22
-priceChecked: 2026-11-22
+updated: 2026-11-24
+priceChecked: 2026-11-24
 order: 4
 card: How Tidio counts chats and prices Lyro
 stat: $24 to $29
@@ -26,6 +26,7 @@ Use Tidio if your store needs an AI agent for common questions, flows and e-comm
 | First paid plan | $9 a month | $24 per month on annual billing or $29 on monthly billing on Human only Starter |
 | Conversations included | No limit | 100 a month on Human only Starter at the listed price |
 | AI agent | None built in. Bring your own, no AI fee | With Lyro AI Starter starts at $390 a year for 50 AI and human conversations a month |
+| Saved replies and typing preview | Included | From Human only Growth, $41 a month on annual billing |
 | Self-hosting | Free, open source | Not possible |
 
 Sources: [Tidio’s pricing page](https://www.tidio.com/pricing/), [its Human only price table](https://www.tidio.com/blog/chatbot-pricing/) and [the November 16 plan change](https://help.tidio.com/articles/which-upgrades/). Older subscriptions can keep their old terms. [All the prices side by side](/compare/).

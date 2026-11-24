@@ -1,5 +1,5 @@
 ---
-title: Help Scout alternative for website chat: Dinghy vs Help Scout | Dinghy
+title: Help Scout alternative for live chat: Dinghy vs Help Scout
 nav: Dinghy vs Help Scout
 description: Help Scout is a help desk with chat from $25 to $30 a user. Dinghy is only website chat: $9 a month for up to 5 people, or free to self-host.
 date: 2026-11-09
