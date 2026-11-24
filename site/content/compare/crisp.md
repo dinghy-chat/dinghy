@@ -42,7 +42,7 @@ Crisp prices are from [Crisp’s pricing page](https://crisp.chat/en/pricing/). 
 
 ## What Dinghy does differently
 
-On Crisp Free, visitors can't send a screenshot or a file, and webhooks start at Essentials. Dinghy has both on every plan.
+On Crisp Free, visitors can't send a screenshot or a file, and webhooks start at Essentials. Dinghy includes both, on the cloud and on your own server.
 
 Crisp's plans count your contacts. Dinghy doesn't bill by contact. Dinghy Cloud is $9 a month for up to 5 people, no per-person add-ons.
 
