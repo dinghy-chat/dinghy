@@ -145,29 +145,42 @@ describe("submissionStep", () => {
   const draft = { id: "draft", state: "READY_FOR_REVIEW" };
 
   test("creates a submission when none is open", () => {
-    expect(submissionStep(undefined, "v1")).toEqual({ kind: "create" });
+    expect(submissionStep([], "v1")).toEqual({ kind: "create" });
   });
 
   test("finishes its own draft, adding the version when it is missing", () => {
-    expect(submissionStep({ ...draft, itemVersionIds: [] }, "v1")).toEqual({
+    expect(submissionStep([{ ...draft, itemVersionIds: [] }], "v1")).toEqual({
       kind: "resume",
       submissionId: "draft",
       isAddingVersion: true,
     });
-    expect(submissionStep({ ...draft, itemVersionIds: ["v1"] }, "v1")).toEqual({
+    expect(submissionStep([{ ...draft, itemVersionIds: ["v1"] }], "v1")).toEqual({
       kind: "resume",
       submissionId: "draft",
       isAddingVersion: false,
     });
   });
 
-  test("refuses a submission Apple is reviewing, or a draft with other items", () => {
+  test("finds its own draft among several, and resubmits one App Review sent back", () => {
+    const other = { id: "other", state: "READY_FOR_REVIEW", itemVersionIds: ["v0"] };
+    expect(submissionStep([other, { ...draft, itemVersionIds: ["v1"] }], "v1")).toMatchObject({
+      kind: "resume",
+      submissionId: "draft",
+    });
+    const sentBack = { id: "back", state: "UNRESOLVED_ISSUES", itemVersionIds: ["v1"] };
+    expect(submissionStep([sentBack], "v1")).toMatchObject({
+      kind: "resume",
+      submissionId: "back",
+    });
+  });
+
+  test("refuses while Apple reviews, or when only drafts with other items are open", () => {
     const reviewing = { id: "sent", state: "WAITING_FOR_REVIEW", itemVersionIds: ["v1"] };
-    expect(submissionStep(reviewing, "v1")).toMatchObject({ kind: "refuse" });
-    expect(submissionStep({ ...draft, itemVersionIds: ["v1", null] }, "v1")).toMatchObject({
+    expect(submissionStep([reviewing], "v1")).toMatchObject({ kind: "refuse" });
+    expect(submissionStep([{ ...draft, itemVersionIds: ["v1", null] }], "v1")).toMatchObject({
       kind: "refuse",
     });
-    expect(submissionStep({ ...draft, itemVersionIds: ["v0"] }, "v1")).toMatchObject({
+    expect(submissionStep([{ ...draft, itemVersionIds: ["v0"] }], "v1")).toMatchObject({
       kind: "refuse",
     });
   });

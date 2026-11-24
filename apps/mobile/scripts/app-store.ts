@@ -711,7 +711,7 @@ async function submit(api: Api, options: Options) {
   }
   const { version } = await findState(api);
   if (!version) throw new Error("No editable version to submit.");
-  const step = submissionStep(await openSubmission(api), version.id);
+  const step = submissionStep(await openSubmissions(api), version.id);
   if (step.kind === "refuse") throw new Error(step.reason);
   const versionString = String(attr(version, "versionString"));
   if (!options.isConfirmed) {
@@ -737,18 +737,25 @@ async function submit(api: Api, options: Options) {
   console.log(`Submitted version ${versionString} for review.`);
 }
 
-async function openSubmission(api: Api) {
+async function openSubmissions(api: Api) {
   const submissions = await api.many(
     `/v1/reviewSubmissions?filter[app]=${APP_ID}&filter[platform]=IOS&limit=20`,
   );
-  const open = submissions.find((item) => OPEN_SUBMISSION_STATES.has(String(attr(item, "state"))));
-  if (!open) return undefined;
-  const items = await api.many(`/v1/reviewSubmissions/${open.id}/items?include=appStoreVersion`);
-  return {
-    id: open.id,
-    state: String(attr(open, "state")),
-    itemVersionIds: items.map((item) => relatedId(item, "appStoreVersion")),
-  };
+  const open = submissions.filter((item) =>
+    OPEN_SUBMISSION_STATES.has(String(attr(item, "state"))),
+  );
+  return Promise.all(
+    open.map(async (submission) => {
+      const items = await api.many(
+        `/v1/reviewSubmissions/${submission.id}/items?include=appStoreVersion`,
+      );
+      return {
+        id: submission.id,
+        state: String(attr(submission, "state")),
+        itemVersionIds: items.map((item) => relatedId(item, "appStoreVersion")),
+      };
+    }),
+  );
 }
 
 async function createSubmission(api: Api) {

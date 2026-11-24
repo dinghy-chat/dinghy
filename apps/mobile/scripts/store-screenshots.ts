@@ -120,12 +120,9 @@ function capture() {
   console.log(`Raw screens in ${RAW}`);
 }
 
-/** Maestro saves the screens under takeScreenshot, in a folder per run or at the top. */
+/** Maestro saves the screens in a takeScreenshot folder, at a depth that differs by version. */
 function collectScreens() {
-  const saved = [
-    ...globSync(join(RAW, "*/screenshots/takeScreenshot/*.png")),
-    ...globSync(join(RAW, "takeScreenshot/*.png")),
-  ];
+  const saved = globSync(join(RAW, "**/takeScreenshot/*.png"));
   for (const file of saved) renameSync(file, join(RAW, basename(file)));
   for (const entry of readdirSync(RAW, { withFileTypes: true })) {
     if (entry.isDirectory()) rmSync(join(RAW, entry.name), { recursive: true });

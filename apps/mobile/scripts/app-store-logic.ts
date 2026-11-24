@@ -146,6 +146,9 @@ export function screenshotPlan(current: Screenshot[], wanted: WantedScreenshot[]
 /** The review submission that is open for the app, with the version of each of its items. */
 export type OpenSubmission = { id: string; state: string; itemVersionIds: (string | null)[] };
 
+/** Open submissions that this script may finish: its own draft, or one App Review sent back. */
+const RESUMABLE_STATES = new Set(["READY_FOR_REVIEW", "UNRESOLVED_ISSUES"]);
+
 export type SubmissionStep =
   | { kind: "create" }
   | { kind: "resume"; submissionId: string; isAddingVersion: boolean }
@@ -156,25 +159,33 @@ export type SubmissionStep =
  * finished, so submit picks it up. Apple keeps one open submission per platform, so anything else
  * open stops it.
  */
-export function submissionStep(
-  open: OpenSubmission | undefined,
-  versionId: string,
-): SubmissionStep {
-  if (!open) return { kind: "create" };
-  if (open.state !== "READY_FOR_REVIEW") {
-    return { kind: "refuse", reason: `Submission ${open.id} is already open (${open.state}).` };
-  }
-  if (open.itemVersionIds.some((id) => id !== versionId)) {
+export function submissionStep(open: OpenSubmission[], versionId: string): SubmissionStep {
+  const reviewing = open.find((item) => !RESUMABLE_STATES.has(item.state));
+  if (reviewing) {
     return {
       kind: "refuse",
-      reason: `Draft submission ${open.id} holds other items. Remove them in App Store Connect.`,
+      reason: `Submission ${reviewing.id} is already open (${reviewing.state}).`,
     };
   }
-  return {
-    kind: "resume",
-    submissionId: open.id,
-    isAddingVersion: !open.itemVersionIds.includes(versionId),
-  };
+  // A draft, or a submission App Review sent back, that holds only this version is resumed.
+  const own = open
+    .filter((item) => item.itemVersionIds.every((id) => id === versionId))
+    .sort((a, b) => b.itemVersionIds.length - a.itemVersionIds.length)[0];
+  if (own) {
+    return {
+      kind: "resume",
+      submissionId: own.id,
+      isAddingVersion: !own.itemVersionIds.includes(versionId),
+    };
+  }
+  const other = open[0];
+  if (other) {
+    return {
+      kind: "refuse",
+      reason: `Submission ${other.id} holds other items. Remove them in App Store Connect.`,
+    };
+  }
+  return { kind: "create" };
 }
 
 export type Options = {

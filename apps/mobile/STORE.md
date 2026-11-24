@@ -48,7 +48,7 @@ The script never prints the key, the token or the demo code.
 3. `node apps/mobile/scripts/app-store.ts push` writes the listing, the categories, the age rating, the review details, the screenshots and the price, and attaches the build once Apple marks it VALID. Add `--build <number>` for another build, or `--screenshots <dir>` for another folder. It changes only a version that Apple lets you edit. Run it again after a build finishes processing.
 4. `node apps/mobile/scripts/app-store.ts check` again, until it says the version is ready for review.
 5. `node apps/mobile/scripts/app-store.ts submit` runs the check and shows what it would submit.
-6. `node apps/mobile/scripts/app-store.ts submit --yes` submits the version for review. When an earlier submit stopped before it finished, it completes that draft. It refuses while Apple reviews another submission, or while a draft holds other items.
+6. `node apps/mobile/scripts/app-store.ts submit --yes` submits the version for review. It finishes a draft that an earlier submit left, and resubmits a submission App Review sent back, when either holds only this version. It refuses while Apple reviews a submission, or while only drafts with other items are open.
 
 The age rating answers no to every question except messaging and chat, and user-generated content, because operators read messages that website visitors write. When Apple adds a question that the script does not know, `push` names it, and you answer it in App Store Connect under App Information, Age Rating.
 
