@@ -4,8 +4,17 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- A visitor who chatted signed out and then signs in on the same browser keeps that history: the widget sends its old browser token once, with `POST /v1/widget/{key}/me/merge`, and the server moves the anonymous visitor's conversations, messages, pages and events into the signed-in visitor, then deletes it. The signed-in visitor keeps its name, email and attributes.
+- A contact's `sameEmail` lists the conversations of other visitors with the same email, ignoring case, with `visitorId` and `signedIn`. Nothing is merged. The contact page, the thread's side panel and the mobile app show them, and a visitor who was not signed in is marked "Not signed in". The MCP tool `get_contact` returns them too.
+- In the mobile app, a thread shows "2 other conversations" above its first message when the visitor has others, and the visitor sheet lists them.
+
 ### Fixed
 
+- In the mobile app, a conversation opens at its newest message at once, instead of starting at the top and scrolling down. Pull to reload is gone from the thread, as the live stream keeps it current.
+- In the mobile app, a conversation's unread dot goes away in the list after the operator opens it.
+- In the mobile app, the harbor picture in the visitor sheet reaches the top edge, with no white band above it.
 - In the iOS app, the reply field shrinks back to one line after a send, and the composer reads the keyboard state again when the app comes back from the background, so no gap stays below the field.
 
 ## [0.56.0] - 2026-11-24

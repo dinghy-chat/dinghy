@@ -400,9 +400,15 @@ function Chat({
     // A newer request replaces this one, so a late 401 cannot erase a replacement token.
     let replaced = false;
     const sendsAtStart = sends.current;
-    client
-      .me(token)
+    // A visitor who chatted signed out, then signed in on this browser, keeps that history. The
+    // chat page's token is a link's, which never merges.
+    const browserToken = identity !== null && !fullPage ? readToken(publicKey) : null;
+    (browserToken === null ? client.me(token) : client.meMerging(token, browserToken))
       .then((me) => {
+        // Only the token this merge sent: a reset() meanwhile may have stored a new one.
+        if (browserToken !== null && readToken(publicKey) === browserToken) {
+          writeToken(publicKey, null);
+        }
         if (replaced) return;
         renewDelay.current = 0;
         knowVisitor(context, me.visitorId);
@@ -434,7 +440,18 @@ function Chat({
     return () => {
       replaced = true;
     };
-  }, [client, context, identity, publicKey, restored, restoring, token, tokenEpoch, visible]);
+  }, [
+    client,
+    context,
+    fullPage,
+    identity,
+    publicKey,
+    restored,
+    restoring,
+    token,
+    tokenEpoch,
+    visible,
+  ]);
 
   // A new session after reset() starts with none, so the page hears false at once.
   useEffect(() => reportConversation(context, openConversation), [context, openConversation]);

@@ -22,6 +22,13 @@ export interface Update {
 /** Newest first. Add a new entry at the top, in the pull request that makes the change. */
 export const UPDATES: Update[] = [
   {
+    id: "visitor-history",
+    date: "2026-11-24",
+    kind: "improvement",
+    title: "A visitor's earlier chats",
+    text: "When someone chatted signed out and then signs in on the same browser, their earlier chats move to the signed-in contact. A contact also shows the conversations of other visitors with the same email, on the web and in the mobile app.",
+  },
+  {
     id: "live-chat-by-dinghy",
     date: "2026-11-24",
     kind: "improvement",

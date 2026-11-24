@@ -11,7 +11,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -19,25 +18,26 @@ import {
   View,
 } from "react-native";
 import type { EnrichedTextInputInstance } from "react-native-enriched-html";
-import { t } from "../../operator/src/text.ts";
+import { plural, t } from "../../operator/src/text.ts";
 import { Harbor } from "../Harbor";
 import type { PendingReply } from "../outbox";
 import { AnchoredMenu, type MenuItem } from "./anchored-menu";
 import type { DinghyApi } from "./api";
 import { Avatar, readableError, SheetCloseButton, visitorName } from "./common";
 import { ThreadComposer } from "./composer-tools";
+import { ConversationList, otherConversations } from "./contact-view";
 import { fonts } from "./fonts";
 import { Icon } from "./icon";
 import { MessageIcon } from "./message-icon";
 import { MessageMarkdown } from "./message-markdown";
 import { shownReceipts } from "./message-state";
 import { Sheet } from "./sheet";
-import type { Palette } from "./theme";
+import { day as dayTheme, night as nightTheme, type Palette } from "./theme";
 import { type Rect, visitorContext } from "./thread-logic";
 import { MessageQuote, ThreadMessage } from "./thread-message";
 import type { Conversation, Member, Message, Thread, Workspace } from "./types";
 
-/** How close to the newest message, in points, still counts as reading it. */
+/** How close to the newest message, in points, still follows a new message. */
 const NEWEST_SLACK = 80;
 
 function SheetTools({ onClose, palette }: { onClose(): void; palette: Palette }) {
@@ -58,19 +58,21 @@ function VisitorDetailsSheet({
   members,
   name,
   onClose,
+  onOpenConversation,
   onRetry,
   palette,
   visible,
 }: {
   bottomInset: number;
   conversation: Conversation;
-  detail: Awaited<ReturnType<DinghyApi["contact"]>> | null;
+  detail: ContactDetail | null;
   failure: string | null;
   isNight: boolean;
   meId: string;
   members: Member[];
   name: string;
   onClose(): void;
+  onOpenConversation(conversationId: string): void;
   onRetry(): void;
   palette: Palette;
   visible: boolean;
@@ -112,9 +114,23 @@ function VisitorDetailsSheet({
       ["string", "number", "boolean"].includes(typeof value),
   );
   return (
-    <Sheet bottomInset={bottomInset} onClose={onClose} palette={palette} visible={visible}>
-      <View style={screenStyles.visitorSky}>
-        <Harbor night={isNight} />
+    <Sheet
+      bottomInset={bottomInset}
+      fullBleed
+      onClose={onClose}
+      palette={palette}
+      visible={visible}
+    >
+      {/* The scene's plain sky continues under the grabber, so the picture is not stretched. */}
+      <View
+        style={[
+          screenStyles.visitorSky,
+          { backgroundColor: (isNight ? nightTheme : dayTheme).analyticsSky },
+        ]}
+      >
+        <View style={screenStyles.visitorHarbor}>
+          <Harbor night={isNight} />
+        </View>
         <SheetTools onClose={onClose} palette={palette} />
       </View>
       <View style={screenStyles.visitorTop}>
@@ -157,6 +173,14 @@ function VisitorDetailsSheet({
             </View>
           ))}
         </View>
+        {detail && (
+          <OtherConversations
+            detail={detail}
+            currentId={conversation.id}
+            onOpen={onOpenConversation}
+            palette={palette}
+          />
+        )}
         {detail?.note && (
           <View style={[screenStyles.contactNote, { backgroundColor: palette.note }]}>
             <Text style={{ fontFamily: fonts.semibold, color: palette.noteInk }}>
@@ -199,6 +223,96 @@ function VisitorDetailsSheet({
           </View>
         )}
         <View style={screenStyles.detailsBottomSpace} />
+      </ScrollView>
+    </Sheet>
+  );
+}
+
+/** The visitor's other conversations, and those of other visitors with their email. */
+function OtherConversations({
+  currentId,
+  detail,
+  onOpen,
+  palette,
+}: {
+  currentId: string;
+  detail: ContactDetail;
+  onOpen(conversationId: string): void;
+  palette: Palette;
+}) {
+  const others = otherConversations(detail, currentId);
+  if (others.length === 0) return null;
+  return (
+    <View style={screenStyles.facts}>
+      <Text style={[screenStyles.sectionLabel, { color: palette.ink }]}>
+        {plural(others.length, "contactOtherConversationsOne", "contactOtherConversationsMany")}
+      </Text>
+      <ConversationList
+        conversations={others}
+        onOpen={(other) => onOpen(other.id)}
+        palette={palette}
+      />
+    </View>
+  );
+}
+
+/** At the top of the log: the visitor's other conversations, which open in a sheet. */
+function OtherConversationsLink({
+  count,
+  onPress,
+  palette,
+}: {
+  count: number;
+  onPress(): void;
+  palette: Palette;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [screenStyles.othersLink, { opacity: pressed ? 0.6 : 1 }]}
+    >
+      <Text style={[screenStyles.othersText, { color: palette.blue, fontFamily: fonts.semibold }]}>
+        {plural(count, "contactOtherConversationsOne", "contactOtherConversationsMany")}
+      </Text>
+      <Icon color={palette.blue} name="next" size={16} />
+    </Pressable>
+  );
+}
+
+function OtherConversationsSheet({
+  bottomInset,
+  currentId,
+  detail,
+  onClose,
+  onOpen,
+  palette,
+  visible,
+}: {
+  bottomInset: number;
+  currentId: string;
+  detail: ContactDetail | null;
+  onClose(): void;
+  onOpen(conversationId: string): void;
+  palette: Palette;
+  visible: boolean;
+}) {
+  if (!visible || detail === null) return null;
+  const others = otherConversations(detail, currentId);
+  return (
+    <Sheet bottomInset={bottomInset} onClose={onClose} palette={palette} visible={visible}>
+      <View style={[screenStyles.assignHead, screenStyles.assignTitleRow]}>
+        <Text style={[screenStyles.assignTitle, { color: palette.ink, fontFamily: fonts.display }]}>
+          {plural(others.length, "contactOtherConversationsOne", "contactOtherConversationsMany")}
+        </Text>
+        <SheetCloseButton label={t("mobileDismiss")} onPress={onClose} palette={palette} />
+      </View>
+      <ScrollView contentContainerStyle={screenStyles.crewList} style={screenStyles.sheetScroll}>
+        <ConversationList
+          conversations={others}
+          onOpen={(other) => onOpen(other.id)}
+          palette={palette}
+        />
       </ScrollView>
     </Sheet>
   );
@@ -500,6 +614,7 @@ export function ThreadScreen({
   onSend,
   onRetry,
   onAssign,
+  onOpenConversation,
   onStatus,
 }: {
   api: DinghyApi;
@@ -523,6 +638,7 @@ export function ThreadScreen({
   onSend(body: string, replyToMessageId: string | null): Promise<void>;
   onRetry(reply: PendingReply): Promise<void>;
   onAssign(): Promise<void>;
+  onOpenConversation(conversationId: string): void;
   onStatus(): Promise<void>;
 }) {
   const isNight = useColorScheme() === "dark";
@@ -561,6 +677,7 @@ export function ThreadScreen({
     return () => back.remove();
   }, [keyboardVisible, onBack]);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [othersOpen, setOthersOpen] = useState(false);
   const [handoffOpen, setHandoffOpen] = useState(false);
   const [handoffBusy, setHandoffBusy] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
@@ -576,13 +693,6 @@ export function ThreadScreen({
   const input = useRef<EnrichedTextInputInstance>(null);
   const moreButton = useRef<ComponentRef<typeof View>>(null);
   const list = useRef<FlatList<Message | PendingReply>>(null);
-  // The log keeps to its newest message while the operator is near it. It scrolls there again when
-  // its content or its own height changes: the first layout, a new message, the keyboard or the
-  // composer. Once the operator scrolls up to read, it stays where they are.
-  const atNewest = useRef(true);
-  const keepNewest = () => {
-    if (atNewest.current) list.current?.scrollToEnd({ animated: false });
-  };
   const current = thread?.conversation ?? conversation;
   const isClosed = current.status === "closed";
   const name = visitorName(current);
@@ -590,7 +700,8 @@ export function ThreadScreen({
   const owner = current.assigneeOperatorId;
   const assignee = members.find((member) => member.id === owner);
   const messages = thread?.messages ?? [];
-  const rows: (Message | PendingReply)[] = [...messages, ...pending];
+  // Newest first: the log is inverted, so it opens at the newest message without scrolling there.
+  const rows: (Message | PendingReply)[] = [...messages, ...pending].reverse();
   const receiptByMessage = shownReceipts(messages, thread?.receipts ?? null);
   const canWrite =
     workspace === null || (workspace.active && !workspace.readOnly && !workspace.suspended);
@@ -620,6 +731,13 @@ export function ThreadScreen({
     const timer = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(timer);
   }, []);
+
+  const otherCount = contact === null ? 0 : otherConversations(contact, current.id).length;
+  const openOther = (conversationId: string) => {
+    setOthersOpen(false);
+    setDetailsOpen(false);
+    onOpenConversation(conversationId);
+  };
 
   const { place, time } = visitorContext(contact?.country ?? null, contact?.timeZone ?? null, now);
   const contextPlace = place ?? current.visitor.email;
@@ -931,30 +1049,33 @@ export function ThreadScreen({
       <FlatList
         ref={list}
         data={rows}
+        inverted
         keyExtractor={(item) => (isPending(item) ? `pending-${item.clientId}` : item.id)}
         contentContainerStyle={screenStyles.log}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="interactive"
+        // The log is inverted, so its footer shows above the oldest message.
+        ListFooterComponent={
+          otherCount > 0 ? (
+            <OtherConversationsLink
+              count={otherCount}
+              onPress={() => setOthersOpen(true)}
+              palette={palette}
+            />
+          ) : undefined
+        }
         ListEmptyComponent={
           loading && thread === null ? (
             <ActivityIndicator accessibilityLabel={t("loading")} color={palette.sub} />
           ) : undefined
         }
-        refreshControl={
-          <RefreshControl
-            refreshing={loading && thread !== null}
-            onRefresh={onReload}
-            tintColor={palette.blue}
-          />
-        }
-        onContentSizeChange={keepNewest}
-        onLayout={keepNewest}
-        onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
-          atNewest.current =
-            contentSize.height - contentOffset.y - layoutMeasurement.height < NEWEST_SLACK;
+        // A new message keeps an operator who scrolled up to read in place, and shows to one at
+        // the newest message.
+        maintainVisibleContentPosition={{
+          minIndexForVisible: 0,
+          autoscrollToTopThreshold: NEWEST_SLACK,
         }}
-        scrollEventThrottle={100}
-        renderItem={({ item, index }) => {
+        renderItem={({ item, index: fromNewest }) => {
           if (isPending(item)) {
             const quoted = messages.find((message) => message.id === item.replyToMessageId);
             return (
@@ -983,6 +1104,7 @@ export function ThreadScreen({
               />
             );
           }
+          const index = rows.length - 1 - fromNewest;
           const previous = messages[index - 1];
           const startsDay =
             !previous ||
@@ -1058,7 +1180,7 @@ export function ThreadScreen({
           }}
           onSend={(body, replyToMessageId) => {
             // A reply the operator sends shows at once, also after they scrolled up.
-            atNewest.current = true;
+            list.current?.scrollToOffset({ offset: 0, animated: true });
             return onSend(body, replyToMessageId);
           }}
           palette={palette}
@@ -1084,9 +1206,19 @@ export function ThreadScreen({
         members={members}
         name={name}
         onClose={() => setDetailsOpen(false)}
+        onOpenConversation={openOther}
         onRetry={() => setContactRequest((value) => value + 1)}
         palette={palette}
         visible={detailsOpen}
+      />
+      <OtherConversationsSheet
+        bottomInset={bottomInset}
+        currentId={current.id}
+        detail={contact}
+        onClose={() => setOthersOpen(false)}
+        onOpen={openOther}
+        palette={palette}
+        visible={othersOpen}
       />
       <HandoffSheet
         bottomInset={bottomInset}
@@ -1122,7 +1254,8 @@ const screenStyles = StyleSheet.create({
     zIndex: 2,
   },
   sheetScroll: { flexShrink: 1 },
-  visitorSky: { height: 116, position: "relative", overflow: "hidden" },
+  visitorSky: { height: 138, paddingTop: 22, position: "relative", overflow: "hidden" },
+  visitorHarbor: { position: "absolute", left: 0, right: 0, bottom: 0, height: 116 },
   visitorTop: { paddingHorizontal: 19, paddingBottom: 12, marginTop: -25, position: "relative" },
   visitorPortrait: {
     width: 59,
@@ -1229,7 +1362,17 @@ const screenStyles = StyleSheet.create({
   context: { fontSize: 12.5, lineHeight: 16 },
   contextPlace: { flexShrink: 1 },
   contextTime: { flexShrink: 0 },
-  log: { flexGrow: 1, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10 },
+  // The log is inverted, so its top padding shows under the newest message.
+  log: { flexGrow: 1, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 12 },
+  othersLink: {
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    marginBottom: 6,
+  },
+  othersText: { fontSize: 13, lineHeight: 18 },
   day: { textAlign: "center", fontSize: 12, lineHeight: 16, marginTop: 4, marginBottom: 10 },
   pending: {
     alignSelf: "flex-end",

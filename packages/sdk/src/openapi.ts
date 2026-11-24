@@ -8509,6 +8509,23 @@ export interface components {
         closedBy: string | null;
         firstReplySeconds: number | null;
       }[];
+      /** @description The conversations of the workspace's other visitors with this contact's email, ignoring case, newest activity first. Empty when the contact has no email. The same person may have chatted signed out and signed in, but a typed email proves nothing. */
+      sameEmail: {
+        id: string;
+        /** @enum {string} */
+        status: "open" | "closed";
+        createdAt: string;
+        updatedAt: string;
+        lastBody: string | null;
+        /** @enum {string|null} */
+        lastKind: "text" | "image" | "file" | null;
+        messageCount: number;
+        assigneeName: string | null;
+        closedBy: string | null;
+        firstReplySeconds: number | null;
+        visitorId: string;
+        signedIn: boolean;
+      }[];
       pages: {
         path: string;
         title: string | null;

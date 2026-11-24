@@ -222,6 +222,7 @@ function ContactList({
 }
 
 type ContactConversation = ContactDetail["conversations"][number];
+type SameEmailConversation = ContactDetail["sameEmail"][number];
 
 /** A signed-out contact's name and email, which the team may correct, in a dialog. */
 function IdentityForm({
@@ -409,7 +410,7 @@ function ConversationCards({
   conversations,
   onOpen,
 }: {
-  conversations: ContactConversation[];
+  conversations: (ContactConversation | SameEmailConversation)[];
   onOpen(id: string, status: "open" | "closed"): void;
 }) {
   return (
@@ -423,6 +424,9 @@ function ConversationCards({
           >
             <span className="conversation-top">
               <span className={one.status === "open" ? "chip open" : "chip"}>{t(one.status)}</span>
+              {"signedIn" in one && !one.signedIn && (
+                <span className="chip">{t("contactNotSignedIn")}</span>
+              )}
               <b>{conversationPreview(one)}</b>
               <time dateTime={one.updatedAt} title={new Date(one.updatedAt).toLocaleString()}>
                 {ago(one.updatedAt, Date.now(), "narrow")}
@@ -599,7 +603,21 @@ function ContactView({
             onChange={setTab}
           />
           {tab === "conversations" ? (
-            <ConversationCards conversations={contact.conversations} onOpen={onOpenConversation} />
+            <>
+              <ConversationCards
+                conversations={contact.conversations}
+                onOpen={onOpenConversation}
+              />
+              {contact.sameEmail.length > 0 && (
+                <>
+                  <h3 className="contact-subhead">{t("contactSameEmail")}</h3>
+                  <ConversationCards
+                    conversations={contact.sameEmail}
+                    onOpen={onOpenConversation}
+                  />
+                </>
+              )}
+            </>
           ) : tab === "outbound" ? (
             <OutboundList
               messages={outbound.data?.outboundMessages ?? []}

@@ -524,7 +524,7 @@ export function chatTools(options: ChatToolsOptions): Tool[] {
     tool({
       name: "get_contact",
       title: "Read a contact",
-      description: `Reads who a visitor is, by \`visitorId\` or by a \`conversationId\` of theirs: name, email and user ID, the attributes your site signed, \`pageContext\`, country, time zone and \`localTime\` (the time on their clock now), whether they are online, their newest 20 pages, the team's private note, and their other conversations. ${UNTRUSTED_TEXT}`,
+      description: `Reads who a visitor is, by \`visitorId\` or by a \`conversationId\` of theirs: name, email and user ID, the attributes your site signed, \`pageContext\`, country, time zone and \`localTime\` (the time on their clock now), whether they are online, their newest 20 pages, the team's private note, their other conversations, and in \`sameEmail\` the conversations of other visitors with the same email (\`signedIn\` false means that email was typed in the chat, which proves nothing). ${UNTRUSTED_TEXT}`,
       input: z.object({
         visitorId: z.uuid().optional().describe("The visitor's ID. Pass this or conversationId"),
         conversationId: conversationId

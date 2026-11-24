@@ -1,0 +1,1 @@
+CREATE INDEX "visitor_email_idx" ON "visitor" USING btree ("workspace_id",lower("email")) WHERE "visitor"."email" is not null;

@@ -66,7 +66,7 @@ import {
   recordVisitorContext,
 } from "./journey.ts";
 import { type Limits, STREAM_LIMIT, STREAM_RETRY_SECONDS } from "./limits.ts";
-import { type Live, wakeConversation } from "./live.ts";
+import { type Live, OPERATORS, wakeConversation } from "./live.ts";
 import type { LiveVisitors } from "./live-visitors.ts";
 import {
   CURSOR_PATTERN,
@@ -99,6 +99,7 @@ import type { SiteSignals } from "./setup.ts";
 import { CLOSE_REASONS_TEXT, openLiveStream, type StreamOptions, streamLeaseMs } from "./stream.ts";
 import { canonicalTimeZone, isTimeZone } from "./time.ts";
 import { AttachmentSchema, attachmentView, refuseUpload, type Uploads } from "./uploads.ts";
+import { mergeBrowserVisitor } from "./visitor-merge.ts";
 import {
   PUBLIC_KEY,
   readWorkspaceFace,
@@ -211,6 +212,31 @@ const meRoute = createRoute({
       },
     },
     ...WIDGET_TOKEN_ERRORS,
+  },
+});
+
+const mergeRoute = createRoute({
+  method: "post",
+  path: "/v1/widget/{key}/me/merge",
+  security: VISITOR_TOKEN,
+  summary: "Move this browser's earlier chats into the signed-in visitor",
+  description:
+    "With a host token, the anonymous visitor that `browserToken` names in this workspace becomes part of the signed-in visitor: its conversations and history move, and it is deleted. A token that names no such visitor changes nothing. The widget sends it once, when a visitor signs in where they chatted before, then forgets the browser token.",
+  request: {
+    params,
+    body: {
+      required: true,
+      content: {
+        "application/json": { schema: z.object({ browserToken: z.string().min(1).max(200) }) },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "The signed-in visitor, after the merge",
+      content: { "application/json": { schema: VisitorSchema } },
+    },
+    ...WIDGET_WRITE_ERRORS,
   },
 });
 
@@ -1806,6 +1832,21 @@ export function registerWidgetRoutes(
     const found = c.get("workspace");
     const identified = await identify(c);
     if (identified === null) return c.json(UNAUTHORIZED, 401);
+    return c.json(await visitorView(db, found.id, identified), 200);
+  });
+
+  app.openapi(mergeRoute, async (c) => {
+    const found = c.get("workspace");
+    const identified = await identify(c);
+    if (identified === null) return c.json(UNAUTHORIZED, 401);
+    const { browserToken } = c.req.valid("json");
+    // Only a host token proves who signed in. Any other answers as `me`, and nothing moves.
+    if (identified.signedIn && isBrowserToken(browserToken)) {
+      const merged = await withWorkspace(db, found.id, (tx) =>
+        mergeBrowserVisitor(tx, found.id, identified.visitorId, browserToken),
+      );
+      if (merged) live.wake(found.id, OPERATORS);
+    }
     return c.json(await visitorView(db, found.id, identified), 200);
   });
 }

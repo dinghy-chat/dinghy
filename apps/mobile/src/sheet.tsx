@@ -43,6 +43,8 @@ type SheetProps = {
   bottomInset?: number;
   /** Android only. iOS dims behind a sheet in the system color. */
   scrimColor?: string;
+  /** The first child starts at the top edge, under the grabber, for art that fills the sheet. */
+  fullBleed?: boolean;
 };
 
 // Message rows can each offer a sheet. Subscribe to native events only while one is on screen.
@@ -113,6 +115,7 @@ function NativeSheet({
   title,
   children,
   dismissible = true,
+  fullBleed = false,
 }: SheetProps) {
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
@@ -148,7 +151,7 @@ function NativeSheet({
   };
   const body = (
     <>
-      <View style={sheet.grabberRoom} />
+      {!fullBleed && <View style={sheet.grabberRoom} />}
       <SheetHeading title={title} palette={palette} onClose={onClose} />
       {children}
     </>
@@ -203,6 +206,7 @@ function SheetPanel({
   children,
   bottomInset,
   scrimColor = palette.scrim,
+  fullBleed = false,
 }: SheetProps) {
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
@@ -343,7 +347,7 @@ function SheetPanel({
               },
             ]}
           >
-            <View {...handle.panHandlers} collapsable={false}>
+            <View {...handle.panHandlers} collapsable={false} style={fullBleed && sheet.overArt}>
               <View style={sheet.handleArea}>
                 <View style={[sheet.handle, { backgroundColor: palette.sub }]} />
               </View>
@@ -374,6 +378,7 @@ const sheet = StyleSheet.create({
     borderTopRightRadius: 32,
     overflow: "hidden",
   },
+  overArt: { position: "absolute", top: 0, left: 0, right: 0, zIndex: 1 },
   handleArea: { height: 22, alignItems: "center", justifyContent: "center" },
   handle: { width: 34, height: 4, borderRadius: 2, opacity: 0.55 },
   heading: {

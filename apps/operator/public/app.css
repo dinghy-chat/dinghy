@@ -5277,6 +5277,11 @@ button.quote:hover {
   color: var(--mute);
   font-size: 13px;
 }
+.contact-subhead {
+  margin-top: 8px;
+  color: var(--navy);
+  font: 700 16px / 1.2 var(--display);
+}
 .conversation-facts {
   overflow: hidden;
   color: var(--mute);

@@ -47,6 +47,8 @@ import type { Rect } from "./thread-logic";
 type Contact = components["schemas"]["Contact"];
 type ContactDetail = components["schemas"]["ContactDetail"];
 type ContactConversation = ContactDetail["conversations"][number];
+/** One of the contact's conversations, or one of another visitor with the same email. */
+type OtherConversation = ContactConversation | ContactDetail["sameEmail"][number];
 export type ContactSort = "lastSeen" | "firstSeen";
 export type ContactPage = { contacts: Contact[]; next: string | null };
 
@@ -295,12 +297,49 @@ function NoteEditor({
   );
 }
 
+/**
+ * The contact's conversations other than `currentId`, and those of other visitors with the same
+ * email, newest activity first.
+ */
+export function otherConversations(contact: ContactDetail, currentId: string): OtherConversation[] {
+  return [...contact.conversations, ...contact.sameEmail]
+    .filter((conversation) => conversation.id !== currentId)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+/** Conversations to open. One from a visitor who only typed this email says so. */
+export function ConversationList({
+  conversations,
+  onOpen,
+  palette,
+}: {
+  conversations: OtherConversation[];
+  onOpen(conversation: OtherConversation): void;
+  palette: Palette;
+}) {
+  return (
+    <View style={s.conversations}>
+      {conversations.map((conversation) => (
+        <ConversationRow
+          conversation={conversation}
+          isEmailTyped={"signedIn" in conversation && !conversation.signedIn}
+          key={conversation.id}
+          onOpen={() => onOpen(conversation)}
+          palette={palette}
+        />
+      ))}
+    </View>
+  );
+}
+
 function ConversationRow({
   conversation,
+  isEmailTyped,
   onOpen,
   palette,
 }: {
   conversation: ContactConversation;
+  isEmailTyped: boolean;
   onOpen(): void;
   palette: Palette;
 }) {
@@ -321,10 +360,13 @@ function ConversationRow({
       ]}
     >
       <View style={s.rowTop}>
-        <View style={[s.status, { backgroundColor: open ? palette.tint : palette.wash }]}>
-          <Text style={[s.statusText, { color: open ? palette.blue : palette.sub }]}>
-            {t(conversation.status)}
-          </Text>
+        <View style={s.rowStart}>
+          <View style={[s.status, { backgroundColor: open ? palette.tint : palette.wash }]}>
+            <Text style={[s.statusText, { color: open ? palette.blue : palette.sub }]}>
+              {t(conversation.status)}
+            </Text>
+          </View>
+          {isEmailTyped && <Badge palette={palette}>{t("contactNotSignedIn")}</Badge>}
         </View>
         <Text style={[s.contactTime, { color: palette.sub }]}>
           {elapsedLabel(conversation.updatedAt)}
@@ -713,18 +755,28 @@ export function ContactView({
             {contact.conversations.length === 0 ? (
               <Text style={[s.help, { color: palette.sub }]}>{t("noMessages")}</Text>
             ) : (
-              <View style={s.conversations}>
-                {contact.conversations.map((conversation) => (
-                  <ConversationRow
-                    conversation={conversation}
-                    key={conversation.id}
-                    onOpen={() => onOpenConversation(conversation.id, contactId)}
-                    palette={palette}
-                  />
-                ))}
-              </View>
+              <ConversationList
+                conversations={contact.conversations}
+                onOpen={(conversation) => onOpenConversation(conversation.id, contactId)}
+                palette={palette}
+              />
             )}
           </View>
+          {contact.sameEmail.length > 0 && (
+            <View style={s.section}>
+              <Text style={[s.sectionTitle, { color: palette.ink }]}>{t("contactSameEmail")}</Text>
+              <ConversationList
+                conversations={contact.sameEmail}
+                onOpen={(conversation) =>
+                  onOpenConversation(
+                    conversation.id,
+                    "visitorId" in conversation ? conversation.visitorId : contactId,
+                  )
+                }
+                palette={palette}
+              />
+            </View>
+          )}
           {runs.length > 0 && (
             <View style={s.section}>
               <Text style={[s.sectionTitle, { color: palette.ink }]}>{t("pagesVisited")}</Text>
@@ -830,6 +882,7 @@ const s = StyleSheet.create({
   },
   outlineButtonText: { fontFamily: fonts.semibold, fontSize: 15, lineHeight: 20 },
   rowTop: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 10 },
+  rowStart: { flexDirection: "row", alignItems: "center", gap: 6, flexShrink: 1 },
   contactTime: { fontFamily: fonts.body, fontSize: 12.5, lineHeight: 17 },
   meta: { fontFamily: fonts.body, fontSize: 12.5, lineHeight: 17 },
   textButton: { minHeight: 44, justifyContent: "center", paddingHorizontal: 15 },

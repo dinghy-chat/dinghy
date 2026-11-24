@@ -2447,6 +2447,67 @@
                   ]
                 }
               },
+              "sameEmail": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string",
+                      "enum": ["open", "closed"]
+                    },
+                    "createdAt": {
+                      "type": "string"
+                    },
+                    "updatedAt": {
+                      "type": "string"
+                    },
+                    "lastBody": {
+                      "type": ["string", "null"]
+                    },
+                    "lastKind": {
+                      "type": ["string", "null"],
+                      "enum": ["text", "image", "file", null]
+                    },
+                    "messageCount": {
+                      "type": "integer"
+                    },
+                    "assigneeName": {
+                      "type": ["string", "null"]
+                    },
+                    "closedBy": {
+                      "type": ["string", "null"]
+                    },
+                    "firstReplySeconds": {
+                      "type": ["integer", "null"]
+                    },
+                    "visitorId": {
+                      "type": "string"
+                    },
+                    "signedIn": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "status",
+                    "createdAt",
+                    "updatedAt",
+                    "lastBody",
+                    "lastKind",
+                    "messageCount",
+                    "assigneeName",
+                    "closedBy",
+                    "firstReplySeconds",
+                    "visitorId",
+                    "signedIn"
+                  ]
+                },
+                "description": "The conversations of the workspace's other visitors with this contact's email, ignoring case, newest activity first. Empty when the contact has no email. The same person may have chatted signed out and signed in, but a typed email proves nothing."
+              },
               "pages": {
                 "type": "array",
                 "items": {
@@ -2466,7 +2527,15 @@
                 }
               }
             },
-            "required": ["online", "attributes", "pageContext", "note", "conversations", "pages"]
+            "required": [
+              "online",
+              "attributes",
+              "pageContext",
+              "note",
+              "conversations",
+              "sameEmail",
+              "pages"
+            ]
           }
         ]
       },
@@ -7105,6 +7174,108 @@
                     }
                   },
                   "required": ["ok"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: the browser token or host token is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "origin_not_allowed: the key is unknown, the Origin is not an allowed site, or the workspace's widget is off: it is suspended, waits for payment, is read-only or was deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over the rate limit. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/widget/{key}/me/merge": {
+      "post": {
+        "security": [
+          {
+            "visitorToken": []
+          }
+        ],
+        "summary": "Move this browser's earlier chats into the signed-in visitor",
+        "description": "With a host token, the anonymous visitor that `browserToken` names in this workspace becomes part of the signed-in visitor: its conversations and history move, and it is deleted. A token that names no such visitor changes nothing. The widget sends it once, when a visitor signs in where they chatted before, then forgets the browser token.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "pattern": "^wk_[0-9a-f]{32}$"
+            },
+            "required": true,
+            "name": "key",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "browserToken": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  }
+                },
+                "required": ["browserToken"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The signed-in visitor, after the merge",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Visitor"
                 }
               }
             }
@@ -17409,6 +17580,7 @@
           }
         ],
         "summary": "Get one contact with their conversations, pages and note",
+        "description": "`sameEmail` holds the conversations of other visitors in the workspace with the same email, ignoring case: often the same person, who chatted signed out before signing in. Nothing is merged, and a visitor never sees them.",
         "parameters": [
           {
             "schema": {

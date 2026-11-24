@@ -312,6 +312,8 @@ Dinghy.identify(async () => {
 
 You can also pass the token as a string, but a string cannot renew itself. Call `identify` on each page load, because the widget does not store this token.
 
+A person who chatted before signing in, in the same browser, keeps that chat: the first time the signed-in widget loads, the conversations of the signed-out visitor move to the signed-in contact, and the signed-out visitor is gone. The contact keeps the name, email and attributes your token signs.
+
 **3. When the user signs out,** call this. It ends the chat in this browser, so that the next person on a shared computer cannot read it:
 
 ```js

@@ -8,10 +8,11 @@ import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { type App, createApp } from "./app.ts";
 import { createChatLink } from "./chat-link.ts";
-import { conversation, visitor } from "./db/schema.ts";
+import { conversation, operator, visitor, workspaceMember } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
 import { withWorkspace } from "./db/tenant.ts";
-import { newBrowserToken, normalizeOrigin, verifyHostToken } from "./identity.ts";
+import { newBrowserToken, normalizeOrigin, sha256Hex, verifyHostToken } from "./identity.ts";
+import { appendMessage } from "./messages.ts";
 import { tokenKind, widgetToken } from "./widget.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
@@ -333,6 +334,189 @@ describe("browser tokens", () => {
       headers: { origin: ORIGIN },
     });
     expect(response.status).toBe(401);
+  });
+});
+
+describe("signing in where the visitor chatted", () => {
+  function merge(token: string, browserToken: string, key = a.publicKey, origin = ORIGIN) {
+    return app.request(`/v1/widget/${key}/me/merge`, {
+      method: "POST",
+      headers: { origin, authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ browserToken }),
+    });
+  }
+
+  async function chattedVisitor(key = a.publicKey, origin = ORIGIN) {
+    const created = (await (await newVisitor(key, origin)).json()) as {
+      visitorId: string;
+      token: string;
+    };
+    const sent = await app.request(`/v1/widget/${key}/messages`, {
+      method: "POST",
+      headers: {
+        origin,
+        authorization: `Bearer ${created.token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ clientId: "before-sign-in", body: "hello" }),
+    });
+    expect(sent.status).toBe(201);
+    return created;
+  }
+
+  const owner = () => database.connect("migrator").db;
+  const conversationsOf = (visitorId: string) =>
+    owner()
+      .select({ id: conversation.id })
+      .from(conversation)
+      .where(eq(conversation.visitorId, visitorId));
+  const OPERATOR = "6c0f43e5-5d5e-4f0c-9a3c-1d6f8f0e7a21";
+  beforeAll(async () => {
+    await owner()
+      .insert(operator)
+      .values({ id: OPERATOR, name: "Anna", email: "anna@example.com" });
+    await owner()
+      .insert(workspaceMember)
+      .values({ workspaceId: a.id, operatorId: OPERATOR, role: "owner" });
+  });
+  /** A team reply in the conversation, answering its seq. */
+  const teamReply = (conversationId: string) =>
+    withWorkspace(owner(), a.id, async (tx) => {
+      const { message } = await appendMessage(
+        tx,
+        a.id,
+        { kind: "operator", operatorId: OPERATOR, conversationId },
+        { clientId: `reply-${conversationId}`, body: "Here is how" },
+      );
+      return message.seq;
+    });
+  const readPosition = async (visitorId: string) =>
+    (
+      await owner()
+        .select({ seq: visitor.lastReadSeq })
+        .from(visitor)
+        .where(eq(visitor.id, visitorId))
+    )[0]?.seq;
+  const visitorExists = async (visitorId: string) =>
+    (await owner().select({ id: visitor.id }).from(visitor).where(eq(visitor.id, visitorId)))
+      .length === 1;
+
+  test("the browser's anonymous chats move to the signed-in visitor, which keeps its own email", async () => {
+    const anonymous = await chattedVisitor();
+    const [chat] = await conversationsOf(anonymous.visitorId);
+    await owner()
+      .update(visitor)
+      .set({ note: "Asked about invoices", email: "typed@example.com" })
+      .where(eq(visitor.id, anonymous.visitorId));
+    const token = await hostToken({ subject: "merging", payload: { email: "real@example.com" } });
+
+    const response = await merge(token, anonymous.token);
+    expect(response.status).toBe(200);
+    const merged = (await response.json()) as { visitorId: string; chatted: boolean };
+    expect(merged.chatted).toBe(true);
+
+    expect(await visitorExists(anonymous.visitorId)).toBe(false);
+    expect(await conversationsOf(merged.visitorId)).toEqual([{ id: chat?.id }]);
+    const authors = await owner().execute<{ author: string }>(
+      sql`select author_visitor_id as author from message where conversation_id = ${chat?.id}`,
+    );
+    expect(authors.rows).toEqual([{ author: merged.visitorId }]);
+    const [row] = await owner()
+      .select({ email: visitor.email, note: visitor.note })
+      .from(visitor)
+      .where(eq(visitor.id, merged.visitorId));
+    expect(row).toEqual({ email: "real@example.com", note: "Asked about invoices" });
+    // The old token is gone with its visitor, and a second merge changes nothing.
+    expect((await me(anonymous.token)).status).toBe(401);
+    expect((await merge(token, anonymous.token)).status).toBe(200);
+  });
+
+  test("a merge keeps an unread reply unread, takes a clashing client ID and drops the browser's chat links", async () => {
+    const anonymous = await chattedVisitor();
+    const [chat] = await conversationsOf(anonymous.visitorId);
+    if (chat === undefined) throw new Error("No conversation");
+    // The worker makes chat links, so this uses the owner's role.
+    const link = await withWorkspace(owner(), a.id, (tx) =>
+      createChatLink(tx, a.id, anonymous.visitorId, chat.id, Date.now()),
+    );
+    const token = await hostToken({ subject: "clashing" });
+    const unreadReply = await teamReply(chat.id);
+    // The signed-in visitor used the same client ID, and read further.
+    const sent = await app.request(`/v1/widget/${a.publicKey}/messages`, {
+      method: "POST",
+      headers: {
+        origin: ORIGIN,
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ clientId: "before-sign-in", body: "signed in" }),
+    });
+    expect(sent.status).toBe(201);
+    const { visitorId } = (await (await me(token)).json()) as { visitorId: string };
+    await owner().update(visitor).set({ lastReadSeq: 1000n }).where(eq(visitor.id, visitorId));
+
+    const response = await merge(token, anonymous.token);
+    expect(response.status).toBe(200);
+    expect(((await response.json()) as { unread: number }).unread).toBe(1);
+
+    const moved = await owner().execute<{ id: string; clientId: string }>(
+      sql`select id, client_id as "clientId" from message
+        where conversation_id = ${chat.id} and author_visitor_id = ${visitorId}`,
+    );
+    expect(moved.rows).toEqual([
+      { id: moved.rows[0]?.id, clientId: `merged:${moved.rows[0]?.id}` },
+    ]);
+    expect(await readPosition(visitorId)).toBe(unreadReply - 1n);
+    // The link reached an email nobody checked, so it opens nothing of the signed-in visitor.
+    const links = await owner().execute(
+      sql`select 1 from chat_link where token_hash = ${sha256Hex(link)}`,
+    );
+    expect(links.rows).toEqual([]);
+  });
+
+  test("a reply read before sign-in stays read", async () => {
+    const anonymous = await chattedVisitor();
+    const [chat] = await conversationsOf(anonymous.visitorId);
+    if (chat === undefined) throw new Error("No conversation");
+    const read = await teamReply(chat.id);
+    await owner()
+      .update(visitor)
+      .set({ lastReadSeq: read })
+      .where(eq(visitor.id, anonymous.visitorId));
+    const token = await hostToken({ subject: "first-sign-in" });
+
+    const response = await merge(token, anonymous.token);
+    const merged = (await response.json()) as { visitorId: string; unread: number };
+    expect(merged.unread).toBe(0);
+    expect(await readPosition(merged.visitorId)).toBe(read);
+  });
+
+  test("only a host token merges: a browser token never takes another browser's visitor", async () => {
+    const first = await chattedVisitor();
+    const second = await chattedVisitor();
+    const response = await merge(second.token, first.token);
+    expect(response.status).toBe(200);
+    expect(await visitorExists(first.visitorId)).toBe(true);
+    expect(await conversationsOf(first.visitorId)).toHaveLength(1);
+  });
+
+  test("a signed-in visitor is never merged into another", async () => {
+    const other = (await (await me(await hostToken({ subject: "kept" }))).json()) as {
+      visitorId: string;
+    };
+    const token = await hostToken({ subject: "taker" });
+    // A signed-in visitor holds no browser token, so nothing names it.
+    expect((await merge(token, newBrowserToken())).status).toBe(200);
+    expect(await visitorExists(other.visitorId)).toBe(true);
+  });
+
+  test("a browser token of another workspace is ignored", async () => {
+    const elsewhere = await chattedVisitor(b.publicKey, OTHER_ORIGIN);
+    const response = await merge(await hostToken({ subject: "cross" }), elsewhere.token);
+    expect(response.status).toBe(200);
+    expect(((await response.json()) as { chatted: boolean }).chatted).toBe(false);
+    expect(await visitorExists(elsewhere.visitorId)).toBe(true);
+    expect(await conversationsOf(elsewhere.visitorId)).toHaveLength(1);
   });
 });
 
