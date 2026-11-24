@@ -11,6 +11,7 @@ import {
   operator,
   savedReply,
   visitor,
+  welcomeLink,
   workspace,
   workspaceMember,
 } from "./db/schema.ts";
@@ -45,6 +46,24 @@ function chat(...args: string[]): Promise<{ code: number | null; out: string }> 
   });
 }
 
+/** A visitor who says hello in a new conversation. */
+async function visitorChat(workspaceId: string) {
+  return withWorkspace(db, workspaceId, async (tx) => {
+    const [guest] = await tx
+      .insert(visitor)
+      .values({ workspaceId, tokenHash: sha256Hex(newBrowserToken()) })
+      .returning({ id: visitor.id });
+    if (guest === undefined) throw new Error("No visitor");
+    const { message } = await appendMessage(
+      tx,
+      workspaceId,
+      { kind: "visitor", visitorId: guest.id },
+      { clientId: randomUUID(), body: "Hello" },
+    );
+    return { visitorId: guest.id, conversationId: message.conversationId };
+  });
+}
+
 /** A workspace with an owner, other members, and a chat, a label and a saved reply of its own. */
 async function workspaceWithData(name: string, otherMembers = 0) {
   const space = await createWorkspace(db, name, ["https://site.example"]);
@@ -62,18 +81,8 @@ async function workspaceWithData(name: string, otherMembers = 0) {
     });
   }
   await owner.insert(workspaceMember).values(members);
+  await visitorChat(space.id);
   await withWorkspace(db, space.id, async (tx) => {
-    const [guest] = await tx
-      .insert(visitor)
-      .values({ workspaceId: space.id, tokenHash: sha256Hex(newBrowserToken()) })
-      .returning({ id: visitor.id });
-    if (guest === undefined) throw new Error("No visitor");
-    await appendMessage(
-      tx,
-      space.id,
-      { kind: "visitor", visitorId: guest.id },
-      { clientId: randomUUID(), body: "Hello" },
-    );
     await tx.insert(label).values({ workspaceId: space.id, name: "Old", color: "red" });
     await tx
       .insert(savedReply)
@@ -184,6 +193,38 @@ describe("chat demo", () => {
     expect(out).toContain("Teammates it adds: Kenji Watanabe.");
     expect(out).toContain("no room for Amara Mensah, Lucía Fernández");
   });
+
+  test("it keeps the welcome chat with Dinghy Cloud and its visitor", async () => {
+    const review = await workspaceWithData("Welcomed");
+    const founder = await workspaceWithData("Founder");
+    const customerSide = await visitorChat(review.id);
+    const founderSide = await visitorChat(founder.id);
+    await owner.insert(welcomeLink).values({
+      customerWorkspaceId: review.id,
+      customerConversationId: customerSide.conversationId,
+      founderWorkspaceId: founder.id,
+      founderConversationId: founderSide.conversationId,
+    });
+    const dryRun = await chat(review.id);
+    expect(dryRun.out).toContain(
+      "It keeps 1 welcome chats with Dinghy Cloud and their visitors, and deletes the rest of 2 conversations",
+    );
+
+    const { code, out } = await chat(review.id, "--yes");
+    expect(code, out).toBe(0);
+    const kept = await owner.execute<{ conversations: number; visitors: number }>(sql`select
+      (select count(*)::int from conversation
+        where workspace_id = ${review.id} and id = ${customerSide.conversationId}) as conversations,
+      (select count(*)::int from visitor
+        where workspace_id = ${review.id} and id = ${customerSide.visitorId}) as visitors`);
+    expect(kept.rows[0]).toEqual({ conversations: 1, visitors: 1 });
+    expect(await contents(review.id)).toMatchObject({ conversations: STORY_CONVERSATIONS + 1 });
+    const links = await owner
+      .select()
+      .from(welcomeLink)
+      .where(eq(welcomeLink.customerWorkspaceId, review.id));
+    expect(links).toHaveLength(1);
+  }, 60_000);
 
   test("it refuses a suspended workspace and deletes nothing", async () => {
     const suspended = await workspaceWithData("Suspended");

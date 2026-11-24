@@ -167,3 +167,19 @@ describe("native mobile authentication", () => {
     );
   });
 });
+
+describe("a build-time loopback origin", () => {
+  test("is allowed over http in a release build, with or without a trailing slash", async () => {
+    vi.stubGlobal("__DEV__", false);
+    vi.stubEnv("EXPO_PUBLIC_DINGHY_ORIGIN", "http://localhost:3000/");
+    try {
+      const { CLOUD_ORIGIN } = await import("./auth");
+      const { normalizeOrigin } = await import("./api");
+      expect(CLOUD_ORIGIN).toBe("http://localhost:3000");
+      expect(normalizeOrigin("http://localhost:3000")).toBe("http://localhost:3000");
+      expect(() => normalizeOrigin("http://localhost:4000")).toThrow();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});

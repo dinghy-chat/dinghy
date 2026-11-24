@@ -9,14 +9,17 @@ import { setTimeout as delay } from "node:timers/promises";
 import { LISTING, SLIDES } from "../store/listing.ts";
 import {
   ageRatingAnswers,
+  chooseBuild,
   type FieldStatus,
   fieldStatus,
   isDelivered,
   isEditable,
+  isPushable,
   md5,
   type Options,
   parseArgs,
   pngSize,
+  priceStatus,
   type Screenshot,
   screenshotPlan,
   signToken,
@@ -30,7 +33,7 @@ Commands:
   check                    Compare App Store Connect with store/listing.ts. Exits 1 when
                            something is missing or differs.
   push                     Write the listing, review details, age rating, build, screenshots
-                           and price.
+                           and a free price. It never sets availability.
     --build <number>       The build to attach. Defaults to ios.buildNumber in app.config.js.
     --screenshots <dir>    Defaults to apps/mobile/store/output/composed/iphone-6.9.
     --dry-run              Print every write and make none.
@@ -124,7 +127,9 @@ function createApi(isDryRun: boolean) {
     const text = await response.text();
     if (response.status === 404 && method === "GET") return null;
     if (!response.ok) throw new Error(`${method} ${path} failed with ${response.status}.\n${text}`);
-    return text ? (JSON.parse(text) as { data: Resource | Resource[] | null }) : null;
+    return text
+      ? (JSON.parse(text) as { data: Resource | Resource[] | null; included?: Resource[] })
+      : null;
   }
 
   return {
@@ -137,6 +142,12 @@ function createApi(isDryRun: boolean) {
     async many(path: string) {
       const data = (await request("GET", path))?.data;
       return Array.isArray(data) ? data : [];
+    },
+    /** A list with the resources its `include` asked for. */
+    async manyWithIncluded(path: string) {
+      const document = await request("GET", path);
+      const data = document?.data;
+      return { data: Array.isArray(data) ? data : [], included: document?.included ?? [] };
     },
     /** A write. A dry run prints it and returns null. */
     async send(method: "POST" | "PATCH" | "DELETE", path: string, body?: unknown) {
@@ -216,11 +227,20 @@ function deliveryState(screenshot: Resource | null) {
   return state?.state ?? "UNKNOWN";
 }
 
-async function priceSchedule(api: Api) {
+/** The customer price of each manual price in the app's price schedule, such as "0.0". */
+async function manualPrices(api: Api) {
   const schedule = await api.one(`/v1/apps/${APP_ID}/appPriceSchedule`);
-  if (!schedule) return null;
-  const prices = await api.many(`/v1/appPriceSchedules/${schedule.id}/manualPrices?limit=1`);
-  return prices.length > 0 ? schedule : null;
+  if (!schedule) return [];
+  const { data, included } = await api.manyWithIncluded(
+    `/v1/appPriceSchedules/${schedule.id}/manualPrices?include=appPricePoint&limit=200`,
+  );
+  return data.map((price) => {
+    const pointId = relatedId(price, "appPricePoint");
+    return attr(
+      included.find((point) => point.id === pointId),
+      "customerPrice",
+    );
+  });
 }
 
 // check
@@ -284,8 +304,27 @@ async function checkRows(api: Api, options: Options) {
   rows.push(...(await reviewRows(api, version.id)));
   rows.push(await screenshotRow(api, localization?.id, options));
   rows.push(await buildRow(api, version.id, options.build ?? appConfig.ios.buildNumber));
-  rows.push(present("price schedule", (await priceSchedule(api)) !== null));
+  rows.push(await priceRow(api), await availabilityRow(api));
   return rows;
+}
+
+async function priceRow(api: Api): Promise<Row> {
+  const prices = await manualPrices(api);
+  const status = priceStatus(prices);
+  return {
+    label: "free price",
+    status,
+    detail: status === "differs" ? `has ${prices.join(", ")}` : "",
+  };
+}
+
+async function availabilityRow(api: Api) {
+  const availability = await api.one(`/v1/apps/${APP_ID}/appAvailabilityV2`);
+  return present(
+    "availability",
+    availability !== null,
+    availability ? "" : "set it in App Store Connect under Pricing and Availability",
+  );
 }
 
 async function ageRatingRows(api: Api, appInfoId: string): Promise<Row[]> {
@@ -387,6 +426,12 @@ async function push(api: Api, options: Options) {
   const isSkippingScreenshots = api.isDryRun && !existsSync(dir);
   const screenshots = isSkippingScreenshots ? [] : composedScreenshots(dir);
   const { appInfo, version: found } = await findState(api);
+  const state = attr(found, "appStoreState");
+  if (found && !isPushable(state)) {
+    throw new Error(
+      `Version ${String(attr(found, "versionString"))} is ${String(state)} in a draft review submission, and Apple locks it. Finish it with submit --yes, or remove it from the draft in App Store Connect, then push again. Nothing was written.`,
+    );
+  }
   const versionId = await pushVersion(api, found);
   await pushAppInfo(api, appInfo);
   await pushAgeRating(api, appInfo.id);
@@ -566,21 +611,32 @@ async function pushReviewDetail(api: Api, versionId: string, contact: Record<str
 }
 
 async function pushBuild(api: Api, versionId: string, buildNumber: string) {
-  const [build] = await api.many(
-    `/v1/builds?filter[app]=${APP_ID}&filter[version]=${buildNumber}&filter[preReleaseVersion.platform]=IOS&limit=1`,
+  const { data, included } = await api.manyWithIncluded(
+    `/v1/builds?filter[app]=${APP_ID}&filter[version]=${buildNumber}&filter[preReleaseVersion.platform]=IOS&include=preReleaseVersion&limit=50`,
   );
-  const state = attr(build, "processingState");
-  if (!build || state !== "VALID") {
-    console.log(
-      `Build ${buildNumber} is ${build ? String(state) : "not uploaded"}. Run push again once it is VALID.`,
-    );
+  const builds = data.map((build) => {
+    const preReleaseId = relatedId(build, "preReleaseVersion");
+    return {
+      id: build.id,
+      appVersion: attr(
+        included.find((item) => item.id === preReleaseId),
+        "version",
+      ),
+      processingState: attr(build, "processingState"),
+      buildAudienceType: attr(build, "buildAudienceType"),
+    };
+  });
+  const choice = chooseBuild(builds, buildNumber, appConfig.version);
+  if (choice.kind === "refuse") throw new Error(choice.reason);
+  if (choice.kind === "wait") {
+    console.log(choice.reason);
     return;
   }
   const attached =
     versionId === DRY_ID ? null : await api.one(`/v1/appStoreVersions/${versionId}/build`);
-  if (attached?.id === build.id) return;
+  if (attached?.id === choice.buildId) return;
   await api.send("PATCH", `/v1/appStoreVersions/${versionId}/relationships/build`, {
-    data: { type: "builds", id: build.id },
+    data: { type: "builds", id: choice.buildId },
   });
 }
 
@@ -676,7 +732,14 @@ async function waitForDelivery(api: Api, screenshotId: string, fileName: string)
 }
 
 async function pushPrice(api: Api) {
-  if (await priceSchedule(api)) return;
+  const prices = await manualPrices(api);
+  const status = priceStatus(prices);
+  if (status === "ok") return;
+  if (status === "differs") {
+    throw new Error(
+      `The app's price is not free (${prices.join(", ")}). push does not change a price that is set: change it in App Store Connect under Pricing and Availability.`,
+    );
+  }
   const points = await api.many(
     `/v1/apps/${APP_ID}/appPricePoints?filter[territory]=USA&limit=200`,
   );

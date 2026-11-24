@@ -2,12 +2,15 @@ import { generateKeyPairSync, verify } from "node:crypto";
 import { describe, expect, test } from "vitest";
 import {
   ageRatingAnswers,
+  chooseBuild,
   fieldStatus,
   isEditable,
+  isPushable,
   jwtClaims,
   md5,
   parseArgs,
   pngSize,
+  priceStatus,
   screenshotPlan,
   signToken,
   submissionStep,
@@ -60,12 +63,62 @@ test("pngSize reads the IHDR chunk", () => {
   expect(() => pngSize(Buffer.alloc(24))).toThrow("Not a PNG");
 });
 
-test("only versions Apple lets us change are editable", () => {
+test("submit takes a version in a draft submission, which push may not write to", () => {
   expect(isEditable("PREPARE_FOR_SUBMISSION")).toBe(true);
   expect(isEditable("METADATA_REJECTED")).toBe(true);
   expect(isEditable("READY_FOR_REVIEW")).toBe(true);
   expect(isEditable("WAITING_FOR_REVIEW")).toBe(false);
   expect(isEditable(undefined)).toBe(false);
+  expect(isPushable("PREPARE_FOR_SUBMISSION")).toBe(true);
+  expect(isPushable("METADATA_REJECTED")).toBe(true);
+  expect(isPushable("READY_FOR_REVIEW")).toBe(false);
+  expect(isPushable("WAITING_FOR_REVIEW")).toBe(false);
+});
+
+test("priceStatus accepts only free manual prices", () => {
+  expect(priceStatus(["0.0"])).toBe("ok");
+  expect(priceStatus(["0.00", "0"])).toBe("ok");
+  expect(priceStatus([])).toBe("missing");
+  expect(priceStatus(["0.99"])).toBe("differs");
+  expect(priceStatus(["0.0", "1.99"])).toBe("differs");
+  expect(priceStatus([undefined])).toBe("differs");
+  expect(priceStatus([""])).toBe("differs");
+});
+
+describe("chooseBuild", () => {
+  const build = {
+    id: "b1",
+    appVersion: "1.0.0",
+    processingState: "VALID",
+    buildAudienceType: "APP_STORE_ELIGIBLE",
+  };
+
+  test("attaches the valid build of the app version", () => {
+    const other = { ...build, id: "b0", appVersion: "0.9.0" };
+    expect(chooseBuild([other, build], "15", "1.0.0")).toEqual({ kind: "attach", buildId: "b1" });
+  });
+
+  test("waits for a build that is missing or still processing", () => {
+    expect(chooseBuild([], "15", "1.0.0")).toEqual({
+      kind: "wait",
+      reason: "Build 15 is not uploaded. Run push again once it is VALID.",
+    });
+    expect(chooseBuild([{ ...build, processingState: "PROCESSING" }], "15", "1.0.0")).toEqual({
+      kind: "wait",
+      reason: "Build 15 is PROCESSING. Run push again once it is VALID.",
+    });
+  });
+
+  test("refuses a build of another version, or one for internal testing only", () => {
+    expect(chooseBuild([{ ...build, appVersion: "0.9.0" }], "15", "1.0.0")).toEqual({
+      kind: "refuse",
+      reason:
+        "Build 15 belongs to version 0.9.0, not 1.0.0. Check version and ios.buildNumber in app.config.js.",
+    });
+    expect(
+      chooseBuild([{ ...build, buildAudienceType: "INTERNAL_ONLY" }], "15", "1.0.0"),
+    ).toMatchObject({ kind: "refuse", reason: expect.stringContaining("internal TestFlight") });
+  });
 });
 
 test("fieldStatus tells missing from different", () => {
@@ -86,6 +139,8 @@ test("the age rating says no to everything but chat and user content", () => {
     kidsAgeBand: null,
     ageRatingOverride: "NONE",
     someNewQuestion: null,
+    answeredByHand: "INFREQUENT_OR_MILD",
+    answeredNoByHand: false,
   });
   expect(answers).toEqual({
     violenceRealistic: "NONE",
@@ -202,6 +257,10 @@ describe("parseArgs", () => {
     expect(parseArgs(["--help"]).command).toBe("help");
     expect(() => parseArgs(["deploy"])).toThrow("Unknown command");
     expect(() => parseArgs(["push", "--build"])).toThrow("needs a value");
+    expect(() => parseArgs(["push", "--build", "--dry-run"])).toThrow("--build needs a value");
+    expect(() => parseArgs(["check", "--screenshots", "--build", "15"])).toThrow(
+      "--screenshots needs a value",
+    );
     expect(() => parseArgs(["push", "--force"])).toThrow("push does not take --force");
   });
 

@@ -269,10 +269,7 @@ function stayLive(
   });
 }
 
-/**
- * A live page campaign, and a draft that waits for review. Each replaces the one with its key, so
- * a second fill of the same workspace keeps two.
- */
+/** A live page campaign, and a draft that waits for review. */
 async function addCampaigns(workspaceId: string, team: TeamIds) {
   const campaigns = createCampaigns({ db, live });
   const operatorId = teammateId(team, ownerOf(data)[0]);
@@ -283,7 +280,7 @@ async function addCampaigns(workspaceId: string, team: TeamIds) {
     delivery: { sendEmail: false },
     rules: { frequency: "once", businessHours: false, endsAt: null },
   } as const;
-  const pricing = await campaigns.upsert(
+  const pricing = await campaigns.create(
     workspaceId,
     actor,
     CampaignDefinitionSchema.parse({
@@ -294,7 +291,7 @@ async function addCampaigns(workspaceId: string, team: TeamIds) {
       message: { body: "Comparing plans? Ask us anything, we answer in a few minutes." },
     }),
   );
-  const welcome = await campaigns.upsert(
+  const welcome = await campaigns.create(
     workspaceId,
     actor,
     CampaignDefinitionSchema.parse({

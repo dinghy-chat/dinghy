@@ -1,6 +1,6 @@
 # App Store release
 
-`scripts/app-store.ts` writes the Dinghy Chat listing to App Store Connect through Apple's API. The copy lives in `store/listing.ts`. The version comes from `version` in `app.config.js`, and the build from `ios.buildNumber`. The only step left in App Store Connect is App Privacy, because Apple's API cannot set it.
+`scripts/app-store.ts` writes the Dinghy Chat listing to App Store Connect through Apple's API. The copy lives in `store/listing.ts`. The version comes from `version` in `app.config.js`, and the build from `ios.buildNumber`. Two steps stay in App Store Connect: App Privacy, because Apple's API cannot set it, and availability, because the owner picks the countries and regions.
 
 The script needs Node 24 and nothing else. Run every command from the repository root.
 
@@ -45,10 +45,11 @@ The script never prints the key, the token or the demo code.
 
 1. `node apps/mobile/scripts/app-store.ts check` compares App Store Connect with the listing, field by field. It reads and never writes. It exits 1 while something is missing or different.
 2. `node apps/mobile/scripts/app-store.ts push --dry-run` prints every write that `push` would make.
-3. `node apps/mobile/scripts/app-store.ts push` writes the listing, the categories, the age rating, the review details, the screenshots and the price, and attaches the build once Apple marks it VALID. Add `--build <number>` for another build, or `--screenshots <dir>` for another folder. It changes only a version that Apple lets you edit. Run it again after a build finishes processing.
-4. `node apps/mobile/scripts/app-store.ts check` again, until it says the version is ready for review.
-5. `node apps/mobile/scripts/app-store.ts submit` runs the check and shows what it would submit.
-6. `node apps/mobile/scripts/app-store.ts submit --yes` submits the version for review. It finishes a draft that an earlier submit left, and resubmits a submission App Review sent back, when either holds only this version. It refuses while Apple reviews a submission, or while only drafts with other items are open.
+3. `node apps/mobile/scripts/app-store.ts push` writes the listing, the categories, the age rating, the review details and the screenshots, sets the price to free when the app has no price yet, and attaches the build once Apple marks it VALID. Add `--build <number>` for another build, or `--screenshots <dir>` for another folder. The build must belong to `version` in `app.config.js` and must not be for internal TestFlight testing only. It changes only a version that Apple lets you edit, and stops when the version waits in a draft review submission, which Apple locks. It refuses to change a price that is not free. Run it again after a build finishes processing.
+4. Before the first submit, set availability in App Store Connect under Pricing and Availability. `push` never sets it. Leave out the EU until the trader account is ready. `check` reports it missing until it is set.
+5. `node apps/mobile/scripts/app-store.ts check` again, until it says the version is ready for review.
+6. `node apps/mobile/scripts/app-store.ts submit` runs the check and shows what it would submit.
+7. `node apps/mobile/scripts/app-store.ts submit --yes` submits the version for review. It finishes a draft that an earlier submit left, and resubmits a submission App Review sent back, when either holds only this version. It refuses while Apple reviews a submission, or while only drafts with other items are open.
 
 The age rating answers no to every question except messaging and chat, and user-generated content, because operators read messages that website visitors write. When Apple adds a question that the script does not know, `push` names it, and you answer it in App Store Connect under App Information, Age Rating.
 
@@ -71,6 +72,7 @@ The app does not track people, shows no ads and uses no third-party analytics or
 | Contact info: email address           | The email address the operator signs in with                               |
 | User content: photos or videos        | The operator's profile picture, and images they send in a conversation     |
 | User content: emails or text messages | The replies and notes the operator writes in conversations                 |
+| User content: other user content      | Text the operator types, such as a workspace name or a contact note        |
 | Identifiers: user ID                  | The operator's account ID on the Dinghy server                             |
 | Identifiers: device ID                | The push notification token, so the server can send alerts about new chats |
 

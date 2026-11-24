@@ -35,18 +35,24 @@ export function pngSize(contents: Buffer) {
   return { width: contents.readUInt32BE(16), height: contents.readUInt32BE(20) };
 }
 
-const EDITABLE_STATES = new Set([
+/** Versions that push may write to. */
+const PUSHABLE_STATES = new Set([
   "PREPARE_FOR_SUBMISSION",
-  // In a draft review submission that was never submitted, which submit finishes.
-  "READY_FOR_REVIEW",
   "DEVELOPER_REJECTED",
   "REJECTED",
   "METADATA_REJECTED",
   "INVALID_BINARY",
 ]);
 
+/** Apple locks a version in a draft review submission, which submit still finishes. */
+const LOCKED_DRAFT_STATE = "READY_FOR_REVIEW";
+
+export function isPushable(appStoreState: unknown) {
+  return typeof appStoreState === "string" && PUSHABLE_STATES.has(appStoreState);
+}
+
 export function isEditable(appStoreState: unknown) {
-  return typeof appStoreState === "string" && EDITABLE_STATES.has(appStoreState);
+  return appStoreState === LOCKED_DRAFT_STATE || isPushable(appStoreState);
 }
 
 export type FieldStatus = "ok" | "differs" | "missing";
@@ -104,7 +110,7 @@ const LEFT_ALONE = new Set([
 
 /**
  * The answers to write, from the attributes Apple's GET returned. A question this script does not
- * know goes to `unknown`, so a new Apple question is reported instead of guessed.
+ * know and nobody answered goes to `unknown`, so a new Apple question is reported instead of guessed.
  */
 export function ageRatingAnswers(current: Record<string, unknown>) {
   const answers: Record<string, string | boolean> = {};
@@ -113,10 +119,68 @@ export function ageRatingAnswers(current: Record<string, unknown>) {
     if (LEFT_ALONE.has(name)) continue;
     if (YES_QUESTIONS.has(name)) answers[name] = true;
     else if (FREQUENCY_QUESTIONS.has(name)) answers[name] = "NONE";
-    else if (YES_NO_QUESTIONS.has(name) || typeof value === "boolean") answers[name] = false;
-    else unknown.push(name);
+    else if (YES_NO_QUESTIONS.has(name)) answers[name] = false;
+    // An unknown question with an answer was answered by hand in App Store Connect.
+    else if (value === null) unknown.push(name);
   }
   return { answers, unknown };
+}
+
+/**
+ * Whether the app's manual prices are all free, from the customerPrice of each one's price point.
+ * Apple writes a free price as "0.0".
+ */
+export function priceStatus(customerPrices: unknown[]): FieldStatus {
+  if (customerPrices.length === 0) return "missing";
+  return customerPrices.every((price) => typeof price === "string" && FREE_PRICE.test(price))
+    ? "ok"
+    : "differs";
+}
+
+const FREE_PRICE = /^0+(\.0+)?$/;
+
+export type Build = {
+  id: string;
+  /** The version of the build's pre-release version, such as 1.0.0. */
+  appVersion: unknown;
+  processingState: unknown;
+  buildAudienceType: unknown;
+};
+
+export type BuildChoice =
+  | { kind: "attach"; buildId: string }
+  | { kind: "wait"; reason: string }
+  | { kind: "refuse"; reason: string };
+
+/** The uploaded build with this number for this app version, or why push cannot attach one yet. */
+export function chooseBuild(builds: Build[], buildNumber: string, appVersion: string): BuildChoice {
+  const build = builds.find((candidate) => candidate.appVersion === appVersion);
+  if (!build) {
+    if (builds.length === 0) {
+      return {
+        kind: "wait",
+        reason: `Build ${buildNumber} is not uploaded. Run push again once it is VALID.`,
+      };
+    }
+    const others = builds.map((candidate) => String(candidate.appVersion)).join(", ");
+    return {
+      kind: "refuse",
+      reason: `Build ${buildNumber} belongs to version ${others}, not ${appVersion}. Check version and ios.buildNumber in app.config.js.`,
+    };
+  }
+  if (build.buildAudienceType === "INTERNAL_ONLY") {
+    return {
+      kind: "refuse",
+      reason: `Build ${buildNumber} is for internal TestFlight testing only, so App Review cannot get it. Upload a new build that is not internal only.`,
+    };
+  }
+  if (build.processingState !== "VALID") {
+    return {
+      kind: "wait",
+      reason: `Build ${buildNumber} is ${String(build.processingState)}. Run push again once it is VALID.`,
+    };
+  }
+  return { kind: "attach", buildId: build.id };
 }
 
 export type Screenshot = { id: string; checksum: string | null; deliveryState: string };
@@ -225,7 +289,7 @@ export function parseArgs(args: string[]): Options {
     else if (flag === "--yes") options.isConfirmed = true;
     else if (flag === "--build" || flag === "--screenshots") {
       const value = rest[++index];
-      if (!value) throw new Error(`${flag} needs a value.`);
+      if (!value || value.startsWith("--")) throw new Error(`${flag} needs a value.`);
       if (flag === "--build") options.build = value;
       else options.screenshots = value;
     }

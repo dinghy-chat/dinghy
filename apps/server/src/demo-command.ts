@@ -1,6 +1,6 @@
 // `chat demo <workspace-id>`: replaces one workspace's chats, contacts, labels and saved replies with
 // the Harbor Coffee story, so an app review account shows the same data as the store screenshots.
-import { and, asc, count, eq, isNull, sql } from "drizzle-orm";
+import { and, asc, count, eq, isNull, notInArray, or, sql } from "drizzle-orm";
 import { deleteContacts } from "./contacts.ts";
 import * as schema from "./db/schema.ts";
 import {
@@ -32,6 +32,8 @@ interface Plan {
   /** Teammates past the limit, whose lines the owner takes. */
   mapped: string[];
   before: Counts;
+  /** Dinghy Cloud's welcome chats, which the command keeps with their visitors. */
+  welcomeChats: number;
 }
 
 type Counts = {
@@ -131,13 +133,19 @@ async function readPlan(
       joining: missing.slice(0, room),
       mapped: missing.slice(room),
       before: await countRows(tx, workspaceId),
+      welcomeChats: (await welcomeChatVisitors(tx, workspaceId)).length,
     };
   });
 }
 
-function printPlan({ name, owner, members, joining, mapped, before }: Plan): void {
+function printPlan({ name, owner, members, joining, mapped, before, welcomeChats }: Plan): void {
   console.log(`Workspace: ${name}. Owner: ${owner.name} <${owner.email}>.`);
-  console.log(`It deletes ${describe(before)}.`);
+  if (welcomeChats === 0) console.log(`It deletes ${describe(before)}.`);
+  else {
+    console.log(
+      `It keeps ${welcomeChats} welcome chats with Dinghy Cloud and their visitors, and deletes the rest of ${describe(before)}.`,
+    );
+  }
   console.log("It turns off chat transcripts, so closing the demo's chats emails nobody.");
   console.log(
     `It writes the ${harbor.WORKSPACE_NAME} story, with ${STORY_OWNER.name}'s lines from ${owner.name}.`,
@@ -170,8 +178,33 @@ async function countRows(tx: Transaction, workspaceId: string): Promise<Counts> 
 }
 
 /**
+ * The visitor of each welcome chat in the workspace, on either side of its link. The welcome chat
+ * is how a Dinghy Cloud customer reaches the founder, so the command never deletes it.
+ */
+function welcomeChatVisitors(tx: Transaction, workspaceId: string) {
+  const { conversation, welcomeLink } = schema;
+  return tx
+    .select({ visitorId: conversation.visitorId })
+    .from(conversation)
+    .innerJoin(
+      welcomeLink,
+      or(
+        and(
+          eq(welcomeLink.customerWorkspaceId, conversation.workspaceId),
+          eq(welcomeLink.customerConversationId, conversation.id),
+        ),
+        and(
+          eq(welcomeLink.founderWorkspaceId, conversation.workspaceId),
+          eq(welcomeLink.founderConversationId, conversation.id),
+        ),
+      ),
+    )
+    .where(eq(conversation.workspaceId, workspaceId));
+}
+
+/**
  * Deletes the workspace's visitors, with their conversations, messages and pages, then its labels
- * and saved replies, through the same deletes the app runs.
+ * and saved replies, through the same deletes the app runs. Welcome chats and their visitors stay.
  */
 async function clearWorkspace(db: Database, workspaceId: string): Promise<void> {
   for (;;) {
@@ -179,7 +212,12 @@ async function clearWorkspace(db: Database, workspaceId: string): Promise<void> 
       const batch = await tx
         .select({ id: schema.visitor.id })
         .from(schema.visitor)
-        .where(eq(schema.visitor.workspaceId, workspaceId))
+        .where(
+          and(
+            eq(schema.visitor.workspaceId, workspaceId),
+            notInArray(schema.visitor.id, welcomeChatVisitors(tx, workspaceId)),
+          ),
+        )
         .limit(DELETE_BATCH);
       return deleteContacts(
         tx,
