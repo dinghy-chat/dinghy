@@ -194,7 +194,13 @@ test("the sitemap lists every page, and robots.txt points to it", () => {
 
 test("llms.txt links to each content page at its canonical address", () => {
   const index = readFileSync(join(PUBLIC, "llms.txt"), "utf8");
-  const staticPages = new Set(["index.html", "404.html", "privacy.html", "terms.html"]);
+  const staticPages = new Set([
+    "index.html",
+    "404.html",
+    "privacy.html",
+    "terms.html",
+    "support.html",
+  ]);
   for (const page of pages.filter((file) => !staticPages.has(file) && !file.startsWith("docs/"))) {
     const canonical = readPage(page).match(/<link rel="canonical" href="([^"]+)">/)?.[1];
     expect(index, page).toContain(`](${canonical})`);
