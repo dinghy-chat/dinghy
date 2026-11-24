@@ -6,7 +6,7 @@ module.exports = {
   version: "0.1.0",
   userInterfaceStyle: "automatic",
   ios: {
-    buildNumber: "11",
+    buildNumber: "14",
     config: { usesNonExemptEncryption: false },
     bundleIdentifier: "chat.dinghy.operator",
     icon: { light: "./assets/icon.png", dark: "./assets/icon.png" },

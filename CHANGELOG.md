@@ -4,6 +4,10 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Fixed
+
+- In the iOS app, the reply field shrinks back to one line after a send, and the composer reads the keyboard state again when the app comes back from the background, so no gap stays below the field.
+
 ## [0.56.0] - 2026-11-24
 
 ### Added

@@ -299,7 +299,13 @@ export function ThreadComposer({
     drafts.current[sent] = "";
     if (sent === "note") setNoteDraft("");
     else setReplyDraft("");
-    if (field.current.mode === sent) showHtml("");
+    if (field.current.mode !== sent) return;
+    showHtml("");
+    // iOS skips the height update while the keyboard holds marked text, which left an empty field
+    // six lines tall. The second empty value runs after the text is unmarked.
+    requestAnimationFrame(() => {
+      if (field.current.mode === sent && field.current.text === "") inputRef.current?.setValue("");
+    });
   };
 
   const pickSaved = (reply: SavedReply) => {

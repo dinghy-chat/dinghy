@@ -4,6 +4,7 @@ import {
   AccessibilityInfo,
   ActivityIndicator,
   Alert,
+  AppState,
   BackHandler,
   FlatList,
   Keyboard,
@@ -527,17 +528,24 @@ export function ThreadScreen({
   const isNight = useColorScheme() === "dark";
   const [keyboardVisible, setKeyboardVisible] = useState(Keyboard.isVisible());
   useEffect(() => {
-    const show = Keyboard.addListener(
-      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
-      () => setKeyboardVisible(true),
-    );
-    const hide = Keyboard.addListener(
-      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
-      () => setKeyboardVisible(false),
-    );
+    // iOS can skip the "will" events when the app goes to the background and back, so the "did"
+    // events and the return to the app read the keyboard state again.
+    const sync = () => setKeyboardVisible(Keyboard.isVisible());
+    const subscriptions = [
+      Keyboard.addListener(Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow", () =>
+        setKeyboardVisible(true),
+      ),
+      Keyboard.addListener(Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide", () =>
+        setKeyboardVisible(false),
+      ),
+      Keyboard.addListener("keyboardDidShow", sync),
+      Keyboard.addListener("keyboardDidHide", sync),
+      AppState.addEventListener("change", (state) => {
+        if (state === "active") sync();
+      }),
+    ];
     return () => {
-      show.remove();
-      hide.remove();
+      for (const subscription of subscriptions) subscription.remove();
     };
   }, []);
   useEffect(() => {
