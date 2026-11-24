@@ -12,6 +12,9 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ### Fixed
 
+- In the mobile app, a conversation opens at its newest message at once, instead of starting at the top and scrolling down. Pull to reload is gone from the thread, as the live stream keeps it current.
+- In the mobile app, a conversation's unread dot goes away in the list after the operator opens it.
+- In the mobile app, the harbor picture in the visitor sheet reaches the top edge, with no white band above it.
 - In the iOS app, the reply field shrinks back to one line after a send, and the composer reads the keyboard state again when the app comes back from the background, so no gap stays below the field.
 
 ## [0.56.0] - 2026-11-24
