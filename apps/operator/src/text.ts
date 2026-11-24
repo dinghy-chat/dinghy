@@ -691,7 +691,7 @@ const en = {
     'Says "Online" while someone is online, and your away message when nobody is.',
   widgetStatusReplyTimeHelp:
     'While someone is online, says "Usually replies in 2 min", from your median first reply time over 30 days. With no replies yet, it says "Online".',
-  widgetFilesEmailTitle: "Files, email, sound and branding",
+  widgetFilesEmailTitle: "Files, email and sound",
   widgetVisitorFiles: "Visitors can send files",
   widgetVisitorFilesHelp:
     "PDF, TXT, CSV, LOG, JSON, ZIP, Office, OpenDocument, MP4 and MOV files up to 10 MB, as well as images. Your team can always send files.",
@@ -703,7 +703,6 @@ const en = {
   widgetEmailOff: "Never",
   widgetEmailAfter: "After the first message",
   widgetEmailBefore: "Before the first message",
-  widgetBranding: 'Show "Powered by Dinghy"',
   widgetSaved: "Saved. New pages of your site show this within 5 minutes.",
   pageBusinessHours: "Business hours",
   businessHoursContext:

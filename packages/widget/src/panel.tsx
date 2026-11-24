@@ -822,7 +822,7 @@ export function Composer({
 export function Branding() {
   return (
     <a class="brand" href="https://dinghy.chat" target="_blank" rel="noopener">
-      {t("poweredBy")}
+      {t("brand")}
     </a>
   );
 }

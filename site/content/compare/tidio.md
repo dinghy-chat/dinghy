@@ -25,7 +25,6 @@ Use Tidio if your store needs an AI agent for common questions, flows and e-comm
 | Free plan | No. Self-hosting is free | Yes, 50 conversations a month |
 | First paid plan | $9 a month | $24 per month on annual billing or $29 on monthly billing on Human only Starter |
 | Conversations included | No limit | 100 a month on Human only Starter at the listed price |
-| Remove the branding | Free, one switch in Settings | Paid branding add-on |
 | AI agent | None built in. Bring your own, no AI fee | With Lyro AI Starter starts at $390 a year for 50 AI and human conversations a month |
 | Self-hosting | Free, open source | Not possible |
 

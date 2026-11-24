@@ -1,0 +1,1 @@
+ALTER TABLE "widget_settings" DROP COLUMN "branding";

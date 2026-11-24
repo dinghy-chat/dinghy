@@ -86,7 +86,6 @@ export const WidgetSettingsSchema = z
     mascot: z.boolean(),
     radius: z.number().int().min(0).max(RADIUS_MAX_PX),
     emailAsk: z.enum(widgetEmailAsk.enumValues),
-    branding: z.boolean(),
     sound: z.boolean(),
     transcript: z.boolean(),
     // Visitors may send files as well as images. Operators always may.

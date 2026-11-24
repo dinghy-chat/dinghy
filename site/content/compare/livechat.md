@@ -26,7 +26,6 @@ Use LiveChat if you need its integrations, reports, routing and AI, and can pay 
 | 3 people | $9 a month | $57 to $75 a month |
 | 5 people | $9 a month | $95 to $125 a month |
 | Chat history | Text kept while you subscribe, images and files for 12 months | 60 days on Essential. Growth costs $79 to $99 per seat. |
-| White-label widget | Turn off "Powered by Dinghy" for free | Enterprise only |
 | Canned responses, tags, business hours | Saved replies, labels, business hours | Yes |
 | AI | None built in. Bring your own agent, no AI fee | AI features and chatbots |
 | Self-hosting | Free, open source | Not possible |

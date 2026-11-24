@@ -18,7 +18,6 @@ const DEFAULTS = {
   launcher: "bubble",
   radius: 16,
   emailAsk: "after_first",
-  branding: true,
   sound: true,
   transcript: true,
   headerFaces: "online",
@@ -35,7 +34,6 @@ test.beforeAll(async () => {
     {
       "/plain": page(),
       "/tagged": page('data-accent="#ff0000" data-position="right" data-launcher="boat"'),
-      "/no-branding": page('data-branding="false"'),
       "/spanish": page('data-locale="es"'),
     },
     { emailAvailable: true },
@@ -467,33 +465,13 @@ test("a returning visitor's unread count shows on the launcher, even before the 
   await visitor.context().close();
 });
 
-test.describe("the Powered by Dinghy line", () => {
-  const branding = (visitor: Page) => visitor.getByRole("link", { name: "Powered by Dinghy" });
-
-  test("shows by default, as a plain link", async ({ browser }) => {
-    const visitor = await visit(browser);
-    await launcher(visitor).click();
-    await expect(branding(visitor)).toHaveAttribute("href", "https://dinghy.chat");
-    await expect(branding(visitor)).toHaveAttribute("rel", "noopener");
-    await visitor.context().close();
-  });
-
-  test("hides with the setting", async ({ browser }) => {
-    await server.setWidgetSettings({ branding: false });
-    const visitor = await visit(browser);
-    await launcher(visitor).click();
-    await expect(visitor.locator(".head b")).toHaveText("Chat with us");
-    await expect(branding(visitor)).toHaveCount(0);
-    await visitor.context().close();
-  });
-
-  test("hides with the tag's data-branding", async ({ browser }) => {
-    const visitor = await visit(browser, "/no-branding");
-    await launcher(visitor).click();
-    await expect(visitor.locator(".head b")).toHaveText("Chat with us");
-    await expect(branding(visitor)).toHaveCount(0);
-    await visitor.context().close();
-  });
+test("the chat always shows the Live chat by Dinghy line, as a plain link", async ({ browser }) => {
+  const visitor = await visit(browser);
+  await launcher(visitor).click();
+  const line = visitor.getByRole("link", { name: "Live chat by Dinghy" });
+  await expect(line).toHaveAttribute("href", "https://dinghy.chat");
+  await expect(line).toHaveAttribute("rel", "noopener");
+  await visitor.context().close();
 });
 
 test("an owner changes the color, theme and launcher in Appearance, and the site shows them", async ({

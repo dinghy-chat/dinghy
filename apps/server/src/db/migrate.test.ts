@@ -140,7 +140,7 @@ describe("chat migrate", () => {
     await run();
     expect(
       await query(
-        `select workspace_id, title, greeting, away, logo_updated_at, launcher, radius, branding
+        `select workspace_id, title, greeting, away, logo_updated_at, launcher, radius
          from widget_settings order by workspace_id`,
       ),
     ).toEqual([
@@ -152,7 +152,6 @@ describe("chat migrate", () => {
         logo_updated_at: new Date("2026-11-01T10:00:00Z"),
         launcher: "boat",
         radius: 16,
-        branding: true,
       },
       {
         workspace_id: plain,
@@ -162,7 +161,6 @@ describe("chat migrate", () => {
         logo_updated_at: null,
         launcher: "boat",
         radius: 16,
-        branding: true,
       },
     ]);
   });

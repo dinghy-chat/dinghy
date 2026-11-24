@@ -7813,7 +7813,6 @@ export interface components {
       radius: number;
       /** @enum {string} */
       emailAsk: "off" | "after_first" | "before_first";
-      branding: boolean;
       sound: boolean;
       transcript: boolean;
       visitorFiles: boolean;
@@ -9354,7 +9353,6 @@ export interface components {
       radius: number;
       /** @enum {string} */
       emailAsk: "off" | "after_first" | "before_first";
-      branding: boolean;
       sound: boolean;
       transcript: boolean;
       visitorFiles: boolean;

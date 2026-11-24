@@ -182,7 +182,7 @@ function OpenPreview({ appearance, sample, outbound }: PreviewProps) {
             filesAllowed={appearance.visitorFiles}
           />
         )}
-        {appearance.branding && <Branding />}
+        <Branding />
       </section>
       {/* A hidden launcher draws nothing, and the operator app says so. */}
       {launcher !== "hidden" && <Launcher kind={launcher} title={say("title")} nudge={false} />}

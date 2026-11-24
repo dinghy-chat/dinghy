@@ -48,7 +48,7 @@ export const es: Texts = {
   emailSavedTo: "Te enviaremos las respuestas a {email}",
   emailInvalid: "Escribe un correo válido.",
   emailFailed: "No se guardó. Inténtalo de nuevo.",
-  poweredBy: "Funciona con Dinghy",
+  brand: "Chat en vivo por Dinghy",
   closed: "Esta conversación está cerrada. Escríbenos cuando quieras.",
   reopened: "Conversación reabierta",
   reply: "Responder",

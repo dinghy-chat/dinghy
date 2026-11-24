@@ -40,7 +40,7 @@ test("init adds one loader tag with the options as data attributes, however ofte
     accent: "#e5352b",
     position: "left" as const,
     offsetY: 80,
-    branding: false,
+    mascot: false,
     launcher: false,
   };
   expect(init(options)).toBe(init(options));
@@ -52,7 +52,7 @@ test("init adds one loader tag with the options as data attributes, however ofte
     "data-accent": "#e5352b",
     "data-position": "left",
     "data-offset-y": "80",
-    "data-branding": "false",
+    "data-mascot": "false",
     "data-launcher": "hidden",
   });
 });

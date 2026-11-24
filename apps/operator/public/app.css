@@ -4829,7 +4829,7 @@ button.quote:hover {
     grid-column: 1;
   }
 }
-/* The "Colors and layout" and "Email and branding" sections on Appearance: one compact line per
+/* The "Colors and layout" and "Files, email and sound" sections on Appearance: one compact line per
    setting, the label on the left and the control on the right, with a hairline between lines. */
 .setting-rows {
   display: grid;

@@ -46,8 +46,6 @@ export interface WidgetSettings {
   /** Pixels, for the chat's corners and the launcher's. */
   radius: number;
   emailAsk: "off" | "after_first" | "before_first";
-  /** The "Powered by Dinghy" line. */
-  branding: boolean;
   /** A chime when a reply arrives and the visitor is not looking at the chat. */
   sound: boolean;
   /** The visitor gets the conversation by email when it closes. The widget does not use it. */
@@ -138,7 +136,6 @@ export const WIDGET_DEFAULTS: SavedAppearance = {
   mascot: true,
   radius: 16,
   emailAsk: "after_first",
-  branding: true,
   sound: true,
   transcript: true,
   visitorFiles: true,

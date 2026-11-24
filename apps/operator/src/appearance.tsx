@@ -768,13 +768,6 @@ function AppearanceForm({ api, me, workspaceId, canEdit, onOpenWorkspace }: Appe
                   onChange={(sound) => change({ sound })}
                 />
               </div>
-              <div className="setting-row setting-switch">
-                <Switch
-                  label={t("widgetBranding")}
-                  checked={draft.branding}
-                  onChange={(branding) => change({ branding })}
-                />
-              </div>
             </div>
           </FormSection>
         </fieldset>

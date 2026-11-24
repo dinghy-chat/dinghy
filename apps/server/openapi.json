@@ -226,9 +226,6 @@
             "type": "string",
             "enum": ["off", "after_first", "before_first"]
           },
-          "branding": {
-            "type": "boolean"
-          },
           "sound": {
             "type": "boolean"
           },
@@ -325,7 +322,6 @@
           "mascot",
           "radius",
           "emailAsk",
-          "branding",
           "sound",
           "transcript",
           "visitorFiles",
@@ -4539,9 +4535,6 @@
             "type": "string",
             "enum": ["off", "after_first", "before_first"]
           },
-          "branding": {
-            "type": "boolean"
-          },
           "sound": {
             "type": "boolean"
           },
@@ -4592,7 +4585,6 @@
           "mascot",
           "radius",
           "emailAsk",
-          "branding",
           "sound",
           "transcript",
           "visitorFiles",

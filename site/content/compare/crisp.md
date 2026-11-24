@@ -6,7 +6,7 @@ date: 2026-11-08
 updated: 2026-11-22
 priceChecked: 2026-11-22
 order: 3
-card: Both priced per workspace. Crisp keeps its label until $295
+card: Both priced per workspace. Crisp Mini is $45, Dinghy Cloud $9
 stat: Free, then $45
 ---
 
@@ -16,7 +16,7 @@ Crisp and Dinghy Cloud charge per workspace. Crisp has a free plan for two peopl
 
 ## Which one fits
 
-Stay on Crisp Free if you're one or two people, under 100 contacts, and fine with Crisp's branding. Pay for Crisp if you need email, a knowledge base, AI and integrations. Pick Dinghy if you want to host it yourself or remove the widget badge without an upgrade.
+Stay on Crisp Free if you're one or two people with under 100 contacts. Pay for Crisp if you need email, a knowledge base, AI and integrations. Pick Dinghy if you want to host it yourself or pay $9 a month for up to five people.
 
 ## Price for a small team
 
@@ -25,7 +25,6 @@ Stay on Crisp Free if you're one or two people, under 100 contacts, and fine wit
 | 1 to 2 people | $9 a month | $0 on Free, with 100 contacts |
 | 3 to 4 people | $9 a month | $45 a month on Mini |
 | 5 people | $9 a month | $95 a month on Essentials |
-| "We run on Crisp" label | "Powered by Dinghy" turns off for free | Removed only on Plus, $295 a month |
 | AI | None built in. Bring your own agent, no AI fee | AI chatbot on higher plans |
 | Self-hosting | Free, open source | Not possible |
 
@@ -41,7 +40,7 @@ Crisp prices are from [Crisp’s pricing page](https://crisp.chat/en/pricing/). 
 
 ## What Dinghy does differently
 
-Crisp's paid plans keep the "We run on Crisp" label until the $295 Plus plan, and they count your contacts. Dinghy's "Powered by" line turns off for free on any plan, and Dinghy doesn't bill by contact. Dinghy Cloud is $9 a month for up to 5 people, no per-person add-ons.
+Crisp's plans count your contacts. Dinghy doesn't bill by contact. Dinghy Cloud is $9 a month for up to 5 people, no per-person add-ons.
 
 Dinghy has no AI of its own, so no AI fee either. If you want a bot, connect your own agent through MCP or the API. Its replies wait as drafts until a person sends them, unless you let it send on its own. See [Bring your own AI agent](/blog/bring-your-own-ai-agent). But if you want a hosted bot that learns from your help center with zero setup, use Crisp.
 

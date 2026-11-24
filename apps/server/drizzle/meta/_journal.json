@@ -904,6 +904,13 @@
       "when": 1795476172108,
       "tag": "0128_lifecycle_widget_sites_grant",
       "breakpoints": true
+    },
+    {
+      "idx": 129,
+      "version": "7",
+      "when": 1795513778468,
+      "tag": "0129_drop_widget_branding",
+      "breakpoints": true
     }
   ]
 }
