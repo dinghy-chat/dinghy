@@ -181,10 +181,7 @@ export function BottomNav({
     };
   }, []);
   const dark = palette === night;
-  const { width, height } = useWindowDimensions();
-  const showClouds = page === "inbox" && !keyboardVisible;
-  const cloudTiles =
-    width > 900 ? ["left", "middle", "right"] : width > 540 ? ["left", "right"] : ["middle"];
+  const { width } = useWindowDimensions();
   const barWidth = Math.min(340, width - 32);
   const tabWidth = (barWidth - 10) / tabs.length;
   const index = tabs.indexOf(page);
@@ -233,43 +230,15 @@ export function BottomNav({
     <GlassView
       pointerEvents="none"
       colorScheme={dark ? "dark" : "light"}
-      glassEffectStyle={showClouds ? "clear" : "regular"}
+      glassEffectStyle="regular"
       style={dock.glass}
     />
   );
   return (
     <View
       pointerEvents="box-none"
-      style={[
-        dock.anchor,
-        showClouds && height > width && dock.cloudClearance,
-        { paddingBottom: keyboardVisible ? 6 : bottom + 6 },
-      ]}
+      style={[dock.anchor, { paddingBottom: keyboardVisible ? 6 : bottom + 6 }]}
     >
-      {showClouds && (
-        <View
-          accessible={false}
-          accessibilityElementsHidden
-          importantForAccessibility="no-hide-descendants"
-          pointerEvents="none"
-          style={dock.cloudBackdrop}
-        >
-          {cloudTiles.map((tile) => (
-            <Image
-              key={tile}
-              accessible={false}
-              fadeDuration={0}
-              resizeMode="stretch"
-              source={
-                dark
-                  ? require("../assets/inbox-clouds-dark.png")
-                  : require("../assets/inbox-clouds-light.png")
-              }
-              style={dock.cloudTile}
-            />
-          ))}
-        </View>
-      )}
       {search && nativeSearchFieldAvailable && (
         <NativeSearchField query={query} onQuery={onQuery} dark={dark} width={barWidth} />
       )}
@@ -378,9 +347,6 @@ const dock = StyleSheet.create({
     alignItems: "center",
   },
   // Leave room for the few cloud pixels above search and keep the last conversation visible.
-  cloudClearance: { paddingTop: 48 },
-  cloudBackdrop: { ...StyleSheet.absoluteFill, flexDirection: "row" },
-  cloudTile: { flex: 1, width: 0, height: "100%" },
   bar: {
     height: 54,
     flexDirection: "row",

@@ -3,10 +3,10 @@ module.exports = {
   icon: "./assets/icon.png",
   slug: "dinghy-operator",
   scheme: "dinghy",
-  version: "0.1.0",
+  version: "1.0.0",
   userInterfaceStyle: "automatic",
   ios: {
-    buildNumber: "14",
+    buildNumber: "15",
     config: { usesNonExemptEncryption: false },
     bundleIdentifier: "chat.dinghy.operator",
     icon: { light: "./assets/icon.png", dark: "./assets/icon.png" },

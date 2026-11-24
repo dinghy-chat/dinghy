@@ -1,16 +1,38 @@
 // The demo workspace that `bun run seed` writes: a team, its labels and saved replies, and the
 // conversations, contacts and live visitors that make every screen of the operator app look used.
 // Times are relative to the moment the seed runs, so the inbox always shows people waiting now.
+import {
+  AMSTERDAM,
+  BERLIN,
+  type ConversationSeed,
+  daysAgo,
+  LONDON,
+  MADRID,
+  MILAN,
+  MUMBAI,
+  minutesAgo,
+  NY,
+  PARIS,
+  type RoutineChat,
+  routineHistory,
+  SAO_PAULO,
+  type SeedData,
+  SF,
+  STOCKHOLM,
+  SYDNEY,
+  type TeamMember,
+  TOKYO,
+  TORONTO,
+  type VisitorSeed,
+  visitor,
+} from "./seed-shared.ts";
 
 export const SITE = "https://acme.example";
 export const WORKSPACE_NAME = "Acme";
 
-export type TeamKey = "anna" | "ben" | "chloe" | "diego";
+type TeamKey = "anna" | "ben" | "chloe" | "diego";
 
-export const TEAM: Record<
-  TeamKey,
-  { name: string; email: string; role: "owner" | "admin" | "member"; away: boolean }
-> = {
+export const TEAM: Record<TeamKey, TeamMember> = {
   anna: { name: "Anna Lindqvist", email: "anna@acme.example", role: "owner", away: false },
   ben: { name: "Ben Okafor", email: "ben@acme.example", role: "admin", away: false },
   chloe: { name: "Chloé Martin", email: "chloe@acme.example", role: "member", away: false },
@@ -48,65 +70,6 @@ export const SAVED_REPLIES = [
   },
 ];
 
-const MINUTE_MS = 60_000;
-const DAY_MS = 24 * 60 * MINUTE_MS;
-
-/** `minutes` before the seed runs. */
-const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * MINUTE_MS);
-
-/** A local time of day, `days` days before the seed runs. */
-function daysAgo(days: number, hour: number, minute = 0): Date {
-  const at = new Date(Date.now() - days * DAY_MS);
-  at.setHours(hour, minute, 0, 0);
-  return at;
-}
-
-export interface VisitorSeed {
-  /** A signed-in contact of Acme's own app. Without it, the visitor is anonymous. */
-  contact?: { userId: string; name: string; email: string; company?: string; plan?: string };
-  country: string;
-  timeZone: string;
-  device: string;
-  /** The pages they went through, oldest first. The chat starts on the last one. */
-  pages: string[];
-}
-
-/** Who wrote a line: the visitor, a teammate, or a teammate's internal note. */
-type Author = "visitor" | TeamKey | `note:${TeamKey}`;
-/** A line, with the minutes since the line before it. */
-export type Line = [Author, string, number?];
-
-export interface ConversationSeed {
-  visitor: VisitorSeed;
-  startedAt: Date;
-  lines: Line[];
-  status: "open" | "closed" | "snoozed";
-  labels?: LabelName[];
-}
-
-const visitor = (
-  country: string,
-  timeZone: string,
-  device: string,
-  pages: string[],
-  contact?: VisitorSeed["contact"],
-): VisitorSeed => ({ country, timeZone, device, pages, ...(contact && { contact }) });
-
-const NY = ["US", "America/New_York"] as const;
-const SF = ["US", "America/Los_Angeles"] as const;
-const LONDON = ["GB", "Europe/London"] as const;
-const BERLIN = ["DE", "Europe/Berlin"] as const;
-const PARIS = ["FR", "Europe/Paris"] as const;
-const SAO_PAULO = ["BR", "America/Sao_Paulo"] as const;
-const TOKYO = ["JP", "Asia/Tokyo"] as const;
-const TORONTO = ["CA", "America/Toronto"] as const;
-const SYDNEY = ["AU", "Australia/Sydney"] as const;
-const MUMBAI = ["IN", "Asia/Kolkata"] as const;
-const MADRID = ["ES", "Europe/Madrid"] as const;
-const AMSTERDAM = ["NL", "Europe/Amsterdam"] as const;
-const STOCKHOLM = ["SE", "Europe/Stockholm"] as const;
-const MILAN = ["IT", "Europe/Rome"] as const;
-
 const MAYA = visitor(...NY, "Chrome on macOS", ["/app/reports", "/account/billing"], {
   userId: "u_1042",
   name: "Maya Patel",
@@ -134,19 +97,16 @@ const NOAH = visitor(...TORONTO, "Chrome on Windows", ["/app/reports", "/changel
 });
 
 /** The visitors who are on the site now, and the tabs the Visitors screen lists. */
-export const LIVE = {
-  /** Chatting visitors, by their conversation's index in CONVERSATIONS. */
+export const LIVE: SeedData["LIVE"] = {
   chatting: [
     { conversation: 0, title: "Billing · Acme" },
     { conversation: 2, title: "Exports · Acme Docs" },
     { conversation: 3, title: "Invite your team · Acme Docs" },
   ],
-  /** The visitor whose unsent draft the inbox shows, with `--live`. */
   typing: {
     conversation: 3,
     draft: "I clicked the link in the email but it says the invite has expired, can you",
   },
-  /** A known contact on the site who has not chatted. */
   known: { visitor: NOAH, title: "Changelog · Acme" },
   anonymous: [
     {
@@ -210,7 +170,7 @@ export const QUIET_CONTACTS: VisitorSeed[] = [
   }),
 ];
 
-export const CONVERSATIONS: ConversationSeed[] = [
+export const CONVERSATIONS: ConversationSeed<TeamKey, LabelName>[] = [
   // Waiting for a reply now.
   {
     visitor: MAYA,
@@ -706,7 +666,7 @@ export const CONVERSATIONS: ConversationSeed[] = [
 ];
 
 /** Short questions that come back every week, answered and closed, so Analytics has a history. */
-const ROUTINE: [question: string, answer: string, thanks: string][] = [
+const ROUTINE: RoutineChat[] = [
   [
     "Where can I download my invoices?",
     "In Settings → Billing → Invoices, each one has a PDF.",
@@ -759,47 +719,17 @@ const ROUTINE: [question: string, answer: string, thanks: string][] = [
   ],
 ];
 
-const PLACES = [NY, LONDON, BERLIN, PARIS, TORONTO, SYDNEY, MADRID, AMSTERDAM, SAO_PAULO, MUMBAI];
-const DEVICES = [
-  "Chrome on macOS",
-  "Safari on iPhone",
-  "Chrome on Windows",
-  "Firefox on Windows",
-  "Edge on Windows",
-];
-const REPLIERS: TeamKey[] = ["chloe", "ben", "anna", "diego"];
-/** Routine chats each weekday of the last 30 days, in turn, and fewer on weekends. */
-const PER_WEEKDAY = [2, 1, 3, 2, 1];
-const HISTORY_DAYS = 29;
-
-function routineDay(days: number, start: number): ConversationSeed[] {
-  const weekday = daysAgo(days, 12).getDay();
-  const count =
-    weekday === 0 || weekday === 6 ? days % 2 : (PER_WEEKDAY[days % PER_WEEKDAY.length] ?? 1);
-  return Array.from({ length: count }, (_, one) => {
-    const index = start + one;
-    const routine = ROUTINE[index % ROUTINE.length];
-    if (routine === undefined) throw new Error("No routine chat");
-    const [question, answer, thanks] = routine;
-    const [country, timeZone] = PLACES[index % PLACES.length] ?? NY;
-    return {
-      visitor: visitor(country, timeZone, DEVICES[index % DEVICES.length] ?? "Chrome on macOS", [
-        "/",
-        "/docs",
-      ]),
-      startedAt: daysAgo(days, 9 + ((index * 5) % 9), (index * 13) % 60),
-      status: "closed",
-      lines: [
-        ["visitor", question],
-        [REPLIERS[index % REPLIERS.length] ?? "anna", answer, 1 + (index % 6)],
-        ["visitor", thanks, 3],
-      ],
-    };
-  });
-}
-
 /** The routine chats of the last 30 days, oldest first: about 42, as the weekdays fall. */
-export const ROUTINE_CONVERSATIONS: ConversationSeed[] = Array.from(
-  { length: HISTORY_DAYS },
-  (_, day) => HISTORY_DAYS - day,
-).reduce<ConversationSeed[]>((all, days) => [...all, ...routineDay(days, all.length)], []);
+export const ROUTINE_CONVERSATIONS = routineHistory<TeamKey>({
+  chats: ROUTINE,
+  places: [NY, LONDON, BERLIN, PARIS, TORONTO, SYDNEY, MADRID, AMSTERDAM, SAO_PAULO, MUMBAI],
+  devices: [
+    "Chrome on macOS",
+    "Safari on iPhone",
+    "Chrome on Windows",
+    "Firefox on Windows",
+    "Edge on Windows",
+  ],
+  repliers: ["chloe", "ben", "anna", "diego"],
+  pages: ["/", "/docs"],
+});

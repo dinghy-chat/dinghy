@@ -24,6 +24,8 @@ site/public/*.html
 !site/public/404.html
 !site/public/privacy.html
 !site/public/terms.html
+!site/public/support.html
 site/public/sitemap.xml
 site/public/llms.txt
 site/public/llms-full.txt
+apps/mobile/store/output/

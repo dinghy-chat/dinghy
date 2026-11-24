@@ -1,10 +1,11 @@
 // Fills the development database with a demo workspace, Acme, for screenshots and manual testing,
 // with `bun run seed`. Start `bun run dev` first: this writes to its database and Valkey.
 // Each run deletes the workspace it made before, and nothing else, then makes it again. It keeps that
-// workspace's ID in .dev/seed-workspace. It sends no email: Acme sends no transcripts, and every
+// workspace's ID in .dev/seed-workspace. It sends no email: the demo sends no transcripts, and every
 // address is on a reserved domain.
 // With `bun run seed -- --live`, it keeps the live visitors on the site, a teammate online and a
 // visitor typing, until Ctrl-C. Without it, the live visitors leave the Visitors screen after 90 s.
+// With `--harbor`, it writes Harbor Coffee, a coffee roaster from seed-harbor.ts, instead of Acme.
 import { randomUUID } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -41,20 +42,7 @@ import {
 } from "../src/messages.ts";
 import { createPresence, createVisitorPresence } from "../src/presence.ts";
 import { createWorkspace } from "../src/workspaces.ts";
-import {
-  CONVERSATIONS,
-  type ConversationSeed,
-  LABELS,
-  LIVE,
-  QUIET_CONTACTS,
-  ROUTINE_CONVERSATIONS,
-  SAVED_REPLIES,
-  SITE,
-  TEAM,
-  type TeamKey,
-  type VisitorSeed,
-  WORKSPACE_NAME,
-} from "./seed-data.ts";
+import type { ConversationSeed, SeedData, VisitorSeed } from "./seed-shared.ts";
 
 // The same database, Valkey and port as scripts/dev.ts.
 const DATABASE = "dinghy_dev";
@@ -81,14 +69,39 @@ const TYPING_MS = 1_500;
 const READ_ALL = 2n ** 62n;
 const logger = pino({ level: "warn" });
 
-const { values: flags } = parseArgs({ options: { live: { type: "boolean", default: false } } });
+const { values: flags } = parseArgs({
+  options: {
+    live: { type: "boolean", default: false },
+    harbor: { type: "boolean", default: false },
+  },
+});
+const {
+  CONVERSATIONS,
+  LABELS,
+  LIVE,
+  QUIET_CONTACTS,
+  ROUTINE_CONVERSATIONS,
+  SAVED_REPLIES,
+  SITE,
+  TEAM,
+  WORKSPACE_NAME,
+}: SeedData = flags.harbor ? await import("./seed-harbor.ts") : await import("./seed-data.ts");
+const owner = Object.entries(TEAM).find(([, member]) => member.role === "owner");
+if (owner === undefined) throw new Error("The demo team has no owner");
+const [OWNER, { name: OWNER_NAME, email: OWNER_EMAIL }] = owner;
 
 const appPool = new pg.Pool({ connectionString: postgres(ROLES.app), max: 2 });
 const db: Database = drizzle(appPool, { schema });
 const valkey = new Redis(VALKEY_URL, { maxRetriesPerRequest: 1 });
 const live: Live = { ...noLive, ...createSignals(valkey, logger) };
 
-type TeamIds = Record<TeamKey, string>;
+type TeamIds = Record<string, string>;
+
+function teammateId(team: TeamIds, key: string): string {
+  const id = team[key];
+  if (id === undefined) throw new Error(`No teammate ${key} in the demo team`);
+  return id;
+}
 
 /** Marks the workspace that an earlier run made as deleted. The worker in `bun run dev` purges it. */
 async function removeEarlierDemo(): Promise<void> {
@@ -104,15 +117,15 @@ async function removeEarlierDemo(): Promise<void> {
   );
 }
 
-/** Without the ID file: the one workspace Anna owns with the demo's name and site, if exactly one. */
+/** Without the ID file: the one workspace the owner has with the demo's name and site, if exactly one. */
 async function matchEarlierDemo(): Promise<string | undefined> {
-  const [anna] = await db
+  const [ownerRow] = await db
     .select({ id: schema.operator.id })
     .from(schema.operator)
-    .where(eq(schema.operator.email, TEAM.anna.email));
-  if (anna === undefined) return undefined;
+    .where(eq(schema.operator.email, OWNER_EMAIL));
+  if (ownerRow === undefined) return undefined;
   const matches: string[] = [];
-  for (const { workspaceId, role } of await operatorWorkspaces(db, anna.id)) {
+  for (const { workspaceId, role } of await operatorWorkspaces(db, ownerRow.id)) {
     if (role !== "owner") continue;
     const [match] = await withWorkspace(db, workspaceId, (tx) =>
       tx
@@ -163,18 +176,17 @@ async function ensureTeam(): Promise<TeamIds> {
     if (id === undefined) throw new Error(`The operator ${email} was not saved`);
     return id;
   };
-  const keys = Object.keys(TEAM) as TeamKey[];
-  return Object.fromEntries(keys.map((key) => [key, idOf(TEAM[key].email)])) as TeamIds;
+  return Object.fromEntries(Object.entries(TEAM).map(([key, { email }]) => [key, idOf(email)]));
 }
 
 /** The members, with Get started hidden, and the labels and saved replies a team sets up first. */
 async function setUpWorkspace(tx: Transaction, workspaceId: string, team: TeamIds) {
   const joined = new Date(Date.now() - 60 * 24 * 60 * MINUTE_MS);
   await tx.insert(schema.workspaceMember).values(
-    (Object.keys(TEAM) as TeamKey[]).map((key) => ({
+    Object.entries(TEAM).map(([key, { role }]) => ({
       workspaceId,
-      operatorId: team[key],
-      role: TEAM[key].role,
+      operatorId: teammateId(team, key),
+      role,
       getStartedDismissedAt: joined,
       createdAt: joined,
     })),
@@ -201,7 +213,7 @@ async function setUpWorkspace(tx: Transaction, workspaceId: string, team: TeamId
 }
 
 /**
- * A visitor of the site: a contact of Acme's app, or an anonymous browser. Its pages lead up to
+ * A visitor of the site: a contact of the site's own app, or an anonymous browser. Its pages lead up to
  * `arrivedAt`, such as the start of its chat, and it was last seen at `seenAt`.
  */
 async function addVisitor(
@@ -243,7 +255,7 @@ async function addVisitor(
       locale: "en",
       lastPage: pages.at(-1)?.path ?? null,
       lastSeenAt: seenAt,
-      // A contact signed up to Acme's app long before; an anonymous visitor came with its first page.
+      // A contact signed up to the site's app long before; an anonymous visitor came with its first page.
       createdAt:
         seed.contact === undefined ? firstPage : signedUpBefore(firstPage, seed.contact.userId),
     })
@@ -295,12 +307,12 @@ async function addConversation(
       continue;
     }
     const [operator, isNote] = author.startsWith("note:")
-      ? [author.slice("note:".length) as TeamKey, true]
-      : [author as TeamKey, false];
+      ? [author.slice("note:".length), true]
+      : [author, false];
     await appendMessage(
       tx,
       workspaceId,
-      { kind: "operator", operatorId: team[operator], conversationId },
+      { kind: "operator", operatorId: teammateId(team, operator), conversationId },
       isNote ? { ...input, note: true } : input,
     );
   }
@@ -310,7 +322,7 @@ async function addConversation(
       await setLabel(tx, workspaceId, { conversationId, labelId, added: true });
   }
   if (seed.status === "closed") {
-    const closer = team[lastTeammate(seed) ?? "anna"];
+    const closer = teammateId(team, lastTeammate(seed) ?? OWNER);
     await setConversationStatus(tx, workspaceId, conversationId, "closed", {
       kind: "operator",
       operatorId: closer,
@@ -335,9 +347,9 @@ async function addConversation(
 const lastAuthor = (seed: ConversationSeed) =>
   seed.lines.filter(([author]) => !author.startsWith("note:")).at(-1)?.[0];
 
-function lastTeammate(seed: ConversationSeed): TeamKey | undefined {
+function lastTeammate(seed: ConversationSeed): string | undefined {
   const author = seed.lines.map(([one]) => one).findLast((one) => one !== "visitor");
-  return author?.replace("note:", "") as TeamKey | undefined;
+  return author?.replace("note:", "");
 }
 
 /** Gives the conversation's messages, in order, the script's times instead of now. */
@@ -378,7 +390,7 @@ async function backdate(
 /** A live page campaign, and a draft that waits for review. */
 async function addCampaigns(workspaceId: string, operatorId: string) {
   const campaigns = createCampaigns({ db, live });
-  const actor = { kind: "operator", operatorId, name: TEAM.anna.name } as const;
+  const actor = { kind: "operator", operatorId, name: OWNER_NAME } as const;
   const base = {
     message: { body: "" },
     presentation: { startConversation: "on_reply", show: "preview", ifConversationOpen: "skip" },
@@ -405,7 +417,9 @@ async function addCampaigns(workspaceId: string, operatorId: string) {
       name: "Welcome new signups",
       trigger: { type: "match" },
       audience: { field: "signedIn", op: "eq", value: true },
-      message: { body: "Welcome to Acme! Reply here any time, a person reads every message." },
+      message: {
+        body: `Welcome to ${WORKSPACE_NAME}! Reply here any time, a person reads every message.`,
+      },
     }),
   );
   for (const outcome of [pricing, welcome]) {
@@ -502,7 +516,9 @@ function stayLive(
   const open = tabs.flatMap((tab) =>
     tab.visitorId === null ? [] : [marks.open(workspaceId, tab.visitorId)],
   );
-  const online = (["ben", "chloe"] as const).map((key) => team[key]);
+  const online = Object.entries(TEAM).flatMap(([key, { role, away }]) =>
+    role === "owner" || away ? [] : [teammateId(team, key)],
+  );
   const beat = async () => {
     await beatAll(workspaceId, tabs);
     for (const operatorId of online) {
@@ -544,9 +560,9 @@ async function finish() {
 }
 
 async function seed() {
-  console.log("==> Removing the earlier Acme demo, if any");
+  console.log("==> Removing the earlier demo, if any");
   await removeEarlierDemo();
-  console.log("==> Creating the Acme workspace");
+  console.log(`==> Creating the ${WORKSPACE_NAME} workspace`);
   const team = await ensureTeam();
   const workspaceId = (await createWorkspace(db, WORKSPACE_NAME, [SITE])).id;
   writeFileSync(DEMO_FILE, `${workspaceId}\n`);
@@ -578,7 +594,7 @@ async function seed() {
     return ids;
   });
   console.log("==> Adding campaigns and live visitors");
-  await addCampaigns(workspaceId, team.anna);
+  await addCampaigns(workspaceId, teammateId(team, OWNER));
   const tabs = liveTabs(seeded, quiet[0] ?? "");
   await arrive(workspaceId, tabs);
   live.wake(workspaceId, OPERATORS);
@@ -588,10 +604,10 @@ async function seed() {
     secret: readFileSync(SECRET_FILE, "utf8").trim(),
     baseURL: process.env.PUBLIC_URL || `http://localhost:${PORT}`,
   });
-  // The tour reads the workspace from this line, since Anna may belong to others.
-  console.log(`\n==> Acme is ready, workspace ${workspaceId}.`);
-  console.log(`==> Sign in as ${TEAM.anna.email} within ${LINK_MINUTES} minutes:`);
-  console.log(await signInLink(auth, TEAM.anna.email));
+  // The tour reads the workspace from this line, since the owner may belong to others.
+  console.log(`\n==> ${WORKSPACE_NAME} is ready, workspace ${workspaceId}.`);
+  console.log(`==> Sign in as ${OWNER_EMAIL} within ${LINK_MINUTES} minutes:`);
+  console.log(await signInLink(auth, OWNER_EMAIL));
   const typing = seeded[LIVE.typing.conversation];
   if (flags.live && typing !== undefined) stayLive(workspaceId, tabs, team, typing);
   else await finish();

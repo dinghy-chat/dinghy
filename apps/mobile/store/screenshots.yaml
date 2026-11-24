@@ -1,0 +1,45 @@
+# The App Store screenshots, for scripts/store-screenshots.ts capture. It signs in to the seeded
+# Harbor Coffee workspace (`bun run seed -- --harbor --live`) and saves one raw screen per slide in
+# listing.ts, in the folder the script passes as --test-output-dir. EMAIL and CODE come from the script.
+appId: chat.dinghy.operator
+---
+- launchApp:
+    clearState: true
+# The keychain keeps a session after the app's data is cleared, so sign in only when asked.
+- runFlow:
+    when:
+      visible: "Sign in"
+    commands:
+      - tapOn: "Sign in"
+      - tapOn: "you@example.com"
+      - inputText: ${EMAIL}
+      - tapOn: "Email me a code"
+      - tapOn: "123456"
+      - inputText: ${CODE}
+      - tapOn: "Continue"
+      - runFlow:
+          when:
+            visible: "Allow"
+          commands:
+            - tapOn: "Allow"
+- extendedWaitUntil:
+    visible: ".*Rosa Delgado.*"
+    timeout: 20000
+- waitForAnimationToEnd
+- takeScreenshot: 01-inbox
+- tapOn: ".*Rosa Delgado.*"
+- tapOn: "Reply to Rosa.*"
+- inputText: "Done! Your 20 kg now ships the first Tuesday of each month"
+- waitForAnimationToEnd
+- takeScreenshot: 02-conversation
+- tapOn: "Back"
+- tapOn: "Visitors.*"
+- waitForAnimationToEnd
+- takeScreenshot: 03-visitors
+- tapOn: "Contacts"
+- tapOn: ".*Rosa Delgado.*"
+- waitForAnimationToEnd
+- takeScreenshot: 04-contact
+- tapOn: "Analytics"
+- waitForAnimationToEnd
+- takeScreenshot: 05-analytics

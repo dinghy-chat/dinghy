@@ -462,6 +462,7 @@ export function InboxScreen({
   onOpen(conversation: Conversation): void;
   onOpenPending(conversationId: string): void;
 }) {
+  const dockInset = useTabBarInset();
   const [scope, setScope] = useState<Scope>("all");
   const [refreshing, setRefreshing] = useState(false);
   const [compact, setCompact] = useState(false);
@@ -554,7 +555,8 @@ export function InboxScreen({
             tintColor={palette.blue}
           />
         }
-        contentContainerStyle={screen.inboxContent}
+        scrollIndicatorInsets={{ bottom: dockInset }}
+        contentContainerStyle={[screen.inboxContent, { paddingBottom: 16 + dockInset }]}
       >
         {!searching && pendingByConversation.length > 0 && (
           <View style={[screen.savedReplies, { borderBottomColor: palette.line }]}>

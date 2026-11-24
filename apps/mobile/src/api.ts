@@ -35,7 +35,7 @@ function normalizeOrigin(value: string): string {
   const withScheme = /^https?:\/\//i.test(value.trim()) ? value.trim() : `https://${value.trim()}`;
   const parsed = new URL(withScheme);
   const developmentLoopback =
-    __DEV__ &&
+    (__DEV__ || parsed.origin === process.env.EXPO_PUBLIC_DINGHY_ORIGIN) &&
     ["localhost", "127.0.0.1", "10.0.2.2"].includes(parsed.hostname) &&
     parsed.protocol === "http:";
   if (parsed.protocol !== "https:" && !developmentLoopback) {

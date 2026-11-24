@@ -134,8 +134,21 @@ function SignedInApp({
   const [contactsQuery, setContactsQuery] = useState("");
   const [contactOpen, setContactOpen] = useState(false);
   const [tabBarHeight, setTabBarHeight] = useState(0);
+  const [keyboardShown, setKeyboardShown] = useState(false);
+  useEffect(() => {
+    const show = Keyboard.addListener("keyboardWillShow", () => setKeyboardShown(true));
+    const hide = Keyboard.addListener("keyboardWillHide", () => setKeyboardShown(false));
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+  // The dock floats over the list, which scrolls behind it. While the inbox search field is open,
+  // the dock sits under the list instead, so the keyboard padding lifts it above the keyboard.
   const overlaysList =
-    Platform.OS === "ios" && page !== "inbox" && !(page === "contacts" && contactOpen);
+    Platform.OS === "ios" &&
+    !(page === "inbox" && keyboardShown) &&
+    !(page === "contacts" && contactOpen);
   const [members, setMembers] = useState<Member[]>([]);
   const [me, setMe] = useState<Me | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);

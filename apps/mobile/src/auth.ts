@@ -33,8 +33,10 @@ export type EmailCodeResult =
   | { status: "totp_required"; challenge: string; expiresInSeconds: number };
 
 function cloudOrigin(): string {
+  // A loopback address set at build time replaces Dinghy Cloud, in development and in the
+  // simulator build that takes the App Store screenshots. Store builds never set it.
   const configured = process.env.EXPO_PUBLIC_DINGHY_ORIGIN;
-  if (!__DEV__ || !configured) return "https://app.dinghy.chat";
+  if (!configured) return "https://app.dinghy.chat";
   const parsed = new URL(configured);
   const loopback =
     parsed.hostname === "localhost" ||
