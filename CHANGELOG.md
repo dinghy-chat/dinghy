@@ -6,7 +6,7 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ### Changed
 
-- The line under the chat says "Live chat by Dinghy", or "Chat en direct par Dinghy" and "Chat en vivo por Dinghy", and every chat shows it.
+- The line under the chat says "Live chat by Dinghy", or "Chat en direct par Dinghy" and "Chat en vivo por Dinghy", and every chat shows it. It is no longer faded, so its text has at least 4.5:1 contrast in the light and dark themes.
 
 ### Removed
 
