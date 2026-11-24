@@ -45,7 +45,7 @@ Tell Claude Code to add Dinghy to your site. It calls the tools in this order:
 3. You deploy the site.
 4. `verify_install` with the origin. It tells you if the origin is allowed, if the chat loaded there, which origins got refused in the last 24 hours, how many tabs have it open right now, and what to do next.
 
-After that, `send_test_message` sends a chat as a test visitor, and `delete_test_visitors` cleans up. Check the visitors selected for deletion before you confirm the cleanup.
+After that, `send_test_message` sends a chat as a test visitor, and `delete_test_visitors` cleans up. It deletes every test visitor in the workspace, not only Claude's, so Claude asks you first.
 
 You can also type `/mcp__dinghy__install` in Claude Code: the same steps come from Dinghy as a prompt. In the operator app, the Install page has a "Set up with an agent" row with a prompt to copy.
 

@@ -40,7 +40,7 @@ const METHOD_NOT_FOUND = -32601;
 const INVALID_PARAMS = -32602;
 const HEADER_MISMATCH = -32020;
 const UNSUPPORTED_VERSION = -32022;
-/** How long a client may keep a list or the instructions. They depend on the key, so they are private. */
+/** How long a client may keep the tool and prompt lists. They depend on the key, so they are private. */
 const LIST_TTL_MS = 5 * 60_000;
 const NO_SUCH_TOOL = "There is no tool with this name. tools/list lists this connection's tools.";
 const NEEDS_FULL_ACCESS =
@@ -540,7 +540,8 @@ export function registerMcp(
         capabilities,
         serverInfo,
         instructions: instructions(actor),
-        ttlMs: LIST_TTL_MS,
+        // The instructions say the key's reply mode now, which an admin may change at any time.
+        ttlMs: 0,
         cacheScope: "private",
       });
     }

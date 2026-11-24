@@ -2,6 +2,7 @@ import { z } from "@hono/zod-openapi";
 import type { KeyActor } from "./api-keys.ts";
 import { normalizeOrigin } from "./identity.ts";
 import { UNTRUSTED_TEXT } from "./inputs.ts";
+import { Origin } from "./setup.ts";
 import { FRAMEWORKS } from "./setup-code.ts";
 
 // What the MCP server tells an agent before its first tool call: the instructions that every
@@ -53,8 +54,8 @@ const optional = <S extends z.ZodType>(schema: S) =>
 const InstallArguments = z.object({
   framework: optional(z.enum(FRAMEWORKS)),
   site: optional(
-    z.string().transform((value, context) => {
-      const origin = normalizeOrigin(value.trim());
+    Origin.transform((value, context) => {
+      const origin = normalizeOrigin(value);
       if (origin !== null) return origin;
       context.addIssue("Not an origin");
       return z.NEVER;

@@ -209,7 +209,9 @@ describe("the protocol", () => {
     expect(JSON.stringify(tools)).not.toContain("[0-9a-fA-F]{8}");
     // Zod takes only times in UTC, which the pattern beside `date-time` says.
     const snooze = tools.find((tool) => tool.name === "snooze_conversation");
-    expect(JSON.stringify(snooze?.inputSchema)).toContain('"format":"date-time","pattern"');
+    expect(snooze?.inputSchema.properties).toMatchObject({
+      until: { anyOf: [{ format: "date-time", pattern: expect.any(String) }, { type: "null" }] },
+    });
   });
 
   test("a body that is not one JSON-RPC message is refused", async () => {
@@ -296,6 +298,9 @@ describe("protocol 2026-07-28, with no session", () => {
       supportedVersions: ["2026-07-28", "2025-11-25", "2025-06-18", "2025-03-26"],
       capabilities: { tools: { listChanged: false } },
       serverInfo: { name: "dinghy" },
+      // The instructions say the key's reply mode, which may change, so nobody caches them.
+      ttlMs: 0,
+      cacheScope: "private",
       resultType: "complete",
       _meta: { "io.modelcontextprotocol/serverInfo": { name: "dinghy" } },
     });
@@ -822,6 +827,7 @@ describe("prompts, and a Full access key", () => {
       { framework: "cobol" },
       { framework: 1 },
       { site: "https://a.example/docs" },
+      { site: `https://${"a".repeat(293)}` },
     ]) {
       const bad = await asSetup("prompts/get", { name: "install", arguments: args });
       expect(bad.error?.code).toBe(-32602);
