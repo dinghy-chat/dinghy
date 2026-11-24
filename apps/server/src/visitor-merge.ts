@@ -4,7 +4,7 @@ import { conversation, visitor } from "./db/schema.ts";
 import type { Transaction } from "./db/tenant.ts";
 import { sha256Hex } from "./identity.ts";
 import { lockVisitors } from "./journey.ts";
-import { lockWorkspace, recordConversationChanges } from "./messages.ts";
+import { isChat, lockWorkspace, recordConversationChanges } from "./messages.ts";
 
 /**
  * Moves everything of the anonymous visitor that this browser token names into the signed-in
@@ -48,8 +48,9 @@ export async function mergeBrowserVisitor(
 
 /**
  * The signed-in visitor keeps its own name, email and attributes. It takes the anonymous one's note
- * when it has none, its block, the earlier start and the earlier read position, so no unread reply
- * counts as read. False when the source went away in another merge.
+ * when it has none, its block and the earlier start. Its read position is the further one, but stops
+ * before the first reply either of them has not read, so no reply changes between read and unread.
+ * False when the source went away in another merge.
  */
 async function mergeVisitorRow(
   tx: Transaction,
@@ -62,7 +63,13 @@ async function mergeVisitorRow(
       note = coalesce(t.note, s.note),
       blocked_at = coalesce(t.blocked_at, s.blocked_at),
       created_at = least(t.created_at, s.created_at),
-      last_read_seq = least(t.last_read_seq, s.last_read_seq)
+      last_read_seq = least(greatest(t.last_read_seq, s.last_read_seq), coalesce((
+        SELECT min(m.seq) - 1 FROM message AS m
+        JOIN conversation AS c ON c.workspace_id = m.workspace_id AND c.id = m.conversation_id
+        WHERE m.workspace_id = t.workspace_id AND c.visitor_id IN (s.id, t.id)
+          AND m.author_visitor_id IS NULL AND ${isChat(sql`m.kind`)} AND m.deleted_at IS NULL
+          AND m.seq > CASE WHEN c.visitor_id = s.id THEN s.last_read_seq ELSE t.last_read_seq END
+      ), greatest(t.last_read_seq, s.last_read_seq)))
     FROM visitor AS s
     WHERE t.workspace_id = ${workspaceId} AND t.id = ${targetId}
       AND s.workspace_id = ${workspaceId} AND s.id = ${sourceId}`);
@@ -86,13 +93,14 @@ async function moveVisitorRows(
     .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.visitorId, sourceId)))
     .returning({ id: conversation.id });
   const scope = sql`workspace_id = ${workspaceId} AND visitor_id = ${sourceId}`;
-  // Each visitor's client IDs are unique only to them, so a clash takes the message's own ID.
+  // Each visitor's client IDs are unique only to them, so a clash takes the message's own ID, with a
+  // colon that no client ID from the API holds.
   await tx.execute(sql`
     UPDATE message AS s SET author_visitor_id = ${targetId},
       client_id = CASE WHEN EXISTS (
         SELECT 1 FROM message AS t WHERE t.workspace_id = s.workspace_id
           AND t.author_visitor_id = ${targetId} AND t.client_id = s.client_id
-      ) THEN s.id::text ELSE s.client_id END
+      ) THEN 'merged:' || s.id ELSE s.client_id END
     WHERE s.workspace_id = ${workspaceId} AND s.author_visitor_id = ${sourceId}`);
   // Chat links stay with the anonymous visitor and go with its delete: a link reached an email that
   // was never checked, so it must not open the signed-in visitor's chats.
