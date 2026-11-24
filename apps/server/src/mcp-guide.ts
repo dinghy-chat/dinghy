@@ -1,7 +1,7 @@
 import { z } from "@hono/zod-openapi";
 import type { KeyActor } from "./api-keys.ts";
+import { normalizeOrigin } from "./identity.ts";
 import { UNTRUSTED_TEXT } from "./inputs.ts";
-import { Origin } from "./setup.ts";
 import { FRAMEWORKS } from "./setup-code.ts";
 
 // What the MCP server tells an agent before its first tool call: the instructions that every
@@ -10,10 +10,10 @@ import { FRAMEWORKS } from "./setup-code.ts";
 const LEVEL_NAMES = { conversations: "Chats access", setup: "Full access" } as const;
 
 const ANSWER_LOOP =
-  "To answer chats, call wait_for_events with no cursor, read what came before with list_conversations and get_conversation (`format: \"markdown\"` is the shortest), then call wait_for_events in a loop with each answer's `cursor`. For each visitor message: get_conversation, list_saved_replies for the team's facts, set_typing, then reply with a `clientId` you make. Call hand_off when the visitor asks for a person, when it is about money, an account or a complaint, or when you are unsure. While a person handles a conversation, write add_note instead of replying.";
+  "To answer chats, call wait_for_events with no cursor, read what came before with list_conversations and get_conversation (`format: \"markdown\"` is the shortest), and list_drafts, then call wait_for_events in a loop with each answer's `cursor`. On `resync: true`, read the open conversations and list_drafts again. For each visitor message: get_conversation, list_saved_replies for the team's facts, set_typing, then reply with a `clientId` you make. Call hand_off when the visitor asks for a person, when it is about money, an account or a complaint, or when you are unsure. While a person handles a conversation, write add_note instead of replying.";
 
 const INSTALL_STEPS =
-  "To install the chat on a site: get_install_snippet, add_allowed_site, deploy, then verify_install. Test with send_test_message, then clean up with delete_test_visitors. The install prompt holds these steps.";
+  "To install the chat on a site: get_install_snippet, add_allowed_site, deploy, then verify_install. Test with send_test_message. delete_test_visitors deletes every test visitor of the workspace, not only yours, so ask first. The install prompt holds these steps.";
 
 /** What this connection is and may do now, then how to use it, then the safety rule. */
 export function instructions(actor: KeyActor): string {
@@ -43,12 +43,23 @@ interface Prompt {
   description: string;
   arguments: { name: string; description: string; required: boolean }[];
   /** Null when the arguments are not valid. */
-  text(args: Record<string, string>): string | null;
+  text(args: unknown): string | null;
 }
 
+/** A blank argument, which a client sends for a field left empty, counts as left out. */
+const optional = <S extends z.ZodType>(schema: S) =>
+  z.preprocess((value) => (value === "" ? undefined : value), schema.optional());
+
 const InstallArguments = z.object({
-  framework: z.enum(FRAMEWORKS).optional(),
-  site: Origin.optional(),
+  framework: optional(z.enum(FRAMEWORKS)),
+  site: optional(
+    z.string().transform((value, context) => {
+      const origin = normalizeOrigin(value.trim());
+      if (origin !== null) return origin;
+      context.addIssue("Not an origin");
+      return z.NEVER;
+    }),
+  ),
 });
 
 const installPrompt: Prompt = {
@@ -77,7 +88,7 @@ const installPrompt: Prompt = {
 2. Call add_allowed_site with ${site === undefined ? "the site's origin, such as https://www.example.com" : site}. www and the bare domain are two origins.
 3. Deploy the site, or ask me to.
 4. Call verify_install with the origin and do its nextStep, at most 5 times.
-5. Call send_test_message, tell me to look for it in the inbox, then call delete_test_visitors.
+5. Call send_test_message, and tell me to look for it in the inbox. Ask me before delete_test_visitors: it deletes every test visitor of the workspace.
 
 Ask me before you change anything outside the install. Never ask for a secret or write one in code.`;
   },

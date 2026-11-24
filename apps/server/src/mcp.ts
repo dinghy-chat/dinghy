@@ -40,7 +40,7 @@ const METHOD_NOT_FOUND = -32601;
 const INVALID_PARAMS = -32602;
 const HEADER_MISMATCH = -32020;
 const UNSUPPORTED_VERSION = -32022;
-/** How long a client may keep the tool and prompt lists. They depend on the key, so they are private. */
+/** How long a client may keep a list or the instructions. They depend on the key, so they are private. */
 const LIST_TTL_MS = 5 * 60_000;
 const NO_SUCH_TOOL = "There is no tool with this name. tools/list lists this connection's tools.";
 const NEEDS_FULL_ACCESS =
@@ -85,8 +85,8 @@ export interface Tool {
 }
 
 /** A missing argument reads as such, not as Zod's "expected string, received undefined". */
-const missingIsRequired = (issue: { code: string; input?: unknown }) =>
-  issue.code === "invalid_type" && issue.input === undefined ? "Required" : undefined;
+const missingIsRequired = (issue: { input?: unknown }) =>
+  issue.input === undefined ? "Required" : undefined;
 
 /** Every problem with a tool's arguments at once, so an agent fixes them in one retry. */
 function invalidArguments(error: z.ZodError) {
@@ -96,16 +96,25 @@ function invalidArguments(error: z.ZodError) {
   return failure("invalid_request", `Fix these arguments. ${problems.join(". ")}.`);
 }
 
+/** Formats whose JSON Schema meaning is Zod's check, so its long regex beside them says nothing more. */
+const FORMATS_WITHOUT_PATTERN = new Set(["uuid", "email", "date"]);
+
 /**
- * The JSON Schema without the long regex that Zod writes beside a `format`, such as `uuid` or
- * `email`. The format says the same to an agent in a few tokens, and Zod still checks the input.
+ * The JSON Schema without the long regex that Zod writes beside a `format` such as `uuid`. The
+ * format says the same to an agent in a few tokens, and Zod still checks the input. A `date-time`
+ * keeps its pattern, because Zod accepts only times in UTC, ending in `Z`.
  */
 function withoutFormatPatterns(schema: unknown): Record<string, unknown> {
   const strip = (node: unknown): unknown => {
     if (Array.isArray(node)) return node.map(strip);
     if (typeof node !== "object" || node === null) return node;
     const entries = Object.entries(node).filter(
-      ([key, value]) => !(key === "pattern" && typeof value === "string" && "format" in node),
+      ([key]) =>
+        !(
+          key === "pattern" &&
+          "format" in node &&
+          FORMATS_WITHOUT_PATTERN.has(String(node.format))
+        ),
     );
     return Object.fromEntries(entries.map(([key, value]) => [key, strip(value)]));
   };
@@ -402,16 +411,6 @@ interface McpOptions {
 
 type Params = Record<string, unknown>;
 
-/** A prompt's arguments, which MCP sends as strings. Any other value is left out. */
-const stringArguments = (value: unknown): Record<string, string> =>
-  typeof value === "object" && value !== null
-    ? Object.fromEntries(
-        Object.entries(value).filter(
-          (entry): entry is [string, string] => typeof entry[1] === "string",
-        ),
-      )
-    : {};
-
 /** The `_meta` of a request's params, where a 2026-07-28 request names its version. */
 const metaOf = (params: Params): Params => {
   const meta = params._meta;
@@ -437,7 +436,8 @@ function headerMismatch(
     return true;
   }
   if (method !== undefined && headers.method !== method) return true;
-  return (method === "tools/call" || method === "prompts/get") && headers.name !== params.name;
+  const named = method === "tools/call" || method === "prompts/get";
+  return named && (headers.name === undefined || headers.name !== params.name);
 }
 
 /** The protocol version a request asks for: its body's, or else its header's. */
@@ -496,7 +496,7 @@ export function registerMcp(
   const getPrompt = (id: RpcId, params: Params, actor: KeyActor) => {
     const found = promptsFor(actor).find((one) => one.name === params.name);
     if (found === undefined) return rpcError(id, INVALID_PARAMS, NO_SUCH_PROMPT);
-    const text = found.text(stringArguments(params.arguments));
+    const text = found.text(params.arguments ?? {});
     if (text === null) return rpcError(id, INVALID_PARAMS, "These prompt arguments are not valid.");
     return rpcResult(id, {
       description: found.description,
@@ -540,6 +540,8 @@ export function registerMcp(
         capabilities,
         serverInfo,
         instructions: instructions(actor),
+        ttlMs: LIST_TTL_MS,
+        cacheScope: "private",
       });
     }
     if (method === "ping") return complete({});
