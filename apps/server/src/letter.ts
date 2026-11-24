@@ -226,20 +226,22 @@ export function letter(
 }
 
 /**
- * The same letter in HTML, which looks like the text but puts each link behind its words. `footer`
- * is HTML that its maker escaped, in small print under the sign-off.
+ * The same letter in HTML, which looks like the text but puts each link behind its words. It sets
+ * only the font and a near-black color, and keeps the mail app's own margins. `footer` is HTML
+ * that its maker escaped, in small print under the sign-off.
  */
 export function plainLetterHtml(
   paragraphs: Paragraph[],
   { name, team = "Dinghy", signOff, footer = "" }: LetterOptions = {},
 ): string {
   const body = letterParts(paragraphs, name, team, signOff)
-    .map((one) => `<p style="margin:0 0 14px">${paragraphHtml(one).replaceAll("\n", "<br>")}</p>`)
+    .map((one) => `<p>${paragraphHtml(one).replaceAll("\n", "<br>")}</p>`)
     .join("");
+  // Near-black, not the navy: in dark mode a mail app turns the navy into a pale blue.
   return (
-    '<!doctype html><html><head><meta charset="utf-8"></head><body style="margin:0;padding:16px;' +
-    `font-family:${EMAIL_FONTS};font-size:15px;line-height:1.55;color:${EMAIL_COLORS.text}">` +
-    `${body}${footer}</body></html>`
+    '<!doctype html><html><head><meta charset="utf-8"></head><body>' +
+    `<div style="font-family:${EMAIL_FONTS};font-size:14px;line-height:1.6;color:#1a1a1a">` +
+    `${body}${footer}</div></body></html>`
   );
 }
 

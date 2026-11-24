@@ -523,7 +523,7 @@ describe("the HTML version of a lifecycle email", () => {
     );
     expect(html).not.toContain(">https://");
     expect(html).toContain("Cheers,<br>Julien from Dinghy");
-    expect(html).toContain(">Unsubscribe</a></p></body></html>");
+    expect(html).toContain(">Unsubscribe</a></p></div></body></html>");
     expect(lifecycleHtml(mail.body, "Bob", undefined)).not.toContain("Unsubscribe");
   });
 });
