@@ -1539,7 +1539,7 @@ Ask me before you change anything outside the install. Never ask for a secret or
   contactOtherConversationsOne: "1 other conversation",
   contactOtherConversationsMany: "{count} other conversations",
   contactSameEmail: "Other visitors with this email",
-  contactEmailTyped: "Email typed in chat",
+  contactNotSignedIn: "Not signed in",
   contactRepliedIn: "Replied in {time}",
   contactViewTabs: "Show",
   emailLabel: "email",

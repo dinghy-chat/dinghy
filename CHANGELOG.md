@@ -7,7 +7,7 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 ### Added
 
 - A visitor who chatted signed out and then signs in on the same browser keeps that history: the widget sends its old browser token once, with `POST /v1/widget/{key}/me/merge`, and the server moves the anonymous visitor's conversations, messages, pages and events into the signed-in visitor, then deletes it. The signed-in visitor keeps its name, email and attributes.
-- A contact's `sameEmail` lists the conversations of other visitors with the same email, ignoring case, with `visitorId` and `signedIn`. Nothing is merged. The contact page, the thread's side panel and the mobile app show them, and a visitor who only typed the email is marked "Email typed in chat". The MCP tool `get_contact` returns them too.
+- A contact's `sameEmail` lists the conversations of other visitors with the same email, ignoring case, with `visitorId` and `signedIn`. Nothing is merged. The contact page, the thread's side panel and the mobile app show them, and a visitor who was not signed in is marked "Not signed in". The MCP tool `get_contact` returns them too.
 - In the mobile app, a thread shows "2 other conversations" above its first message when the visitor has others, and the visitor sheet lists them.
 
 ### Fixed

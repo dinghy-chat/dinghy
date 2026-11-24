@@ -366,7 +366,7 @@ function ConversationRow({
               {t(conversation.status)}
             </Text>
           </View>
-          {isEmailTyped && <Badge palette={palette}>{t("contactEmailTyped")}</Badge>}
+          {isEmailTyped && <Badge palette={palette}>{t("contactNotSignedIn")}</Badge>}
         </View>
         <Text style={[s.contactTime, { color: palette.sub }]}>
           {elapsedLabel(conversation.updatedAt)}

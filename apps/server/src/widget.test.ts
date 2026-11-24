@@ -11,7 +11,7 @@ import { createChatLink } from "./chat-link.ts";
 import { conversation, visitor } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
 import { withWorkspace } from "./db/tenant.ts";
-import { newBrowserToken, normalizeOrigin, verifyHostToken } from "./identity.ts";
+import { newBrowserToken, normalizeOrigin, sha256Hex, verifyHostToken } from "./identity.ts";
 import { tokenKind, widgetToken } from "./widget.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
@@ -401,6 +401,52 @@ describe("signing in where the visitor chatted", () => {
     // The old token is gone with its visitor, and a second merge changes nothing.
     expect((await me(anonymous.token)).status).toBe(401);
     expect((await merge(token, anonymous.token)).status).toBe(200);
+  });
+
+  test("a merge keeps unread replies unread, takes a clashing client ID and drops the browser's chat links", async () => {
+    const anonymous = await chattedVisitor();
+    const [chat] = await conversationsOf(anonymous.visitorId);
+    if (chat === undefined) throw new Error("No conversation");
+    // The worker makes chat links, so this uses the owner's role.
+    const link = await withWorkspace(owner(), a.id, (tx) =>
+      createChatLink(tx, a.id, anonymous.visitorId, chat.id, Date.now()),
+    );
+    const token = await hostToken({ subject: "clashing" });
+    // The signed-in visitor used the same client ID, and read further.
+    const sent = await app.request(`/v1/widget/${a.publicKey}/messages`, {
+      method: "POST",
+      headers: {
+        origin: ORIGIN,
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ clientId: "before-sign-in", body: "signed in" }),
+    });
+    expect(sent.status).toBe(201);
+    const { visitorId } = (await (await me(token)).json()) as { visitorId: string };
+    await owner().update(visitor).set({ lastReadSeq: 1000n }).where(eq(visitor.id, visitorId));
+    await owner()
+      .update(visitor)
+      .set({ lastReadSeq: 0n })
+      .where(eq(visitor.id, anonymous.visitorId));
+
+    expect((await merge(token, anonymous.token)).status).toBe(200);
+
+    const moved = await owner().execute<{ id: string; clientId: string }>(
+      sql`select id, client_id as "clientId" from message
+        where conversation_id = ${chat.id} and author_visitor_id = ${visitorId}`,
+    );
+    expect(moved.rows).toEqual([{ id: moved.rows[0]?.id, clientId: moved.rows[0]?.id }]);
+    const [row] = await owner()
+      .select({ lastReadSeq: visitor.lastReadSeq })
+      .from(visitor)
+      .where(eq(visitor.id, visitorId));
+    expect(row?.lastReadSeq).toBe(0n);
+    // The link reached an email nobody checked, so it opens nothing of the signed-in visitor.
+    const links = await owner().execute(
+      sql`select 1 from chat_link where token_hash = ${sha256Hex(link)}`,
+    );
+    expect(links.rows).toEqual([]);
   });
 
   test("only a host token merges: a browser token never takes another browser's visitor", async () => {

@@ -425,7 +425,7 @@ function ConversationCards({
             <span className="conversation-top">
               <span className={one.status === "open" ? "chip open" : "chip"}>{t(one.status)}</span>
               {"signedIn" in one && !one.signedIn && (
-                <span className="chip">{t("contactEmailTyped")}</span>
+                <span className="chip">{t("contactNotSignedIn")}</span>
               )}
               <b>{conversationPreview(one)}</b>
               <time dateTime={one.updatedAt} title={new Date(one.updatedAt).toLocaleString()}>

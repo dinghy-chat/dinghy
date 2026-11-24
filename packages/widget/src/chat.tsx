@@ -405,7 +405,10 @@ function Chat({
     const browserToken = identity !== null && !fullPage ? readToken(publicKey) : null;
     (browserToken === null ? client.me(token) : client.meMerging(token, browserToken))
       .then((me) => {
-        if (browserToken !== null) writeToken(publicKey, null);
+        // Only the token this merge sent: a reset() meanwhile may have stored a new one.
+        if (browserToken !== null && readToken(publicKey) === browserToken) {
+          writeToken(publicKey, null);
+        }
         if (replaced) return;
         renewDelay.current = 0;
         knowVisitor(context, me.visitorId);

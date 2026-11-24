@@ -388,7 +388,7 @@ function ConversationLinks({
             <span className="link-preview">{conversationPreview(one)}</span>
             <small>
               {t(one.status)} · {ago(one.updatedAt, Date.now(), "narrow")}
-              {"signedIn" in one && !one.signedIn && ` · ${t("contactEmailTyped")}`}
+              {"signedIn" in one && !one.signedIn && ` · ${t("contactNotSignedIn")}`}
             </small>
           </button>
         </li>

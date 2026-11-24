@@ -48,8 +48,8 @@ export async function mergeBrowserVisitor(
 
 /**
  * The signed-in visitor keeps its own name, email and attributes. It takes the anonymous one's note
- * when it has none, its block, the earlier start and the further read position. False when the
- * source went away in another merge.
+ * when it has none, its block, the earlier start and the earlier read position, so no unread reply
+ * counts as read. False when the source went away in another merge.
  */
 async function mergeVisitorRow(
   tx: Transaction,
@@ -62,7 +62,7 @@ async function mergeVisitorRow(
       note = coalesce(t.note, s.note),
       blocked_at = coalesce(t.blocked_at, s.blocked_at),
       created_at = least(t.created_at, s.created_at),
-      last_read_seq = greatest(t.last_read_seq, s.last_read_seq)
+      last_read_seq = least(t.last_read_seq, s.last_read_seq)
     FROM visitor AS s
     WHERE t.workspace_id = ${workspaceId} AND t.id = ${targetId}
       AND s.workspace_id = ${workspaceId} AND s.id = ${sourceId}`);
@@ -86,10 +86,17 @@ async function moveVisitorRows(
     .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.visitorId, sourceId)))
     .returning({ id: conversation.id });
   const scope = sql`workspace_id = ${workspaceId} AND visitor_id = ${sourceId}`;
+  // Each visitor's client IDs are unique only to them, so a clash takes the message's own ID.
   await tx.execute(sql`
-    UPDATE message SET author_visitor_id = ${targetId}
-    WHERE workspace_id = ${workspaceId} AND author_visitor_id = ${sourceId}`);
-  for (const table of ["chat_link", "reply_address", "page_view", "alert_delivery"]) {
+    UPDATE message AS s SET author_visitor_id = ${targetId},
+      client_id = CASE WHEN EXISTS (
+        SELECT 1 FROM message AS t WHERE t.workspace_id = s.workspace_id
+          AND t.author_visitor_id = ${targetId} AND t.client_id = s.client_id
+      ) THEN s.id::text ELSE s.client_id END
+    WHERE s.workspace_id = ${workspaceId} AND s.author_visitor_id = ${sourceId}`);
+  // Chat links stay with the anonymous visitor and go with its delete: a link reached an email that
+  // was never checked, so it must not open the signed-in visitor's chats.
+  for (const table of ["reply_address", "page_view", "alert_delivery"]) {
     await tx.execute(
       sql`UPDATE ${sql.identifier(table)} SET visitor_id = ${targetId} WHERE ${scope}`,
     );
