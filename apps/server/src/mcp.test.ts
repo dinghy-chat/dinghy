@@ -811,6 +811,15 @@ describe("prompts, and a Full access key", () => {
       name: "install",
       arguments: { framework: "nextjs", site: "https://www.example.com" },
     });
+    // Percent-encoded, it is longer than add_allowed_site takes, but its origin is short.
+    const encoded = `https://${"%C3%A9".repeat(50)}.example.com`;
+    const normalized = await asSetup("prompts/get", {
+      name: "install",
+      arguments: { site: encoded },
+    });
+    expect(JSON.stringify(normalized.result)).toContain(
+      `add_allowed_site with ${new URL(encoded).origin}.`,
+    );
     const [message] = (filled.result?.messages ?? []) as {
       role: string;
       content: { text: string };

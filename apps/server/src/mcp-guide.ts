@@ -54,9 +54,10 @@ const optional = <S extends z.ZodType>(schema: S) =>
 const InstallArguments = z.object({
   framework: optional(z.enum(FRAMEWORKS)),
   site: optional(
-    Origin.transform((value, context) => {
-      const origin = normalizeOrigin(value);
-      if (origin !== null) return origin;
+    // Checked as add_allowed_site will get it: normalized, which can change its length.
+    z.string().transform((value, context) => {
+      const origin = normalizeOrigin(value.trim());
+      if (origin !== null && Origin.safeParse(origin).success) return origin;
       context.addIssue("Not an origin");
       return z.NEVER;
     }),
