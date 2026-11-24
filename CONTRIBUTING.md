@@ -35,6 +35,7 @@ While `bun run dev` runs, `bun run seed` adds a demo workspace, Acme, so every s
 
 - Run it again to start the demo over. It deletes only the Acme workspace it made, whose ID it keeps in `.dev/seed-workspace`, so other workspaces in the database stay as they are.
 - The visitors on the site leave the Visitors screen after 90 seconds. `bun run seed -- --live` keeps them there, keeps two teammates online and shows a visitor typing, until Ctrl-C.
+- `bun run seed -- --harbor` writes Harbor Coffee instead, a coffee roaster whose owner is `owner@harborcoffee.example`, for the mobile app's store screenshots. `chat demo` writes the same story into an existing workspace, such as the app review account's on Dinghy Cloud.
 - With `DINGHY_PORT`, give it the same value as `bun run dev`, so the link opens the right port.
 - `RECORD_TOUR=<directory> bun x playwright test tour --project=chromium` reseeds the demo and records the product tour video, `dinghy-tour.mp4` and its poster, into that directory. It needs ffmpeg.
 

@@ -808,7 +808,7 @@ function llmsFull(): string {
 /** Every page on the site, for search engines. The hand-written pages come first, and the 404 page is left out. */
 function sitemap(): string {
   const entries = [
-    ...["/", "/terms", "/privacy"].map((path) => ({ path, updated: undefined as string | undefined })),
+    ...["/", "/terms", "/privacy", "/support"].map((path) => ({ path, updated: undefined as string | undefined })),
     ...ALL_PAGES.map((page) => ({ path: page.path, updated: page.updated })),
   ]
     .map(({ path, updated }) => {

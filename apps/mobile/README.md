@@ -10,7 +10,7 @@ Operators can insert a saved reply and edit it before sending. **Photo** opens t
 
 Install the repository dependencies with `bun install`. From `apps/mobile`, run `bun run ios` on a Mac with Xcode or `bun run android` with the Android SDK. Each command builds the native app and starts Metro.
 
-Use a server that includes the mobile sign-in routes. To use a local server, run `DINGHY_PORT=4620 bun run dev` from the repository root. Set `EXPO_PUBLIC_DINGHY_ORIGIN=http://localhost:4620` when starting Metro. For an Android emulator, also run `adb reverse tcp:4620 tcp:4620`. Release builds use the Dinghy Cloud address for the Cloud sign-in option.
+Use a server that includes the mobile sign-in routes. To use a local server, run `DINGHY_PORT=4620 bun run dev` from the repository root. Set `EXPO_PUBLIC_DINGHY_ORIGIN=http://localhost:4620` when starting Metro. For an Android emulator, also run `adb reverse tcp:4620 tcp:4620`. Release builds use the Dinghy Cloud address for the Cloud sign-in option, unless `EXPO_PUBLIC_DINGHY_ORIGIN` holds a loopback address at build time, as in the simulator build for the App Store screenshots.
 
 ## Push alerts
 

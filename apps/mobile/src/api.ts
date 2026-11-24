@@ -34,8 +34,9 @@ export class ApiError extends Error {
 function normalizeOrigin(value: string): string {
   const withScheme = /^https?:\/\//i.test(value.trim()) ? value.trim() : `https://${value.trim()}`;
   const parsed = new URL(withScheme);
+  const configured = process.env.EXPO_PUBLIC_DINGHY_ORIGIN;
   const developmentLoopback =
-    __DEV__ &&
+    (__DEV__ || (!!configured && parsed.origin === new URL(configured).origin)) &&
     ["localhost", "127.0.0.1", "10.0.2.2"].includes(parsed.hostname) &&
     parsed.protocol === "http:";
   if (parsed.protocol !== "https:" && !developmentLoopback) {
