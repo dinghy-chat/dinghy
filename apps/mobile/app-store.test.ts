@@ -10,6 +10,7 @@ import {
   pngSize,
   screenshotPlan,
   signToken,
+  submissionStep,
 } from "./scripts/app-store-logic.ts";
 
 describe("the API token", () => {
@@ -62,6 +63,7 @@ test("pngSize reads the IHDR chunk", () => {
 test("only versions Apple lets us change are editable", () => {
   expect(isEditable("PREPARE_FOR_SUBMISSION")).toBe(true);
   expect(isEditable("METADATA_REJECTED")).toBe(true);
+  expect(isEditable("READY_FOR_REVIEW")).toBe(true);
   expect(isEditable("WAITING_FOR_REVIEW")).toBe(false);
   expect(isEditable(undefined)).toBe(false);
 });
@@ -106,9 +108,9 @@ describe("screenshotPlan", () => {
   test("keeps matching screenshots in order, uploads new ones and deletes the rest", () => {
     const plan = screenshotPlan(
       [
-        { id: "old", checksum: "x" },
-        { id: "kept-c", checksum: "c" },
-        { id: "kept-a", checksum: "a" },
+        { id: "old", checksum: "x", deliveryState: "COMPLETE" },
+        { id: "kept-c", checksum: "c", deliveryState: "COMPLETE" },
+        { id: "kept-a", checksum: "a", deliveryState: "COMPLETE" },
       ],
       wanted,
     );
@@ -121,8 +123,53 @@ describe("screenshotPlan", () => {
       { fileName: "01.png", checksum: "a" },
       { fileName: "02.png", checksum: "a" },
     ];
-    const plan = screenshotPlan([{ id: "one", checksum: "a" }], twins);
+    const plan = screenshotPlan([{ id: "one", checksum: "a", deliveryState: "COMPLETE" }], twins);
     expect(plan.order).toEqual([{ keep: "one" }, { upload: twins[1] }]);
+  });
+
+  test("replaces a screenshot that Apple has not finished processing, even with the same file", () => {
+    const plan = screenshotPlan(
+      [
+        { id: "processing", checksum: "a", deliveryState: "UPLOAD_COMPLETE" },
+        { id: "failed", checksum: "b", deliveryState: "FAILED" },
+        { id: "done", checksum: "c", deliveryState: "COMPLETE" },
+      ],
+      wanted,
+    );
+    expect(plan.order).toEqual([{ upload: wanted[0] }, { upload: wanted[1] }, { keep: "done" }]);
+    expect(plan.remove).toEqual(["processing", "failed"]);
+  });
+});
+
+describe("submissionStep", () => {
+  const draft = { id: "draft", state: "READY_FOR_REVIEW" };
+
+  test("creates a submission when none is open", () => {
+    expect(submissionStep(undefined, "v1")).toEqual({ kind: "create" });
+  });
+
+  test("finishes its own draft, adding the version when it is missing", () => {
+    expect(submissionStep({ ...draft, itemVersionIds: [] }, "v1")).toEqual({
+      kind: "resume",
+      submissionId: "draft",
+      isAddingVersion: true,
+    });
+    expect(submissionStep({ ...draft, itemVersionIds: ["v1"] }, "v1")).toEqual({
+      kind: "resume",
+      submissionId: "draft",
+      isAddingVersion: false,
+    });
+  });
+
+  test("refuses a submission Apple is reviewing, or a draft with other items", () => {
+    const reviewing = { id: "sent", state: "WAITING_FOR_REVIEW", itemVersionIds: ["v1"] };
+    expect(submissionStep(reviewing, "v1")).toMatchObject({ kind: "refuse" });
+    expect(submissionStep({ ...draft, itemVersionIds: ["v1", null] }, "v1")).toMatchObject({
+      kind: "refuse",
+    });
+    expect(submissionStep({ ...draft, itemVersionIds: ["v0"] }, "v1")).toMatchObject({
+      kind: "refuse",
+    });
   });
 });
 
@@ -142,5 +189,16 @@ describe("parseArgs", () => {
     expect(parseArgs(["--help"]).command).toBe("help");
     expect(() => parseArgs(["deploy"])).toThrow("Unknown command");
     expect(() => parseArgs(["push", "--build"])).toThrow("needs a value");
+    expect(() => parseArgs(["push", "--force"])).toThrow("push does not take --force");
+  });
+
+  test("refuses an option the command does not take", () => {
+    expect(() => parseArgs(["submit", "--dry-run"])).toThrow("submit does not take --dry-run");
+    expect(() => parseArgs(["check", "--yes"])).toThrow("check does not take --yes");
+    expect(parseArgs(["submit", "--yes", "--build", "15"])).toMatchObject({
+      command: "submit",
+      build: "15",
+      isConfirmed: true,
+    });
   });
 });

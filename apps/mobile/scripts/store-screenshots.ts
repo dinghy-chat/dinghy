@@ -7,7 +7,15 @@
 // server with the seeded Harbor Coffee owner and runs store/screenshots.yaml with Maestro, which
 // saves the raw screens. `compose` puts each raw screen under its headline at 1320 x 2868 pixels.
 import { execFileSync } from "node:child_process";
-import { globSync, mkdirSync, readFileSync, renameSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  globSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+} from "node:fs";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
@@ -82,31 +90,52 @@ function capture() {
   }
   run("xcrun", ["simctl", "install", udid, values.app]);
   // The keychain outlives the app, and an old session can point at a workspace a new seed replaced.
+  // The reset clears every app's keychain on this simulator, so keep a simulator for screenshots.
   run("xcrun", ["simctl", "keychain", udid, "reset"]);
   rmSync(RAW, { recursive: true, force: true });
   mkdirSync(RAW, { recursive: true });
-  execFileSync(
-    "maestro",
-    [
-      "--device",
-      udid,
-      "test",
-      "--test-output-dir",
-      RAW,
-      join(MOBILE, "store/screenshots.yaml"),
-      "-e",
-      `EMAIL=${values.email}`,
-      "-e",
-      `CODE=${values.code}`,
-    ],
-    { stdio: "inherit" },
-  );
-  // Maestro saves the screens in a folder per run, under takeScreenshot.
-  for (const file of globSync(join(RAW, "*/screenshots/takeScreenshot/*.png"))) {
-    renameSync(file, join(RAW, basename(file)));
+  try {
+    execFileSync(
+      "maestro",
+      [
+        "--device",
+        udid,
+        "test",
+        "--test-output-dir",
+        RAW,
+        join(MOBILE, "store/screenshots.yaml"),
+        "-e",
+        `EMAIL=${values.email}`,
+        "-e",
+        `CODE=${values.code}`,
+      ],
+      { stdio: "inherit" },
+    );
+  } catch {
+    // Node's error holds the command line, and with it the sign-in code.
+    throw new Error("Maestro failed. Its output above shows the step.");
   }
   run("xcrun", ["simctl", "status_bar", udid, "clear"]);
+  collectScreens();
   console.log(`Raw screens in ${RAW}`);
+}
+
+/** Maestro saves the screens under takeScreenshot, in a folder per run or at the top. */
+function collectScreens() {
+  const saved = [
+    ...globSync(join(RAW, "*/screenshots/takeScreenshot/*.png")),
+    ...globSync(join(RAW, "takeScreenshot/*.png")),
+  ];
+  for (const file of saved) renameSync(file, join(RAW, basename(file)));
+  for (const entry of readdirSync(RAW, { withFileTypes: true })) {
+    if (entry.isDirectory()) rmSync(join(RAW, entry.name), { recursive: true });
+  }
+  const missing = SLIDES.filter((slide) => !existsSync(join(RAW, `${slide.name}.png`)));
+  if (missing.length > 0) {
+    throw new Error(
+      `Maestro saved no screen for ${missing.map((slide) => slide.name).join(", ")}. Check store/screenshots.yaml.`,
+    );
+  }
 }
 
 const asBase64 = (path: string) => readFileSync(path).toString("base64");

@@ -6,7 +6,29 @@ The script needs Node 24 and nothing else. Run every command from the repository
 
 ## 1. Screenshots
 
-Capture and compose the screenshots with `node apps/mobile/scripts/store-screenshots.ts`. It writes one 1320x2868 PNG per slide in `store/listing.ts` to `apps/mobile/store/output/composed/iphone-6.9`, named after the slide, such as `01-inbox.png`.
+The screenshots come from the Release app on an iPhone 6.9" simulator, signed in to a local server that holds the Harbor Coffee demo. Capture needs a Mac with Xcode and Maestro. Pick any code of 6 digits for `<code>`.
+
+1. Start the local server with the review sign-in and a mailer. The sign-in route refuses to send a code while the server has no mailer, even for the review account, which never gets mail. So set `SMTP_URL` and `MAIL_FROM` to any local value:
+
+   ```sh
+   APP_REVIEW_EMAIL=owner@harborcoffee.example APP_REVIEW_CODE=<code> \
+     SMTP_URL=smtp://localhost:1025 MAIL_FROM=dev@localhost bun run dev
+   ```
+
+2. In another terminal, seed the demo and keep its visitors live: `bun run seed -- --harbor --live`.
+3. Build the Release simulator app against that server. The port is 3000 unless `DINGHY_PORT` moved it. Run this from `apps/mobile`, after `bun x expo prebuild`:
+
+   ```sh
+   EXPO_PUBLIC_DINGHY_ORIGIN=http://localhost:<port> xcodebuild \
+     -workspace ios/DinghyChat.xcworkspace -scheme DinghyChat \
+     -configuration Release -sdk iphonesimulator -destination "generic/platform=iOS Simulator" \
+     DEVELOPMENT_TEAM=46DR2RY722 CODE_SIGN_IDENTITY=- -derivedDataPath <dir> build
+   ```
+
+   The build must be signed for the simulator. With `CODE_SIGNING_ALLOWED=NO`, the app has no keychain and cannot keep its session.
+
+4. `node apps/mobile/scripts/store-screenshots.ts capture --app <dir>/Build/Products/Release-iphonesimulator/DinghyChat.app --code <code>` installs the app and saves one raw screen per slide in `apps/mobile/store/output/raw`. It resets the simulator's keychain, which clears every app's keychain on that simulator, so use a simulator you keep for screenshots. Pass `--device` to choose another one than iPhone 17 Pro Max.
+5. `node apps/mobile/scripts/store-screenshots.ts compose` writes one 1320x2868 PNG per slide in `store/listing.ts` to `apps/mobile/store/output/composed/iphone-6.9`, named after the slide, such as `01-inbox.png`.
 
 ## 2. Environment
 
@@ -26,31 +48,31 @@ The script never prints the key, the token or the demo code.
 3. `node apps/mobile/scripts/app-store.ts push` writes the listing, the categories, the age rating, the review details, the screenshots and the price, and attaches the build once Apple marks it VALID. Add `--build <number>` for another build, or `--screenshots <dir>` for another folder. It changes only a version that Apple lets you edit. Run it again after a build finishes processing.
 4. `node apps/mobile/scripts/app-store.ts check` again, until it says the version is ready for review.
 5. `node apps/mobile/scripts/app-store.ts submit` runs the check and shows what it would submit.
-6. `node apps/mobile/scripts/app-store.ts submit --yes` submits the version for review. It refuses while another submission is open.
+6. `node apps/mobile/scripts/app-store.ts submit --yes` submits the version for review. When an earlier submit stopped before it finished, it completes that draft. It refuses while Apple reviews another submission, or while a draft holds other items.
 
 The age rating answers no to every question except messaging and chat, and user-generated content, because operators read messages that website visitors write. When Apple adds a question that the script does not know, `push` names it, and you answer it in App Store Connect under App Information, Age Rating.
 
 ## 4. App Privacy
 
-Apple's API keys cannot set App Privacy, so it goes through fastlane, which signs in with an Apple ID of the team. `store/app-privacy.json` holds the answers. Run this on a Mac, then type the Apple ID password and the two-factor code when fastlane asks:
+Apple's API keys cannot set App Privacy, so it goes through fastlane, which signs in with an Apple ID of the team. `store/app-privacy.json` holds the answers. Run this on a Mac, then type the Apple ID password and the two-factor code when fastlane asks. When the Apple ID belongs to several teams, fastlane also asks which team to use:
 
 ```sh
 fastlane run upload_app_privacy_details_to_app_store app_identifier:chat.dinghy.operator \
-  team_id:46DR2RY722 json_path:apps/mobile/store/app-privacy.json username:<apple id>
+  json_path:apps/mobile/store/app-privacy.json username:<apple id>
 ```
 
 The answers change only when the app collects something new.
 
 The app does not track people, shows no ads and uses no third-party analytics or crash reporting. Every item below is linked to the user, is used only for app functionality and is not used for tracking.
 
-| Data type                      | What the app collects                                                      |
-| ------------------------------ | -------------------------------------------------------------------------- |
-| Contact info: name             | The operator's name on their account                                       |
-| Contact info: email address    | The email address the operator signs in with                               |
-| User content: photos or videos | The operator's profile picture, and images they send in a conversation     |
-| User content: customer support | The replies and notes the operator writes in conversations                 |
-| Identifiers: user ID           | The operator's account ID on the Dinghy server                             |
-| Identifiers: device ID         | The push notification token, so the server can send alerts about new chats |
+| Data type                             | What the app collects                                                      |
+| ------------------------------------- | -------------------------------------------------------------------------- |
+| Contact info: name                    | The operator's name on their account                                       |
+| Contact info: email address           | The email address the operator signs in with                               |
+| User content: photos or videos        | The operator's profile picture, and images they send in a conversation     |
+| User content: emails or text messages | The replies and notes the operator writes in conversations                 |
+| Identifiers: user ID                  | The operator's account ID on the Dinghy server                             |
+| Identifiers: device ID                | The push notification token, so the server can send alerts about new chats |
 
 Answer "No" for location, health, financial info, contacts, browsing history, search history, purchases, usage data, diagnostics and sensitive info.
 

@@ -37,6 +37,8 @@ export function pngSize(contents: Buffer) {
 
 const EDITABLE_STATES = new Set([
   "PREPARE_FOR_SUBMISSION",
+  // In a draft review submission that was never submitted, which submit finishes.
+  "READY_FOR_REVIEW",
   "DEVELOPER_REJECTED",
   "REJECTED",
   "METADATA_REJECTED",
@@ -117,22 +119,62 @@ export function ageRatingAnswers(current: Record<string, unknown>) {
   return { answers, unknown };
 }
 
-export type Screenshot = { id: string; checksum: string | null };
+export type Screenshot = { id: string; checksum: string | null; deliveryState: string };
 export type WantedScreenshot = { fileName: string; checksum: string };
+
+export const isDelivered = (shot: Screenshot) => shot.deliveryState === "COMPLETE";
 
 /**
  * Which screenshots to keep, upload and delete. A screenshot on Apple's side is kept when its
- * checksum matches a file that has no match yet. `order` holds a kept id or the file to upload.
+ * checksum matches a file that has no match yet, and Apple finished processing it: one that is
+ * still processing or failed matches nothing, so push uploads it again. `order` holds a kept id or
+ * the file to upload.
  */
 export function screenshotPlan(current: Screenshot[], wanted: WantedScreenshot[]) {
   const unmatched = [...current];
   const order = wanted.map((file) => {
-    const index = unmatched.findIndex((shot) => shot.checksum === file.checksum);
+    const index = unmatched.findIndex(
+      (shot) => isDelivered(shot) && shot.checksum === file.checksum,
+    );
     if (index === -1) return { upload: file };
     const [kept] = unmatched.splice(index, 1);
     return { keep: kept?.id ?? "" };
   });
   return { order, remove: unmatched.map((shot) => shot.id) };
+}
+
+/** The review submission that is open for the app, with the version of each of its items. */
+export type OpenSubmission = { id: string; state: string; itemVersionIds: (string | null)[] };
+
+export type SubmissionStep =
+  | { kind: "create" }
+  | { kind: "resume"; submissionId: string; isAddingVersion: boolean }
+  | { kind: "refuse"; reason: string };
+
+/**
+ * A draft that holds nothing but this version is an earlier submit that stopped before it
+ * finished, so submit picks it up. Apple keeps one open submission per platform, so anything else
+ * open stops it.
+ */
+export function submissionStep(
+  open: OpenSubmission | undefined,
+  versionId: string,
+): SubmissionStep {
+  if (!open) return { kind: "create" };
+  if (open.state !== "READY_FOR_REVIEW") {
+    return { kind: "refuse", reason: `Submission ${open.id} is already open (${open.state}).` };
+  }
+  if (open.itemVersionIds.some((id) => id !== versionId)) {
+    return {
+      kind: "refuse",
+      reason: `Draft submission ${open.id} holds other items. Remove them in App Store Connect.`,
+    };
+  }
+  return {
+    kind: "resume",
+    submissionId: open.id,
+    isAddingVersion: !open.itemVersionIds.includes(versionId),
+  };
 }
 
 export type Options = {
@@ -141,6 +183,13 @@ export type Options = {
   screenshots: string | null;
   isDryRun: boolean;
   isConfirmed: boolean;
+};
+
+/** The options each command takes, checked before any call to Apple. */
+const FLAGS = {
+  check: ["--build", "--screenshots"],
+  push: ["--build", "--screenshots", "--dry-run"],
+  submit: ["--build", "--screenshots", "--yes"],
 };
 
 export function parseArgs(args: string[]): Options {
@@ -157,7 +206,10 @@ export function parseArgs(args: string[]): Options {
     throw new Error(`Unknown command: ${command}`);
   }
   for (let index = 0; index < rest.length; index++) {
-    const flag = rest[index];
+    const flag = rest[index] ?? "";
+    if (options.command === "help" || !FLAGS[options.command].includes(flag)) {
+      throw new Error(`${options.command} does not take ${flag}. Run help for the options.`);
+    }
     if (flag === "--dry-run") options.isDryRun = true;
     else if (flag === "--yes") options.isConfirmed = true;
     else if (flag === "--build" || flag === "--screenshots") {
@@ -165,7 +217,7 @@ export function parseArgs(args: string[]): Options {
       if (!value) throw new Error(`${flag} needs a value.`);
       if (flag === "--build") options.build = value;
       else options.screenshots = value;
-    } else throw new Error(`Unknown option: ${flag}`);
+    }
   }
   return options;
 }

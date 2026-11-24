@@ -15,7 +15,7 @@
     "data_protections": ["DATA_LINKED_TO_YOU"]
   },
   {
-    "category": "CUSTOMER_SUPPORT",
+    "category": "EMAILS_OR_TEXT_MESSAGES",
     "purposes": ["APP_FUNCTIONALITY"],
     "data_protections": ["DATA_LINKED_TO_YOU"]
   },

@@ -3,10 +3,15 @@
 import { and, asc, count, eq, isNull, sql } from "drizzle-orm";
 import { deleteContacts } from "./contacts.ts";
 import * as schema from "./db/schema.ts";
-import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
+import {
+  type Database,
+  type Transaction,
+  withWorkspace,
+  workspaceAccess,
+  writable,
+} from "./db/tenant.ts";
 import { addMembers, ensureOperators, fillWorkspace, ownerOf, type TeamIds } from "./demo.ts";
 import * as harbor from "./demo-harbor.ts";
-import { noLive } from "./live.ts";
 import { lockWorkspace } from "./messages.ts";
 
 /** Visitors deleted per transaction, so a large workspace holds no lock for long. */
@@ -35,15 +40,17 @@ type Counts = {
   visitors: number;
   labels: number;
   savedReplies: number;
-  campaigns: number;
 };
+
+/** The seats left within the plan's limit, after the members and the open invites. */
+type FreeSeats = (tx: Transaction, workspaceId: string) => Promise<number>;
 
 export async function demoCommand(
   db: Database,
   workspaceId: string,
-  { write, maxOperators }: { write: boolean; maxOperators: number },
+  { write, freeSeats }: { write: boolean; freeSeats: FreeSeats },
 ): Promise<number> {
-  const plan = await readPlan(db, workspaceId, maxOperators);
+  const plan = await readPlan(db, workspaceId, freeSeats);
   if (typeof plan === "string") {
     console.error(`Nothing was changed. ${plan}`);
     return 1;
@@ -59,11 +66,9 @@ export async function demoCommand(
     workspaceId,
     data: harbor,
     team,
-    ownerName: plan.owner.name,
-    live: noLive,
   });
   const after = await withWorkspace(db, workspaceId, (tx) => countRows(tx, workspaceId));
-  console.log(`Done. ${plan.name} now has ${describe(after)}, and ${after.campaigns} campaigns.`);
+  console.log(`Done. ${plan.name} now has ${describe(after)}.`);
   return 0;
 }
 
@@ -71,7 +76,7 @@ export async function demoCommand(
 async function readPlan(
   db: Database,
   workspaceId: string,
-  maxOperators: number,
+  freeSeats: FreeSeats,
 ): Promise<Plan | string> {
   return withWorkspace(db, workspaceId, async (tx) => {
     const [found] = await tx
@@ -80,6 +85,11 @@ async function readPlan(
       .where(eq(schema.workspace.id, workspaceId));
     if (found === undefined || found.deletedAt !== null) {
       return `No workspace has the ID ${workspaceId}, or it is deleted.`;
+    }
+    // The story's chats go in through the app's message writes, which would refuse halfway.
+    const access = await workspaceAccess(tx, workspaceId);
+    if (!writable(access)) {
+      return `${found.name} cannot take new messages. Its state is ${access}.`;
     }
     const [webhooks] = await tx
       .select({ n: count() })
@@ -113,7 +123,7 @@ async function readPlan(
       if (member === undefined) missing.push(key);
       else memberIds[key] = member.id;
     }
-    const room = Math.max(0, maxOperators - members.length);
+    const room = Math.max(0, await freeSeats(tx, workspaceId));
     return {
       name: found.name,
       owner,
@@ -128,7 +138,6 @@ async function readPlan(
 function printPlan({ name, owner, members, joining, mapped, before }: Plan): void {
   console.log(`Workspace: ${name}. Owner: ${owner.name} <${owner.email}>.`);
   console.log(`It deletes ${describe(before)}.`);
-  console.log("It adds 2 campaigns, or replaces the ones with the same keys.");
   console.log("It turns off chat transcripts, so closing the demo's chats emails nobody.");
   console.log(
     `It writes the ${harbor.WORKSPACE_NAME} story, with ${STORY_OWNER.name}'s lines from ${owner.name}.`,
@@ -154,8 +163,7 @@ async function countRows(tx: Transaction, workspaceId: string): Promise<Counts> 
     ${counted("message")} as messages,
     ${counted("visitor")} as visitors,
     ${counted("label")} as labels,
-    ${counted("saved_reply")} as "savedReplies",
-    ${counted("campaign")} as campaigns`);
+    ${counted("saved_reply")} as "savedReplies"`);
   const [row] = result.rows;
   if (row === undefined) throw new Error("The count returned no row");
   return row;

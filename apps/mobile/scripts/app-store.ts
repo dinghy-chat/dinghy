@@ -11,6 +11,7 @@ import {
   ageRatingAnswers,
   type FieldStatus,
   fieldStatus,
+  isDelivered,
   isEditable,
   md5,
   type Options,
@@ -19,6 +20,7 @@ import {
   type Screenshot,
   screenshotPlan,
   signToken,
+  submissionStep,
   YES_QUESTIONS,
 } from "./app-store-logic.ts";
 
@@ -32,8 +34,11 @@ Commands:
     --build <number>       The build to attach. Defaults to ios.buildNumber in app.config.js.
     --screenshots <dir>    Defaults to apps/mobile/store/output/composed/iphone-6.9.
     --dry-run              Print every write and make none.
-  submit                   Show what a review submission would do.
+  submit                   Show what a review submission would do. It finishes a draft
+                           submission that an earlier submit left.
     --yes                  Submit the version for review.
+
+check and submit also take --build and --screenshots.
 
 Environment:
   ASC_ISSUER_ID            Required.
@@ -196,9 +201,14 @@ async function screenshotSet(api: Api, localizationId: string | undefined) {
   return sets.find((set) => attr(set, "screenshotDisplayType") === DISPLAY_TYPE);
 }
 
-async function screenshotsIn(api: Api, setId: string | undefined) {
+async function screenshotsIn(api: Api, setId: string | undefined): Promise<Screenshot[]> {
   if (!setId || setId === DRY_ID) return [];
-  return api.many(`/v1/appScreenshotSets/${setId}/appScreenshots?limit=50`);
+  const shots = await api.many(`/v1/appScreenshotSets/${setId}/appScreenshots?limit=50`);
+  return shots.map((shot) => ({
+    id: shot.id,
+    checksum: (attr(shot, "sourceFileChecksum") as string | null) ?? null,
+    deliveryState: deliveryState(shot),
+  }));
 }
 
 function deliveryState(screenshot: Resource | null) {
@@ -310,17 +320,24 @@ async function reviewRows(api: Api, versionId: string): Promise<Row[]> {
 async function screenshotRow(api: Api, localizationId: string | undefined, options: Options) {
   const set = await screenshotSet(api, localizationId);
   const current = await screenshotsIn(api, set?.id);
-  const checksums = current.map((shot) => attr(shot, "sourceFileChecksum"));
-  const detail = `${current.length} on Apple, ${SLIDES.length} wanted`;
+  const undelivered = current.filter((shot) => !isDelivered(shot));
+  const detail = [
+    `${current.length} on Apple, ${SLIDES.length} wanted`,
+    ...(undelivered.length > 0
+      ? [
+          `${undelivered.length} not processed by Apple (${undelivered.map((shot) => shot.deliveryState).join(", ")}), push uploads them again`,
+        ]
+      : []),
+  ].join("; ");
   const dir = options.screenshots ?? DEFAULT_SCREENSHOTS_DIR;
   if (!existsSync(dir)) {
     return present("screenshots", false, `${detail}; no composed files in ${dir}`);
   }
-  const wanted = composedScreenshots(dir).map((file) => file.checksum);
+  const plan = screenshotPlan(current, composedScreenshots(dir));
   const isSame =
-    wanted.length === checksums.length && wanted.every((sum, i) => sum === checksums[i]);
-  const isDelivered = current.every((shot) => deliveryState(shot) === "COMPLETE");
-  return present(`screenshots ${DISPLAY_TYPE}`, isSame && isDelivered, detail);
+    plan.remove.length === 0 &&
+    plan.order.every((step, index) => "keep" in step && step.keep === current[index]?.id);
+  return present(`screenshots ${DISPLAY_TYPE}`, isSame, detail);
 }
 
 async function buildRow(api: Api, versionId: string, buildNumber: string): Promise<Row> {
@@ -587,11 +604,7 @@ async function pushScreenshots(
     });
     setId = created?.id ?? DRY_ID;
   }
-  const current: Screenshot[] = (await screenshotsIn(api, setId)).map((shot) => ({
-    id: shot.id,
-    checksum: (attr(shot, "sourceFileChecksum") as string | null) ?? null,
-  }));
-  const plan = screenshotPlan(current, screenshots);
+  const plan = screenshotPlan(await screenshotsIn(api, setId), screenshots);
   for (const id of plan.remove) await api.send("DELETE", `/v1/appScreenshots/${id}`);
   const orderedIds: string[] = [];
   for (const step of plan.order) {
@@ -696,19 +709,49 @@ async function submit(api: Api, options: Options) {
   if (!printRows(await checkRows(api, options))) {
     throw new Error("Refusing to submit: run push first, then check.");
   }
+  const { version } = await findState(api);
+  if (!version) throw new Error("No editable version to submit.");
+  const step = submissionStep(await openSubmission(api), version.id);
+  if (step.kind === "refuse") throw new Error(step.reason);
+  const versionString = String(attr(version, "versionString"));
+  if (!options.isConfirmed) {
+    const draft = step.kind === "resume" ? ` with draft submission ${step.submissionId}` : "";
+    console.log(`\nWould submit version ${versionString}${draft}. Add --yes.`);
+    return;
+  }
+  const submissionId = step.kind === "resume" ? step.submissionId : await createSubmission(api);
+  if (step.kind === "create" || step.isAddingVersion) {
+    await api.send("POST", "/v1/reviewSubmissionItems", {
+      data: {
+        type: "reviewSubmissionItems",
+        relationships: {
+          reviewSubmission: resource("reviewSubmissions", submissionId),
+          appStoreVersion: resource("appStoreVersions", version.id),
+        },
+      },
+    });
+  }
+  await api.send("PATCH", `/v1/reviewSubmissions/${submissionId}`, {
+    data: { type: "reviewSubmissions", id: submissionId, attributes: { submitted: true } },
+  });
+  console.log(`Submitted version ${versionString} for review.`);
+}
+
+async function openSubmission(api: Api) {
   const submissions = await api.many(
     `/v1/reviewSubmissions?filter[app]=${APP_ID}&filter[platform]=IOS&limit=20`,
   );
   const open = submissions.find((item) => OPEN_SUBMISSION_STATES.has(String(attr(item, "state"))));
-  if (open) {
-    throw new Error(`Submission ${open.id} is already open (${String(attr(open, "state"))}).`);
-  }
-  const { version } = await findState(api);
-  if (!version) throw new Error("No editable version to submit.");
-  if (!options.isConfirmed) {
-    console.log(`\nWould submit version ${String(attr(version, "versionString"))}. Add --yes.`);
-    return;
-  }
+  if (!open) return undefined;
+  const items = await api.many(`/v1/reviewSubmissions/${open.id}/items?include=appStoreVersion`);
+  return {
+    id: open.id,
+    state: String(attr(open, "state")),
+    itemVersionIds: items.map((item) => relatedId(item, "appStoreVersion")),
+  };
+}
+
+async function createSubmission(api: Api) {
   const created = await api.send("POST", "/v1/reviewSubmissions", {
     data: {
       type: "reviewSubmissions",
@@ -717,19 +760,7 @@ async function submit(api: Api, options: Options) {
     },
   });
   if (!created) throw new Error("Apple returned no review submission.");
-  await api.send("POST", "/v1/reviewSubmissionItems", {
-    data: {
-      type: "reviewSubmissionItems",
-      relationships: {
-        reviewSubmission: resource("reviewSubmissions", created.id),
-        appStoreVersion: resource("appStoreVersions", version.id),
-      },
-    },
-  });
-  await api.send("PATCH", `/v1/reviewSubmissions/${created.id}`, {
-    data: { type: "reviewSubmissions", id: created.id, attributes: { submitted: true } },
-  });
-  console.log(`Submitted version ${String(attr(version, "versionString"))} for review.`);
+  return created.id;
 }
 
 async function main() {
@@ -743,7 +774,7 @@ async function main() {
       `app.config.js has bundle ${appConfig.ios.bundleIdentifier}, not ${BUNDLE_ID}.`,
     );
   }
-  const api = createApi(options.command === "push" && options.isDryRun);
+  const api = createApi(options.isDryRun);
   if (options.command === "check")
     process.exitCode = printRows(await checkRows(api, options)) ? 0 : 1;
   else if (options.command === "push") await push(api, options);

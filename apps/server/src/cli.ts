@@ -15,7 +15,7 @@ import pg from "pg";
 import { pino } from "pino";
 import { generateVAPIDKeys } from "web-push";
 import { z } from "zod";
-import { freeWorkspace, MAX_OPERATORS, signupsCsv } from "../../../ee/server/index.ts";
+import { freeWorkspace, MAX_OPERATORS, seatsTaken, signupsCsv } from "../../../ee/server/index.ts";
 import { BadArchiveError } from "./archive.ts";
 import { audit } from "./audit.ts";
 import { type Auth, createAuth, LINK_MINUTES, signInLink } from "./auth.ts";
@@ -105,8 +105,8 @@ const USAGE = `Usage:
   chat demo <workspace-id> [--yes]
       For the cloud's app review account: replaces the workspace's conversations, visitors,
       contacts, labels and saved replies with the Harbor Coffee demo, and adds its teammates within
-      the operator limit. The workspace's owner plays the demo's owner. It sends no email, push or
-      webhook. Without --yes, it only prints what it would do. Run it with the same settings as
+      the operator limit, after open invites. The workspace's owner plays the demo's owner. It
+      leaves campaigns as they are, and sends no email, push or webhook. Without --yes, it only prints what it would do. Run it with the same settings as
       chat migrate.
   chat push-keys
       For development: prints new VAPID keys for web push. Changing the keys ends every device's
@@ -311,7 +311,7 @@ async function demoCliCommand(
   try {
     return await demoCommand(drizzle(pool, { schema }), workspaceId, {
       write: args.includes("--yes"),
-      maxOperators: MAX_OPERATORS,
+      freeSeats: async (tx, id) => MAX_OPERATORS - (await seatsTaken(tx, id)),
     });
   } finally {
     await pool.end();

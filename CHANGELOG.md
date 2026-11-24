@@ -9,7 +9,11 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - A visitor who chatted signed out and then signs in on the same browser keeps that history: the widget sends its old browser token once, with `POST /v1/widget/{key}/me/merge`, and the server moves the anonymous visitor's conversations, messages, pages and events into the signed-in visitor, then deletes it. The signed-in visitor keeps its name, email and attributes.
 - A contact's `sameEmail` lists the conversations of other visitors with the same email, ignoring case, with `visitorId` and `signedIn`. Nothing is merged. The contact page, the thread's side panel and the mobile app show them, and a visitor who was not signed in is marked "Not signed in". The MCP tool `get_contact` returns them too.
 - In the mobile app, a thread shows "2 other conversations" above its first message when the visitor has others, and the visitor sheet lists them.
-- `chat demo <workspace-id> --yes` replaces a workspace's conversations, contacts, labels and saved replies with the Harbor Coffee demo, for a demo or app review account. Without `--yes`, it prints what it would do.
+- `chat demo <workspace-id> --yes` replaces a workspace's conversations, contacts, labels and saved replies with the Harbor Coffee demo, for a demo or app review account. It leaves campaigns as they are, and refuses a workspace that cannot take new messages. Without `--yes`, it prints what it would do.
+
+### Changed
+
+- In the iOS app, the inbox's chat list scrolls behind the search bar and the tab bar, as on the other tabs, and the clouds behind the bar are gone.
 
 ### Fixed
 

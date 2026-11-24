@@ -1,17 +1,14 @@
-// Fills a workspace with a demo story: labels, saved replies, contacts, backdated conversations and
-// campaigns. `bun run seed` and `chat demo` both write through here. Every message goes through the
+// Fills a workspace with a demo story: labels, saved replies, contacts and backdated conversations.
+// `bun run seed` and `chat demo` both write through here. Every message goes through the
 // app's own writes, then moves back to the time the story gives.
 import { randomUUID } from "node:crypto";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import { CampaignDefinitionSchema } from "./campaign-schemas.ts";
-import { createCampaigns } from "./campaigns.ts";
 import { upsertContact } from "./contact-fields.ts";
 import * as schema from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import type { ConversationSeed, DemoData, TeamMember, VisitorSeed } from "./demo-data.ts";
 import { newBrowserToken, sha256Hex } from "./identity.ts";
 import { setLabel } from "./labels.ts";
-import type { Live } from "./live.ts";
 import {
   appendMessage,
   markConversationRead,
@@ -38,9 +35,6 @@ export interface DemoTarget {
   workspaceId: string;
   data: DemoData;
   team: TeamIds;
-  /** The owner's name, which a campaign's author shows. */
-  ownerName: string;
-  live: Live;
 }
 
 /** What the fill wrote that a caller needs next, such as the seed's live visitors. */
@@ -136,7 +130,6 @@ export async function fillWorkspace(db: Database, target: DemoTarget): Promise<F
     }
     return ids;
   });
-  await addCampaigns(db, target);
   return { conversations, quietVisitorIds };
 }
 
@@ -333,55 +326,4 @@ async function backdate(
         eq(schema.conversation.id, conversationId),
       ),
     );
-}
-
-/**
- * A live page campaign, and a draft that waits for review. Each replaces the one with its key, so
- * a second fill of the same workspace keeps two.
- */
-async function addCampaigns(
-  db: Database,
-  { workspaceId, data, team, ownerName, live }: DemoTarget,
-) {
-  const campaigns = createCampaigns({ db, live });
-  const operatorId = teammateId(team, ownerOf(data)[0]);
-  const actor = { kind: "operator", operatorId, name: ownerName } as const;
-  const base = {
-    message: { body: "" },
-    presentation: { startConversation: "on_reply", show: "preview", ifConversationOpen: "skip" },
-    delivery: { sendEmail: false },
-    rules: { frequency: "once", businessHours: false, endsAt: null },
-  } as const;
-  const pricing = await campaigns.upsert(
-    workspaceId,
-    actor,
-    CampaignDefinitionSchema.parse({
-      ...base,
-      key: "pricing-help",
-      name: "Help on the pricing page",
-      trigger: { type: "page", url: "/pricing*", seconds: 20 },
-      message: { body: "Comparing plans? Ask us anything, we answer in a few minutes." },
-    }),
-  );
-  const welcome = await campaigns.upsert(
-    workspaceId,
-    actor,
-    CampaignDefinitionSchema.parse({
-      ...base,
-      key: "welcome",
-      name: "Welcome new signups",
-      trigger: { type: "match" },
-      audience: { field: "signedIn", op: "eq", value: true },
-      message: {
-        body: `Welcome to ${data.WORKSPACE_NAME}! Reply here any time, a person reads every message.`,
-      },
-    }),
-  );
-  for (const outcome of [pricing, welcome]) {
-    if (typeof outcome === "string" || outcome instanceof Error) {
-      throw new Error(`A campaign was refused: ${String(outcome)}`);
-    }
-  }
-  const resumed = await campaigns.setStatus(workspaceId, { key: "pricing-help" }, "resume");
-  if (typeof resumed === "string") throw new Error(`The campaign did not start: ${resumed}`);
 }

@@ -42,7 +42,7 @@ The app needs a Dinghy account. Sign in to Dinghy Cloud, or enter the address of
   /** The review notes. The demo account's email and code come from the environment at push time. */
   reviewNotes: `Dinghy is a live chat tool for websites. This app is for the support team that answers the chats.
 
-Sign in with the demo account: enter the email, tap Continue, then enter the code. The code is fixed for this account, so no email is needed. The account belongs to a demo workspace, Harbor Coffee, with conversations, contacts and visitors.`,
+Sign in with the demo account: enter the email and tap "Email me a code", then enter the code and tap "Continue". The code is fixed for this account, so no email is needed. The account belongs to a demo workspace, Harbor Coffee, with conversations, contacts and visitors.`,
 } as const;
 
 /** The screenshots in App Store order, each with the headline the compose step puts above it. */

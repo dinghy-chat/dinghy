@@ -1,11 +1,19 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
-import { sql } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { fanOutOne } from "./alerts.ts";
-import { label, operator, savedReply, visitor, workspaceMember } from "./db/schema.ts";
+import {
+  invite,
+  label,
+  operator,
+  savedReply,
+  visitor,
+  workspace,
+  workspaceMember,
+} from "./db/schema.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
 import { CONVERSATIONS, ROUTINE_CONVERSATIONS } from "./demo-harbor.ts";
 import { newBrowserToken, sha256Hex } from "./identity.ts";
@@ -127,7 +135,7 @@ describe("chat demo", () => {
       conversations: STORY_CONVERSATIONS,
       labels: 4,
       savedReplies: 5,
-      campaigns: 2,
+      campaigns: 0,
       members: 4,
       alerts: 0,
     });
@@ -159,6 +167,36 @@ describe("chat demo", () => {
       members: 5,
     });
   }, 60_000);
+
+  test("an open invite holds its seat, so the demo adds one teammate fewer", async () => {
+    const invited = await workspaceWithData("Invited", 2);
+    await owner.insert(invite).values({
+      workspaceId: invited.id,
+      tokenHash: sha256Hex(randomUUID()),
+      role: "member",
+      email: "invited@example.com",
+      mailed: true,
+      createdBy: invited.ownerId,
+      expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+    });
+    const { code, out } = await chat(invited.id);
+    expect(code, out).toBe(0);
+    expect(out).toContain("Teammates it adds: Kenji Watanabe.");
+    expect(out).toContain("no room for Amara Mensah, Lucía Fernández");
+  });
+
+  test("it refuses a suspended workspace and deletes nothing", async () => {
+    const suspended = await workspaceWithData("Suspended");
+    await owner
+      .update(workspace)
+      .set({ suspendedAt: new Date() })
+      .where(eq(workspace.id, suspended.id));
+    const before = await contents(suspended.id);
+    const { code, out } = await chat(suspended.id, "--yes");
+    expect(code).toBe(1);
+    expect(out).toContain("Suspended cannot take new messages. Its state is suspended.");
+    expect(await contents(suspended.id)).toEqual(before);
+  });
 
   test("it refuses a workspace that does not exist", async () => {
     const { code, out } = await chat(randomUUID(), "--yes");

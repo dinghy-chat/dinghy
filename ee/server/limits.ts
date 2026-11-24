@@ -45,6 +45,22 @@ async function members(tx: Transaction, workspaceId: string): Promise<number> {
   return row?.n ?? 0;
 }
 
+/** Members, and the open invites that could still become members. */
+export async function seatsTaken(tx: Transaction, workspaceId: string): Promise<number> {
+  const [pending] = await tx
+    .select({ n: count() })
+    .from(invite)
+    .where(
+      and(
+        eq(invite.workspaceId, workspaceId),
+        isNull(invite.usedAt),
+        isNull(invite.revokedAt),
+        gt(invite.expiresAt, sql`now()`),
+      ),
+    );
+  return (await members(tx, workspaceId)) + (pending?.n ?? 0);
+}
+
 async function storedBytes(tx: Transaction, workspaceId: string): Promise<number> {
   const [row] = await tx
     .select({ bytes: sum(attachment.byteSize) })
@@ -67,18 +83,7 @@ export function createLimits(
     // Members and the invites that could still become members, so a link the app hands out works.
     async mayInvite(tx, workspaceId) {
       await lockWorkspace(tx, workspaceId);
-      const [pending] = await tx
-        .select({ n: count() })
-        .from(invite)
-        .where(
-          and(
-            eq(invite.workspaceId, workspaceId),
-            isNull(invite.usedAt),
-            isNull(invite.revokedAt),
-            gt(invite.expiresAt, sql`now()`),
-          ),
-        );
-      return (await members(tx, workspaceId)) + (pending?.n ?? 0) < maxOperators;
+      return (await seatsTaken(tx, workspaceId)) < maxOperators;
     },
     // Members alone, with the new one: the invite it used was one of the pending ones. A join that
     // waited for the lock sees the members that the one before it committed.

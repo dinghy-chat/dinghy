@@ -27,7 +27,7 @@ import { CLOUD_CONTACT, registerSignup, type SignupMode } from "./signup.ts";
 import { createCopyReply, type WelcomeSettings, welcomeFace, welcomeProblem } from "./welcome.ts";
 
 /** For `chat demo`, which adds teammates within the plan's limit. */
-export { MAX_OPERATORS } from "./limits.ts";
+export { MAX_OPERATORS, seatsTaken } from "./limits.ts";
 /** For `chat signups`, which lists the early signups that wait for the cloud. */
 export { freeWorkspace, signupsCsv } from "./signup.ts";
 

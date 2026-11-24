@@ -19,6 +19,8 @@ import { pino } from "pino";
 // works only from this end.
 import "../src/app.ts";
 import { createAuth, LINK_MINUTES, signInLink } from "../src/auth.ts";
+import { CampaignDefinitionSchema } from "../src/campaign-schemas.ts";
+import { createCampaigns } from "../src/campaigns.ts";
 import { ROLES } from "../src/db/roles.ts";
 import * as schema from "../src/db/schema.ts";
 import {
@@ -267,6 +269,54 @@ function stayLive(
   });
 }
 
+/**
+ * A live page campaign, and a draft that waits for review. Each replaces the one with its key, so
+ * a second fill of the same workspace keeps two.
+ */
+async function addCampaigns(workspaceId: string, team: TeamIds) {
+  const campaigns = createCampaigns({ db, live });
+  const operatorId = teammateId(team, ownerOf(data)[0]);
+  const actor = { kind: "operator", operatorId, name: OWNER_NAME } as const;
+  const base = {
+    message: { body: "" },
+    presentation: { startConversation: "on_reply", show: "preview", ifConversationOpen: "skip" },
+    delivery: { sendEmail: false },
+    rules: { frequency: "once", businessHours: false, endsAt: null },
+  } as const;
+  const pricing = await campaigns.upsert(
+    workspaceId,
+    actor,
+    CampaignDefinitionSchema.parse({
+      ...base,
+      key: "pricing-help",
+      name: "Help on the pricing page",
+      trigger: { type: "page", url: "/pricing*", seconds: 20 },
+      message: { body: "Comparing plans? Ask us anything, we answer in a few minutes." },
+    }),
+  );
+  const welcome = await campaigns.upsert(
+    workspaceId,
+    actor,
+    CampaignDefinitionSchema.parse({
+      ...base,
+      key: "welcome",
+      name: "Welcome new signups",
+      trigger: { type: "match" },
+      audience: { field: "signedIn", op: "eq", value: true },
+      message: {
+        body: `Welcome to ${data.WORKSPACE_NAME}! Reply here any time, a person reads every message.`,
+      },
+    }),
+  );
+  for (const outcome of [pricing, welcome]) {
+    if (typeof outcome === "string" || outcome instanceof Error) {
+      throw new Error(`A campaign was refused: ${String(outcome)}`);
+    }
+  }
+  const resumed = await campaigns.setStatus(workspaceId, { key: "pricing-help" }, "resume");
+  if (typeof resumed === "string") throw new Error(`The campaign did not start: ${resumed}`);
+}
+
 async function finish() {
   await appPool.end();
   valkey.disconnect();
@@ -287,9 +337,8 @@ async function seed() {
     workspaceId,
     data,
     team,
-    ownerName: OWNER_NAME,
-    live,
   });
+  await addCampaigns(workspaceId, team);
   const seeded = filled.conversations;
   console.log("==> Adding live visitors");
   const tabs = liveTabs(seeded, filled.quietVisitorIds[0] ?? "");
