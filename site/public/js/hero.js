@@ -16,7 +16,7 @@ const CHATS = [
   ["Do you deliver on Sundays?", "Yes, before noon. Want a slot?", "Tom"],
   ["Where is my order #4102?", "It ships today. Tracking is coming.", "Ana"],
   ["Can I change my plan?", "Yes. I can switch it for you now.", "Priya"],
-  ["Do you have this in a medium?", "We do. Two are left in stock.", "Tom"],
+  ["Can I get an invoice for my order?", "Sure. It's in your inbox now.", "Tom"],
   ["Can I get a refund?", "Of course. I just sent it.", "Ana"],
   ["Is anyone there?", "Yes, hi! How can I help?", "Priya"],
   ["My import keeps failing. Help?", "Found the cause. Try it now.", "Tom"],

@@ -1,5 +1,5 @@
 ---
-title: Live chat for your own AI agent, with a person in the loop | Dinghy
+title: Live chat for your AI agent, with a person in the loop
 nav: AI agents
 description: Let Claude Code, Cursor or your own bot answer website chats through MCP or the API. Replies wait as drafts for a person by default. No AI fee.
 date: 2026-11-14

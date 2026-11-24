@@ -76,7 +76,14 @@ const DOCS: DocEntry[] = [
     description:
       "Put the Dinghy chat on your website with one tag. Set its colors, open it from your own button and show who is chatting.",
   },
-  { source: "operator-guide.md", slug: "operator-guide", nav: "Operator guide", group: "Use it" },
+  {
+    source: "operator-guide.md",
+    slug: "operator-guide",
+    nav: "Operator guide",
+    group: "Use it",
+    description:
+      "Sign in, answer chats, send images and files, use saved replies, notes and labels, and get alerts on your phone.",
+  },
   {
     source: "agents.md",
     slug: "agents",
@@ -464,7 +471,7 @@ function head(page: Page, heading: string, description: string): string {
   <meta property="og:image" content="${SITE}/og.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="A boat on the water, with the words: Live chat for solo founders and small teams.">
+  <meta property="og:image:alt" content="A boat on the water, with the words: Live chat for your website 80% cheaper than Crisp. A table shows that screenshots in chat, analytics and connecting your AI cost $95 a month on Crisp, and $9 on Dinghy.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="${escape(fullTitle)}">
   <meta name="twitter:description" content="${escape(description)}">
@@ -778,13 +785,19 @@ function absoluteLinks(markdown: string, page: Page): string {
   });
 }
 
+/** A doc as Markdown, with its page's address and absolute links, for an agent to read. */
+function docMarkdown(page: Page): string {
+  const [title = "", ...rest] = readFileSync(page.file, "utf8").split("\n");
+  const body = absoluteLinks(rest.join("\n").trim(), page);
+  return `${title}\n\nSource: ${SITE}${page.path}\n\n${body}\n`;
+}
+
+/** Where a doc's Markdown is served: its page's address plus `.md`, and `/docs/index.md` for the docs home. */
+const markdownPathFor = (page: Page) => (page.path.endsWith("/") ? `${page.path}index.md` : `${page.path}.md`);
+
 /** Every doc in sidebar order, in one Markdown file, as llmstxt.org suggests for llms-full.txt. */
 function llmsFull(): string {
-  const docs = DOCS_PAGES.map((page) => {
-    const [title = "", ...rest] = readFileSync(page.file, "utf8").split("\n");
-    const body = absoluteLinks(rest.join("\n").trim(), page);
-    return `${title}\n\nSource: ${SITE}${page.path}\n\n${body}\n`;
-  });
+  const docs = DOCS_PAGES.map(docMarkdown);
   const header = `# Dinghy docs, in full
 
 > Dinghy is a small, open-source live support chat. This file holds every page of its docs, from ${REPO}/tree/main/docs. The short index is ${SITE}/llms.txt.
@@ -830,6 +843,7 @@ export function buildSite(): Map<string, string | Buffer> {
   files.set(join(PUBLIC, "sitemap.xml"), sitemap());
   files.set(join(PUBLIC, "llms.txt"), llms());
   files.set(join(PUBLIC, "llms-full.txt"), llmsFull());
+  for (const page of DOCS_PAGES) files.set(join(PUBLIC, markdownPathFor(page)), docMarkdown(page));
   return files;
 }
 

@@ -2,7 +2,7 @@
 
 > Dinghy is a small, open-source live support chat. Visitors chat in a widget on your site, and your team answers in the operator app. It runs on one small server with Postgres and Valkey, or on Dinghy Cloud. Self-hosting is free. Dinghy Cloud costs $9 USD per month per workspace, for up to 5 teammates and 1 GB of files. The self-hosted server is AGPL, the widget is MIT, and cloud billing has a separate source-available license.
 
-The docs are in plain Markdown on GitHub, at https://github.com/dinghy-chat/dinghy/tree/main/docs, and as pages at https://dinghy.chat/docs/. Every doc in one file: [llms-full.txt](https://dinghy.chat/llms-full.txt).
+The docs are in plain Markdown on GitHub, at https://github.com/dinghy-chat/dinghy/tree/main/docs, and as pages at https://dinghy.chat/docs/. Each page is also Markdown at its address plus `.md`, such as https://dinghy.chat/docs/agents.md. Every doc in one file: [llms-full.txt](https://dinghy.chat/llms-full.txt).
 
 Dinghy can send proactive chat campaigns and one-off outbound messages. Its Analytics screen shows support metrics and aggregate site traffic without cookies. Dinghy has no built-in AI. An external agent can draft replies via MCP or the API.
 

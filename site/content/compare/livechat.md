@@ -1,5 +1,5 @@
 ---
-title: LiveChat alternative with one flat price: Dinghy vs LiveChat | Dinghy
+title: LiveChat alternative with one flat price: Dinghy vs LiveChat
 nav: Dinghy vs LiveChat
 description: LiveChat costs $19 to $25 per seat a month and keeps 60 days of history on Essential. Dinghy Cloud is $9 a month for up to 5 people.
 date: 2026-11-09

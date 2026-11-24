@@ -12,12 +12,13 @@ function select(block) {
   selection.addRange(range);
 }
 
-/** Copy buttons: each copies the code block named by data-copy, and says so. */
+/** Copy buttons: each copies the code block named by data-copy, and says so for data-copy-ms, or 2 seconds. */
 export function startCopyButtons() {
   const status = document.querySelector("[data-copy-status]");
   for (const button of document.querySelectorAll("[data-copy]")) {
     const block = document.getElementById(button.dataset.copy);
     const label = button.querySelector("[data-copy-label]");
+    const idle = label.textContent;
     let timer = 0;
     button.addEventListener("click", async () => {
       let message = "Copied";
@@ -32,9 +33,9 @@ export function startCopyButtons() {
       if (status) status.textContent = message === "Copied" ? "Copied to the clipboard" : "Selected. Press Ctrl+C or Cmd+C to copy";
       clearTimeout(timer);
       timer = setTimeout(() => {
-        label.textContent = "Copy";
+        label.textContent = idle;
         button.classList.remove("is-done");
-      }, RESET_MS);
+      }, Number(button.dataset.copyMs) || RESET_MS);
     });
   }
 }

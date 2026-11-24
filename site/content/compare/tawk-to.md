@@ -1,5 +1,5 @@
 ---
-title: tawk.to alternative without the add-ons: Dinghy vs tawk.to | Dinghy
+title: tawk.to alternative without the add-ons: Dinghy vs tawk.to
 nav: Dinghy vs tawk.to
 description: tawk.to is free, then sells add-ons such as AI Assist from $29 a month. Dinghy has no add-ons. Self-host free or $9 a month.
 date: 2026-11-08

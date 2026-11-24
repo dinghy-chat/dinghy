@@ -1,5 +1,5 @@
 ---
-title: Zendesk chat alternative for small teams: Dinghy vs Zendesk | Dinghy
+title: Zendesk chat alternative for small teams: Dinghy vs Zendesk
 nav: Dinghy vs Zendesk
 description: Zendesk's live chat starts on Suite Team at $55 to $69 per agent a month. Dinghy Cloud is $9 a month for up to 5 people.
 date: 2026-11-09

@@ -3,8 +3,8 @@ title: Intercom alternative for small teams: Dinghy vs Intercom | Dinghy
 nav: Dinghy vs Intercom
 description: Intercom charges per seat and per AI outcome. Dinghy Cloud is $9 a month flat for up to 5 people, and Dinghy is free on your own server.
 date: 2026-11-08
-updated: 2026-11-22
-priceChecked: 2026-11-22
+updated: 2026-11-24
+priceChecked: 2026-11-24
 order: 2
 card: Per seat plus AI outcomes, or one flat price
 stat: $19 to $29/seat
@@ -26,6 +26,7 @@ Use Dinghy for website chat, a shared inbox and alerts, at one price for the tea
 | 3 people | $9 a month | $57 to $87 a month |
 | 5 people | $9 a month | $95 to $145 a month |
 | AI answers | No AI fee. Your own agent connects and drafts replies | $0.99 per Fin outcome, if you turn it on |
+| Targeted messages | Campaigns included | Posts, Series and product tours need Proactive Support Plus, $99 a month more |
 | Self-hosting | Free, open source | Not possible |
 | Free trial | None | 14 days |
 

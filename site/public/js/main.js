@@ -1,4 +1,5 @@
 import "./nav.js";
+import { startCopyButtons } from "./copy.js";
 import { startFooter } from "./footer.js";
 import { startHero } from "./hero.js";
 import { watchVisibility } from "./motion.js";
@@ -7,6 +8,7 @@ import { startToys } from "./toys.js";
 import { FAR, MIDDLE, NEAR } from "./water.js";
 
 startHero();
+startCopyButtons();
 startFooter();
 startToys();
 // The price line floats on the same three swells as the hero, over the band's deep water.
