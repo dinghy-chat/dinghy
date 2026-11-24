@@ -32,7 +32,14 @@ The age rating answers no to every question except messaging and chat, and user-
 
 ## 4. App Privacy
 
-Enter these answers once in App Store Connect, under App Privacy. They change only when the app collects something new.
+Apple's API keys cannot set App Privacy, so it goes through fastlane, which signs in with an Apple ID of the team. `store/app-privacy.json` holds the answers. Run this on a Mac, then type the Apple ID password and the two-factor code when fastlane asks:
+
+```sh
+fastlane run upload_app_privacy_details_to_app_store app_identifier:chat.dinghy.operator \
+  team_id:46DR2RY722 json_path:apps/mobile/store/app-privacy.json username:<apple id>
+```
+
+The answers change only when the app collects something new.
 
 The app does not track people, shows no ads and uses no third-party analytics or crash reporting. Every item below is linked to the user, is used only for app functionality and is not used for tracking.
 
