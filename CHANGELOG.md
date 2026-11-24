@@ -4,6 +4,10 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Fixed
+
+- The sign-in email and the other plain emails use near-black text at 14px with the mail app's own paragraph spacing. Before, their navy text showed as pale blue in dark mode.
+
 ## [0.54.0] - 2026-11-23
 
 ### Changed
