@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.55.0] - 2026-11-24
+
 ### Changed
 
 - The line under the chat says "Live chat by Dinghy", or "Chat en direct par Dinghy" and "Chat en vivo por Dinghy", and every chat shows it. It is no longer faded, so its text has at least 4.5:1 contrast in the light and dark themes.
@@ -831,7 +833,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.54.1...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.55.0...HEAD
+[0.55.0]: https://github.com/dinghy-chat/dinghy/compare/v0.54.1...v0.55.0
 [0.54.1]: https://github.com/dinghy-chat/dinghy/compare/v0.54.0...v0.54.1
 [0.54.0]: https://github.com/dinghy-chat/dinghy/compare/v0.53.0...v0.54.0
 [0.53.0]: https://github.com/dinghy-chat/dinghy/compare/v0.52.0...v0.53.0
