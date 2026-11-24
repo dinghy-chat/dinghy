@@ -897,7 +897,7 @@ function Chat({
           onUnquote={() => setQuoting(null)}
         />
       )}
-      {pageOr(context.attribute("branding"), saved.branding) && <Branding />}
+      <Branding />
     </section>
   );
 }

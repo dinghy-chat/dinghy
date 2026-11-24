@@ -20,7 +20,7 @@ Put the chat on your own site, not on a page served from the same address as Din
 
 ## Change how it looks
 
-The easiest way needs no code: **Settings > Appearance** in the operator app sets the colors, the side, the theme, the chat button, the corners, the boat, the words, when to ask for an email and the "Powered by Dinghy" line. The [operator guide](operator-guide.md#change-the-widget) explains it. Pages of your site that open after a save show the change within 5 minutes, and a page already open keeps the look it loaded with.
+The easiest way needs no code: **Settings > Appearance** in the operator app sets the colors, the side, the theme, the chat button, the corners, the boat, the words and when to ask for an email. The [operator guide](operator-guide.md#change-the-widget) explains it. Pages of your site that open after a save show the change within 5 minutes, and a page already open keeps the look it loaded with. The chat always shows a "Live chat by Dinghy" link to dinghy.chat under the message box.
 
 You can also set the look in the tag. These attributes win over the saved settings, and `Dinghy.configure()` wins too:
 
@@ -33,7 +33,6 @@ You can also set the look in the tag. These attributes win over the saved settin
 | `data-position` | `left` or `right` | The corner for the button and the chat |
 | `data-offset-x` | Pixels, such as `24` | The distance from the side of the window. The default is `16` |
 | `data-offset-y` | Pixels, such as `80` | The distance from the bottom of the window. The default is `16` |
-| `data-branding` | `false` or `true` | Hides or shows the "Powered by Dinghy" line |
 | `data-locale` | `en`, `fr` or `es`, or a tag such as `fr-CA` | The language of the widget's own words, over the **Language** setting |
 
 A color in any other form, such as `red` or `#123`, is ignored. So is an offset that is not a whole number of 0 or more.
@@ -234,7 +233,7 @@ dinghy.on("unread", (count) => setBadge(count));
 dinghy.open({ message: "I need help with my order" });
 ```
 
-`init` adds the tag once, however often it runs, and returns the same `Dinghy` object. Calls made before the script loads wait for it. It takes `url`, `key` and the options of the tag: `primary`, `accent`, `mascot`, `branding`, `launcher`, `position`, `offsetX`, `offsetY`, `zIndex` and `locale`. The package also exports the types, such as `DinghyApi` and `DinghyEvents`.
+`init` adds the tag once, however often it runs, and returns the same `Dinghy` object. Calls made before the script loads wait for it. It takes `url`, `key` and the options of the tag: `primary`, `accent`, `mascot`, `launcher`, `position`, `offsetX`, `offsetY`, `zIndex` and `locale`. The package also exports the types, such as `DinghyApi` and `DinghyEvents`.
 
 ### Ask a coding agent to install it
 

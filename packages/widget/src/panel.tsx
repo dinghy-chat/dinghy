@@ -144,8 +144,8 @@ dialog img{display:block;max-width:95vw;max-height:95svh}
 .faces .face{width:26px;height:26px;margin-left:-6px;box-shadow:0 0 0 2px var(--primary)}
 .faces>span{position:relative;display:flex}
 .faces i{position:absolute;z-index:1;right:-1px;bottom:-1px;width:8px;height:8px;border-radius:50%;background:#22c55e;box-shadow:0 0 0 2px var(--primary)}
-.brand{display:block;padding:0 12px 8px;font-size:11px;line-height:14px;color:var(--mute);opacity:.75;text-align:center;text-decoration:none}
-.brand:hover{opacity:1}
+.brand{display:block;padding:0 12px 8px;font-size:11px;line-height:14px;color:var(--mute);text-align:center;text-decoration:none}
+.brand:hover{text-decoration:underline}
 :host([data-theme=dark]) :is(.panel,.preview){${DARK}}
 @media (prefers-color-scheme:dark){:host([data-theme=auto]) :is(.panel,.preview){${DARK}}}
 .preview{position:absolute;right:0;bottom:76px;display:flex;flex-direction:column;gap:6px;width:300px;max-width:calc(100vw - var(--d-x,16px) - 16px);padding:10px 12px 12px;border-radius:16px;background:var(--sand);box-shadow:0 2px 6px rgb(13 34 64/.08),0 16px 40px rgb(13 34 64/.2)}
@@ -822,7 +822,7 @@ export function Composer({
 export function Branding() {
   return (
     <a class="brand" href="https://dinghy.chat" target="_blank" rel="noopener">
-      {t("poweredBy")}
+      {t("brand")}
     </a>
   );
 }

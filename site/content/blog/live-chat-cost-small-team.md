@@ -45,7 +45,7 @@ Tidio’s Human only Starter price in the table covers 100 conversations a month
 
 The team wants the chat to look like part of its own site. So the other company's badge has to go.
 
-On tawk.to that's $29 a month. Tidio offers branding removal as a paid add-on. On Crisp, the "We run on Crisp" label stays on every plan below Plus, which is $295 a month. So our team keeps it.
+On tawk.to that's $29 a month. Tidio offers branding removal as a paid add-on. On Crisp, the "We run on Crisp" label stays on every plan below Plus, which is $295 a month, so our team keeps it. Dinghy shows its "Live chat by Dinghy" line on every plan, so that line stays too.
 
 ## Month twelve, the AI pitch
 
@@ -62,7 +62,7 @@ Four people, one busy month behind them, and no badge where they could pay to re
 | Product | Month one | Month twelve |
 |---|---|---|
 | tawk.to | $0 | $29 |
-| Dinghy Cloud | $9 | $9 |
+| Dinghy Cloud | $9 | $9, line still on |
 | Tidio | $24 to $29 | Depends on the conversation quota and branding add-on |
 | Crisp | $45 | $45, label still on |
 | Chatwoot | $57 | $76 |

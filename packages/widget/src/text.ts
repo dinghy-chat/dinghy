@@ -54,7 +54,7 @@ const en = {
   emailSavedTo: "We'll email replies to {email}",
   emailInvalid: "Enter a valid email.",
   emailFailed: "Not saved. Try again.",
-  poweredBy: "Powered by Dinghy",
+  brand: "Live chat by Dinghy",
   closed: "This conversation is closed. Write to us again any time.",
   reopened: "Conversation reopened",
   reply: "Reply",

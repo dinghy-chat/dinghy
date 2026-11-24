@@ -4,6 +4,18 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Changed
+
+- The line under the chat says "Live chat by Dinghy", or "Chat en direct par Dinghy" and "Chat en vivo por Dinghy", and every chat shows it. It is no longer faded, so its text has at least 4.5:1 contrast in the light and dark themes.
+
+### Removed
+
+- The switch in Settings > Appearance that hid the line under the chat, the `branding` field of the widget settings API, the tag's `data-branding` attribute and the `branding` option of `init`.
+
+### Upgrading
+
+- The migration drops the `branding` column of `widget_settings`. The widget ignores a tag's `data-branding`, and the API ignores a `branding` field. In TypeScript, remove `branding` from the options of `init`.
+
 ## [0.54.1] - 2026-11-24
 
 ### Fixed

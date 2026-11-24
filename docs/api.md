@@ -225,7 +225,6 @@ For that event, the server downloads the raw email with `GET /mailboxes/{id}/inb
 | `radius` | The corners in pixels, a whole number from 0 to 24 |
 | `mascot` | Whether the open chat shows the boat |
 | `emailAsk` | `off`, `after_first` or `before_first`: when a signed-out visitor is asked for an email |
-| `branding` | Whether the chat shows "Powered by Dinghy" |
 | `transcript` | Whether a visitor with an email gets the conversation by email 5 minutes after it closes, when someone on the team replied since the last transcript. A reopen within the 5 minutes cancels it, and a later close sends only the messages since the last transcript the visitor got |
 | `sound` | Whether the widget plays a soft chime for a reply that arrives while the chat is closed or its tab is hidden |
 | `language` | `en`, `fr` or `es` for the widget's own words, or `visitor` for the first of the browser's languages that it speaks. The tag's `data-locale` wins over it |

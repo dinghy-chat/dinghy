@@ -1705,8 +1705,6 @@ export const widgetSettings = pgTable(
     // Pixels, for the chat's corners and the launcher's.
     radius: smallint("radius").notNull().default(WIDGET_DEFAULTS.radius),
     emailAsk: widgetEmailAsk("email_ask").notNull().default(WIDGET_DEFAULTS.emailAsk),
-    // The "Powered by Dinghy" line.
-    branding: boolean("branding").notNull().default(WIDGET_DEFAULTS.branding),
     // A chime in the widget for a reply the visitor is not looking at.
     sound: boolean("sound").notNull().default(WIDGET_DEFAULTS.sound),
     // The visitor gets the conversation by email when it closes.
