@@ -1,6 +1,6 @@
 {
   "name": "@dinghy-chat/sdk",
-  "version": "0.55.0",
+  "version": "0.56.0",
   "description": "Call the Dinghy API from your server, with typed methods, webhook checks and host tokens.",
   "type": "module",
   "license": "MIT",

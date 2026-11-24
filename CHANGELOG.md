@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.56.0] - 2026-11-24
+
 ### Added
 
 - The MCP server has prompts: `install`, for a Full access connection, with the optional arguments `framework` and `site`, and `answer_chats`, for every connection. Claude Code shows them as `/mcp__dinghy__install` and `/mcp__dinghy__answer_chats`.
@@ -846,7 +848,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.55.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.56.0...HEAD
+[0.56.0]: https://github.com/dinghy-chat/dinghy/compare/v0.55.0...v0.56.0
 [0.55.0]: https://github.com/dinghy-chat/dinghy/compare/v0.54.1...v0.55.0
 [0.54.1]: https://github.com/dinghy-chat/dinghy/compare/v0.54.0...v0.54.1
 [0.54.0]: https://github.com/dinghy-chat/dinghy/compare/v0.53.0...v0.54.0
