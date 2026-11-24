@@ -22,6 +22,13 @@ export interface Update {
 /** Newest first. Add a new entry at the top, in the pull request that makes the change. */
 export const UPDATES: Update[] = [
   {
+    id: "live-chat-by-dinghy",
+    date: "2026-11-24",
+    kind: "improvement",
+    title: "Live chat by Dinghy",
+    text: 'The line under the chat says "Live chat by Dinghy" and shows on every chat. Appearance no longer has a switch to hide it.',
+  },
+  {
     id: "whats-new-sheet",
     date: "2026-11-23",
     kind: "improvement",
