@@ -235,7 +235,14 @@ function SignedInApp({
         );
         const newest = result.messages.at(-1)?.seq;
         if (newest) {
-          void api.markRead(conversationId, newest).catch(() => undefined);
+          // The stream sends no event for a read, so the row loses its dot here.
+          void api.markRead(conversationId, newest).then(
+            () =>
+              setConversations((current) =>
+                current.map((row) => (row.id === conversationId ? { ...row, unread: false } : row)),
+              ),
+            () => undefined,
+          );
         }
       } catch (failure) {
         const target = threadTarget.current;

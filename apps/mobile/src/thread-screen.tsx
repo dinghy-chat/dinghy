@@ -11,7 +11,6 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -32,12 +31,12 @@ import { MessageIcon } from "./message-icon";
 import { MessageMarkdown } from "./message-markdown";
 import { shownReceipts } from "./message-state";
 import { Sheet } from "./sheet";
-import type { Palette } from "./theme";
+import { day as dayTheme, night as nightTheme, type Palette } from "./theme";
 import { type Rect, visitorContext } from "./thread-logic";
 import { MessageQuote, ThreadMessage } from "./thread-message";
 import type { Conversation, Member, Message, Thread, Workspace } from "./types";
 
-/** How close to the newest message, in points, still counts as reading it. */
+/** How close to the newest message, in points, still follows a new message. */
 const NEWEST_SLACK = 80;
 
 function SheetTools({ onClose, palette }: { onClose(): void; palette: Palette }) {
@@ -112,9 +111,23 @@ function VisitorDetailsSheet({
       ["string", "number", "boolean"].includes(typeof value),
   );
   return (
-    <Sheet bottomInset={bottomInset} onClose={onClose} palette={palette} visible={visible}>
-      <View style={screenStyles.visitorSky}>
-        <Harbor night={isNight} />
+    <Sheet
+      bottomInset={bottomInset}
+      fullBleed
+      onClose={onClose}
+      palette={palette}
+      visible={visible}
+    >
+      {/* The scene's plain sky continues under the grabber, so the picture is not stretched. */}
+      <View
+        style={[
+          screenStyles.visitorSky,
+          { backgroundColor: (isNight ? nightTheme : dayTheme).analyticsSky },
+        ]}
+      >
+        <View style={screenStyles.visitorHarbor}>
+          <Harbor night={isNight} />
+        </View>
         <SheetTools onClose={onClose} palette={palette} />
       </View>
       <View style={screenStyles.visitorTop}>
@@ -576,13 +589,6 @@ export function ThreadScreen({
   const input = useRef<EnrichedTextInputInstance>(null);
   const moreButton = useRef<ComponentRef<typeof View>>(null);
   const list = useRef<FlatList<Message | PendingReply>>(null);
-  // The log keeps to its newest message while the operator is near it. It scrolls there again when
-  // its content or its own height changes: the first layout, a new message, the keyboard or the
-  // composer. Once the operator scrolls up to read, it stays where they are.
-  const atNewest = useRef(true);
-  const keepNewest = () => {
-    if (atNewest.current) list.current?.scrollToEnd({ animated: false });
-  };
   const current = thread?.conversation ?? conversation;
   const isClosed = current.status === "closed";
   const name = visitorName(current);
@@ -590,7 +596,8 @@ export function ThreadScreen({
   const owner = current.assigneeOperatorId;
   const assignee = members.find((member) => member.id === owner);
   const messages = thread?.messages ?? [];
-  const rows: (Message | PendingReply)[] = [...messages, ...pending];
+  // Newest first: the log is inverted, so it opens at the newest message without scrolling there.
+  const rows: (Message | PendingReply)[] = [...messages, ...pending].reverse();
   const receiptByMessage = shownReceipts(messages, thread?.receipts ?? null);
   const canWrite =
     workspace === null || (workspace.active && !workspace.readOnly && !workspace.suspended);
@@ -931,6 +938,7 @@ export function ThreadScreen({
       <FlatList
         ref={list}
         data={rows}
+        inverted
         keyExtractor={(item) => (isPending(item) ? `pending-${item.clientId}` : item.id)}
         contentContainerStyle={screenStyles.log}
         keyboardShouldPersistTaps="handled"
@@ -940,21 +948,13 @@ export function ThreadScreen({
             <ActivityIndicator accessibilityLabel={t("loading")} color={palette.sub} />
           ) : undefined
         }
-        refreshControl={
-          <RefreshControl
-            refreshing={loading && thread !== null}
-            onRefresh={onReload}
-            tintColor={palette.blue}
-          />
-        }
-        onContentSizeChange={keepNewest}
-        onLayout={keepNewest}
-        onScroll={({ nativeEvent: { contentOffset, contentSize, layoutMeasurement } }) => {
-          atNewest.current =
-            contentSize.height - contentOffset.y - layoutMeasurement.height < NEWEST_SLACK;
+        // A new message keeps an operator who scrolled up to read in place, and shows to one at
+        // the newest message.
+        maintainVisibleContentPosition={{
+          minIndexForVisible: 0,
+          autoscrollToTopThreshold: NEWEST_SLACK,
         }}
-        scrollEventThrottle={100}
-        renderItem={({ item, index }) => {
+        renderItem={({ item, index: fromNewest }) => {
           if (isPending(item)) {
             const quoted = messages.find((message) => message.id === item.replyToMessageId);
             return (
@@ -983,6 +983,7 @@ export function ThreadScreen({
               />
             );
           }
+          const index = rows.length - 1 - fromNewest;
           const previous = messages[index - 1];
           const startsDay =
             !previous ||
@@ -1058,7 +1059,7 @@ export function ThreadScreen({
           }}
           onSend={(body, replyToMessageId) => {
             // A reply the operator sends shows at once, also after they scrolled up.
-            atNewest.current = true;
+            list.current?.scrollToOffset({ offset: 0, animated: true });
             return onSend(body, replyToMessageId);
           }}
           palette={palette}
@@ -1122,7 +1123,8 @@ const screenStyles = StyleSheet.create({
     zIndex: 2,
   },
   sheetScroll: { flexShrink: 1 },
-  visitorSky: { height: 116, position: "relative", overflow: "hidden" },
+  visitorSky: { height: 138, paddingTop: 22, position: "relative", overflow: "hidden" },
+  visitorHarbor: { position: "absolute", left: 0, right: 0, bottom: 0, height: 116 },
   visitorTop: { paddingHorizontal: 19, paddingBottom: 12, marginTop: -25, position: "relative" },
   visitorPortrait: {
     width: 59,
@@ -1229,7 +1231,8 @@ const screenStyles = StyleSheet.create({
   context: { fontSize: 12.5, lineHeight: 16 },
   contextPlace: { flexShrink: 1 },
   contextTime: { flexShrink: 0 },
-  log: { flexGrow: 1, paddingHorizontal: 16, paddingTop: 12, paddingBottom: 10 },
+  // The log is inverted, so its top padding shows under the newest message.
+  log: { flexGrow: 1, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 12 },
   day: { textAlign: "center", fontSize: 12, lineHeight: 16, marginTop: 4, marginBottom: 10 },
   pending: {
     alignSelf: "flex-end",
