@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.57.0] - 2026-11-24
+
 ### Added
 
 - A visitor who chatted signed out and then signs in on the same browser keeps that history: the widget sends its old browser token once, with `POST /v1/widget/{key}/me/merge`, and the server moves the anonymous visitor's conversations, messages, pages and events into the signed-in visitor, then deletes it. The signed-in visitor keeps its name, email and attributes.
@@ -866,7 +868,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.56.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.57.0...HEAD
+[0.57.0]: https://github.com/dinghy-chat/dinghy/compare/v0.56.0...v0.57.0
 [0.56.0]: https://github.com/dinghy-chat/dinghy/compare/v0.55.0...v0.56.0
 [0.55.0]: https://github.com/dinghy-chat/dinghy/compare/v0.54.1...v0.55.0
 [0.54.1]: https://github.com/dinghy-chat/dinghy/compare/v0.54.0...v0.54.1
