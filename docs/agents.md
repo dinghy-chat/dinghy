@@ -40,6 +40,8 @@ A bot on a server, or a job in CI, has no browser. Give it an API key instead. A
 claude mcp add --transport http dinghy https://chat.example.com/v1/mcp --header "Authorization: Bearer dk_..."
 ```
 
+When it connects, the agent reads the server's instructions: the connection's name, its access, whether its replies are drafts, how to answer chats and, with Full access, how to install. A tool call with bad arguments answers every problem at once, such as `clientId: Required. reason: Required.`, and a Full access tool called on a Chats connection says that it needs Full access.
+
 A key and an OAuth connection do the same things at the same access level. Visitors see the key's or the app's name on its replies, with a bot icon.
 
 ## Set up the chat on a site
@@ -53,15 +55,19 @@ Connect with **Full access**, then ask your coding agent to add Dinghy to the si
 5. Optional: `get_identity_setup` with your server's language, to show operators who a signed-in user is. It gives server code that reads the signing secret from `DINGHY_SIGNING_SECRET`. It never gives the secret. A person copies it from **Settings > Install** into the server's environment.
 6. Optional: `get_appearance` and `update_appearance` for the widget's colors and words.
 7. Optional: `create_webhook` and `get_webhook_verification`, if your server should get events.
-8. `send_test_message` to send a test chat, then `delete_test_visitors` to clean up. See [Test a bot](#test-a-bot).
+8. `send_test_message` to send a test chat. `delete_test_visitors` cleans up, but it deletes every test visitor of the workspace, so the agent asks you first. See [Test a bot](#test-a-bot).
+
+The server also gives these steps as the MCP prompt `install`, with the optional arguments `framework` and `site`. Claude Code shows it as `/mcp__dinghy__install`. A Chats connection does not list it.
 
 The **Install** page in the operator app has a "Set up with an agent" row with a prompt to copy, in the words of Claude Code, Cursor or another MCP client. It holds these steps. To keep the agent careful later, add the block in [Tell your agent about Dinghy](#tell-your-agent-about-dinghy) to your site's `AGENTS.md` yourself.
 
 ## Answer chats
 
+The MCP prompt `answer_chats` starts the loop below, in Claude Code as `/mcp__dinghy__answer_chats`. Every connection lists it.
+
 Your bot reads new visitor messages, reads the conversation, and replies. Pick the way it hears about new messages:
 
-- **`wait_for_events`**, for an agent with no public address, such as Claude Code on a laptop. Call it once with no cursor: it answers at once with a cursor for now, and no events. Read the messages from before then with `list_conversations` and `get_conversation`. Then call it in a loop, each time with the last answer's `cursor`. It waits up to `timeoutSeconds` (1 to 30, 25 by default) and answers `{ events, cursor }` as soon as something comes. Each event has a `type`. A `message.created` event is a visitor's new message in an open conversation, with `conversationId`, `message`, the visitor's name and email, `humanHandling` and `botsPaused`. A `draft.change_requested` event is an operator's request to rewrite one of your key's drafts, with `changeRequest` and `draft`: see [Ask to change](#ask-to-change). `resync: true` means the cursor is too old: read the open conversations and `list_drafts` again.
+- **`wait_for_events`**, for an agent with no public address, such as Claude Code on a laptop. Call it once with no cursor: it answers at once with a cursor for now, and no events. Read the messages from before then with `list_conversations` and `get_conversation`, and the drafts waiting for a rewrite with `list_drafts`. Then call it in a loop, each time with the last answer's `cursor`. It waits up to `timeoutSeconds` (1 to 30, 25 by default) and answers `{ events, cursor }` as soon as something comes. Each event has a `type`. A `message.created` event is a visitor's new message in an open conversation, with `conversationId`, `message`, the visitor's name and email, `humanHandling` and `botsPaused`. A `draft.change_requested` event is an operator's request to rewrite one of your key's drafts, with `changeRequest` and `draft`: see [Ask to change](#ask-to-change). `resync: true` means the cursor is too old: read the open conversations and `list_drafts` again.
 - **`GET /v1/events`**, for a bot that runs for a long time. It is a server-sent event stream with the same events as webhooks, and it needs no public address either. Reconnect with the last event's ID, and the stream replays what you missed, even between the two events that a conversation's first message makes. See [API](api.md#events-for-api-keys).
 - **Webhooks**, for a bot that has a public `https` address. Dinghy sends a signed `POST` for each event. See [API](api.md#webhooks).
 
@@ -222,7 +228,7 @@ This site's live chat is Dinghy. Its MCP server is named `dinghy`, at https://ch
 - Install with a Full access connection. Answer chats with a separate Chats connection in "Drafts only".
 - To install: get_install_snippet, add_allowed_site, deploy, then verify_install. Ask me before changing anything outside the install.
 - Ask me before remove_allowed_site, delete_webhook, delete_test_visitors or close_conversation.
-- Test with send_test_message, then clean up with delete_test_visitors.
+- Test with send_test_message. Ask me before delete_test_visitors: it deletes every test visitor of the workspace.
 - When answering chats, call hand_off when a visitor asks for a person, when the question is about money, an account or a complaint, or when you are unsure.
 - While a person handles a chat, do not reply: pass on what you found with add_note, which only the team sees.
 ```
