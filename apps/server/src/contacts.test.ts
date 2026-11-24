@@ -196,6 +196,49 @@ describe("one contact", () => {
     });
   });
 
+  test("lists other visitors' conversations with the same email, and keeps them out of its own", async () => {
+    const email = `same-${randomUUID()}@example.com`;
+    const typed = await visitorStarts(app, space.publicKey, "Billing question");
+    const signedIn = await visitorStarts(app, space.publicKey, "Second chat");
+    const unrelated = await visitorStarts(app, space.publicKey, "Someone else");
+    await owner
+      .update(visitor)
+      .set({ email: email.toUpperCase() })
+      .where(eq(visitor.id, typed.visitorId));
+    await owner
+      .update(visitor)
+      .set({ email, userId: `user-${randomUUID()}`, tokenHash: null })
+      .where(eq(visitor.id, signedIn.visitorId));
+    await owner
+      .update(visitor)
+      .set({ email: `other-${email}` })
+      .where(eq(visitor.id, unrelated.visitorId));
+
+    const read = (await (await get(path(`/${signedIn.visitorId}`))).json()) as {
+      conversations: { id: string }[];
+      sameEmail: unknown[];
+    };
+    expect(read.conversations).toEqual([expect.objectContaining({ id: signedIn.conversationId })]);
+    expect(read.conversations[0]).not.toHaveProperty("visitorId");
+    expect(read.sameEmail).toEqual([
+      expect.objectContaining({
+        id: typed.conversationId,
+        visitorId: typed.visitorId,
+        signedIn: false,
+        lastBody: "Billing question",
+      }),
+    ]);
+    // The other way round, the signed-in visitor's conversation says so.
+    expect(await (await get(path(`/${typed.visitorId}`))).json()).toMatchObject({
+      sameEmail: [{ id: signedIn.conversationId, visitorId: signedIn.visitorId, signedIn: true }],
+    });
+    // A contact with no email matches nobody.
+    await owner.update(visitor).set({ email: null }).where(eq(visitor.id, unrelated.visitorId));
+    expect(await (await get(path(`/${unrelated.visitorId}`))).json()).toMatchObject({
+      sameEmail: [],
+    });
+  });
+
   test("a deleted message is not a conversation's preview", async () => {
     const { visitorId, conversationId } = await visitorStarts(
       app,

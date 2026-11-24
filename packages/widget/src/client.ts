@@ -167,6 +167,9 @@ export function createClient(
     newVisitor: () =>
       call<{ visitorId: string; token: string }>("visitors", null, { method: "POST" }),
     me: (token: string) => call<Me>("me", token),
+    /** As `me`, after moving the anonymous chats of this browser into the signed-in visitor. */
+    meMerging: (token: string, browserToken: string) =>
+      call<Me>("me/merge", token, { method: "POST", body: JSON.stringify({ browserToken }) }),
     /** The token only on the chat page, where it is what lets the request in. */
     presence: (token: string | null) => call<Presence>("presence", token),
     reportPage: (token: string, address: string, title: string) =>

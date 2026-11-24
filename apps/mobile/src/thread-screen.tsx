@@ -18,13 +18,14 @@ import {
   View,
 } from "react-native";
 import type { EnrichedTextInputInstance } from "react-native-enriched-html";
-import { t } from "../../operator/src/text.ts";
+import { plural, t } from "../../operator/src/text.ts";
 import { Harbor } from "../Harbor";
 import type { PendingReply } from "../outbox";
 import { AnchoredMenu, type MenuItem } from "./anchored-menu";
 import type { DinghyApi } from "./api";
 import { Avatar, readableError, SheetCloseButton, visitorName } from "./common";
 import { ThreadComposer } from "./composer-tools";
+import { ConversationList, otherConversations } from "./contact-view";
 import { fonts } from "./fonts";
 import { Icon } from "./icon";
 import { MessageIcon } from "./message-icon";
@@ -57,19 +58,21 @@ function VisitorDetailsSheet({
   members,
   name,
   onClose,
+  onOpenConversation,
   onRetry,
   palette,
   visible,
 }: {
   bottomInset: number;
   conversation: Conversation;
-  detail: Awaited<ReturnType<DinghyApi["contact"]>> | null;
+  detail: ContactDetail | null;
   failure: string | null;
   isNight: boolean;
   meId: string;
   members: Member[];
   name: string;
   onClose(): void;
+  onOpenConversation(conversationId: string): void;
   onRetry(): void;
   palette: Palette;
   visible: boolean;
@@ -170,6 +173,14 @@ function VisitorDetailsSheet({
             </View>
           ))}
         </View>
+        {detail && (
+          <OtherConversations
+            detail={detail}
+            currentId={conversation.id}
+            onOpen={onOpenConversation}
+            palette={palette}
+          />
+        )}
         {detail?.note && (
           <View style={[screenStyles.contactNote, { backgroundColor: palette.note }]}>
             <Text style={{ fontFamily: fonts.semibold, color: palette.noteInk }}>
@@ -212,6 +223,96 @@ function VisitorDetailsSheet({
           </View>
         )}
         <View style={screenStyles.detailsBottomSpace} />
+      </ScrollView>
+    </Sheet>
+  );
+}
+
+/** The visitor's other conversations, and those of other visitors with their email. */
+function OtherConversations({
+  currentId,
+  detail,
+  onOpen,
+  palette,
+}: {
+  currentId: string;
+  detail: ContactDetail;
+  onOpen(conversationId: string): void;
+  palette: Palette;
+}) {
+  const others = otherConversations(detail, currentId);
+  if (others.length === 0) return null;
+  return (
+    <View style={screenStyles.facts}>
+      <Text style={[screenStyles.sectionLabel, { color: palette.ink }]}>
+        {plural(others.length, "contactOtherConversationsOne", "contactOtherConversationsMany")}
+      </Text>
+      <ConversationList
+        conversations={others}
+        onOpen={(other) => onOpen(other.id)}
+        palette={palette}
+      />
+    </View>
+  );
+}
+
+/** At the top of the log: the visitor's other conversations, which open in a sheet. */
+function OtherConversationsLink({
+  count,
+  onPress,
+  palette,
+}: {
+  count: number;
+  onPress(): void;
+  palette: Palette;
+}) {
+  return (
+    <Pressable
+      accessibilityRole="button"
+      onPress={onPress}
+      style={({ pressed }) => [screenStyles.othersLink, { opacity: pressed ? 0.6 : 1 }]}
+    >
+      <Text style={[screenStyles.othersText, { color: palette.blue, fontFamily: fonts.semibold }]}>
+        {plural(count, "contactOtherConversationsOne", "contactOtherConversationsMany")}
+      </Text>
+      <Icon color={palette.blue} name="next" size={16} />
+    </Pressable>
+  );
+}
+
+function OtherConversationsSheet({
+  bottomInset,
+  currentId,
+  detail,
+  onClose,
+  onOpen,
+  palette,
+  visible,
+}: {
+  bottomInset: number;
+  currentId: string;
+  detail: ContactDetail | null;
+  onClose(): void;
+  onOpen(conversationId: string): void;
+  palette: Palette;
+  visible: boolean;
+}) {
+  if (!visible || detail === null) return null;
+  const others = otherConversations(detail, currentId);
+  return (
+    <Sheet bottomInset={bottomInset} onClose={onClose} palette={palette} visible={visible}>
+      <View style={[screenStyles.assignHead, screenStyles.assignTitleRow]}>
+        <Text style={[screenStyles.assignTitle, { color: palette.ink, fontFamily: fonts.display }]}>
+          {plural(others.length, "contactOtherConversationsOne", "contactOtherConversationsMany")}
+        </Text>
+        <SheetCloseButton label={t("mobileDismiss")} onPress={onClose} palette={palette} />
+      </View>
+      <ScrollView contentContainerStyle={screenStyles.crewList} style={screenStyles.sheetScroll}>
+        <ConversationList
+          conversations={others}
+          onOpen={(other) => onOpen(other.id)}
+          palette={palette}
+        />
       </ScrollView>
     </Sheet>
   );
@@ -513,6 +614,7 @@ export function ThreadScreen({
   onSend,
   onRetry,
   onAssign,
+  onOpenConversation,
   onStatus,
 }: {
   api: DinghyApi;
@@ -536,6 +638,7 @@ export function ThreadScreen({
   onSend(body: string, replyToMessageId: string | null): Promise<void>;
   onRetry(reply: PendingReply): Promise<void>;
   onAssign(): Promise<void>;
+  onOpenConversation(conversationId: string): void;
   onStatus(): Promise<void>;
 }) {
   const isNight = useColorScheme() === "dark";
@@ -574,6 +677,7 @@ export function ThreadScreen({
     return () => back.remove();
   }, [keyboardVisible, onBack]);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [othersOpen, setOthersOpen] = useState(false);
   const [handoffOpen, setHandoffOpen] = useState(false);
   const [handoffBusy, setHandoffBusy] = useState(false);
   const [selectedMemberId, setSelectedMemberId] = useState<string | null>(null);
@@ -627,6 +731,13 @@ export function ThreadScreen({
     const timer = setInterval(() => setNow(new Date()), 60_000);
     return () => clearInterval(timer);
   }, []);
+
+  const otherCount = contact === null ? 0 : otherConversations(contact, current.id).length;
+  const openOther = (conversationId: string) => {
+    setOthersOpen(false);
+    setDetailsOpen(false);
+    onOpenConversation(conversationId);
+  };
 
   const { place, time } = visitorContext(contact?.country ?? null, contact?.timeZone ?? null, now);
   const contextPlace = place ?? current.visitor.email;
@@ -943,6 +1054,16 @@ export function ThreadScreen({
         contentContainerStyle={screenStyles.log}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="interactive"
+        // The log is inverted, so its footer shows above the oldest message.
+        ListFooterComponent={
+          otherCount > 0 ? (
+            <OtherConversationsLink
+              count={otherCount}
+              onPress={() => setOthersOpen(true)}
+              palette={palette}
+            />
+          ) : undefined
+        }
         ListEmptyComponent={
           loading && thread === null ? (
             <ActivityIndicator accessibilityLabel={t("loading")} color={palette.sub} />
@@ -1085,9 +1206,19 @@ export function ThreadScreen({
         members={members}
         name={name}
         onClose={() => setDetailsOpen(false)}
+        onOpenConversation={openOther}
         onRetry={() => setContactRequest((value) => value + 1)}
         palette={palette}
         visible={detailsOpen}
+      />
+      <OtherConversationsSheet
+        bottomInset={bottomInset}
+        currentId={current.id}
+        detail={contact}
+        onClose={() => setOthersOpen(false)}
+        onOpen={openOther}
+        palette={palette}
+        visible={othersOpen}
       />
       <HandoffSheet
         bottomInset={bottomInset}
@@ -1233,6 +1364,15 @@ const screenStyles = StyleSheet.create({
   contextTime: { flexShrink: 0 },
   // The log is inverted, so its top padding shows under the newest message.
   log: { flexGrow: 1, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 12 },
+  othersLink: {
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+    marginBottom: 6,
+  },
+  othersText: { fontSize: 13, lineHeight: 18 },
   day: { textAlign: "center", fontSize: 12, lineHeight: 16, marginTop: 4, marginBottom: 10 },
   pending: {
     alignSelf: "flex-end",

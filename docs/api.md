@@ -687,7 +687,7 @@ Every key and connected app gets the Chats tools. A Full access one also gets th
 | `assign_conversation` | Chats | Assigns a conversation to a member by operator ID, or clears it with `null` |
 | `list_labels` | Chats | Lists the team's labels: `id`, `name` and `color`. A conversation's `labelIds` name them |
 | `label_conversation`, `unlabel_conversation` | Chats | Puts one label on a conversation, or takes it off. A repeat changes nothing |
-| `get_contact` | Chats | Reads a visitor, by `visitorId` or by `conversationId`, exactly one of them, with their local time, pages and other conversations |
+| `get_contact` | Chats | Reads a visitor, by `visitorId` or by `conversationId`, exactly one of them, with their local time, pages and other conversations, and in `sameEmail` the conversations of other visitors with the same email |
 | `list_contacts`, `search_contacts` | Chats | Lists or finds the people who have a conversation. `list_contacts` with `hasChatted: false` adds those with none, and `filter` takes a [condition](outbound-messages.md#unless) |
 | `upsert_contact` | Chats | Creates or updates a contact by your `userId`: `name`, `email` and `attributes`, which merge key by key |
 | `send_outbound_message` | Chats | Sends an [outbound message](#outbound-messages-and-contacts) to one visitor, with the fields of the route. Pass the same `clientId` on a retry |

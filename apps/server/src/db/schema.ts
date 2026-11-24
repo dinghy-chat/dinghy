@@ -355,6 +355,10 @@ export const visitor = pgTable(
     ),
     // Contacts, newest first.
     index("visitor_created_idx").on(table.workspaceId, table.createdAt, table.id),
+    // A contact's other visitors with the same email, which the contact page joins.
+    index("visitor_email_idx")
+      .on(table.workspaceId, sql`lower(${table.email})`)
+      .where(sql`${table.email} is not null`),
     check("visitor_note_length", sql`char_length(${table.note}) <= 5000`),
     check("visitor_country", sql`${table.country} ~ '^[A-Z]{2}$'`),
     check("visitor_time_zone_length", sql`char_length(${table.timeZone}) <= 64`),

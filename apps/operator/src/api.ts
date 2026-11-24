@@ -369,26 +369,34 @@ export interface Contact extends VisitorIdentity {
   pictureUrl: string | null;
 }
 
+/** One of a contact's conversations, with its preview and numbers. */
+interface ContactConversation {
+  id: string;
+  status: "open" | "closed";
+  createdAt: string;
+  updatedAt: string;
+  lastBody: string | null;
+  /** Null with no message. */
+  lastKind: ChatKind | null;
+  messageCount: number;
+  assigneeName: string | null;
+  /** The member or key that closed it. Null while open, or when the visitor closed it. */
+  closedBy: string | null;
+  firstReplySeconds: number | null;
+}
+
 export interface ContactDetail extends Contact {
   /** A widget stream of the visitor's is open now. Null when the server cannot tell. */
   online: boolean | null;
   attributes: Record<string, unknown> | null;
   pageContext: PageContext | null;
   note: string | null;
-  conversations: {
-    id: string;
-    status: "open" | "closed";
-    createdAt: string;
-    updatedAt: string;
-    lastBody: string | null;
-    /** Null with no message. */
-    lastKind: ChatKind | null;
-    messageCount: number;
-    assigneeName: string | null;
-    /** The member or key that closed it. Null while open, or when the visitor closed it. */
-    closedBy: string | null;
-    firstReplySeconds: number | null;
-  }[];
+  conversations: ContactConversation[];
+  /**
+   * The conversations of other visitors with the same email. `signedIn` false: that visitor only
+   * typed the email in the chat.
+   */
+  sameEmail: (ContactConversation & { visitorId: string; signedIn: boolean })[];
   pages: PageView[];
 }
 

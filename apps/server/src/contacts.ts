@@ -1,5 +1,5 @@
 import { createRoute, z } from "@hono/zod-openapi";
-import { and, desc, eq, inArray, isNotNull, or, sql } from "drizzle-orm";
+import { and, desc, eq, inArray, isNotNull, or, type SQL, sql } from "drizzle-orm";
 import { SESSION, SESSION_OR_KEY } from "./api-security.ts";
 import type { App } from "./app.ts";
 import {
@@ -72,6 +72,25 @@ const ContactSchema = z
   })
   .openapi("Contact");
 
+const ContactConversationSchema = z.object({
+  id: z.string(),
+  status: z.enum(["open", "closed"]),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  // The newest message's text, or a file's name. Null for an image, and for a removed file.
+  lastBody: z.string().nullable(),
+  // The newest message's kind. Null with no message.
+  lastKind: z.enum(CHAT_KINDS).nullable(),
+  // Messages people wrote, not counting deleted ones.
+  messageCount: z.number().int(),
+  assigneeName: z.string().nullable(),
+  // The member or API key that wrote the newest close. Null while open, or when the visitor
+  // closed it.
+  closedBy: z.string().nullable(),
+  // From the start to the first reply from a member or an API key. Null with no reply.
+  firstReplySeconds: z.number().int().nullable(),
+});
+
 const ContactDetailSchema = ContactSchema.extend({
   // A widget stream of the visitor's is open now. Null when the server cannot tell.
   online: z.boolean().nullable(),
@@ -79,26 +98,19 @@ const ContactDetailSchema = ContactSchema.extend({
   pageContext: PageContextSchema.nullable(),
   // Private to the team.
   note: z.string().nullable(),
-  conversations: z.array(
-    z.object({
-      id: z.string(),
-      status: z.enum(["open", "closed"]),
-      createdAt: z.string(),
-      updatedAt: z.string(),
-      // The newest message's text, or a file's name. Null for an image, and for a removed file.
-      lastBody: z.string().nullable(),
-      // The newest message's kind. Null with no message.
-      lastKind: z.enum(CHAT_KINDS).nullable(),
-      // Messages people wrote, not counting deleted ones.
-      messageCount: z.number().int(),
-      assigneeName: z.string().nullable(),
-      // The member or API key that wrote the newest close. Null while open, or when the visitor
-      // closed it.
-      closedBy: z.string().nullable(),
-      // From the start to the first reply from a member or an API key. Null with no reply.
-      firstReplySeconds: z.number().int().nullable(),
+  conversations: z.array(ContactConversationSchema),
+  sameEmail: z
+    .array(
+      ContactConversationSchema.extend({
+        visitorId: z.string(),
+        // The host site signed who that visitor is. Otherwise the email was typed in the chat.
+        signedIn: z.boolean(),
+      }),
+    )
+    .openapi({
+      description:
+        "The conversations of the workspace's other visitors with this contact's email, ignoring case, newest activity first. Empty when the contact has no email. The same person may have chatted signed out and signed in, but a typed email proves nothing.",
     }),
-  ),
   // The newest pages, newest first, at most 20.
   pages: z.array(
     z.object({ path: z.string(), title: z.string().nullable(), viewedAt: z.string() }),
@@ -193,6 +205,8 @@ const readRoute = createRoute({
   path: `${PREFIX}/{workspaceId}/contacts/{visitorId}`,
   security: SESSION,
   summary: "Get one contact with their conversations, pages and note",
+  description:
+    "`sameEmail` holds the conversations of other visitors in the workspace with the same email, ignoring case: often the same person, who chatted signed out before signing in. Nothing is merged, and a visitor never sees them.",
   request: { params: contactParams },
   responses: {
     200: {
@@ -389,15 +403,18 @@ type ConversationRow = {
   assigneeName: string | null;
   closedBy: string | null;
   firstReplySeconds: number | null;
+  visitorId: string;
+  signedIn: boolean;
 };
 
 /**
- * A contact's conversations, newest activity first, each with its preview and numbers, in one
- * statement: each lateral reads one conversation's run of the message index.
+ * The conversations of the visitors that match a condition on `v`, newest activity first, each
+ * with its preview and numbers, in one statement: each lateral reads one conversation's run of the
+ * message index.
  */
-const contactConversations = (tx: Transaction, workspaceId: string, visitorId: string) =>
+const visitorConversations = (tx: Transaction, workspaceId: string, visitors: SQL) =>
   tx.execute<ConversationRow>(sql`
-    SELECT c.id, c.status,
+    SELECT c.id, c.status, c.visitor_id AS "visitorId", v.user_id IS NOT NULL AS "signedIn",
            to_char(c.created_at AT TIME ZONE 'UTC', ${ISO_FORMAT}) AS "createdAt",
            to_char(c.updated_at AT TIME ZONE 'UTC', ${ISO_FORMAT}) AS "updatedAt",
            newest.body AS "lastBody", newest.kind AS "lastKind",
@@ -405,6 +422,7 @@ const contactConversations = (tx: Transaction, workspaceId: string, visitorId: s
            assignee.name AS "assigneeName", closer.name AS "closedBy",
            extract(epoch FROM stats.first_reply_at - c.created_at)::int AS "firstReplySeconds"
     FROM conversation AS c
+    JOIN visitor AS v ON v.workspace_id = c.workspace_id AND v.id = c.visitor_id
     LEFT JOIN operator AS assignee ON assignee.id = c.assignee_operator_id
     LEFT JOIN LATERAL (
       SELECT ${previewBody(sql`m.body`, sql`m.metadata`)} AS body, m.kind FROM message AS m
@@ -426,7 +444,7 @@ const contactConversations = (tx: Transaction, workspaceId: string, visitorId: s
       WHERE m.workspace_id = c.workspace_id AND m.conversation_id = c.id AND m.kind = 'closed'
       ORDER BY m.seq DESC LIMIT 1
     ) AS closer ON c.status = 'closed'
-    WHERE c.workspace_id = ${workspaceId} AND c.visitor_id = ${visitorId}
+    WHERE c.workspace_id = ${workspaceId} AND ${visitors}
     ORDER BY c.updated_at DESC`);
 
 /** One contact with everything the contact page shows, or null. */
@@ -441,7 +459,17 @@ export async function readContact(tx: Transaction, workspaceId: string, visitorI
     .from(visitor)
     .where(and(eq(visitor.workspaceId, workspaceId), eq(visitor.id, visitorId)));
   if (row === undefined) return null;
-  const conversations = await contactConversations(tx, workspaceId, visitorId);
+  const own = await visitorConversations(tx, workspaceId, sql`v.id = ${visitorId}`);
+  const sameEmail =
+    row.email === null
+      ? []
+      : (
+          await visitorConversations(
+            tx,
+            workspaceId,
+            sql`v.email IS NOT NULL AND lower(v.email) = lower(${row.email}) AND v.id <> ${visitorId}`,
+          )
+        ).rows;
   const pages = await visitorPages(tx, workspaceId, visitorId);
   const { attributes, pageContext, note, ...contact } = row;
   return {
@@ -449,7 +477,8 @@ export async function readContact(tx: Transaction, workspaceId: string, visitorI
     attributes: (attributes as Record<string, unknown> | null) ?? null,
     pageContext: PageContextSchema.nullable().catch(null).parse(pageContext),
     note,
-    conversations: conversations.rows,
+    conversations: own.rows.map(({ visitorId: _, signedIn: __, ...one }) => one),
+    sameEmail,
     pages: pages.map((page) => ({ ...page, viewedAt: page.viewedAt.toISOString() })),
   };
 }

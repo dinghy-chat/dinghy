@@ -577,6 +577,29 @@ const ATTACKS: Record<string, Attack> = {
       401,
     );
   },
+  "POST /v1/widget/:key/me/merge": async ({ widget, a, b, one, two, other }) => {
+    const now = Math.floor(Date.now() / 1000);
+    const signedIn = await new SignJWT({})
+      .setProtectedHeader({ alg: "HS256" })
+      .setAudience(a.publicKey)
+      .setSubject(`merge-${randomUUID()}`)
+      .setIssuedAt(now)
+      .setExpirationTime(now + 600)
+      .sign(new TextEncoder().encode(a.signingSecret));
+    const exists = async (id: string) =>
+      (await owner.select().from(visitor).where(eq(visitor.id, id))).length === 1;
+    // Another workspace's browser token names nobody here.
+    const merge = (key: string, token: string, browserToken: string, origin: string) =>
+      widget(key, "POST", "me/merge", token, origin, { browserToken });
+    expect((await merge(a.publicKey, signedIn, other.token, SITE_A)).status).toBe(200);
+    expect(await exists(other.id)).toBe(true);
+    // A signed-out visitor cannot take another one's chats.
+    expect((await merge(a.publicKey, one.token, two.token, SITE_A)).status).toBe(200);
+    expect(await exists(two.id)).toBe(true);
+    // A host token is for its own workspace only.
+    expect((await merge(b.publicKey, signedIn, other.token, SITE_B)).status).toBe(401);
+    expect(await exists(other.id)).toBe(true);
+  },
   "GET /v1/widget/:key/presence": async ({ widget, operator: as, a, b, anna }) => {
     expect((await widget(a.publicKey, "GET", "presence", null, SITE_B)).status).toBe(403);
     // Online in one workspace is not online in another.

@@ -336,6 +336,102 @@ describe("browser tokens", () => {
   });
 });
 
+describe("signing in where the visitor chatted", () => {
+  function merge(token: string, browserToken: string, key = a.publicKey, origin = ORIGIN) {
+    return app.request(`/v1/widget/${key}/me/merge`, {
+      method: "POST",
+      headers: { origin, authorization: `Bearer ${token}`, "content-type": "application/json" },
+      body: JSON.stringify({ browserToken }),
+    });
+  }
+
+  async function chattedVisitor(key = a.publicKey, origin = ORIGIN) {
+    const created = (await (await newVisitor(key, origin)).json()) as {
+      visitorId: string;
+      token: string;
+    };
+    const sent = await app.request(`/v1/widget/${key}/messages`, {
+      method: "POST",
+      headers: {
+        origin,
+        authorization: `Bearer ${created.token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ clientId: "before-sign-in", body: "hello" }),
+    });
+    expect(sent.status).toBe(201);
+    return created;
+  }
+
+  const owner = () => database.connect("migrator").db;
+  const conversationsOf = (visitorId: string) =>
+    owner()
+      .select({ id: conversation.id })
+      .from(conversation)
+      .where(eq(conversation.visitorId, visitorId));
+  const visitorExists = async (visitorId: string) =>
+    (await owner().select({ id: visitor.id }).from(visitor).where(eq(visitor.id, visitorId)))
+      .length === 1;
+
+  test("the browser's anonymous chats move to the signed-in visitor, which keeps its own email", async () => {
+    const anonymous = await chattedVisitor();
+    const [chat] = await conversationsOf(anonymous.visitorId);
+    await owner()
+      .update(visitor)
+      .set({ note: "Asked about invoices", email: "typed@example.com" })
+      .where(eq(visitor.id, anonymous.visitorId));
+    const token = await hostToken({ subject: "merging", payload: { email: "real@example.com" } });
+
+    const response = await merge(token, anonymous.token);
+    expect(response.status).toBe(200);
+    const merged = (await response.json()) as { visitorId: string; chatted: boolean };
+    expect(merged.chatted).toBe(true);
+
+    expect(await visitorExists(anonymous.visitorId)).toBe(false);
+    expect(await conversationsOf(merged.visitorId)).toEqual([{ id: chat?.id }]);
+    const authors = await owner().execute<{ author: string }>(
+      sql`select author_visitor_id as author from message where conversation_id = ${chat?.id}`,
+    );
+    expect(authors.rows).toEqual([{ author: merged.visitorId }]);
+    const [row] = await owner()
+      .select({ email: visitor.email, note: visitor.note })
+      .from(visitor)
+      .where(eq(visitor.id, merged.visitorId));
+    expect(row).toEqual({ email: "real@example.com", note: "Asked about invoices" });
+    // The old token is gone with its visitor, and a second merge changes nothing.
+    expect((await me(anonymous.token)).status).toBe(401);
+    expect((await merge(token, anonymous.token)).status).toBe(200);
+  });
+
+  test("only a host token merges: a browser token never takes another browser's visitor", async () => {
+    const first = await chattedVisitor();
+    const second = await chattedVisitor();
+    const response = await merge(second.token, first.token);
+    expect(response.status).toBe(200);
+    expect(await visitorExists(first.visitorId)).toBe(true);
+    expect(await conversationsOf(first.visitorId)).toHaveLength(1);
+  });
+
+  test("a signed-in visitor is never merged into another", async () => {
+    const other = (await (await me(await hostToken({ subject: "kept" }))).json()) as {
+      visitorId: string;
+    };
+    const token = await hostToken({ subject: "taker" });
+    // A signed-in visitor holds no browser token, so nothing names it.
+    expect((await merge(token, newBrowserToken())).status).toBe(200);
+    expect(await visitorExists(other.visitorId)).toBe(true);
+  });
+
+  test("a browser token of another workspace is ignored", async () => {
+    const elsewhere = await chattedVisitor(b.publicKey, OTHER_ORIGIN);
+    const response = await merge(await hostToken({ subject: "cross" }), elsewhere.token);
+    expect(response.status).toBe(200);
+    expect(((await response.json()) as { chatted: boolean }).chatted).toBe(false);
+    expect(await visitorExists(elsewhere.visitorId)).toBe(true);
+    expect(await conversationsOf(elsewhere.visitorId)).toHaveLength(1);
+  });
+});
+
 describe("origins", () => {
   test("an allowed origin gets the CORS header for itself", async () => {
     const response = await newVisitor();

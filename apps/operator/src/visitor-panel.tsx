@@ -377,7 +377,7 @@ function ConversationLinks({
   conversations,
   onOpen,
 }: {
-  conversations: ContactDetail["conversations"];
+  conversations: (ContactDetail["conversations"][number] | ContactDetail["sameEmail"][number])[];
   onOpen(id: string, status: "open" | "closed"): void;
 }) {
   return (
@@ -388,6 +388,7 @@ function ConversationLinks({
             <span className="link-preview">{conversationPreview(one)}</span>
             <small>
               {t(one.status)} · {ago(one.updatedAt, Date.now(), "narrow")}
+              {"signedIn" in one && !one.signedIn && ` · ${t("contactEmailTyped")}`}
             </small>
           </button>
         </li>
@@ -460,7 +461,11 @@ function ContactFolds({
   onOpenConversation(id: string, status: "open" | "closed"): void;
   onNote(note: string | null): Promise<unknown>;
 }) {
-  const others = contact?.conversations.filter((one) => one.id !== conversationId) ?? [];
+  // With the conversations of other visitors with the same email: often the same person, signed
+  // out before.
+  const others = [...(contact?.conversations ?? []), ...(contact?.sameEmail ?? [])]
+    .filter((one) => one.id !== conversationId)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   return (
     <>
       {hasDetails(visitor) && (

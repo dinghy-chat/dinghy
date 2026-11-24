@@ -896,6 +896,7 @@ function SignedInApp({
                 }
               }}
               onRetry={deliver}
+              onOpenConversation={(id) => openById(id)}
               onDraftChange={(body) => saveDraft(opened.conversationId, body)}
               onSend={(body, replyToMessageId) =>
                 send(opened.conversationId, body, replyToMessageId)
