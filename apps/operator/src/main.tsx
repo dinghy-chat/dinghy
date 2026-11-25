@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import { Component, type ReactNode, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { identifyOperator, startAnalytics, trackPage } from "../../../ee/operator/analytics.ts";
+import { identifyOperator, startAnalytics } from "../../../ee/operator/analytics.ts";
 import { BillingReturn, FinishPayment, Onboarding, Signup } from "../../../ee/operator/signup.tsx";
 import { getMe, getMeta, type Me, type Meta, signOut } from "./api.ts";
 import { AccountDeleted, LinkPage, SignIn } from "./auth.tsx";
@@ -101,14 +101,11 @@ function App() {
       })
       .catch(() => setMeta({ billing: false, signup: null, analytics: null, email: true }));
   }, []);
-  // A page view for each screen, once the server has said whether the cloud's analytics are on.
+  // PostHog counts page views itself. The app tells it who is signed in.
   const operatorId = me === "loading" ? undefined : (me?.id ?? null);
-  const shown = new URL(at, location.origin).pathname;
   useEffect(() => {
-    if (meta === "loading" || operatorId === undefined) return;
-    identifyOperator(operatorId);
-    trackPage(shown);
-  }, [meta, operatorId, shown]);
+    if (operatorId !== undefined) identifyOperator(operatorId);
+  }, [operatorId]);
 
   const address = new URL(at, location.origin);
   const query = address.searchParams;

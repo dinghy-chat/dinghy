@@ -101,7 +101,7 @@ test("the share image exists", () => {
 test("_headers sets the CSP, which allows Dinghy's chat and PostHog, and caches fonts for a year", () => {
   const headers = readFileSync(join(PUBLIC, "_headers"), "utf8");
   expect(headers).toContain(
-    "Content-Security-Policy: default-src 'none'; script-src 'self' https://app.dinghy.chat https://eu-assets.i.posthog.com; style-src 'self'; img-src 'self' data: https://app.dinghy.chat https://img.dinghychat.com; font-src 'self'; connect-src https://app.dinghy.chat https://img.dinghychat.com https://eu.i.posthog.com https://eu-assets.i.posthog.com; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+    "Content-Security-Policy: default-src 'none'; script-src 'self' https://app.dinghy.chat https://eu-assets.i.posthog.com; style-src 'self'; img-src 'self' data: https://app.dinghy.chat https://img.dinghychat.com; font-src 'self'; connect-src https://app.dinghy.chat https://img.dinghychat.com https://eu.i.posthog.com https://eu-assets.i.posthog.com; worker-src blob:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
   );
   expect(headers).toMatch(/\/fonts\/\*\n\s+Cache-Control: public, max-age=31536000, immutable/);
 });

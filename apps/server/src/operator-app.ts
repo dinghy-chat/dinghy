@@ -34,17 +34,24 @@ export function registerOperatorApp(
     billing = false,
     signup = false,
     uploadsOrigin,
-    analyticsOrigin,
+    analyticsHost,
   }: {
     billing?: boolean;
     signup?: boolean;
     uploadsOrigin?: string | undefined;
-    /** Dinghy Cloud's PostHog address, the one other place the app may send to. */
-    analyticsOrigin?: string | undefined;
+    /** Dinghy Cloud's PostHog address. The app then loads PostHog's scripts and sends to it. */
+    analyticsHost?: string | undefined;
   } = {},
 ): void {
   const images = uploadsOrigin === undefined ? "" : ` ${uploadsOrigin}`;
-  const analytics = analyticsOrigin === undefined ? "" : ` ${analyticsOrigin}`;
+  // PostHog serves its scripts from a host next to the one that takes events.
+  const assets =
+    analyticsHost === undefined
+      ? ""
+      : ` ${new URL(analyticsHost.replace(".i.posthog.com", "-assets.i.posthog.com")).origin}`;
+  const analytics = analyticsHost === undefined ? "" : ` ${new URL(analyticsHost).origin}${assets}`;
+  // Replay's recorder compresses in a worker that it makes from a blob.
+  const workers = analyticsHost === undefined ? "" : " blob:";
   const page = async () => {
     const html = await readFile(join(directory, "index.html"), "utf8").catch(() => null);
     if (html === null) return null;
@@ -53,7 +60,7 @@ export function registerOperatorApp(
         ...SECURITY,
         "content-type": "text/html; charset=utf-8",
         "cache-control": "no-cache",
-        "content-security-policy": `default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:${images}; connect-src 'self'${images}${analytics}; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
+        "content-security-policy": `default-src 'none'; script-src 'self'${assets}; style-src 'self'; font-src 'self'; img-src 'self' data:${images}; connect-src 'self'${images}${analytics}; manifest-src 'self'; worker-src 'self'${workers}; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
       },
     });
   };

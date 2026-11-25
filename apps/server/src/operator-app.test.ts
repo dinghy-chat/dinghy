@@ -31,16 +31,22 @@ test("the page's CSP allows fonts from this server and no inline style", async (
   expect(csp).toContain("style-src 'self';");
 });
 
-test("the page may send to the cloud's PostHog host only when the server names one", async () => {
-  const csp = async (analyticsOrigin?: string) => {
+test("the page loads PostHog and sends to it only when the server names a host", async () => {
+  const csp = async (analyticsHost?: string) => {
     const app: App = new OpenAPIHono();
-    registerOperatorApp(app, PUBLIC, { analyticsOrigin });
+    registerOperatorApp(app, PUBLIC, { analyticsHost });
     return (await app.request("/")).headers.get("content-security-policy");
   };
-  expect(await csp()).toContain("connect-src 'self';");
-  expect(await csp("https://eu.i.posthog.com")).toContain(
-    "connect-src 'self' https://eu.i.posthog.com;",
+  const off = await csp();
+  expect(off).toContain("script-src 'self';");
+  expect(off).toContain("connect-src 'self';");
+  expect(off).toContain("worker-src 'self';");
+  const on = await csp("https://eu.i.posthog.com");
+  expect(on).toContain("script-src 'self' https://eu-assets.i.posthog.com;");
+  expect(on).toContain(
+    "connect-src 'self' https://eu.i.posthog.com https://eu-assets.i.posthog.com;",
   );
+  expect(on).toContain("worker-src 'self' blob:;");
 });
 
 test.each([

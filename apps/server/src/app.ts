@@ -651,7 +651,7 @@ export function createApp({
       billing: cloud?.billing ?? false,
       signup: cloud !== undefined,
       uploadsOrigin: uploads?.origin,
-      analyticsOrigin: cloud?.analytics ? new URL(cloud.analytics.host).origin : undefined,
+      analyticsHost: cloud?.analytics?.host,
     });
   if (widgetDirectory !== undefined) registerWidgetFiles(app, widgetDirectory);
 

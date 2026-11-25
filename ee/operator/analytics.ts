@@ -2,78 +2,91 @@
 import type { Meta } from "../../apps/operator/src/api.ts";
 
 /**
- * Page views and signup steps for Dinghy Cloud's PostHog project, sent with plain requests to its
- * capture API. Only the cloud's server names a project, so a self-hosted app sends nothing. Nothing
- * is stored in the browser: before sign-in the ID lasts as long as the tab, after it the ID is the
- * operator's. The address goes without its query, which can hold a sign-in token.
+ * PostHog for Dinghy Cloud's app: page views, signup steps and session replay. Only the cloud's server
+ * names a project, so a self-hosted app loads nothing. PostHog's cookie is shared with dinghy.chat, so
+ * a visit to the website and the signup that follows belong to one person.
+ *
+ * A signed-in operator's screens show their customers' chats, so replay masks all text there and
+ * blocks images in messages. Typed text is always masked. Addresses lose their query, which can hold
+ * a sign-in token.
  */
-let project: Meta["analytics"] = null;
-// Made on first use, because crypto.randomUUID throws outside HTTPS, where a self-hosted app may run.
-let anonymousId: string | null = null;
+type Method = "capture" | "identify" | "reset";
+type PostHog = Record<Method, (...args: unknown[]) => void>;
+
+/** Pages that show only the operator's own account, where replay keeps the text. */
+const OWN_PAGES = new Set(["/signup", "/link", "/billing/return"]);
+const METHODS: Method[] = ["capture", "identify", "reset"];
+
 let operatorId: string | null = null;
-let lastPath: string | null = null;
 
-function currentId(): string {
-  if (operatorId !== null) return operatorId;
-  anonymousId ??= crypto.randomUUID();
-  return anonymousId;
+/** The stub until PostHog's script loads, then PostHog itself, which replaces it on `window`. */
+const posthog = () => (window as unknown as { posthog?: PostHog }).posthog;
+
+/** Drops the query from this app's own addresses, wherever an event carries one. */
+function withoutQuery(value: unknown): unknown {
+  return typeof value === "string" && value.startsWith(location.origin)
+    ? value.split("?")[0]
+    : value;
 }
 
-function send(event: string, distinctId: string, properties: Record<string, unknown> = {}): void {
-  if (project === null) return;
-  void fetch(`${project.host}/i/v0/e/`, {
-    method: "POST",
-    keepalive: true,
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      api_key: project.key,
-      event,
-      distinct_id: distinctId,
-      timestamp: new Date().toISOString(),
-      properties: {
-        $lib: "dinghy-operator",
-        $current_url: location.origin + location.pathname,
-        $host: location.host,
-        $pathname: location.pathname,
-        $screen_width: screen.width,
-        $screen_height: screen.height,
-        // A visitor who is not signed in gets no person profile, as on the website.
-        ...(operatorId === null && event !== "$identify" ? { $process_person_profile: false } : {}),
-        ...properties,
-      },
-    }),
-  }).catch(() => {});
+function stripQueries(event: { properties?: Record<string, unknown> } | null) {
+  const properties = event?.properties;
+  for (const bag of [properties, properties?.$set, properties?.$set_once]) {
+    if (typeof bag !== "object" || bag === null) continue;
+    const values = bag as Record<string, unknown>;
+    for (const key of Object.keys(values)) values[key] = withoutQuery(values[key]);
+  }
+  return event;
 }
 
-/** Turns analytics on with the project the server names, or leaves it off with none. */
+const maskText = (text: string) =>
+  operatorId === null || OWN_PAGES.has(location.pathname) ? text : text.replace(/\S/g, "*");
+
+/** Loads PostHog with the project the server names, or nothing with none. */
 export function startAnalytics(analytics: Meta["analytics"]): void {
-  project = analytics;
-}
-
-/** Ties this tab's earlier events to the operator once they sign in, and starts over at sign-out. */
-export function identifyOperator(id: string | null): void {
-  if (id === operatorId || project === null) return;
-  // Only a tab's anonymous events join the operator. A switch between two accounts joins nothing.
-  if (id !== null && operatorId === null && anonymousId !== null)
-    send("$identify", id, { $anon_distinct_id: anonymousId });
-  // Without a join, the new ID gets its own view of the screen on show.
-  else lastPath = null;
-  operatorId = id;
-  anonymousId = null;
-}
-
-/** A page view of this path, which never has the address's query. A repeat of the last path is skipped. */
-export function trackPage(path: string = location.pathname): void {
-  if (project === null || path === lastPath) return;
-  lastPath = path;
-  send("$pageview", currentId(), {
-    $current_url: location.origin + path,
-    $pathname: path,
+  if (analytics === null || posthog() !== undefined) return;
+  const config = {
+    api_host: analytics.host,
+    person_profiles: "identified_only",
+    capture_pageview: "history_change",
+    // Surveys add inline styles, which the app's CSP blocks.
+    disable_surveys: true,
+    before_send: stripQueries,
+    session_recording: {
+      maskAllInputs: true,
+      maskTextSelector: "*",
+      maskTextFn: maskText,
+      blockSelector: ".msg img",
+      maskCapturedNetworkRequestFn: (request: { name: string }) => ({
+        ...request,
+        name: request.name.split("?")[0],
+      }),
+    },
+  };
+  // PostHog's script reads `_i`, then runs the calls queued in this array.
+  const stub = Object.assign([] as unknown[], {
+    _i: [[analytics.key, config, "posthog"]],
+    people: [],
   });
+  for (const method of METHODS)
+    Object.assign(stub, { [method]: (...args: unknown[]) => stub.push([method, ...args]) });
+  (window as unknown as { posthog: unknown }).posthog = stub;
+  const script = document.createElement("script");
+  script.src = `${analytics.host.replace(".i.posthog.com", "-assets.i.posthog.com")}/static/array.js`;
+  script.async = true;
+  script.crossOrigin = "anonymous";
+  document.head.append(script);
+}
+
+/** Ties the visit to the operator once they sign in, and starts a new visitor at sign-out. */
+export function identifyOperator(id: string | null): void {
+  if (id === operatorId) return;
+  if (id === null) posthog()?.reset();
+  else posthog()?.identify(id);
+  operatorId = id;
 }
 
 /** A signup step, such as "workspace created". */
 export function trackEvent(event: string, properties?: Record<string, unknown>): void {
-  if (project === null) return;
-  send(event, currentId(), properties);
+  posthog()?.capture(event, properties);
 }

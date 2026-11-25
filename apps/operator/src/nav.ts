@@ -1,5 +1,3 @@
-import { trackPage } from "../../../ee/operator/analytics.ts";
-
 /**
  * Moves between the app's screens without loading the page again, so the sky and the sea stay in
  * place while the card changes. The app listens for this event, loads the account again and then
@@ -33,8 +31,6 @@ let position = positionOf(history.state);
 export function pushAddress(address: string) {
   position += 1;
   history.pushState({ position }, "", address);
-  // A view such as Contacts changes only the address, so its page view is sent here.
-  trackPage();
 }
 
 /** Signup for a signed-in operator, who adds a workspace. A bare /signup opens the app instead. */
@@ -72,7 +68,6 @@ addEventListener("popstate", (event) => {
   leave(
     () => {
       position = to;
-      trackPage();
       dispatchEvent(new Event(NAVIGATE_EVENT));
     },
     () => {

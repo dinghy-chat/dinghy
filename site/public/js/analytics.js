@@ -1,5 +1,5 @@
-// Page views and clicks on dinghy.chat go to Dinghy's PostHog project, in the EU. Cookieless mode stores
-// nothing in the browser: PostHog's server counts visitors with a hash that changes each day.
+// Page views, clicks and session replays on dinghy.chat go to Dinghy's PostHog project, in the EU.
+// PostHog's cookie is on dinghy.chat and its subdomains, so the cloud app continues the same visit.
 // PostHog's own script reads this stub's `_i` list when it loads, so the site needs no inline snippet.
 const HOST = "https://eu.i.posthog.com";
 
@@ -10,9 +10,7 @@ window.posthog = Object.assign([], {
       "phc_ktU9amrfggazFmzQgjR6oikS6eEbY45GarENts85wF2E",
       {
         api_host: HOST,
-        cookieless_mode: "always",
         person_profiles: "identified_only",
-        disable_session_recording: true,
         disable_surveys: true,
       },
       "posthog",
