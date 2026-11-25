@@ -836,6 +836,8 @@ export interface Meta {
   billing: boolean;
   /** How cloud signup works here, or null where nobody can sign up. */
   signup: "payment" | "early" | null;
+  /** Dinghy Cloud's PostHog project. Null on every other server. */
+  analytics: { key: string; host: string } | null;
   /** Whether sign-in links go by email. Without, the server's admin hands them out. */
   email: boolean;
 }

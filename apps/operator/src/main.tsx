@@ -1,6 +1,7 @@
 /** @jsxImportSource react */
 import { Component, type ReactNode, useCallback, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { identifyOperator, startAnalytics } from "../../../ee/operator/analytics.ts";
 import { BillingReturn, FinishPayment, Onboarding, Signup } from "../../../ee/operator/signup.tsx";
 import { getMe, getMeta, type Me, type Meta, signOut } from "./api.ts";
 import { AccountDeleted, LinkPage, SignIn } from "./auth.tsx";
@@ -95,10 +96,16 @@ function App() {
     getMeta()
       .then((loaded) => {
         setLogoLinksHome(loaded.signup !== null);
+        startAnalytics(loaded.analytics);
         setMeta(loaded);
       })
-      .catch(() => setMeta({ billing: false, signup: null, email: true }));
+      .catch(() => setMeta({ billing: false, signup: null, analytics: null, email: true }));
   }, []);
+  // PostHog counts page views itself. The app tells it who is signed in.
+  const operatorId = me === "loading" ? undefined : (me?.id ?? null);
+  useEffect(() => {
+    if (operatorId !== undefined) identifyOperator(operatorId);
+  }, [operatorId]);
 
   const address = new URL(at, location.origin);
   const query = address.searchParams;

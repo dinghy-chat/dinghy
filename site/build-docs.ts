@@ -20,6 +20,8 @@ const SITE = "https://dinghy.chat";
 /** Dinghy's own chat, on every page of the site, from Dinghy Cloud. The CSP in _headers allows it. */
 const WIDGET =
   '<script src="https://app.dinghy.chat/widget/loader.js" data-key="wk_f2dce993672e6c0e4e08e116323ffe7e" async></script>';
+/** Analytics and session replay for Dinghy's PostHog project, on every page. The CSP in _headers allows it. */
+const ANALYTICS = '<script src="/js/analytics.js" async></script>';
 const PUBLIC = "site/public";
 const CONTENT = "site/content";
 /** The folders this script owns. It empties them before it writes. */
@@ -481,6 +483,7 @@ function head(page: Page, heading: string, description: string): string {
   <link rel="preload" href="/fonts/hanken-grotesk-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/css/site.css">
   <script type="module" src="/js/${docs ? "docs" : "page"}.js"></script>${data}
+  ${ANALYTICS}
   ${WIDGET}
 </head>`;
 }
