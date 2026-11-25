@@ -618,7 +618,9 @@ export function ThreadMessage({
           }}
         />
       )}
-      {!message.deleted && message.link && <LinkCardView link={message.link} palette={palette} />}
+      {!message.deleted && message.link && (
+        <LinkCardView link={message.link} onImageError={onAttachmentError} palette={palette} />
+      )}
     </View>
   );
   const accessibilityActions = [

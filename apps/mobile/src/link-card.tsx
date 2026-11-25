@@ -14,27 +14,38 @@ import type { Palette } from "./theme";
 
 const THUMBNAIL_PX = 44;
 
-/** The card of the draft's first bare link, and the ✕ that removes it. Pass "" for no card. */
-export function useLinkPreview(ask: (url: string) => Promise<LinkPreview | null>, draft: string) {
+/** The card of the draft's first bare link while `isActive`, and the ✕ that removes it. */
+export function useLinkPreview(
+  ask: (url: string) => Promise<LinkPreview | null>,
+  draft: string,
+  isActive: boolean,
+) {
   const [card, setCard] = useState<LinkPreview | null>(null);
   const latestAsk = useRef(ask);
   latestAsk.current = ask;
   const [previews] = useState(() => createLinkPreviews((url) => latestAsk.current(url), setCard));
-  useEffect(() => previews.update(draft), [previews, draft]);
+  useEffect(() => previews.update(draft, isActive), [previews, draft, isActive]);
   useEffect(() => previews.stop, [previews]);
   return { card, remove: previews.remove };
 }
 
-/** A link's card: a thumbnail, the page's title and the link's hostname. A tap opens the link. */
+/**
+ * A link's card: a thumbnail, the page's title and the link's hostname. A tap opens the link.
+ * `onImageError` reloads the thread once for a thumbnail address that failed, as one expires.
+ */
 export function LinkCardView({
   link,
   palette,
   onRemove,
+  onImageError,
 }: {
   link: LinkCard;
   palette: Palette;
   onRemove?: () => void;
+  onImageError?: () => void | Promise<void>;
 }) {
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+  const image = link.image?.url === failedUrl ? null : link.image;
   return (
     <View style={[styles.card, { backgroundColor: palette.wash, borderColor: palette.line }]}>
       <Pressable
@@ -42,10 +53,14 @@ export function LinkCardView({
         onPress={() => void openMarkdownLink(link.url)}
         style={styles.open}
       >
-        {link.image !== null && (
+        {image !== null && (
           <Image
             accessibilityIgnoresInvertColors
-            source={{ uri: link.image.url }}
+            onError={() => {
+              setFailedUrl(image.url);
+              void onImageError?.();
+            }}
+            source={{ uri: image.url }}
             style={styles.image}
           />
         )}

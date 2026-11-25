@@ -1707,11 +1707,11 @@
           },
           "image": {
             "type": ["string", "null"],
-            "maxLength": 200000
+            "maxLength": 32791
           }
         },
         "required": ["token", "image"],
-        "description": "Signed-in operators only, not on a note: the card from the link preview route. The reply goes out without it when its link is no longer the body's first bare link or the card expired."
+        "description": "Signed-in operators only, not on a note: the card from the link preview route. The reply goes out without it when its link is no longer the body's first bare link."
       },
       "MessageReceipt": {
         "type": "object",

@@ -550,6 +550,7 @@ export function createApp({
       founderPicture,
       db,
       uploads,
+      limits,
       live,
       visitorPresence,
     });

@@ -1,6 +1,8 @@
 // Licensed under the Dinghy Enterprise License. See ee/LICENSE.
 import { randomInt, randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { createServer, type Server } from "node:http";
+import type { LookupFunction } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { and, eq, isNotNull, sql } from "drizzle-orm";
@@ -68,6 +70,8 @@ let settings: WelcomeSettings;
 let early: App;
 let paying: App;
 let shared: Parameters<typeof createApp>[0];
+/** A page with a link card and its picture, which every name reaches. */
+let site: Server;
 
 const newIp = () => `10.${randomInt(256)}.${randomInt(256)}.${randomInt(256)}`;
 
@@ -175,6 +179,20 @@ beforeAll(async () => {
   await writeFile(join(directory, "index.html"), "<!doctype html><title>Dinghy</title>");
   store = localStore(join(directory, "uploads"));
   auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
+  site = createServer((incoming, response) => {
+    if (incoming.url === "/picture.png") {
+      response.writeHead(200, { "content-type": "image/png" }).end(PNG);
+      return;
+    }
+    response.writeHead(200, { "content-type": "text/html" });
+    response.end('<title>Reset</title><meta property="og:image" content="/picture.png">');
+  });
+  await new Promise<void>((resolve) => site.listen(0, "127.0.0.1", resolve));
+  const address = site.address();
+  const toSite = ((_host, options, callback) =>
+    options.all === true
+      ? callback(null, [{ address: "127.0.0.1", family: 4 }])
+      : callback(null, "127.0.0.1", 4)) as LookupFunction;
   shared = {
     auth,
     db,
@@ -185,6 +203,10 @@ beforeAll(async () => {
     alerts: { emailAvailable: true, secret: AUTH_SECRET },
     uploads: createUploads({ store, secret: AUTH_SECRET, publicUrl: PUBLIC_URL }),
     checks: { postgres: ok, valkey: ok },
+    linkPreviewNetwork: {
+      lookup: toSite,
+      port: typeof address === "object" && address !== null ? address.port : 0,
+    },
   };
   dinghy = await createWorkspace(db, "Dinghy", []);
   const bootstrap = createApp(shared);
@@ -214,6 +236,7 @@ beforeAll(async () => {
 }, 30_000);
 
 afterAll(async () => {
+  site.close();
   valkey.disconnect();
   await stripe.stop();
   await rm(directory, { recursive: true, force: true });
@@ -513,6 +536,42 @@ describe("copies between the two sides", () => {
       expect(file?.storageKey.startsWith(`${workspaceId}/`)).toBe(true);
       expect(await store.get(file?.storageKey ?? "")).not.toBeNull();
     }
+  });
+
+  test("a link's card goes with the copy, its thumbnail stored under the other workspace", async () => {
+    const acme = await signUp(early);
+    const link = await linkOf(acme.workspaceId);
+    const chat = inWorkspace(dinghy.id, `/conversations/${link.founderConversationId}`);
+    const asked = await request(early, "POST", `${chat}/link-preview`, {
+      cookie: julien.cookie,
+      body: { url: "http://docs.example/reset" },
+    });
+    const { preview } = (await asked.json()) as {
+      preview: { token: string; image: { data: string } | null };
+    };
+    expect(preview.image).not.toBeNull();
+    const sent = await request(early, "POST", `${chat}/messages`, {
+      cookie: julien.cookie,
+      body: {
+        clientId: randomUUID(),
+        body: "See http://docs.example/reset",
+        linkPreview: { token: preview.token, image: preview.image?.data ?? null },
+      },
+    });
+    expect(sent.status).toBe(201);
+    const copy = (await messagesIn(acme.workspaceId, link.customerConversationId)).at(-1);
+    expect(copy?.authorVisitorId).not.toBeNull();
+    expect(copy?.metadata).toMatchObject({
+      link: { url: "http://docs.example/reset", title: "Reset", image: { width: 112 } },
+    });
+    const [file] = await owner
+      .select()
+      .from(attachment)
+      .where(
+        and(eq(attachment.workspaceId, acme.workspaceId), eq(attachment.messageId, copy?.id ?? "")),
+      );
+    expect(file?.storageKey.startsWith(`${acme.workspaceId}/`)).toBe(true);
+    expect(await store.get(file?.storageKey ?? "")).not.toBeNull();
   });
 
   test("an image stays when the reply's commit is lost, since the reply may have committed", async () => {

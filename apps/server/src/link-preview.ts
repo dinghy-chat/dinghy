@@ -11,7 +11,6 @@ import { sha256Hex } from "./identity.ts";
 import { conversationParams, OPEN_TO_WELCOME, WORKSPACE_PREFIX as PREFIX } from "./member.ts";
 import { findConversation, type StoredLink } from "./messages.ts";
 import type { RateLimit } from "./rate-limit.ts";
-import { MINUTE_MS } from "./time.ts";
 import {
   imageFormat,
   MAX_BYTES,
@@ -24,15 +23,21 @@ import { guardedLookup, hasPrivateLiteral, PUBLIC_ONLY } from "./webhooks.ts";
 /** One deadline for a page and its image, DNS and TLS included. */
 const FETCH_DEADLINE_MS = 5000;
 const MAX_REDIRECTS = 3;
-const PAGE_MAX_BYTES = 512 * 1024;
+/** A page's head is read and parsed up to this size, so a large page costs little. */
+const PAGE_MAX_BYTES = 64 * 1024;
 const TITLE_MAX = 200;
 /** The fetches one server process runs at once. */
 const MAX_FETCHES = 4;
 const PREVIEWS_PER_MINUTE = 30;
-const TOKEN_LIFETIME_MS = 15 * MINUTE_MS;
+/** A larger thumbnail goes without, so a reply that sends it back stays small. */
+const THUMBNAIL_MAX_BYTES = 24 * 1024;
+const TOKEN_MAX = 20_000;
 const USER_AGENT = "Mozilla/5.0 (compatible; DinghyBot/1.0; +https://dinghy.chat)";
 const PAGE_TYPES = new Set(["text/html", "application/xhtml+xml"]);
 const IMAGE_DATA_PREFIX = "data:image/webp;base64,";
+const IMAGE_DATA_MAX = IMAGE_DATA_PREFIX.length + Math.ceil(THUMBNAIL_MAX_BYTES / 3) * 4;
+/** What `linkPreview` adds to a reply's JSON at most: its token, its image and their keys. */
+export const SENT_PREVIEW_MAX_BYTES = TOKEN_MAX + IMAGE_DATA_MAX + 64;
 
 /** Where a fetch connects. Only tests change it, to reach their own server. */
 export interface PreviewNetwork {
@@ -147,25 +152,119 @@ function cleanTitle(raw: string): string {
   return Array.from(title).slice(0, TITLE_MAX).join("").trim();
 }
 
-const META = /<meta\b[^>]*>/gi;
-const ATTRIBUTE = /([^\s"'=<>/]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g;
-const TITLE = /<title\b[^>]*>([\s\S]*?)<\/title>/i;
+const SPACES = new Set([" ", "\t", "\n", "\r", "\f"]);
+const isSpace = (char: string) => SPACES.has(char);
+
+/** The position of the first character from `from` that passes `stop`, or the end. */
+function scanTo(html: string, from: number, stop: (char: string) => boolean) {
+  let at = from;
+  while (at < html.length && !stop(html.charAt(at))) at += 1;
+  return at;
+}
+
+/** An attribute's value from `start`, quoted or not. Null when the input cuts off its quote. */
+function readValue(html: string, start: number) {
+  const quote = html.charAt(start);
+  if (quote === '"' || quote === "'") {
+    const close = html.indexOf(quote, start + 1);
+    return close === -1 ? null : { value: html.slice(start + 1, close), end: close + 1 };
+  }
+  const end = scanTo(html, start, (char) => isSpace(char) || char === ">");
+  return { value: html.slice(start, end), end };
+}
+
+/**
+ * The tag that opens at `start`, read forward once, so no input makes it backtrack. A quoted value
+ * may hold a ">". Null for a tag that the input cuts off.
+ */
+function readTag(html: string, start: number) {
+  const nameEnd = scanTo(html, start + 1, (char) => isSpace(char) || char === "/" || char === ">");
+  const name = html.slice(start + 1, nameEnd).toLowerCase();
+  const attributes = new Map<string, string>();
+  let at = nameEnd;
+  for (;;) {
+    at = scanTo(html, at, (char) => !isSpace(char) && char !== "/");
+    if (at === html.length) return null;
+    if (html.charAt(at) === ">") return { name, attributes, end: at + 1 };
+    const keyStart = at;
+    at = scanTo(html, at + 1, (char) => isSpace(char) || "/>=".includes(char));
+    const key = html.slice(keyStart, at).toLowerCase();
+    at = scanTo(html, at, (char) => !isSpace(char));
+    let value = "";
+    if (html.charAt(at) === "=") {
+      const read = readValue(
+        html,
+        scanTo(html, at + 1, (char) => !isSpace(char)),
+      );
+      if (read === null) return null;
+      ({ value, end: at } = read);
+    }
+    if (!attributes.has(key)) attributes.set(key, value);
+  }
+}
+
+/** The charset that a Content-Type value names, such as `text/html; charset=utf-8`. */
+function charsetOf(contentType: string | undefined) {
+  const parameter = contentType
+    ?.split(";")
+    .map((part) => part.trim())
+    .find((part) => part.toLowerCase().startsWith("charset="));
+  return parameter?.slice("charset=".length).replace(/["']/g, "").trim() || undefined;
+}
+
+/**
+ * The first value of each meta tag, the first title and the declared charset, in one forward pass.
+ * A comment hides what it holds, and a title runs to its `</title>`, or to the end.
+ */
+function scanHead(html: string) {
+  const meta = new Map<string, string>();
+  let title: string | undefined;
+  let charset: string | undefined;
+  for (let at = html.indexOf("<"); at !== -1; ) {
+    let next = at + 1;
+    if (html.startsWith("<!--", at)) {
+      const close = html.indexOf("-->", at + 4);
+      if (close === -1) break;
+      next = close + 3;
+    } else if (/^[a-z]$/i.test(html.charAt(at + 1))) {
+      const tag = readTag(html, at);
+      if (tag === null) break;
+      next = tag.end;
+      const { attributes } = tag;
+      if (tag.name === "title" && title === undefined) {
+        const closing = /<\/title/gi;
+        closing.lastIndex = tag.end;
+        next = closing.exec(html)?.index ?? html.length;
+        title = html.slice(tag.end, next);
+      } else if (tag.name === "meta") {
+        const key = (attributes.get("property") ?? attributes.get("name"))?.toLowerCase();
+        const content = attributes.get("content");
+        if (key !== undefined && content !== undefined && !meta.has(key)) meta.set(key, content);
+        const isContentType = attributes.get("http-equiv")?.toLowerCase() === "content-type";
+        charset ??= attributes.get("charset") ?? (isContentType ? charsetOf(content) : undefined);
+      }
+    }
+    at = html.indexOf("<", next);
+  }
+  return { meta, title, charset };
+}
+
+/** The page's text, in the charset its Content-Type or its meta tags name, else UTF-8. */
+function decodePage(bytes: Uint8Array, contentType: string | undefined): string {
+  // Latin-1 keeps every byte, so the meta tags read the same in any charset that extends ASCII.
+  const charset = charsetOf(contentType) ?? scanHead(Buffer.from(bytes).toString("latin1")).charset;
+  try {
+    return new TextDecoder(charset ?? "utf-8").decode(bytes);
+  } catch {
+    // An unknown charset.
+    return new TextDecoder().decode(bytes);
+  }
+}
 
 /** The page's title and image address, from its Open Graph or Twitter tags, else its <title>. */
 export function pageFields(html: string): { title: string | null; image: string | null } {
-  const meta = new Map<string, string>();
-  for (const [tag] of html.matchAll(META)) {
-    const attributes = new Map(
-      [...tag.matchAll(ATTRIBUTE)].map(([, name = "", ...values]) => [
-        name.toLowerCase(),
-        values.find((value) => value !== undefined) ?? "",
-      ]),
-    );
-    const key = (attributes.get("property") ?? attributes.get("name"))?.toLowerCase();
-    const content = attributes.get("content");
-    if (key !== undefined && content !== undefined && !meta.has(key)) meta.set(key, content);
-  }
-  const titles = [meta.get("og:title"), meta.get("twitter:title"), TITLE.exec(html)?.[1]];
+  const { meta, title: titleTag } = scanHead(html);
+  const titles = [meta.get("og:title"), meta.get("twitter:title"), titleTag];
   const title = titles.map((one) => (one === undefined ? "" : cleanTitle(one))).find(Boolean);
   const image = meta.get("og:image") ?? meta.get("twitter:image");
   return {
@@ -182,7 +281,7 @@ async function thumbnail(source: string, base: URL, network: PreviewNetwork, sig
   const { bytes, complete } = await readUpTo(opened.response, MAX_BYTES);
   if (!complete || imageFormat(bytes) === null) return null;
   const done = await processThumbnail(bytes);
-  return typeof done === "string" ? null : done;
+  return typeof done === "string" || done.byteLength > THUMBNAIL_MAX_BYTES ? null : done;
 }
 
 /** The card for a link, or null when the page cannot be read or has no title. */
@@ -201,7 +300,7 @@ export async function fetchPreview(
       return null;
     }
     const { bytes } = await readUpTo(page.response, PAGE_MAX_BYTES, "</head>");
-    const fields = pageFields(bytes.toString("utf8"));
+    const fields = pageFields(decodePage(bytes, page.response.headers["content-type"]));
     if (fields.title === null) return null;
     const image =
       fields.image === null
@@ -220,17 +319,11 @@ interface TokenFields {
   title: string;
   /** The SHA-256 of the thumbnail's bytes. */
   image: string | null;
-  expires: number;
 }
 
 function signedPreview(uploads: Uploads, workspaceId: string, preview: FetchedPreview) {
   const { url, title, image } = preview;
-  const fields: TokenFields = {
-    url,
-    title,
-    image: image && sha256Hex(image),
-    expires: Date.now() + TOKEN_LIFETIME_MS,
-  };
+  const fields: TokenFields = { url, title, image: image && sha256Hex(image) };
   const payload = Buffer.from(JSON.stringify(fields)).toString("base64url");
   return {
     url,
@@ -247,15 +340,16 @@ function signedPreview(uploads: Uploads, workspaceId: string, preview: FetchedPr
 /** The card that a reply sends back, as the preview route gave it. */
 export const SentPreview = z
   .object({
-    token: z.string().max(20_000),
+    token: z.string().max(TOKEN_MAX),
     // The preview's `image.data`, or null.
-    image: z.string().max(200_000).nullable(),
+    image: z.string().max(IMAGE_DATA_MAX).nullable(),
   })
   .openapi("SentLinkPreview");
 
 /**
- * The card a reply carries, when its token holds and has not expired, its image is the one that
- * was signed, and its link is still the body's first bare link. Null sends the reply without one.
+ * The card a reply carries, when its token holds, its image is the one that was signed, and its
+ * link is still the body's first bare link. Null sends the reply without one. The token binds the
+ * workspace, the link and the image, so it needs no expiry.
  */
 export function previewFromToken(
   uploads: Uploads,
@@ -266,7 +360,7 @@ export function previewFromToken(
   const [payload = "", signature = ""] = sent.token.split(".");
   if (!uploads.verifyPreview(`${workspaceId}.${payload}`, signature)) return null;
   const fields = JSON.parse(Buffer.from(payload, "base64url").toString()) as TokenFields;
-  if (fields.expires < Date.now() || firstBareLink(body) !== fields.url) return null;
+  if (firstBareLink(body) !== fields.url) return null;
   const image = sent.image?.startsWith(IMAGE_DATA_PREFIX)
     ? Buffer.from(sent.image.slice(IMAGE_DATA_PREFIX.length), "base64")
     : null;
@@ -358,19 +452,20 @@ export function registerLinkPreviewRoute(
   app.openapi(previewRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
     const { conversationId } = c.req.valid("param");
-    const found = await withWorkspace(db, id, (tx) => findConversation(tx, id, conversationId));
-    if (found === null) return c.json(NOT_FOUND, 404);
-    // Over a limit, the link gets no card, which is not an error.
-    if (
-      fetching >= MAX_FETCHES ||
-      (await rateLimit.hit("link-preview", id, PREVIEWS_PER_MINUTE, 60)) !== null
-    ) {
-      return c.json({ preview: null }, 200);
-    }
+    // Over a limit, the link gets no card, which is not an error. The slot is taken before the
+    // first await, so requests that arrive together cannot all pass the check.
+    if (fetching >= MAX_FETCHES) return c.json({ preview: null }, 200);
     fetching += 1;
-    const fetched = await fetchPreview(c.req.valid("json").url, network).finally(() => {
+    try {
+      const found = await withWorkspace(db, id, (tx) => findConversation(tx, id, conversationId));
+      if (found === null) return c.json(NOT_FOUND, 404);
+      if ((await rateLimit.hit("link-preview", id, PREVIEWS_PER_MINUTE, 60)) !== null) {
+        return c.json({ preview: null }, 200);
+      }
+      const fetched = await fetchPreview(c.req.valid("json").url, network);
+      return c.json({ preview: fetched && signedPreview(uploads, id, fetched) }, 200);
+    } finally {
       fetching -= 1;
-    });
-    return c.json({ preview: fetched && signedPreview(uploads, id, fetched) }, 200);
+    }
   });
 }

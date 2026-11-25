@@ -187,7 +187,7 @@ test("a failed draft update keeps the last durable text", () => {
   }
 });
 
-test("an existing outbox adds the reply relation without losing queued messages", () => {
+test("an existing outbox adds the reply relation and the card without losing queued messages", () => {
   const db = new DatabaseSync(":memory:");
   try {
     db.exec(`CREATE TABLE pending_reply (
@@ -208,9 +208,35 @@ test("an existing outbox adds the reply relation without losing queued messages"
         clientId: "old-client",
         body: "Already queued",
         replyToMessageId: null,
+        linkPreview: null,
       },
     ]);
   } finally {
     db.close();
+  }
+});
+
+test("a reply's link card survives a restart and goes with the retry", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "dinghy-outbox-"));
+  const path = join(directory, "outbox.db");
+  let db = new DatabaseSync(path);
+  try {
+    const card = {
+      url: "https://docs.example/reset",
+      title: "Reset your password",
+      image: { data: "data:image/webp;base64,AAAA", width: 112, height: 112 },
+      token: "signed",
+    };
+    const reply = queue(db).enqueue("conversation", "See https://docs.example/reset", null, card);
+    db.close();
+    db = new DatabaseSync(path);
+    const restored = queue(db);
+    expect(restored.list()).toEqual([{ ...reply, linkPreview: card }]);
+    const post = vi.fn(async (_record: typeof reply) => {});
+    await restored.deliver(reply, post);
+    expect(post).toHaveBeenCalledWith(expect.objectContaining({ linkPreview: card }));
+  } finally {
+    db.close();
+    rmSync(directory, { recursive: true });
   }
 });

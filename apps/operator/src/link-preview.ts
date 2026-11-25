@@ -38,8 +38,9 @@ export const sentPreview = (preview: LinkPreview) => ({
 export const linkHost = (url: string) => (URL.canParse(url) ? new URL(url).hostname : url);
 
 /**
- * Follows a draft and shows the card of its first bare link, or null. An answer for a link that
- * left the draft is dropped, and a card the operator removed does not come back in that draft.
+ * Follows a draft and shows the card of its first bare link, or null. Only the answer to the latest
+ * request counts. A card the operator removed does not come back until the draft is sent or
+ * cleared, even when `isActive` turns off for a note and back on.
  */
 export function createLinkPreviews(
   ask: (url: string) => Promise<LinkPreview | null>,
@@ -47,24 +48,27 @@ export function createLinkPreviews(
 ) {
   let link: string | null = null;
   let length = 0;
+  let latest = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const removed = new Set<string>();
   return {
-    update(draft: string) {
+    update(draft: string, isActive: boolean) {
       // Several characters at once are a paste.
       const isPaste = draft.length - length > 1;
       length = draft.length;
       if (draft === "") removed.clear();
-      const next = firstBareLink(draft);
+      const next = isActive ? firstBareLink(draft) : null;
       if (next === link) return;
       link = next;
+      latest += 1;
       clearTimeout(timer);
       show(null);
       if (next === null || removed.has(next)) return;
+      const request = latest;
       const fetch = () =>
         ask(next).then(
           (card) => {
-            if (link === next && !removed.has(next)) show(card);
+            if (request === latest && !removed.has(next)) show(card);
           },
           () => undefined,
         );

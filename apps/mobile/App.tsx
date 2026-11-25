@@ -95,9 +95,6 @@ function SignedInApp({
       }),
     [session],
   );
-  // A reply's card, by its clientId. The outbox keeps only the text, and a card's token expires
-  // in 15 minutes, so a reply sent after a restart goes without its card.
-  const previews = useRef(new Map<string, LinkPreview>());
   const [page, setPage] = useState<TabPage>("inbox");
   const [opened, setOpened] = useState<OpenThread | null>(null);
   const openedRef = useRef(opened);
@@ -519,10 +516,9 @@ function SignedInApp({
           pending.clientId,
           pending.body,
           pending.replyToMessageId ?? undefined,
-          previews.current.get(pending.clientId),
+          pending.linkPreview ?? undefined,
         );
       });
-      previews.current.delete(reply.clientId);
       if (scopeRef.current !== deliveryScope) return;
       setPendingErrors((current) => {
         const next = { ...current };
@@ -564,12 +560,11 @@ function SignedInApp({
     }
     let reply: PendingReply;
     try {
-      reply = outbox.enqueue(conversationId, body, replyToMessageId);
+      reply = outbox.enqueue(conversationId, body, replyToMessageId, preview);
     } catch (failure) {
       setError(t("mobileReplySaveFailed", { error: readableError(failure) }));
       throw failure;
     }
-    if (preview !== null) previews.current.set(reply.clientId, preview);
     setOutboxVersion((value) => value + 1);
     void deliver(reply);
   };

@@ -499,10 +499,10 @@ export function ChatHead({
  * A link's card: a thumbnail, the page's title and the link's own hostname, which a long name loses
  * from its start, so the part that names the site stays.
  */
-function LinkPreview({ link }: { link: LinkCard }) {
+function LinkPreview({ link, onImageError }: { link: LinkCard; onImageError(): void }) {
   return (
     <a class="lp" href={link.url} target="_blank" rel="noopener noreferrer">
-      {link.image && <img src={link.image.url} alt="" />}
+      {link.image && <img src={link.image.url} alt="" onError={onImageError} />}
       <span>
         <b>{link.title}</b>
         <small>
@@ -609,7 +609,7 @@ export function ChatLine({
         <div class={line.fromVisitor ? "msg mine" : "msg"}>
           {line.quote && <Quoted quote={line.quote} />}
           {renderMarkdown(line.body, h)}
-          {line.link && <LinkPreview link={line.link} />}
+          {line.link && <LinkPreview link={line.link} onImageError={onUploadError} />}
           {onReply && (
             <button type="button" class="tool re" aria-label={t("reply")} onClick={onReply}>
               <Icon paths={REPLY_ICON} size={16} />

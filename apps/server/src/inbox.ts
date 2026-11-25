@@ -605,7 +605,7 @@ const replyRoute = createRoute({
             mentions: NOTE_MENTIONS,
             linkPreview: SentPreview.optional().openapi({
               description:
-                "Signed-in operators only, not on a note: the card from the link preview route. The reply goes out without it when its link is no longer the body's first bare link or the card expired.",
+                "Signed-in operators only, not on a note: the card from the link preview route. The reply goes out without it when its link is no longer the body's first bare link.",
             }),
             changeRequestId: z.uuid().optional().openapi({
               description:
@@ -1041,7 +1041,8 @@ export type WelcomeFace = (
 
 /**
  * Cloud only: copies a reply into another workspace, in the reply's own transaction. It runs before
- * that transaction, where it can copy an image or a file, and returns what runs in it, or null.
+ * that transaction, where it can copy an image, a file or a link card's thumbnail, and returns what
+ * runs in it, or null.
  */
 export type CopyReply = (
   workspaceId: string,
@@ -1144,11 +1145,12 @@ export function createInbox({
   uploads,
   live,
   visitorPresence,
+  limits,
   copyReply,
   founderPicture = async () => null,
 }: Pick<
   InboxOptions,
-  "db" | "uploads" | "live" | "visitorPresence" | "copyReply" | "founderPicture"
+  "db" | "uploads" | "limits" | "live" | "visitorPresence" | "copyReply" | "founderPicture"
 >) {
   /**
    * Writes a reply or a note in the caller's transaction, and wakes the clients after the commit. A
@@ -1348,7 +1350,8 @@ export function createInbox({
       },
     ) {
       const { note, mentions, changeRequestId, link, ...text } = input;
-      const content = { attachment: undefined, isNote: note };
+      // A welcome chat copies the card's thumbnail as it copies an image.
+      const content = { attachment: link?.image ?? undefined, isNote: note };
       const request = changeRequestId === undefined ? text : { ...text, changeRequestId };
       return reply(workspaceId, actor, conversationId, content, request, (tx, author) =>
         appendMessage(
@@ -1356,6 +1359,7 @@ export function createInbox({
           workspaceId,
           author,
           note ? { ...text, note, mentions } : { ...text, link },
+          limits,
         ),
       );
     },
@@ -1444,7 +1448,8 @@ export function refusedReply(outcome: Exclude<ReplyOutcome, { kind: "sent" | "dr
 
 /**
  * A reply with its link's card. The thumbnail is stored first, and goes away when the reply was a
- * retry or failed. A thumbnail that cannot be stored leaves the card without one.
+ * retry or failed. A thumbnail that cannot be stored, or that the workspace has no room for, leaves
+ * the card without one.
  */
 async function replyWithLink(
   inbox: Inbox,
@@ -1458,16 +1463,24 @@ async function replyWithLink(
   const send = (stored: NewLink["image"]) =>
     inbox.reply(workspaceId, actor, conversationId, { ...input, link: { ...link, image: stored } });
   if (image === null) return send(null);
-  const kept = await uploads.receiveBytes(
-    image,
-    workspaceId,
-    async (upload) => {
-      const outcome = await send(upload.type === "image" ? upload : null);
-      return { outcome, created: outcome.kind === "sent" && outcome.created };
-    },
-    null,
-  );
-  return "refused" in kept ? send(null) : kept.result.outcome;
+  let isSending = false;
+  const kept = await uploads
+    .receiveBytes(
+      image,
+      workspaceId,
+      async (upload) => {
+        isSending = true;
+        const outcome = await send(upload.type === "image" ? upload : null);
+        return { outcome, created: outcome.kind === "sent" && outcome.created };
+      },
+      null,
+    )
+    .catch((error: unknown) => {
+      // The reply's own failure stands. Only the object store's leaves the card without its image.
+      if (isSending) throw error;
+      return null;
+    });
+  return kept === null || "refused" in kept ? send(null) : kept.result.outcome;
 }
 
 /** A key that was revoked during an upload. Its transaction rolls back. */

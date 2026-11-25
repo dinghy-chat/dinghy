@@ -8259,7 +8259,7 @@ export interface components {
       resolvedAt: string | null;
       replacementDraftId: string | null;
     };
-    /** @description Signed-in operators only, not on a note: the card from the link preview route. The reply goes out without it when its link is no longer the body's first bare link or the card expired. */
+    /** @description Signed-in operators only, not on a note: the card from the link preview route. The reply goes out without it when its link is no longer the body's first bare link. */
     SentLinkPreview: {
       token: string;
       image: string | null;

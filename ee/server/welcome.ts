@@ -240,9 +240,9 @@ async function chatVisitor(tx: Transaction, side: Side) {
 
 /**
  * Copies a reply as a visitor message on the other side, under both locks. Nothing goes when the
- * other side blocked its visitor or the other workspace is suspended or deleted. An image or a file
- * goes only when the other workspace has room for it, and a message with nothing left to copy goes
- * nowhere. Like any visitor message, the copy reopens a closed chat.
+ * other side blocked its visitor or the other workspace is suspended or deleted. An image, a file
+ * or a link card's thumbnail goes only when the other workspace has room for it, and a message with
+ * nothing left to copy goes nowhere. Like any visitor message, the copy reopens a closed chat.
  */
 async function copyInto(
   tx: Transaction,
@@ -264,6 +264,12 @@ async function copyInto(
       ? attachment
       : undefined;
   if (reply.body === null && fitting === undefined) return null;
+  // A link's card goes with its text, and `attachment` is then the card's thumbnail.
+  const link = reply.link && {
+    url: reply.link.url,
+    title: reply.link.title,
+    image: fitting?.type === "image" ? fitting : null,
+  };
   await appendMessage(
     tx,
     other.workspaceId,
@@ -271,7 +277,7 @@ async function copyInto(
     {
       clientId: copyClientId(reply.id),
       ...(reply.body !== null && { body: reply.body }),
-      ...(fitting !== undefined && { attachment: fitting }),
+      ...(link !== null ? { link } : fitting !== undefined && { attachment: fitting }),
     },
     limits,
   );

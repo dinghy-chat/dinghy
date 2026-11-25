@@ -625,8 +625,8 @@ async function inWelcomeChat(tx: Transaction, workspaceId: string, author: Autho
  * below N that commits later. A retry leaves a gap in the sequence, which is harmless.
  *
  * Keep the caller's transaction short, because this lock serializes writes in the workspace. An
- * image or a file counts against the plan's storage under the same lock, and throws
- * StorageFullError past it.
+ * image, a file or a link's thumbnail counts against the plan's storage under the same lock, and
+ * throws StorageFullError past it.
  *
  * The routes refuse a closed workspace up front, but an upload can take a while to arrive. So this
  * reads the workspace's access again under the lock, which `chat suspend` and the billing change to
@@ -714,7 +714,10 @@ export async function appendMessage(
       !(await hasOperatorReply(tx, workspaceId, author.conversationId));
   }
   const { attachment: upload } = input;
-  if (upload !== undefined && !(await limits.mayStore(tx, workspaceId, upload.byteSize))) {
+  const link = input.note === true ? undefined : input.link;
+  // A link's thumbnail is an attachment row too, so deletes, storage and retention count it.
+  const kept = upload ?? link?.image ?? undefined;
+  if (kept !== undefined && !(await limits.mayStore(tx, workspaceId, kept.byteSize))) {
     throw new StorageFullError();
   }
 
@@ -737,7 +740,6 @@ export async function appendMessage(
         author.kind === "operator" ? author.operatorId : null,
       )
     : [];
-  const link = input.note === true ? undefined : input.link;
   const metadata: MessageMetadata = {
     ...(upload !== undefined && attachmentMetadata(upload)),
     ...(link !== undefined && { link: linkMetadata(link) }),
@@ -765,8 +767,6 @@ export async function appendMessage(
     })
     .returning(messageColumns);
   if (row === undefined) throw new Error("The message insert returned no row");
-  // A link's thumbnail is an attachment row too, so deletes, storage and retention count it.
-  const kept = upload ?? link?.image ?? undefined;
   if (kept !== undefined) {
     await tx.insert(attachment).values({
       workspaceId,

@@ -253,7 +253,8 @@ export function Thread({
   const editingDraft = mode === "reply" ? editedDraft : null;
   const linkPreview = useLinkPreview(
     (url) => api.linkPreview(conversationId, url),
-    mode === "reply" && editingDraft === null ? draft.text : "",
+    draft.text,
+    mode === "reply" && editingDraft === null,
   );
   const linesNow = useRef(thread.lines);
   linesNow.current = thread.lines;

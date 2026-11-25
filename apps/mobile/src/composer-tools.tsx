@@ -229,7 +229,8 @@ export function ThreadComposer({
 
   const linkPreview = useLinkPreview(
     (url) => api.linkPreview(conversationId, url),
-    isNote ? "" : replyDraft,
+    replyDraft,
+    !isNote,
   );
 
   const photo = usePhotoComposer({

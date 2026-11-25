@@ -120,7 +120,7 @@ function Bubble({
       line.body,
       line.kind === "note" && line.authorApiKeyId !== null ? plainLinks : createElement,
     ),
-    line.link !== null && <LinkCardView link={line.link} />,
+    line.link !== null && <LinkCardView link={line.link} onImageError={onUploadError} />,
   );
 }
 
