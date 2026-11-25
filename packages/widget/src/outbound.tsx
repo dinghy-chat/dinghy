@@ -308,7 +308,9 @@ export function PreviewCard({
         tabIndex={0}
         onClick={onOpen}
         onKeyDown={(event) => {
-          if (event.key !== "Enter" && event.key !== " ") return;
+          // Only on the card itself, so a link in the message keeps its own keys.
+          if (event.target !== event.currentTarget || (event.key !== "Enter" && event.key !== " "))
+            return;
           event.preventDefault();
           onOpen();
         }}

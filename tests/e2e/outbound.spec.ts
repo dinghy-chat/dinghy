@@ -153,15 +153,24 @@ test("the page's nudge shows a card until it opens the chat with its message", a
   });
 
   await test.step("a reused object updates the card, and a plain nudge() keeps it", async () => {
-    await page.evaluate(() => {
-      const options = { text: "First error", message: "Error ID first" };
-      const { Dinghy } = window as unknown as { Dinghy: DinghyApi };
-      Dinghy.nudge(options);
-      options.text = "Need a hand?";
-      options.message = "Error ID def456";
-      Dinghy.nudge(options);
-      Dinghy.nudge();
+    const options = await page.evaluateHandle(() => ({
+      text: "First error",
+      message: "Error ID first",
+    }));
+    const nudgeWithOptions = () =>
+      page.evaluate(
+        (value) => (window as unknown as { Dinghy: DinghyApi }).Dinghy.nudge(value),
+        options,
+      );
+    await nudgeWithOptions();
+    // Once the card shows, so a missing copy would leave the old text.
+    await expect(card).toContainText("First error");
+    await options.evaluate((value) => {
+      value.text = "Need a hand?";
+      value.message = "Error ID def456";
     });
+    await nudgeWithOptions();
+    await nudge(page);
     await card.getByText("Need a hand?").click();
     await expect(messageBox(page)).toHaveValue("Error ID def456");
     await expect(card).toHaveCount(0);
@@ -215,6 +224,10 @@ test("the nudge's message is no typing preview until the visitor changes it", as
   await messageBox(page).pressSequentially("!");
   await expect.poll(() => drafts.some((body) => body.includes("jkl012!"))).toBe(true);
   expect(drafts.some((body) => body.includes('"Error ID jkl012"'))).toBe(false);
+  // Once sent, the same words typed again are the visitor's.
+  await messageBox(page).press("Enter");
+  await messageBox(page).fill("Error ID jkl012");
+  await expect.poll(() => drafts.some((body) => body.includes('"Error ID jkl012"'))).toBe(true);
 });
 
 test("closing the page's card keeps the pulse of a message that waits", async ({ browser }) => {
@@ -244,6 +257,17 @@ test("the page's card takes the place of a waiting card, which comes back after 
   await expect(card).toContainText("Can we help?");
   await card.getByRole("button", { name: "Close this message" }).click();
   await expect(card).toContainText("A new import tool is out");
+});
+
+test("a link in a waiting card keeps its own Enter key", async ({ browser }) => {
+  const user = { userId: "card-link" };
+  const body = "Read the [import guide](https://example.com/import).";
+  expect((await send({ visitor: user, body, show: "preview" })).status).toBe(201);
+  const page = await signedInPage(browser, user.userId);
+  const link = page.locator(".preview").getByRole("link", { name: "import guide" });
+  const popup = page.waitForEvent("popup");
+  await link.press("Enter");
+  expect((await popup).url()).toBe("https://example.com/import");
 });
 
 test("recipe 2: a message after an hour, cancelled when the domain verifies, or shown as a card", async ({

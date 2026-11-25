@@ -300,8 +300,12 @@ function Chat({
   }, [identity, renewing, renewAttempt, visible]);
 
   // The page's message fills an empty box, or takes the place of the page's last message. A draft
-  // the visitor typed or changed stays.
+  // the visitor typed or changed stays. Once the visitor edits or sends it, it is theirs.
   const pageMessage = useRef<string | null>(null);
+  const typeDraft = (value: string) => {
+    pageMessage.current = null;
+    setDraft(value);
+  };
   useEffect(() => {
     if (prefill === null) return;
     setDraft((current) => {
@@ -718,7 +722,7 @@ function Chat({
     event.preventDefault();
     const body = draft.trim();
     if (body === "") return;
-    setDraft("");
+    typeDraft("");
     clearPrefill(null);
     sendLine(body, { quote: quoting });
     setQuoting(null);
@@ -945,7 +949,7 @@ function Chat({
         <Composer
           draft={draft}
           inputRef={input}
-          onDraft={setDraft}
+          onDraft={typeDraft}
           onSubmit={submit}
           onFiles={sendFiles}
           filesAllowed={saved.visitorFiles}
