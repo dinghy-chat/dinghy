@@ -2207,6 +2207,8 @@ img.ws-tile {
 }
 .row-text {
   display: grid;
+  /* Without it, a long preview widens the row past the list. */
+  grid-template-columns: minmax(0, 1fr);
   flex: 1;
   gap: 3px;
   min-width: 0;
