@@ -56,10 +56,10 @@ export function identifyOperator(id: string | null): void {
   // Only a tab's anonymous events join the operator. A switch between two accounts joins nothing.
   if (id !== null && operatorId === null && anonymousId !== null)
     send("$identify", id, { $anon_distinct_id: anonymousId });
+  // Without a join, the new ID gets its own view of the screen on show.
+  else lastPath = null;
   operatorId = id;
   anonymousId = null;
-  // The new ID gets its own view of the screen on show.
-  lastPath = null;
 }
 
 /** A page view of this path, which never has the address's query. A repeat of the last path is skipped. */
