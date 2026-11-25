@@ -99,6 +99,12 @@ const schema = z.object({
     .email()
     .transform((email) => email.toLowerCase())
     .optional(),
+  // Cloud only. Admin notices about signups and billing go to this Telegram bot's group. Off unless
+  // both are set. Each topic is a thread ID in the group, and unset posts to its General topic.
+  TELEGRAM_BOT_TOKEN: z.string().min(1).optional(),
+  TELEGRAM_CHAT_ID: z.string().min(1).optional(),
+  TELEGRAM_TOPIC_SIGNUPS: z.coerce.number().int().positive().optional(),
+  TELEGRAM_TOPIC_BILLING: z.coerce.number().int().positive().optional(),
   // Optional, for an app store's review of the Dinghy app. This one account signs in to the app
   // with this fixed six-digit code instead of an emailed one, and no email goes to it. Both or none.
   APP_REVIEW_EMAIL: z
@@ -130,6 +136,7 @@ const FROM_FILES = [
   "FCM_PRIVATE_KEY",
   "STRIPE_SECRET_KEY",
   "STRIPE_WEBHOOK_SECRET",
+  "TELEGRAM_BOT_TOKEN",
   "INBOUND_EMAIL_SECRET",
   "SHIPMAIL_API_KEY",
   "SHIPMAIL_WEBHOOK_SECRET",

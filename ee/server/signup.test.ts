@@ -1,6 +1,6 @@
 // Licensed under the Dinghy Enterprise License. See ee/LICENSE.
 import { spawn } from "node:child_process";
-import { randomInt, randomUUID } from "node:crypto";
+import { createHash, randomInt, randomUUID } from "node:crypto";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -15,6 +15,7 @@ import { createAuth } from "../../apps/server/src/auth.ts";
 import { loadConfig } from "../../apps/server/src/config.ts";
 import {
   event,
+  invite,
   message,
   operator,
   subscription,
@@ -68,6 +69,17 @@ let early: App;
 let paying: App;
 /** A self-hosted install: neither setting. */
 let selfHosted: App;
+/** Early signup with the admins' Telegram notices on. */
+let noticed: App;
+
+const SIGNUPS_TOPIC = 11;
+/** The Telegram messages that `noticed` sent, by topic. */
+const telegram: { thread: unknown; text: string }[] = [];
+const recordTelegram = async (_url: string | URL | Request, init?: RequestInit) => {
+  const body = JSON.parse(String(init?.body)) as { message_thread_id?: number; text: string };
+  telegram.push({ thread: body.message_thread_id, text: body.text });
+  return Response.json({ ok: true });
+};
 
 const mails: { to: string; subject: string; text: string; html: string | undefined }[] = [];
 const mailer: Mailer = {
@@ -227,6 +239,19 @@ beforeAll(async () => {
     },
   });
   selfHosted = createApp(shared);
+  noticed = createApp({
+    ...shared,
+    mailer,
+    cloud: {
+      signup: "early",
+      telegram: {
+        token: "bot-token",
+        chatId: "-100",
+        topics: { signups: SIGNUPS_TOPIC },
+        fetch: recordTelegram as typeof fetch,
+      },
+    },
+  });
 }, 30_000);
 
 afterAll(async () => {
@@ -696,6 +721,63 @@ describe("a workspace that waits for the cloud", () => {
     const output = await runCli(["signups"]);
     expect(output.code).toBe(0);
     expect(output.stdout).toBe(csv);
+  });
+});
+
+describe("the admins' Telegram notices", () => {
+  const titled = (title: string) => telegram.filter((sent) => sent.text.startsWith(`<b>${title}`));
+
+  test("a new workspace, its widget's first site and a new operator each post once to signups", async () => {
+    const created = await signup(noticed, "Notice <Co>");
+    await expect.poll(() => titled("Workspace created")).toHaveLength(1);
+    expect(titled("Workspace created")[0]).toEqual({
+      thread: SIGNUPS_TOPIC,
+      text:
+        "<b>Workspace created</b>\n\n" +
+        `<b>Workspace:</b> Notice &lt;Co&gt; (<code>${created.workspaceId}</code>)\n` +
+        `<b>Owner:</b> ${created.email}\n` +
+        "<b>Mode:</b> early\n" +
+        "<b>For this owner:</b> workspace #1",
+    });
+
+    await owner
+      .update(workspace)
+      .set({ active: true, waitingSince: null, allowedOrigins: [SITE] })
+      .where(eq(workspace.id, created.workspaceId));
+    const { publicKey } = await workspaceRow(created.workspaceId);
+    for (const tab of ["noticetab1", "noticetab2"]) {
+      const beat = await noticed.request(`/v1/widget/${publicKey}/beat`, {
+        method: "POST",
+        headers: { origin: SITE, "x-forwarded-for": IP, "content-type": "application/json" },
+        body: JSON.stringify({ tab, page: `${SITE}/` }),
+      });
+      expect(beat.status).toBe(200);
+    }
+    await expect.poll(() => titled("Widget installed")).toHaveLength(1);
+    expect(titled("Widget installed")[0]?.text).toContain(`<b>Site:</b> ${SITE}\n`);
+    expect(titled("Widget installed")[0]?.text).toMatch(/<b>Installed:<\/b> \d+m after signup$/);
+
+    const [founder] = await owner.select().from(operator).where(eq(operator.email, created.email));
+    const token = `${created.workspaceId}.${randomUUID()}`;
+    const email = `joiner-${randomUUID()}@example.com`;
+    await owner.insert(invite).values({
+      workspaceId: created.workspaceId,
+      tokenHash: createHash("sha256").update(token).digest("hex"),
+      role: "member",
+      email,
+      mailed: false,
+      createdBy: founder?.id ?? "",
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const joined = await request(noticed, "POST", "/v1/invites/join", {
+      body: { token, name: "Joiner" },
+    });
+    expect(joined.status).toBe(200);
+    await expect.poll(() => titled("Operator joined")).toHaveLength(1);
+    expect(titled("Operator joined")[0]?.text).toContain(
+      `<b>Operator:</b> ${email}\n<b>Role:</b> member\n<b>Operators:</b> 2 of 5`,
+    );
+    expect(telegram).toHaveLength(3);
   });
 });
 

@@ -22,6 +22,7 @@ import {
   lifecycleMail,
   onboardingStopUrl,
 } from "./lifecycle-emails.ts";
+import type { Notice, Notify } from "./telegram.ts";
 
 /**
  * Stripe's subscription statuses that pay for service. This set and the two below live in this
@@ -238,6 +239,8 @@ interface LifecycleOptions {
   publicUrl: string;
   /** Signs the stop link in onboarding emails. */
   secret: string;
+  /** Tells the cloud's admins about payments, cancellations and deletions. */
+  notify?: Notify | undefined;
   batch?: number;
 }
 
@@ -526,6 +529,7 @@ async function sendLifecycleEmails({
   mailer,
   publicUrl,
   secret,
+  notify,
   batch = 20,
   now,
 }: LifecycleOptions & { now: Date }): Promise<void> {
@@ -618,6 +622,8 @@ async function sendLifecycleEmails({
     await withWorkspace(db, email.workspaceId, (tx) =>
       tx.update(lifecycleEmail).set({ sentAt: now, claimedUntil: null }).where(isEmail(email)),
     );
+    const notice = billingNotice(email, found.name, found.state);
+    if (notice !== undefined) await notify?.("billing", notice);
   }
 
   /** The reason passed before the email was due, so it never goes. */
@@ -626,6 +632,34 @@ async function sendLifecycleEmails({
       tx.delete(lifecycleEmail).where(isEmail(email)),
     );
   }
+}
+
+const BILLING_TITLES: Partial<Record<LifecycleEmailKind, string>> = {
+  ready: "Payment started",
+  payment_failed: "Payment failed",
+  payment_recovered: "Payment recovered",
+  cancellation: "Subscription canceled",
+  welcome_back: "Resubscribed",
+  read_only: "Workspace read-only",
+  deleted: "Workspace deleted",
+};
+
+/** The kinds that end the paid time, whose notice says how long it lasted. */
+const ENDING_KINDS = new Set<LifecycleEmailKind>(["cancellation", "read_only", "deleted"]);
+
+/** The admins' notice for a billing email, or none for the onboarding and reminder kinds. */
+function billingNotice(email: ClaimedEmail, name: string, state: EmailState): Notice | undefined {
+  const title = BILLING_TITLES[email.kind];
+  if (title === undefined) return undefined;
+  const fields: Notice["fields"] = [["Workspace", { name, id: email.workspaceId }]];
+  if (email.kind === "cancellation" && state.currentPeriodEnd !== null) {
+    fields.push(["Ends on", state.currentPeriodEnd.toISOString().slice(0, 10)]);
+  }
+  if (ENDING_KINDS.has(email.kind) && state.paidAt !== null) {
+    const days = Math.round((email.occurrenceAt.getTime() - state.paidAt.getTime()) / DAY_MS);
+    fields.push(["Paid for", `${days} days`]);
+  }
+  return { title, fields };
 }
 
 /** The numbers of days that the emails name. */

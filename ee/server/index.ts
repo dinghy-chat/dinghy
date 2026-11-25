@@ -4,6 +4,7 @@ import type { Redis } from "iovalkey";
 import type { Logger } from "pino";
 import type { App } from "../../apps/server/src/app.ts";
 import type { Auth } from "../../apps/server/src/auth.ts";
+import type { NoticeCloud } from "../../apps/server/src/cloud-notice.ts";
 import type { Config } from "../../apps/server/src/config.ts";
 import { subscription } from "../../apps/server/src/db/schema.ts";
 import { type Database, withWorkspace } from "../../apps/server/src/db/tenant.ts";
@@ -21,9 +22,11 @@ import {
 } from "./billing.ts";
 import { runLifecycle } from "./lifecycle.ts";
 import { registerOnboardingStop } from "./lifecycle-emails.ts";
-import { createLimits, type LimitOptions } from "./limits.ts";
+import { createLimits, type LimitOptions, MAX_OPERATORS } from "./limits.ts";
+import { createCloudNotice } from "./notices.ts";
 import { removeOldUploads } from "./retention.ts";
 import { CLOUD_CONTACT, registerSignup, type SignupMode } from "./signup.ts";
+import { createTelegram, type TelegramSettings, telegramFromConfig } from "./telegram.ts";
 import { createCopyReply, type WelcomeSettings, welcomeFace, welcomeProblem } from "./welcome.ts";
 
 /** For `chat demo`, which adds teammates within the plan's limit. */
@@ -44,6 +47,8 @@ export interface CloudSettings {
   limits?: LimitOptions | undefined;
   /** Each new workspace starts with a chat with the founder. Off when unset. */
   welcome?: WelcomeSettings | undefined;
+  /** Admin notices about signups and billing, in a Telegram group. Off when unset. */
+  telegram?: TelegramSettings | undefined;
 }
 
 /** The cloud's settings, or none on a self-hosted install, which leaves them all unset. */
@@ -56,7 +61,7 @@ export function cloudFromConfig(config: Config): CloudSettings | undefined {
     workspaceId === undefined || operatorEmail === undefined
       ? undefined
       : { workspaceId, operatorEmail };
-  return { billing, signup: config.CLOUD_SIGNUP, welcome };
+  return { billing, signup: config.CLOUD_SIGNUP, welcome, telegram: telegramFromConfig(config) };
 }
 
 /** Why the web role cannot start with these settings, or null when it can. */
@@ -95,6 +100,8 @@ export interface Cloud {
   copyReply: CopyReply | undefined;
   /** The founder's operator, whose picture the new workspace's welcome chat shows. */
   welcomeFace: WelcomeFace | undefined;
+  /** Tells the cloud's admins about a widget's first site and a new operator. */
+  notice: NoticeCloud | undefined;
   /** Checkout, the portal, the webhook and signup. */
   registerRoutes(app: App): void;
 }
@@ -124,6 +131,8 @@ export function createCloud(
   const client = billing === undefined ? undefined : createBilling(billing, db, logger, live);
   const limits = createLimits(valkey, logger, settings?.limits);
   const welcome = settings?.welcome;
+  const notify = createTelegram(settings?.telegram, logger);
+  const maxOperators = settings?.limits?.maxOperators ?? MAX_OPERATORS;
   return {
     billing: client !== undefined,
     signup,
@@ -133,6 +142,7 @@ export function createCloud(
     copyReply:
       welcome === undefined ? undefined : createCopyReply({ db, limits, live, logger, store }),
     welcomeFace: welcome === undefined ? undefined : welcomeFace(welcome),
+    notice: notify && createCloudNotice({ db, logger, notify, maxOperators }),
     beforeDelete:
       client &&
       (async (workspaceId) => {
@@ -156,6 +166,7 @@ export function createCloud(
         logger,
         mailer,
         mode: signup,
+        notify,
         rateLimit,
         valkey,
         welcome,
@@ -189,6 +200,7 @@ export function cloudWorkerStep(
     settings.billing === undefined
       ? undefined
       : createBilling(settings.billing, db, logger, signals);
+  const notify = createTelegram(settings.telegram, logger);
   return async ({ mailer }) => {
     const removed = await removeOldUploads(db);
     if (removed > 0) logger.info({ removed }, "removed images and files older than 12 months");
@@ -200,6 +212,7 @@ export function cloudWorkerStep(
         mailer,
         publicUrl,
         secret,
+        notify,
       });
     }
   };
