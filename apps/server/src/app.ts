@@ -511,6 +511,7 @@ export function createApp({
       });
     registerInboxRoutes(app, {
       copyReply: cloud?.copyReply,
+      copyChange: cloud?.copyChange,
       founderPicture,
       db,
       uploads,

@@ -4,6 +4,7 @@ import { and, eq, isNull, or, sql } from "drizzle-orm";
 import type { Logger } from "pino";
 import {
   conversation,
+  message,
   operator,
   visitor,
   welcomeLink,
@@ -20,9 +21,10 @@ import {
   writableFor,
 } from "../../apps/server/src/db/tenant.ts";
 import { safeErrorFields } from "../../apps/server/src/errors.ts";
-import type { CopyReply } from "../../apps/server/src/inbox.ts";
+import type { CopyChange, CopyReply } from "../../apps/server/src/inbox.ts";
 import type { Limits } from "../../apps/server/src/limits.ts";
 import { type Live, wakeConversation } from "../../apps/server/src/live.ts";
+import { changeCopy } from "../../apps/server/src/message-changes.ts";
 import {
   appendMessage,
   joinVisitor,
@@ -347,6 +349,46 @@ export function createCopyReply({ db, limits, live, logger, store }: CopyDeps): 
         if (attachment !== undefined && unused) {
           await store?.delete(attachment.storageKey).catch(() => undefined);
         }
+      },
+    };
+  };
+}
+
+/**
+ * Gives the copy of a reply on the other side of a welcome chat the reply's edit or delete, in the
+ * change's own transaction. A note has no copy, so its change goes nowhere.
+ */
+export function createCopyChange({ db, live }: Pick<CopyDeps, "db" | "live">): CopyChange {
+  return async (workspaceId, conversationId) => {
+    const own = { workspaceId, conversationId };
+    const other = await withWorkspace(db, workspaceId, (tx) => otherSide(tx, own));
+    if (other === null) return null;
+    let changedFor: string | null = null;
+    return {
+      lock: (tx) => lockBoth(tx, workspaceId, other.workspaceId),
+      async apply(tx, messageId, body) {
+        await enterWorkspace(tx, other.workspaceId);
+        const theirs = await chatVisitor(tx, other);
+        if (theirs !== null) {
+          const [copy] = await tx
+            .select({ id: message.id })
+            .from(message)
+            .where(
+              and(
+                eq(message.workspaceId, other.workspaceId),
+                eq(message.authorVisitorId, theirs.id),
+                eq(message.clientId, copyClientId(messageId)),
+              ),
+            );
+          const changed =
+            copy !== undefined &&
+            (await changeCopy(tx, other.workspaceId, other.conversationId, copy.id, body));
+          if (changed) changedFor = theirs.id;
+        }
+        await enterWorkspace(tx, workspaceId);
+      },
+      finish() {
+        if (changedFor !== null) wakeConversation(live, other.workspaceId, changedFor);
       },
     };
   };

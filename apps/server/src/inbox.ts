@@ -1058,6 +1058,24 @@ interface ReplyCopy {
 }
 
 /**
+ * Cloud only: gives the copy of a reply in another workspace the reply's edit or delete, in the
+ * change's own transaction. It returns what runs in it, or null.
+ */
+export type CopyChange = (
+  workspaceId: string,
+  conversationId: string,
+) => Promise<ChangeCopy | null>;
+
+interface ChangeCopy {
+  /** In the change's transaction, before the change: takes the locks that the copy needs. */
+  lock(tx: Transaction): Promise<void>;
+  /** In the change's transaction, after it: the same change to the copy, `body` null to delete. */
+  apply(tx: Transaction, messageId: string, body: string | null): Promise<void>;
+  /** After the commit. It must not throw. */
+  finish(): void;
+}
+
+/**
  * What came of a transaction. `unknown` is a connection lost during it, maybe after Postgres
  * committed, so whatever the transaction may point to must stay.
  */
@@ -1132,6 +1150,7 @@ interface InboxOptions {
   stream: StreamOptions;
   visitorPresence: VisitorPresence;
   copyReply?: CopyReply | undefined;
+  copyChange?: CopyChange | undefined;
   /** The founder's picture, on Dinghy Cloud only. */
   founderPicture?: FounderPicture | undefined;
 }
@@ -1505,7 +1524,7 @@ const accessStillHolds =
   };
 
 export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrls: ImageUrls }) {
-  const { db, uploads, imageUrls, limits, live, logger, stream } = options;
+  const { db, uploads, imageUrls, limits, live, logger, stream, copyChange } = options;
   const inbox = createInbox(options);
 
   app.openapi(workspaceRoute, async (c) => {
@@ -1634,7 +1653,9 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
   app.openapi(editRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
     const { conversationId, messageId } = c.req.valid("param");
+    const copy = (await copyChange?.(id, conversationId)) ?? null;
     const outcome = await withWorkspace(db, id, async (tx) => {
+      await copy?.lock(tx);
       const edited = await editMessage(
         tx,
         id,
@@ -1644,12 +1665,14 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
         c.req.valid("json"),
       );
       if (edited.kind !== "edited") return edited;
+      await copy?.apply(tx, messageId, edited.message.body);
       const names = await authorNames(tx, id, [edited.message]);
       return { ...edited, view: appMessageView(uploads, id, names, edited.message) };
     });
     if (outcome.kind === "missing") return c.json(NOT_FOUND, 404);
     if (outcome.kind === "not_yours") return c.json(NOT_YOURS, 403);
     if (outcome.kind === "seen") return c.json(MESSAGE_SEEN, 409);
+    copy?.finish();
     wakeFor(live, id, outcome.visitorId, outcome.message.kind === "note");
     return c.json(outcome.view, 200);
   });
@@ -1661,11 +1684,16 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
       operatorId: c.get("operatorId"),
       mayDeleteAnyone: allowed.settings(c.get("memberRole")),
     };
-    const outcome = await withWorkspace(db, id, (tx) =>
-      deleteMessage(tx, id, conversationId, messageId, by),
-    );
+    const copy = (await copyChange?.(id, conversationId)) ?? null;
+    const outcome = await withWorkspace(db, id, async (tx) => {
+      await copy?.lock(tx);
+      const deleted = await deleteMessage(tx, id, conversationId, messageId, by);
+      if (deleted.kind === "deleted") await copy?.apply(tx, messageId, null);
+      return deleted;
+    });
     if (outcome.kind === "missing") return c.json(NOT_FOUND, 404);
     if (outcome.kind === "not_yours") return c.json(FORBIDDEN, 403);
+    copy?.finish();
     wakeFor(live, id, outcome.visitorId, outcome.isNote);
     return c.json({ ok: true as const }, 200);
   });

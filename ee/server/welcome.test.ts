@@ -574,6 +574,30 @@ describe("copies between the two sides", () => {
     expect(await store.get(file?.storageKey ?? "")).not.toBeNull();
   });
 
+  test("an edit or a delete of a reply reaches its copy", async () => {
+    const acme = await signUp(early);
+    const link = await linkOf(acme.workspaceId);
+    const customerChat = link.customerConversationId;
+    const sent = await reply(early, acme.cookie, acme.workspaceId, customerChat, "Hi Julin!");
+    const { id } = (await sent.json()) as { id: string };
+    const line = inWorkspace(acme.workspaceId, `/conversations/${customerChat}/messages/${id}`);
+    const copyOf = async () =>
+      (await messagesIn(dinghy.id, link.founderConversationId)).find(
+        (one) => one.clientId === `copy-${id}`,
+      );
+
+    const edited = await request(early, "PATCH", line, {
+      cookie: acme.cookie,
+      body: { body: "Hi Julien!" },
+    });
+    expect(edited.status).toBe(200);
+    expect(await copyOf()).toMatchObject({ body: "Hi Julien!", editedAt: expect.any(Date) });
+
+    const deleted = await request(early, "DELETE", line, { cookie: acme.cookie });
+    expect(deleted.status).toBe(200);
+    expect(await copyOf()).toMatchObject({ body: null, deletedAt: expect.any(Date) });
+  });
+
   test("an image stays when the reply's commit is lost, since the reply may have committed", async () => {
     let loseCommit = false;
     // Postgres commits the reply, and the connection drops before its answer arrives.

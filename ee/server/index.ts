@@ -8,7 +8,7 @@ import type { NoticeCloud } from "../../apps/server/src/cloud-notice.ts";
 import type { Config } from "../../apps/server/src/config.ts";
 import { subscription } from "../../apps/server/src/db/schema.ts";
 import { type Database, withWorkspace } from "../../apps/server/src/db/tenant.ts";
-import type { CopyReply, WelcomeFace } from "../../apps/server/src/inbox.ts";
+import type { CopyChange, CopyReply, WelcomeFace } from "../../apps/server/src/inbox.ts";
 import type { Limits } from "../../apps/server/src/limits.ts";
 import type { Live, Signals } from "../../apps/server/src/live.ts";
 import type { Mailer } from "../../apps/server/src/mailer.ts";
@@ -27,7 +27,13 @@ import { createCloudNotice } from "./notices.ts";
 import { removeOldUploads } from "./retention.ts";
 import { CLOUD_CONTACT, registerSignup, type SignupMode } from "./signup.ts";
 import { createTelegram, type TelegramSettings, telegramFromConfig } from "./telegram.ts";
-import { createCopyReply, type WelcomeSettings, welcomeFace, welcomeProblem } from "./welcome.ts";
+import {
+  createCopyChange,
+  createCopyReply,
+  type WelcomeSettings,
+  welcomeFace,
+  welcomeProblem,
+} from "./welcome.ts";
 
 /** For `chat demo`, which adds teammates within the plan's limit. */
 export { MAX_OPERATORS, seatsTaken } from "./limits.ts";
@@ -98,6 +104,8 @@ export interface Cloud {
   contact: string;
   /** Copies a reply in a welcome chat to its other side. */
   copyReply: CopyReply | undefined;
+  /** Gives that copy the reply's edit or delete. */
+  copyChange: CopyChange | undefined;
   /** The founder's operator, whose picture the new workspace's welcome chat shows. */
   welcomeFace: WelcomeFace | undefined;
   /** Tells the cloud's admins about a widget's first site and a new operator. */
@@ -141,6 +149,7 @@ export function createCloud(
     contact: CLOUD_CONTACT,
     copyReply:
       welcome === undefined ? undefined : createCopyReply({ db, limits, live, logger, store }),
+    copyChange: welcome === undefined ? undefined : createCopyChange({ db, live }),
     welcomeFace: welcome === undefined ? undefined : welcomeFace(welcome),
     notice: notify && createCloudNotice({ db, logger, notify, maxOperators }),
     beforeDelete:
