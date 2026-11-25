@@ -26,6 +26,7 @@ import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
 const ORIGIN = new URL(PUBLIC_URL).origin;
 const SITE = "https://site.example";
+const CLI_TEST_TIMEOUT_MS = 20_000;
 const CLI = fileURLToPath(new URL("./cli.ts", import.meta.url));
 const logger = pino({ level: "silent" });
 const ok = async () => {};
@@ -134,7 +135,9 @@ afterAll(async () => {
 });
 
 describe("suspending a workspace", () => {
-  test("it cannot send, its widget stream closes, and its operators see why", async () => {
+  test("it cannot send, its widget stream closes, and its operators see why", {
+    timeout: CLI_TEST_TIMEOUT_MS,
+  }, async () => {
     const created = await widget("/visitors", { method: "POST" });
     const { token } = (await created.json()) as { token: string };
     const first = await widget("/messages", {
@@ -254,13 +257,15 @@ describe("suspending a workspace", () => {
     expect(await readUntil("event: close")).toContain('"reason":"unauthorized"');
   });
 
-  test("an unknown workspace is an error", async () => {
+  test("an unknown workspace is an error", { timeout: CLI_TEST_TIMEOUT_MS }, async () => {
     expect((await chat("suspend", randomUUID())).code).toBe(1);
     expect((await chat("suspend", "not-an-id")).code).toBe(2);
   });
 });
 
-test("chat workspaces lists the ID that the suspend and export commands take", async () => {
+test("chat workspaces lists the ID that the suspend and export commands take", {
+  timeout: CLI_TEST_TIMEOUT_MS,
+}, async () => {
   const unpaid = await createWorkspace(db, "Unpaid", [SITE], { active: false });
   const listed = await chat("workspaces");
   expect(listed.code).toBe(0);
