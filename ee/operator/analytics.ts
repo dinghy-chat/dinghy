@@ -58,6 +58,8 @@ export function identifyOperator(id: string | null): void {
     send("$identify", id, { $anon_distinct_id: anonymousId });
   operatorId = id;
   anonymousId = null;
+  // The new ID gets its own view of the screen on show.
+  lastPath = null;
 }
 
 /** A page view of this path, which never has the address's query. A repeat of the last path is skipped. */
@@ -72,5 +74,6 @@ export function trackPage(path: string = location.pathname): void {
 
 /** A signup step, such as "workspace created". */
 export function trackEvent(event: string, properties?: Record<string, unknown>): void {
+  if (project === null) return;
   send(event, currentId(), properties);
 }

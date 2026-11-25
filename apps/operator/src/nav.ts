@@ -72,6 +72,7 @@ addEventListener("popstate", (event) => {
   leave(
     () => {
       position = to;
+      trackPage();
       dispatchEvent(new Event(NAVIGATE_EVENT));
     },
     () => {
