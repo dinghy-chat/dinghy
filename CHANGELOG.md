@@ -4,6 +4,10 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- Dinghy Cloud's Stripe Checkout shows an "Add promotion code" field, so a code made in the Stripe dashboard can give a customer a discount, such as a free first month.
+
 ## [0.57.0] - 2026-11-24
 
 ### Added
