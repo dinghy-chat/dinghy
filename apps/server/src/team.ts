@@ -10,6 +10,7 @@ import type { App } from "./app.ts";
 import { audit } from "./audit.ts";
 import { type Auth, confirmUrl, LINK_MINUTES, signInNow } from "./auth.ts";
 import { takeOver } from "./bots.ts";
+import type { NoticeCloud } from "./cloud-notice.ts";
 import {
   attachment,
   conversation,
@@ -787,6 +788,8 @@ interface TeamOptions {
   rateLimit: RateLimit;
   /** True on a self-hosted server, which keeps its last workspace. */
   keepsLastWorkspace: boolean;
+  /** Tells the cloud's admins when an operator joins with an invite. */
+  notice: NoticeCloud | undefined;
 }
 
 /** Whether a member turned on two-step sign-in, and whether a request waits to remove it. */
@@ -819,7 +822,18 @@ export function listMembers(tx: Transaction, workspaceId: string) {
 
 export function registerTeamRoutes(
   app: App,
-  { auth, db, limits, live, logger, imageUrls, mailer, rateLimit, keepsLastWorkspace }: TeamOptions,
+  {
+    auth,
+    db,
+    limits,
+    live,
+    logger,
+    imageUrls,
+    mailer,
+    rateLimit,
+    keepsLastWorkspace,
+    notice,
+  }: TeamOptions,
 ): void {
   const sources = { limits, keepsLastWorkspace };
   const publicUrl = String(auth.options.baseURL);
@@ -1175,6 +1189,7 @@ export function registerTeamRoutes(
   const joined = (workspaceId: string, operatorId: string) => {
     auditChange("invite.used", workspaceId, operatorId);
     live.wake(workspaceId, OPERATORS);
+    notice?.({ kind: "operator_joined", workspaceId, operatorId });
   };
 
   app.openapi(previewRoute, async (c) => {

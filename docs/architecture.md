@@ -108,6 +108,15 @@ The welcome chat needs two more cloud settings, and is off unless both are set. 
 
 Each new cloud workspace then starts with one open conversation from that operator, and Dinghy's workspace gets the other side, assigned to them. The two conversations are linked in `welcome_link`, which both workspaces' row-level security lets them read. An operator's or an API key's reply on one side is copied, in the reply's own transaction, as a visitor message on the other side. Visitor messages are never copied, so a copy never makes another. A reply takes both workspace row locks in one order, so two replies that cross cannot deadlock. Nothing is copied when either side blocked its visitor or the other workspace is suspended or deleted, and the reply still goes. The welcome chat is the one exception to the payment states: it takes messages while its workspace waits for its first payment or is read-only, so a copy waits in that inbox, and an operator of a read-only workspace can still reply there in text. An image or a file is copied under the receiving workspace's own key, within its storage limit. Analytics leave welcome chats out, an export leaves the link out, and a deleted workspace's links go with its conversations.
 
+Dinghy Cloud's admins hear about signups and billing in a Telegram group with topics. Four more cloud settings turn this on, and it is off unless the first two are set. A self-hosted install leaves them unset, and setting them alone does not turn the cloud on.
+
+- `TELEGRAM_BOT_TOKEN`: the bot that posts. It can come from a file in `DINGHY_SECRETS_DIR`.
+- `TELEGRAM_CHAT_ID`: the group, such as `-1006098886410`.
+- `TELEGRAM_TOPIC_SIGNUPS`: the topic for new workspaces, a widget's first site and new operators.
+- `TELEGRAM_TOPIC_BILLING`: the topic for payments, cancellations, read-only workspaces and deletions. Each comes from a lifecycle email when the worker sends it. Delivery is best effort: a notice can be lost, and rarely posted twice.
+
+A topic left unset, or set to `1`, posts to the group's General topic. A notice that Telegram refuses or that times out is logged and dropped, and never fails a request or the worker.
+
 App store reviewers sign in to the Dinghy app with one account that has a fixed code, because they cannot read its mailbox. Two cloud settings turn this on. Set both or none, because the web role refuses to start with one alone. A self-hosted install leaves them unset.
 
 - `APP_REVIEW_EMAIL`: the review account's email.

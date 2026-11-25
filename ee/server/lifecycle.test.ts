@@ -49,6 +49,7 @@ import {
   runLifecycle,
 } from "./lifecycle.ts";
 import { lifecycleHtml, lifecycleMail } from "./lifecycle-emails.ts";
+import type { Notice, Notify } from "./telegram.ts";
 import {
   type FakeStripe,
   STRIPE_PRICE_ID,
@@ -118,9 +119,11 @@ const workerBilling = () =>
 const lifecycle = ({
   mailer: sender = mailer,
   batch,
+  notify,
 }: {
   mailer?: Mailer | null;
   batch?: number;
+  notify?: Notify;
 } = {}) =>
   runLifecycle({
     db: workerDb,
@@ -129,6 +132,7 @@ const lifecycle = ({
     mailer: sender ?? undefined,
     publicUrl: PUBLIC_URL,
     secret: AUTH_SECRET,
+    notify,
     ...(batch === undefined ? {} : { batch }),
   });
 
@@ -1311,6 +1315,26 @@ describe("the lifecycle emails", () => {
     expect(textsTo(paid.email)[0]).toContain(
       `download an export (${PUBLIC_URL}/settings/workspace?workspace=${paid.workspaceId})`,
     );
+  });
+
+  test("the admins hear of a first payment and a failed one, and of no onboarding email", async () => {
+    const notices: { topic: string; notice: Notice }[] = [];
+    const notify: Notify = async (topic, notice) => {
+      notices.push({ topic, notice });
+    };
+    const paid = await paidWorkspace({ onboarding: true });
+    const workspaceField = ["Workspace", { name: paid.name, id: paid.workspaceId }];
+    await lifecycle({ notify });
+    later(ONBOARDING_DAYS.install);
+    await lifecycle({ notify });
+    expect(subjectsTo(paid.email)).toHaveLength(2);
+    await stripeSays(paid.workspaceId, paid.subscriptionId, "past_due");
+    await lifecycle({ notify });
+    await lifecycle({ notify });
+    expect(notices).toEqual([
+      { topic: "billing", notice: { title: "Payment started", fields: [workspaceField] } },
+      { topic: "billing", notice: { title: "Payment failed", fields: [workspaceField] } },
+    ]);
   });
 
   test("two workers that send at once send each email once", async () => {

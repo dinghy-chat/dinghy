@@ -37,7 +37,8 @@ async function lockWorkspace(tx: Transaction, workspaceId: string): Promise<void
   await tx.execute(sql`select 1 from workspace where id = ${workspaceId} for no key update`);
 }
 
-async function members(tx: Transaction, workspaceId: string): Promise<number> {
+/** Active members, without the open invites. */
+export async function memberCount(tx: Transaction, workspaceId: string): Promise<number> {
   const [row] = await tx
     .select({ n: count() })
     .from(workspaceMember)
@@ -58,7 +59,7 @@ export async function seatsTaken(tx: Transaction, workspaceId: string): Promise<
         gt(invite.expiresAt, sql`now()`),
       ),
     );
-  return (await members(tx, workspaceId)) + (pending?.n ?? 0);
+  return (await memberCount(tx, workspaceId)) + (pending?.n ?? 0);
 }
 
 async function storedBytes(tx: Transaction, workspaceId: string): Promise<number> {
@@ -89,7 +90,7 @@ export function createLimits(
     // waited for the lock sees the members that the one before it committed.
     async operatorsFit(tx, workspaceId) {
       await lockWorkspace(tx, workspaceId);
-      return (await members(tx, workspaceId)) <= maxOperators;
+      return (await memberCount(tx, workspaceId)) <= maxOperators;
     },
     async mayStore(tx, workspaceId, bytes) {
       await lockWorkspace(tx, workspaceId);
@@ -101,7 +102,7 @@ export function createLimits(
       slots.take(`dinghy:streams:${kind}:${workspaceId}`, maxStreams[kind], leaseMs),
     async usage(tx, workspaceId) {
       return {
-        operators: { used: await members(tx, workspaceId), limit: maxOperators },
+        operators: { used: await memberCount(tx, workspaceId), limit: maxOperators },
         uploadBytes: { used: await storedBytes(tx, workspaceId), limit: maxStoredBytes },
       };
     },

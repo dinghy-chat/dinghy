@@ -22,6 +22,7 @@ import {
   lifecycleMail,
   onboardingStopUrl,
 } from "./lifecycle-emails.ts";
+import type { Notice, Notify } from "./telegram.ts";
 
 /**
  * Stripe's subscription statuses that pay for service. This set and the two below live in this
@@ -238,6 +239,8 @@ interface LifecycleOptions {
   publicUrl: string;
   /** Signs the stop link in onboarding emails. */
   secret: string;
+  /** Tells the cloud's admins about payments, cancellations and deletions. */
+  notify?: Notify | undefined;
   batch?: number;
 }
 
@@ -526,6 +529,7 @@ async function sendLifecycleEmails({
   mailer,
   publicUrl,
   secret,
+  notify,
   batch = 20,
   now,
 }: LifecycleOptions & { now: Date }): Promise<void> {
@@ -618,6 +622,9 @@ async function sendLifecycleEmails({
     await withWorkspace(db, email.workspaceId, (tx) =>
       tx.update(lifecycleEmail).set({ sentAt: now, claimedUntil: null }).where(isEmail(email)),
     );
+    // Not awaited: a slow Telegram never holds up the worker's other jobs.
+    const notice = notify && billingNotice(email, found.name, found.state);
+    if (notice !== undefined) void notify?.("billing", notice);
   }
 
   /** The reason passed before the email was due, so it never goes. */
@@ -626,6 +633,26 @@ async function sendLifecycleEmails({
       tx.delete(lifecycleEmail).where(isEmail(email)),
     );
   }
+}
+
+const BILLING_TITLES: Partial<Record<LifecycleEmailKind, string>> = {
+  ready: "Payment started",
+  payment_failed: "Payment failed",
+  payment_recovered: "Payment recovered",
+  cancellation: "Subscription canceled",
+  welcome_back: "Resubscribed",
+  read_only: "Workspace read-only",
+  deleted: "Workspace deleted",
+};
+
+/** The admins' notice for a billing email, or none for the onboarding and reminder kinds. */
+function billingNotice(email: ClaimedEmail, name: string, state: EmailState): Notice | undefined {
+  const title = BILLING_TITLES[email.kind];
+  if (title === undefined) return undefined;
+  const fields: Notice["fields"] = [["Workspace", { name, id: email.workspaceId }]];
+  const end = email.kind === "cancellation" ? serviceEnd(state) : null;
+  if (end !== null) fields.push(["Service ends", end.toISOString().slice(0, 10)]);
+  return { title, fields };
 }
 
 /** The numbers of days that the emails name. */

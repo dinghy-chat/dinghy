@@ -37,6 +37,7 @@ import {
   type NewWorkspace,
   workspaceKeys,
 } from "../../apps/server/src/workspaces.ts";
+import type { Notify } from "./telegram.ts";
 import { startWelcomeChat, type WelcomeSettings } from "./welcome.ts";
 
 /**
@@ -173,6 +174,8 @@ interface SignupOptions {
   logger: Logger;
   mailer: Mailer | undefined;
   mode: SignupMode;
+  /** Tells the cloud's admins about each new workspace. */
+  notify: Notify | undefined;
   rateLimit: RateLimit;
   valkey: Redis | null;
   welcome: WelcomeSettings | undefined;
@@ -184,7 +187,18 @@ interface SignupOptions {
  */
 export function registerSignup(
   app: App,
-  { auth, db, live, logger, mailer, mode, rateLimit, valkey, welcome: welcomeChat }: SignupOptions,
+  {
+    auth,
+    db,
+    live,
+    logger,
+    mailer,
+    mode,
+    notify,
+    rateLimit,
+    valkey,
+    welcome: welcomeChat,
+  }: SignupOptions,
 ) {
   const publicUrl = String(auth.options.baseURL);
   const publicOrigin = new URL(publicUrl).origin;
@@ -269,6 +283,15 @@ export function registerSignup(
       return { welcomed: marked.length > 0, chatStarted: started };
     });
     if (welcomed) welcome(c.get("operatorEmail"), body.name, body.workspaceName);
+    // At most once, after the commit, out of the request's way.
+    void notify?.("signups", {
+      title: "Workspace created",
+      fields: [
+        ["Workspace", { id: keys.id, name: body.workspaceName }],
+        ["Owner", c.get("operatorEmail")],
+        ["Mode", mode],
+      ],
+    });
     if (welcomeChat !== undefined) {
       if (chatStarted) live.wake(welcomeChat.workspaceId, OPERATORS);
       else

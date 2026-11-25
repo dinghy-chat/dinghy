@@ -428,6 +428,7 @@ export function createApp({
     countryOf,
     ownOrigin,
     sites: setup,
+    notice: cloud?.notice,
   });
   const presence = createPresence(valkey, logger, presenceTtlMs);
   registerWidgetPresence(app, db, presence, alerts?.emailAvailable ?? false);
@@ -608,6 +609,7 @@ export function createApp({
       mailer,
       rateLimit,
       keepsLastWorkspace: cloud === undefined,
+      notice: cloud?.notice,
     });
     registerWidgetSettingsRoutes(app, db, urls, live);
     registerBusinessHoursRoutes(app, db, live);

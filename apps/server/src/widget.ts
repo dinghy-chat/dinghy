@@ -19,6 +19,7 @@ import {
   showPageCampaign,
 } from "./campaign-pages.ts";
 import { chatLinkVisitor, chatLinkWorkspace, isChatLinkToken } from "./chat-link.ts";
+import type { NoticeCloud } from "./cloud-notice.ts";
 import {
   appendVisitorReply,
   BEAT_FIELDS,
@@ -1284,6 +1285,8 @@ interface WidgetOptions {
   countryOf: CountryOf;
   /** Notes where the widget loaded and where it was refused, for the install check. */
   sites: SiteSignals;
+  /** Tells the cloud's admins when a workspace's widget first loads on a site. */
+  notice: NoticeCloud | undefined;
 }
 
 /** A person with several tabs open. */
@@ -1315,6 +1318,7 @@ export function registerWidgetRoutes(
     liveVisitors,
     countryOf,
     sites,
+    notice,
   }: WidgetOptions,
 ): void {
   const view = (workspaceId: string, message: VisitorMessage, senders = NO_SENDERS) =>
@@ -1739,13 +1743,21 @@ export function registerWidgetRoutes(
     if (path === null || token.kind === "link") return c.json(nothing, 200);
     if (!seenWidget.has(found.id)) {
       // The first step of Get started. It matches no row once set, so it takes no lock then.
-      await withWorkspace(db, found.id, (tx) =>
+      const first = await withWorkspace(db, found.id, (tx) =>
         tx
           .update(workspace)
           .set({ widgetSeenAt: sql`now()` })
-          .where(and(eq(workspace.id, found.id), isNull(workspace.widgetSeenAt))),
+          .where(and(eq(workspace.id, found.id), isNull(workspace.widgetSeenAt)))
+          .returning({ id: workspace.id }),
       );
       seenWidget.add(found.id);
+      if (first.length > 0) {
+        notice?.({
+          kind: "widget_installed",
+          workspaceId: found.id,
+          origin: c.req.header("origin") ?? "",
+        });
+      }
     }
     await sites.siteSeen(found.id, c.req.header("origin") ?? "");
     const country = countryOf(c.get("clientIp"));
