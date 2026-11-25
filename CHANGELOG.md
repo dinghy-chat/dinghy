@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.59.0] - 2026-11-25
+
 ### Added
 
 - An operator's reply shows a card for its first bare link: the page's title, a small thumbnail and the link's hostname. The composer shows the card before the reply goes, and a ✕ removes it for as long as the draft lasts. The server fetches the page and its image from public addresses only, with a 5-second limit. A workspace may ask for 30 cards a minute, and the route answers 429 past that, or 503 while the server already fetches 4 pages. `POST /v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/link-preview` returns a card, and the reply route takes it back as `linkPreview`. Messages in the operator app and the widget carry `link`. Webhooks, API keys and MCP get no `link`.
@@ -882,7 +884,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.58.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.59.0...HEAD
+[0.59.0]: https://github.com/dinghy-chat/dinghy/compare/v0.58.0...v0.59.0
 [0.58.0]: https://github.com/dinghy-chat/dinghy/compare/v0.57.0...v0.58.0
 [0.57.0]: https://github.com/dinghy-chat/dinghy/compare/v0.56.0...v0.57.0
 [0.56.0]: https://github.com/dinghy-chat/dinghy/compare/v0.55.0...v0.56.0
