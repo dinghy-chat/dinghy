@@ -6,11 +6,14 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ### Added
 
-- `Dinghy.nudge({ text, message })` shows `text` in a card above the chat button, from the page and with no server. A click on the card or the button opens the chat with `message` in the message box, such as an error ID after a failed save.
+- `Dinghy.nudge({ text, message })` shows `text` in a card above the chat button. The card comes from your page, and nothing goes to the server until the visitor sends. A click on the card or the button opens the chat with `message` in the message box, such as an error ID after a failed save.
 
 ### Fixed
 
 - A `Dinghy.nudge()` made before the widget's saved look arrived no longer loses the chat button's pulse.
+- A card above the chat button is one flat surface, with no bubble inside, and its buttons read in dark mode.
+- A message that `Dinghy.open({ message })` put in the message box no longer reaches operators as a typing preview before the visitor changes it.
+- After an `open()` made before the widget's saved look arrived, the chat button leaves the tab order while the chat is open.
 
 ## [0.59.1] - 2026-11-25
 

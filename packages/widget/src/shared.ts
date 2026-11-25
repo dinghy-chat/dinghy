@@ -11,8 +11,8 @@ export interface OpenOptions {
 
 /** A card above the launcher, from the page. A click on it or on the launcher opens the chat. */
 export interface NudgeOptions extends OpenOptions {
-  /** The card's text. Without it, the launcher only pulses. */
-  text?: string;
+  /** The card's text, shown as plain text. */
+  text: string;
 }
 
 /**
@@ -279,9 +279,9 @@ export interface DinghyApi {
   setContext(data: PageContext): void;
   configure(options: Appearance): void;
   /**
-   * Pulses the launcher until the next open, or with false stops it. With options, a card shows
-   * above the launcher too, until the next open, nudge(false) or other options, and the next open
-   * fills the message box with `message`.
+   * Pulses the launcher until the next open. `false` stops the pulse and removes the card. With
+   * options, a card with `text` shows above the launcher, the next open fills the message box with
+   * `message`, and a later call with options replaces the card.
    */
   nudge(on?: boolean | NudgeOptions): void;
   /** Calls `callback` on each event, and returns a function that removes it. */
@@ -303,7 +303,7 @@ interface ChatHandlers {
   /** The loader's beat says outbound messages wait for this visitor. */
   outbound(): void;
   /** nudge() changed the page's card. */
-  nudge(): void;
+  card(): void;
 }
 
 /** Each event's callbacks. The loader keeps them, and the chat bundle calls them. */
@@ -345,7 +345,7 @@ export interface WidgetContext {
   /** An open() made before the chat bundle ran, with its message. */
   wanted?: [string | undefined] | undefined;
   /** The card that nudge() asked for, until the next open, nudge(false) or another card. */
-  nudged?: NudgeOptions | undefined;
+  nudgeCard?: NudgeOptions | undefined;
   /** The loader's `Dinghy.state`, which the chat bundle keeps up to date. */
   state: DinghyState;
   listeners: Listeners;

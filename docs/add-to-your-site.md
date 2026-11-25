@@ -161,7 +161,11 @@ Dinghy.nudge({
 });
 ```
 
-A card with `text` shows above the chat button, and the button pulses. A click on the card or the button opens the chat with `message` in the message box, as `Dinghy.open({ message })` does, so the visitor sends the error ID with their question. The card's close button and `Dinghy.nudge(false)` remove the card and stop the pulse. The next open removes them too. A later `nudge({ text })` replaces the card, and a plain `nudge()` keeps it. The card stays in the page and tells the server nothing, so operators see only what the visitor sends. It shows over a waiting outbound message's card, which comes back once the page's card is gone.
+Your card shows `text` above the chat button, as plain text, and the button pulses. A click on the card or the button opens the chat with `message` in the message box, as `Dinghy.open({ message })` does, so the visitor sends the error ID with their question. `message` is optional. Nothing goes to the server until the visitor sends, so operators see only what the visitor sends.
+
+The card's close button, `Dinghy.nudge(false)`, the next open and `Dinghy.reset()` remove your card. Another `nudge({ text })` replaces it, and a plain `nudge()` keeps it. While the chat is open, your card waits until the visitor closes it.
+
+Your card shows in place of a waiting outbound message's card, which comes back once yours is gone. Closing yours keeps the pulse of an outbound message that waits.
 
 With `data-launcher="hidden"` and your own button, `badge` raises the unread count as a reply does, and `preview` shows its card in the configured corner, with the same offsets. To pulse your own button:
 

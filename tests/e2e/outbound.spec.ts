@@ -161,6 +161,19 @@ test("the page's nudge shows a card, and its click opens the chat with the messa
   await expect(messageBox(page)).toHaveValue("Error ID def456");
   await expect(card).toHaveCount(0);
   await expect(page.locator(".launcher.nudge")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await messageBox(page).waitFor({ state: "hidden" });
+
+  await nudge(page, { text: "Still stuck?", message: "Error ID mno345" });
+  await expect(card).toContainText("Still stuck?");
+  await nudge(page, false);
+  await expect(card).toHaveCount(0);
+  await expect(page.locator(".launcher.nudge")).toHaveCount(0);
+
+  // The launcher opens with the card's message too.
+  await nudge(page, { text: "Still stuck?", message: "Error ID pqr678" });
+  await page.getByRole("button", { name: /Open chat/ }).click();
+  await expect(messageBox(page)).toHaveValue("Error ID pqr678");
 });
 
 test("a nudge before the saved look still pulses, and reset() drops the card", async ({ page }) => {
@@ -208,6 +221,22 @@ test("closing the page's card keeps the pulse of a message that waits", async ({
   await page.locator(".preview").getByRole("button", { name: "Close this message" }).click();
   await expect(page.locator(".preview")).toHaveCount(0);
   await expect(page.locator(".launcher.nudge")).toHaveCount(1);
+});
+
+test("the page's card takes the place of a waiting card, which comes back after it", async ({
+  browser,
+}) => {
+  const user = { userId: "nudge-preview" };
+  const sent = await send({ visitor: user, body: "A new import tool is out", show: "preview" });
+  expect(sent.status).toBe(201);
+  const page = await signedInPage(browser, user.userId);
+  const card = page.locator(".preview");
+  await expect(card).toContainText("A new import tool is out");
+  await nudge(page, { text: "Can we help?" });
+  await expect(card).toHaveCount(1);
+  await expect(card).toContainText("Can we help?");
+  await card.getByRole("button", { name: "Close this message" }).click();
+  await expect(card).toContainText("A new import tool is out");
 });
 
 test("recipe 2: a message after an hour, cancelled when the domain verifies, or shown as a card", async ({

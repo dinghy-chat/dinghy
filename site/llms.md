@@ -35,7 +35,7 @@ Settings > Appearance in the operator app sets the colors, side, theme, launcher
 
 - `open({ message? })`: opens the chat. `message` fills the message box and is not sent.
 - `close()`, `toggle()`, `show()`, `hide()` (the launcher button), and `nudge()` or `nudge(false)` (pulse or stop the launcher).
-- `nudge({ text, message? })`: pulses the launcher and shows `text` in a card above it. A click on the card or the launcher opens the chat with `message` in the message box, such as an error ID. Nothing goes to the server until the visitor sends.
+- `nudge({ text, message? })`: pulses the launcher and shows `text` in a card above it. A click on the card or the launcher opens the chat with `message` in the message box, such as an error ID. The card lasts until the next open or `nudge(false)`, and nothing goes to the server until the visitor sends.
 - `identify(token)`: signs in a user. `token` is an HS256 JWT that your server signs with the workspace's signing secret, with `sub`, `aud` (the public key), `iat`, `exp` at most 24 hours later, and optional `name`, `email` and `attributes`. Pass a function that returns a promise of a token so it can renew. Never put the secret in the browser.
 - `reset()`: call at sign-out.
 - `setContext({ key: value })`: unsigned facts for operators, up to 20 keys. Values are strings up to 200 characters, numbers, booleans or null. Sent only for a visitor who has chatted.

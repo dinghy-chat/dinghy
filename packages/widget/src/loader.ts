@@ -120,11 +120,11 @@ if (script && publicKey) {
   };
   const listeners: Listeners = {};
   const nudge = (on: boolean | NudgeOptions = true) => {
-    // The chat bundle draws the page's card, which a plain nudge() keeps. A copy, as the page may
-    // change its object later. null is an object too.
+    // The chat bundle draws the card, which a plain nudge() keeps. A copy, as the page may change
+    // its object later.
     if (on !== true) {
-      context.nudged = (typeof on === "object" && on && { ...on }) || undefined;
-      context.chat ? context.chat.nudge() : context.nudged?.text && load();
+      context.nudgeCard = (on && { ...on }) || undefined;
+      context.chat ? context.chat.card() : context.nudgeCard?.text && load();
     }
     const pulse = !!on;
     if (state.nudging === pulse) return;
@@ -182,7 +182,7 @@ if (script && publicKey) {
 
   const api: DinghyApi = {
     open(options) {
-      const message = options?.message ?? context.nudged?.message;
+      const message = options?.message ?? context.nudgeCard?.message;
       nudge(false);
       if (context.chat) return context.chat.open(message);
       context.wanted = [message];

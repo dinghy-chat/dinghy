@@ -153,7 +153,7 @@ interface ChatProps {
   /** Grows with each beat that says an outbound message waits. */
   beat: number;
   /** The card that Dinghy.nudge() asked for. */
-  nudged: NudgeOptions | undefined;
+  nudgeCard: NudgeOptions | undefined;
 }
 
 /**
@@ -173,7 +173,7 @@ function Chat({
   saved,
   reveal,
   beat,
-  nudged,
+  nudgeCard,
 }: ChatProps) {
   const { publicKey, base } = context;
   const fullPage = context.page === true;
@@ -753,11 +753,11 @@ function Chat({
   if (!shown) {
     // The page's card goes first, as the page asked for it at this moment.
     // Plain text, as a link in it would open a page as well as the chat.
-    if (typeof nudged?.text === "string") {
+    if (typeof nudgeCard?.text === "string") {
       return (
         <PreviewCard
-          message={<p class="msg">{nudged.text}</p>}
-          onOpen={() => context.chat?.open(nudged.message)}
+          message={<p class="msg">{nudgeCard.text}</p>}
+          onOpen={() => context.chat?.open(nudgeCard.message)}
           onClose={() => {
             context.nudge(false);
             // A waiting outbound message still pulses.
@@ -994,7 +994,7 @@ function Root({ context }: { context: WidgetContext }) {
   const [prefill, setPrefill] = useState<{ text: string } | null>(null);
   const [contextVersion, setContextVersion] = useState(0);
   const [beat, setBeat] = useState(0);
-  const [nudged, setNudged] = useState(context.nudged);
+  const [nudgeCard, setNudgeCard] = useState(context.nudgeCard);
   const [saved, setSaved] = useState<SavedAppearance>();
   // The loader's answer, which also gave the launcher its look. The theme is the panel's alone.
   // With no answer the defaults apply, as on the launcher. A workspace that serves no widget has
@@ -1036,7 +1036,7 @@ function Root({ context }: { context: WidgetContext }) {
       },
       context: () => setContextVersion((current) => current + 1),
       outbound: () => setBeat((current) => current + 1),
-      nudge: () => setNudged(context.nudged),
+      card: () => setNudgeCard(context.nudgeCard),
     };
     context.chat = handlers;
     context.state.ready = true;
@@ -1073,7 +1073,7 @@ function Root({ context }: { context: WidgetContext }) {
       saved={saved}
       reveal={reveal}
       beat={beat}
-      nudged={nudged}
+      nudgeCard={nudgeCard}
     />
   );
 }

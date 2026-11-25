@@ -6,9 +6,9 @@ import { buildWidget } from "../build.ts";
 // every visit, so a feature that grows them must be worth the bytes to every visitor.
 // Campaigns added 200 bytes to the loader, which matches a page campaign's URL and waits its
 // seconds so the chat loads only then, and 750 to the chat, for the campaign's card. The page's own
-// card from nudge() added 20 bytes to the loader.
+// card from nudge() added 40 bytes to the loader.
 const LIMITS: Record<string, number> = {
-  "loader.js": 3170,
+  "loader.js": 3190,
   "page.js": 1000,
   "widget.js": 28_700,
 };
