@@ -185,6 +185,17 @@ test("the page's nudge shows a card until it opens the chat with its message", a
     await closeChat(page);
   });
 
+  await test.step("a card made right after an open waits for the close", async () => {
+    await page.evaluate(() => {
+      const { Dinghy } = window as unknown as { Dinghy: DinghyApi };
+      Dinghy.open();
+      Dinghy.nudge({ text: "Come back anytime" });
+    });
+    await expect(messageBox(page)).toBeVisible();
+    await page.evaluate(() => (window as unknown as { Dinghy: DinghyApi }).Dinghy.close());
+    await expect(card).toContainText("Come back anytime");
+  });
+
   await test.step("the launcher opens the chat with the card's message", async () => {
     await nudge(page, { text: "Still stuck?", message: "Error ID pqr678" });
     await page.getByRole("button", { name: /Open chat/ }).click();
@@ -208,6 +219,22 @@ test("a nudge before the saved look still pulses, and reset() drops the card", a
   await expect(messageBox(page)).toHaveValue("");
 });
 
+test("a second open() before the chat bundle runs keeps the first one's message", async ({
+  page,
+}) => {
+  await page.route(/\/widget\/widget\.js/, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await route.continue();
+  });
+  await page.goto(`${server.hostOrigin}/app`);
+  await page.evaluate(() => {
+    const { Dinghy } = window as unknown as { Dinghy: DinghyApi };
+    Dinghy.open({ message: "Error 127" });
+    Dinghy.open();
+  });
+  await expect(messageBox(page)).toHaveValue("Error 127");
+});
+
 test("the nudge's message is no typing preview until the visitor changes it", async ({ page }) => {
   await page.goto(`${server.hostOrigin}/app`);
   await page.getByRole("button", { name: /Open chat/ }).click();
@@ -220,6 +247,8 @@ test("the nudge's message is no typing preview until the visitor changes it", as
   await nudge(page, { text: "Can we help?", message: "Error ID jkl012" });
   await page.locator(".preview").getByText("Can we help?").click();
   await expect(messageBox(page)).toHaveValue("Error ID jkl012");
+  // Past the previews' 500 ms throttle, so a preview of the page's message would have gone.
+  await page.waitForTimeout(600);
   await messageBox(page).press("End");
   await messageBox(page).pressSequentially("!");
   await expect.poll(() => drafts.some((body) => body.includes("jkl012!"))).toBe(true);
@@ -238,9 +267,18 @@ test("closing the page's card keeps the pulse of a message that waits", async ({
   const page = await signedInPage(browser, user.userId);
   await expect(page.locator(".launcher.nudge .badge")).toHaveText("1");
   await nudge(page, { text: "Can we help?" });
+  await page.evaluate(() => {
+    const win = window as unknown as { Dinghy: DinghyApi; pulses: boolean[] };
+    win.pulses = [];
+    win.Dinghy.on("nudge", (on) => win.pulses.push(on));
+  });
   await page.locator(".preview").getByRole("button", { name: "Close this message" }).click();
   await expect(page.locator(".preview")).toHaveCount(0);
   await expect(pulses(page)).toHaveCount(1);
+  // Only the first call, which on() makes at once: the pulse never stopped.
+  expect(await page.evaluate(() => (window as unknown as { pulses: boolean[] }).pulses)).toEqual([
+    true,
+  ]);
 });
 
 test("the page's card takes the place of a waiting card, which comes back after it", async ({
@@ -251,6 +289,9 @@ test("the page's card takes the place of a waiting card, which comes back after 
   expect(sent.status).toBe(201);
   const page = await signedInPage(browser, user.userId);
   const card = page.locator(".preview");
+  await expect(card).toContainText("A new import tool is out");
+  // Empty text is no card, so the waiting one stays.
+  await nudge(page, { text: "" });
   await expect(card).toContainText("A new import tool is out");
   await nudge(page, { text: "Can we help?" });
   await expect(card).toHaveCount(1);

@@ -756,16 +756,17 @@ function Chat({
 
   if (!shown) {
     // The page's card goes first, as the page asked for it at this moment. Its text is plain, so
-    // a link in it cannot open a page as well as the chat. Closing it keeps the pulse of a waiting
-    // outbound message.
-    if (typeof nudgeCard?.text === "string") {
+    // a link in it cannot open a page as well as the chat. Closing it alone keeps the pulse of a
+    // waiting outbound message.
+    if (typeof nudgeCard?.text === "string" && nudgeCard.text !== "") {
       return (
         <PreviewCard
           message={<p class="msg">{nudgeCard.text}</p>}
           onOpen={() => context.chat?.open(nudgeCard.message)}
           onClose={() => {
-            context.nudge(false);
-            if (outbound.unread > 0) context.nudge(true);
+            context.nudgeCard = undefined;
+            context.chat?.card();
+            if (outbound.unread === 0) context.nudge(false);
           }}
         />
       );
@@ -973,28 +974,31 @@ function Root({ context }: { context: WidgetContext }) {
       wasOpen(publicKey),
   );
   const [open, setOpenState] = useState(false);
+  // The state changes at once, so a toggle() right after a close() sees it closed. An open ends
+  // the pulse and the page's card at once too, whichever way it opens, so a nudge() made right
+  // after it stays.
+  const setOpen = useCallback(
+    (next: boolean) => {
+      context.state.open = next;
+      if (next) context.nudge(false);
+      setOpenState(next);
+    },
+    [context],
+  );
   const [restoring, setRestoring] = useState(remembered);
   const restored = useCallback(
     (reopen: boolean) => {
       setRestoring(false);
-      if (!reopen) return;
-      context.state.open = true;
-      setOpenState(true);
+      if (reopen) setOpen(true);
     },
-    [context],
+    [setOpen],
   );
-  // The state changes at once, so a toggle() right after a close() sees it closed.
-  const setOpen = (next: boolean) => {
-    context.state.open = next;
-    setOpenState(next);
-  };
   const [quiet, setQuiet] = useState(remembered);
   // A message opens the chat, and the focus stays where the visitor had it.
   const reveal = useCallback(() => {
     setQuiet(true);
-    context.state.open = true;
-    setOpenState(true);
-  }, [context]);
+    setOpen(true);
+  }, [setOpen]);
   const [session, setSession] = useState(0);
   const [prefill, setPrefill] = useState<{ text: string } | null>(null);
   const [contextVersion, setContextVersion] = useState(0);
@@ -1022,15 +1026,13 @@ function Root({ context }: { context: WidgetContext }) {
     const handlers = {
       open(message: string | undefined) {
         setRestoring(false);
-        context.state.open = true;
-        setOpenState(true);
+        setOpen(true);
         setQuiet(false);
         if (typeof message === "string") setPrefill({ text: message.slice(0, MESSAGE_MAX) });
       },
       close: () => {
         setRestoring(false);
-        context.state.open = false;
-        setOpenState(false);
+        setOpen(false);
       },
       session: () => {
         // A reset leaves no identity, and the next visitor must not get this one's draft. Nor its
@@ -1049,7 +1051,7 @@ function Root({ context }: { context: WidgetContext }) {
     const { wanted } = context;
     context.wanted = undefined;
     if (wanted !== undefined) handlers.open(wanted[0]);
-  }, [context]);
+  }, [context, setOpen]);
   const shown = useRef(false);
   useEffect(() => {
     if (open === shown.current) return;
@@ -1059,8 +1061,6 @@ function Root({ context }: { context: WidgetContext }) {
     launcher?.classList.toggle("opened", open);
     // The focused element is gone after a close, so a keyboard user returns to the launcher.
     if (!open) launcher?.focus();
-    // The pulse lasts until the next open, whichever way it opens.
-    if (open) context.nudge(false);
     emit(context, open ? "open" : "close", undefined);
   }, [context, open]);
   return (

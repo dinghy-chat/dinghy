@@ -22,6 +22,14 @@ export interface Update {
 /** Newest first. Add a new entry at the top, in the pull request that makes the change. */
 export const UPDATES: Update[] = [
   {
+    id: "nudge-card",
+    date: "2026-11-25",
+    kind: "feature",
+    title: "Offer help from your page",
+    text: "Your site can show a short message above the chat button, such as after a failed save, and start the visitor's message with an error ID. Message cards above the chat button look cleaner too.",
+    docs: "add-to-your-site#offer-help-from-your-page",
+  },
+  {
     id: "chat-history-and-inbox-fixes",
     date: "2026-11-25",
     kind: "fix",

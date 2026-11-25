@@ -182,7 +182,8 @@ if (script && publicKey) {
 
   const api: DinghyApi = {
     open(options) {
-      const message = options?.message ?? context.nudgeCard?.message;
+      // A second open() before the chat bundle runs keeps the first one's message.
+      const message = options?.message ?? context.wanted?.[0] ?? context.nudgeCard?.message;
       nudge(false);
       if (context.chat) return context.chat.open(message);
       context.wanted = [message];
