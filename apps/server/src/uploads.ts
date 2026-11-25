@@ -177,12 +177,18 @@ export const processPicture = (bytes: Uint8Array) =>
  * once `signal` fires, as the preview no longer waits for it.
  */
 export const THUMBNAIL_SIZE_PX = 112;
+let waitingThumbnails = 0;
 export const processThumbnail = async (bytes: Uint8Array, signal: AbortSignal) => {
+  // A preview that gave up still holds its image in the queue, so the queue has a limit too.
+  if (waitingThumbnails >= MAX_WAITING_TO_DECODE) return "busy";
+  waitingThumbnails += 1;
   const done = await inTurn(async () =>
     signal.aborted
       ? ("too_slow" as const)
       : reencode(bytes, (image) => image.resize(THUMBNAIL_SIZE_PX, THUMBNAIL_SIZE_PX).webp()),
-  );
+  ).finally(() => {
+    waitingThumbnails -= 1;
+  });
   return typeof done === "string" ? done : done.data;
 };
 

@@ -551,6 +551,18 @@ export class WorkspaceClosedError extends Error {
   }
 }
 
+/** The workspace's access when it takes no message from this author, or null when it takes one. */
+export async function refusedAccess(
+  tx: Transaction,
+  workspaceId: string,
+  author: Author,
+): Promise<WorkspaceAccess | null> {
+  const found = await workspaceAccess(tx, workspaceId);
+  const welcome = !writable(found) && (await inWelcomeChat(tx, workspaceId, author));
+  const access = welcome ? await welcomeAccess(tx, workspaceId, found) : found;
+  return writableFor(access, { welcome }) ? null : access;
+}
+
 /** Waits for a write, and returns a WorkspaceClosedError instead of throwing it. */
 export const catchClosed = <T>(write: Promise<T>): Promise<T | WorkspaceClosedError> =>
   write.catch((error: unknown) => {
@@ -657,10 +669,8 @@ export async function appendMessage(
 ): Promise<{ message: StoredMessage; created: boolean; conversationStarted: boolean }> {
   const seq = await nextSeq(tx, workspaceId);
   // A statement of its own, after the lock: it sees every change committed before the lock.
-  const found = await workspaceAccess(tx, workspaceId);
-  const welcome = !writable(found) && (await inWelcomeChat(tx, workspaceId, author));
-  const access = welcome ? await welcomeAccess(tx, workspaceId, found) : found;
-  if (!writableFor(access, { welcome })) throw new WorkspaceClosedError(access);
+  const refused = await refusedAccess(tx, workspaceId, author);
+  if (refused !== null) throw new WorkspaceClosedError(refused);
 
   const sender =
     author.kind === "visitor"

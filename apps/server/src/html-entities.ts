@@ -38,7 +38,9 @@ const ENTITIES = new Map<string, string>([
 const decodeEntity = (whole: string, name: string) => {
   if (!name.startsWith("#")) return ENTITIES.get(name) ?? whole;
   const code = /^#x/i.test(name) ? Number.parseInt(name.slice(2), 16) : Number(name.slice(1));
-  return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
+  // A lone surrogate is not text that Postgres or JSON can keep.
+  const valid = code > 0 && code <= 0x10ffff && (code < 0xd800 || code > 0xdfff);
+  return valid ? String.fromCodePoint(code) : whole;
 };
 
 /** Decodes numeric entities, decimal or hex, and the named ones in the table. Anything else stays. */

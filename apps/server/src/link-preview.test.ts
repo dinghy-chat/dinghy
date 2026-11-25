@@ -106,6 +106,10 @@ const PAGES: Record<string, (response: ServerResponse) => void> = {
     response.end(`<html><head>${" ".repeat(600 * 1024)}<title>Too far</title></head></html>`);
   },
   "/slow": () => {},
+  "/stalls": (response) => {
+    response.writeHead(200, { "content-type": "text/html" });
+    response.write("<html><head><title>Early</title></head><body>");
+  },
   "/untitled": (response) => {
     response.writeHead(200, { "content-type": "text/html" });
     response.end(page('<meta property="og:image" content="/picture.png">'));
@@ -183,6 +187,14 @@ describe("fetching a page", () => {
     expect(Date.now() - started).toBeLessThan(6000);
   }, 10_000);
 
+  test("a page that sends its head and then stalls still gets its card", async () => {
+    const started = Date.now();
+    expect(await fetchPreview("http://docs.example/stalls", network)).toMatchObject({
+      title: "Early",
+    });
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+
   test("a page with no title gets none, and an image on a private address leaves no thumbnail", async () => {
     expect(await fetchPreview("http://docs.example/untitled", network)).toBeNull();
     expect(await fetchPreview("http://docs.example/private-image", network)).toEqual({
@@ -198,6 +210,7 @@ describe("fetching a page", () => {
     expect(pageFields(html)).toEqual({ title: "Tom & Jerry's <show> now", image: null });
     expect(pageFields(`<title>${"a".repeat(300)}</title>`).title).toHaveLength(200);
     expect(pageFields("<title> \u0007 </title>").title).toBeNull();
+    expect(pageFields("<title>a&#xD800;b</title>").title).toBe("a&#xD800;b");
   });
 
   test("a quoted '>' stays in its value, and a comment hides its tags", () => {
@@ -480,6 +493,21 @@ describe("a reply with a link's card", () => {
     const [row] = await owner.select().from(message).where(eq(message.id, removed.id));
     expect(row?.metadata).toEqual({});
     expect(await thumbnails(removed.id)).toEqual([]);
+  });
+
+  test("a closed conversation fetches no page", async () => {
+    const { conversationId } = await visitorStarts(app, space.publicKey, "Thanks, all good");
+    const closed = await asOperator(
+      app,
+      ana.cookie,
+      "PATCH",
+      inSpace(`/conversations/${conversationId}`),
+      {
+        status: "closed",
+      },
+    );
+    expect(closed.status).toBe(200);
+    expect(await preview(conversationId, "http://docs.example/reset")).toBeNull();
   });
 
   test("a workspace gets 30 previews a minute, and is asked to wait past them", async () => {

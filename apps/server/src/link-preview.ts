@@ -10,7 +10,7 @@ import { failure, MEMBER_WRITE_ERRORS, NOT_FOUND, RATE_LIMITED } from "./errors.
 import { decodeEntities } from "./html-entities.ts";
 import { sha256Hex } from "./identity.ts";
 import { conversationParams, OPEN_TO_WELCOME, WORKSPACE_PREFIX as PREFIX } from "./member.ts";
-import { findConversation, type StoredLink } from "./messages.ts";
+import { findConversation, refusedAccess, type StoredLink } from "./messages.ts";
 import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
 import { MINUTE_SECONDS } from "./time.ts";
 import {
@@ -102,8 +102,15 @@ async function open(start: URL, network: PreviewNetwork, signal: AbortSignal) {
   return null;
 }
 
-/** Reads at most `maxBytes`, then drops the connection. `complete` is false when the body was longer. */
-async function readUpTo(response: IncomingMessage, maxBytes: number) {
+/**
+ * Reads at most `maxBytes`, or until `enough` holds, then drops the connection. `complete` is false
+ * when the body was longer.
+ */
+async function readUpTo(
+  response: IncomingMessage,
+  maxBytes: number,
+  enough?: (bytes: Buffer) => boolean,
+) {
   const parts: Buffer[] = [];
   let size = 0;
   try {
@@ -113,6 +120,7 @@ async function readUpTo(response: IncomingMessage, maxBytes: number) {
       if (size > maxBytes) {
         return { bytes: Buffer.concat(parts).subarray(0, maxBytes), complete: false };
       }
+      if (enough?.(Buffer.concat(parts))) break;
     }
     return { bytes: Buffer.concat(parts), complete: true };
   } finally {
@@ -207,6 +215,7 @@ function scanHead(html: string) {
   const meta = new Map<string, string>();
   let title: string | undefined;
   let charset: string | undefined;
+  let ended = false;
   for (let at = html.indexOf("<"); at !== -1; ) {
     let next = at + 1;
     if (html.startsWith("<!--", at)) {
@@ -214,10 +223,15 @@ function scanHead(html: string) {
       if (close === -1) break;
       next = close + 3;
     } else if (html.slice(at, at + 6).toLowerCase() === "</head") {
+      ended = true;
       break;
     } else if (/^[a-z]$/i.test(html.charAt(at + 1))) {
       const tag = readTag(html, at);
-      if (tag === null || tag.name === "body") break;
+      if (tag === null) break;
+      if (tag.name === "body") {
+        ended = true;
+        break;
+      }
       next = tag.end;
       const { attributes } = tag;
       const closing = RAW_TEXT_END.get(tag.name);
@@ -237,7 +251,7 @@ function scanHead(html: string) {
     }
     at = html.indexOf("<", next);
   }
-  return { meta, title, charset };
+  return { meta, title, charset, ended };
 }
 
 /** The page's text, in the charset its Content-Type or its meta tags name, else UTF-8. */
@@ -301,7 +315,12 @@ export async function fetchPreview(
       page.response.destroy();
       return null;
     }
-    const { bytes } = await readUpTo(page.response, PAGE_MAX_BYTES);
+    // A page that sends its head and then stalls still gets its card.
+    const { bytes } = await readUpTo(
+      page.response,
+      PAGE_MAX_BYTES,
+      (read) => scanHead(read.toString("latin1")).ended,
+    );
     const fields = pageFields(decodePage(bytes, page.response.headers["content-type"]));
     if (fields.title === null) return null;
     const image =
@@ -465,8 +484,16 @@ export function registerLinkPreviewRoute(
     }
     fetching += 1;
     try {
-      const found = await withWorkspace(db, id, (tx) => findConversation(tx, id, conversationId));
+      const author = { kind: "operator", operatorId: c.get("operatorId"), conversationId } as const;
+      const found = await withWorkspace(db, id, async (tx) => {
+        const conversation = await findConversation(tx, id, conversationId);
+        return conversation && { conversation, refused: await refusedAccess(tx, id, author) };
+      });
       if (found === null) return c.json(NOT_FOUND, 404);
+      // Where no reply can go, no page is fetched.
+      if (found.conversation.status !== "open" || found.refused !== null) {
+        return c.json({ preview: null }, 200);
+      }
       const wait = await rateLimit.hit("link-preview", id, PREVIEWS_PER_MINUTE, MINUTE_SECONDS);
       if (wait !== null) return tooManyRequests(c, wait);
       const fetched = await fetchPreview(c.req.valid("json").url, network);
