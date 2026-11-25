@@ -2,6 +2,7 @@
 // Outbound messages: what the team sent this visitor outside any conversation. They wait as a badge,
 // a card above the launcher or the open chat, until the visitor answers, dismisses or leaves them.
 // All of this is in the chat bundle, so the loader only learns from its beat that one waits.
+import type { ComponentChildren } from "preact";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Answer, Client, Waiting } from "./client.ts";
 import { emit } from "./page-events.ts";
@@ -285,31 +286,28 @@ export function Choices({ one, onPress }: { one: Choosable; onPress(index: numbe
 
 const noop = () => {};
 
-/** The card above the launcher: who sent it, its first lines, and its buttons. A click opens the chat. */
+/**
+ * The card above the launcher: who sent it, its first lines, and an outbound message's buttons. A
+ * click opens the chat.
+ */
 export function PreviewCard({
-  one,
+  line,
   onOpen,
   onClose,
-  onPress,
+  children,
 }: {
-  one: Waiting;
+  line: Line;
   onOpen(): void;
   onClose(): void;
-  onPress(index: number): void;
+  children?: ComponentChildren;
 }) {
   return (
     <aside class="preview" aria-live="polite" aria-label={t("outboundCard")}>
       {/* biome-ignore lint/a11y/useKeyWithClickEvents lint/a11y/noStaticElementInteractions: the launcher opens the chat from the keyboard. */}
       <div class="peek" onClick={onOpen}>
-        <ChatLine
-          line={waitingLine(one)}
-          showAuthor
-          onView={onOpen}
-          onUploadError={noop}
-          onRetry={noop}
-        />
+        <ChatLine line={line} showAuthor onView={onOpen} onUploadError={noop} onRetry={noop} />
       </div>
-      <Choices one={one} onPress={onPress} />
+      {children}
       <CloseButton label={t("outboundClose")} onClick={onClose} />
     </aside>
   );

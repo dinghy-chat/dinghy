@@ -119,6 +119,34 @@ test("recipe 1: a welcome waits on the contact until the visitor opens the chat 
   expect(listed.json.outboundMessages).toHaveLength(1);
 });
 
+test("the page's nudge shows a card, and its click opens the chat with the message", async ({
+  page,
+}) => {
+  await page.goto(`${server.hostOrigin}/app`);
+  type Nudge = { nudge(on?: boolean | { text?: string; message?: string }): void };
+  const nudge = (on?: Parameters<Nudge["nudge"]>[0]) =>
+    page.evaluate((value) => (window as unknown as { Dinghy: Nudge }).Dinghy.nudge(value), on);
+  const card = page.locator(".preview");
+  await nudge({
+    text: "We saw an error while you saved. Can we help?",
+    message: "Error ID abc123",
+  });
+  await expect(card).toContainText("We saw an error while you saved.");
+  await expect(page.locator(".launcher.nudge")).toHaveCount(1);
+  // Its close button stops the pulse too.
+  await card.getByRole("button", { name: "Close this message" }).click();
+  await expect(card).toHaveCount(0);
+  await expect(page.locator(".launcher.nudge")).toHaveCount(0);
+
+  await nudge({ text: "Need a hand?", message: "Error ID def456" });
+  // A plain nudge(), as a waiting outbound message makes, keeps the card.
+  await nudge();
+  await card.getByText("Need a hand?").click();
+  await expect(page.getByRole("textbox", { name: "Your message" })).toHaveValue("Error ID def456");
+  await expect(card).toHaveCount(0);
+  await expect(page.locator(".launcher.nudge")).toHaveCount(0);
+});
+
 test("recipe 2: a message after an hour, cancelled when the domain verifies, or shown as a card", async ({
   browser,
 }) => {

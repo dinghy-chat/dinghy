@@ -38,6 +38,7 @@ import {
   BOT_TYPING_MS,
   CONTEXT_VERSION,
   MESSAGE_MAX,
+  type NudgeOptions,
   type QueuedCall,
   readToken,
   rememberOpen,
@@ -53,6 +54,17 @@ import { larger, useUnread } from "./use-unread.ts";
 
 const NEW_REPLY_SHOWN_MS = 5000;
 const RETRY_LIMIT_MS = 30_000;
+
+/** The page's card as a line from nobody in particular. Its ID cannot be a message's. */
+const NUDGE_LINE: Line = {
+  id: "nudge",
+  seq: null,
+  body: "",
+  attachment: null,
+  fromVisitor: false,
+  author: null,
+  status: "sent",
+};
 
 /**
  * Adds a confirmed message in commit order. A pending line with the same client ID becomes this
@@ -149,6 +161,8 @@ interface ChatProps {
   reveal(): void;
   /** Grows with each beat that says an outbound message waits. */
   beat: number;
+  /** The card that Dinghy.nudge() asked for. */
+  nudged: NudgeOptions | undefined;
 }
 
 /**
@@ -168,6 +182,7 @@ function Chat({
   saved,
   reveal,
   beat,
+  nudged,
 }: ChatProps) {
   const { publicKey, base } = context;
   const fullPage = context.page === true;
@@ -739,14 +754,25 @@ function Chat({
   };
 
   if (!shown) {
+    // The page's card goes first, as the page asked for it at this moment.
+    if (typeof nudged?.text === "string") {
+      return (
+        <PreviewCard
+          line={{ ...NUDGE_LINE, body: nudged.text }}
+          onOpen={() => context.chat?.open(nudged.message)}
+          onClose={() => context.nudge(false)}
+        />
+      );
+    }
     const { card } = outbound;
     return card === undefined ? null : (
       <PreviewCard
-        one={card}
+        line={waitingLine(card)}
         onOpen={() => setOpen(true)}
         onClose={() => outbound.hide(card.id)}
-        onPress={(index) => choose(card, index)}
-      />
+      >
+        <Choices one={card} onPress={(index) => choose(card, index)} />
+      </PreviewCard>
     );
   }
   const everChatted = chatted || lines.length > 0;
@@ -958,6 +984,7 @@ function Root({ context }: { context: WidgetContext }) {
   const [prefill, setPrefill] = useState<{ text: string } | null>(null);
   const [contextVersion, setContextVersion] = useState(0);
   const [beat, setBeat] = useState(0);
+  const [nudged, setNudged] = useState(context.nudged);
   const [saved, setSaved] = useState<SavedAppearance>();
   // The loader's answer, which also gave the launcher its look. The theme is the panel's alone.
   // With no answer the defaults apply, as on the launcher. A workspace that serves no widget has
@@ -999,6 +1026,7 @@ function Root({ context }: { context: WidgetContext }) {
       },
       context: () => setContextVersion((current) => current + 1),
       outbound: () => setBeat((current) => current + 1),
+      nudge: () => setNudged(context.nudged),
     };
     context.chat = handlers;
     context.state.ready = true;
@@ -1035,6 +1063,7 @@ function Root({ context }: { context: WidgetContext }) {
       saved={saved}
       reveal={reveal}
       beat={beat}
+      nudged={nudged}
     />
   );
 }

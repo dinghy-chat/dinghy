@@ -63,6 +63,7 @@ The tag adds a `Dinghy` object to the page:
 | `Dinghy.setContext(data)` | Tells operators about the page, such as a plan or a cart. See below |
 | `Dinghy.configure(options)` | Changes the colors, the side, the offsets and the z-index now |
 | `Dinghy.nudge()`, `Dinghy.nudge(false)` | Pulses the chat button until the next open, or stops it. See [Outbound messages](#outbound-messages) |
+| `Dinghy.nudge({ text, message })` | Pulses the chat button and shows `text` in a card above it. A click opens the chat with `message` in the message box. See [Offer help from your page](#offer-help-from-your-page) |
 | `Dinghy.on(event, callback)` | Calls `callback` on each event, and returns a function that stops it |
 | `Dinghy.state` | `{ ready, open, unread, conversation, visitorId, nudging }`, read only. `visitorId` is null before the visitor exists and after `reset()` or `identify()` until the chat knows the next visitor, and `nudging` says whether the chat button pulses |
 
@@ -147,6 +148,20 @@ Your server can send a visitor an [outbound message](outbound-messages.md), befo
 With `prefers-reduced-motion`, the badge stays still and the card does not slide. A message that arrives while the visitor types never moves the message box or takes the focus.
 
 `Dinghy.nudge()` pulses the chat button until the visitor next opens the chat, and `Dinghy.nudge(false)` stops it. It stays in the page and tells the server nothing. A `badge` message starts it too. `Dinghy.state.nudging` and the `nudge` event follow it.
+
+### Offer help from your page
+
+When your page sees the visitor struggle, such as a failed save, it can offer help without opening the chat:
+
+```js
+// page
+Dinghy.nudge({
+  text: "We saw an error while you saved. Can we help?",
+  message: `I got an error while saving (error ID ${errorId}).`,
+});
+```
+
+A card with `text` shows above the chat button, and the button pulses. A click on the card or the button opens the chat with `message` in the message box, as `Dinghy.open({ message })` does, so the visitor sends the error ID with their question. The card's close button and `Dinghy.nudge(false)` remove the card and stop the pulse. The next open removes them too. A later `nudge({ text })` replaces the card, and a plain `nudge()` keeps it. The card stays in the page and tells the server nothing, so operators see only what the visitor sends. It shows over a waiting outbound message's card, which comes back once the page's card is gone.
 
 With `data-launcher="hidden"` and your own button, `badge` raises the unread count as a reply does, and `preview` shows its card in the configured corner, with the same offsets. To pulse your own button:
 

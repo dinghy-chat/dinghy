@@ -10,6 +10,7 @@ import {
   forgetVisitor,
   type Listeners,
   loadAppearance,
+  type NudgeOptions,
   type QueuedCall,
   RESET_PREFIX,
   readToken,
@@ -116,11 +117,17 @@ if (script && publicKey) {
     nudging: false,
   };
   const listeners: Listeners = {};
-  const nudge = (on = true) => {
-    if (state.nudging === on) return;
-    state.nudging = on;
-    launcher.classList.toggle("nudge", on);
-    emit(context, "nudge", on);
+  const nudge = (on: boolean | NudgeOptions = true) => {
+    // The chat bundle draws the page's card, which a plain nudge() keeps. null is an object too.
+    if (on !== true) {
+      context.nudged = (typeof on === "object" && on) || undefined;
+      context.chat ? context.chat.nudge() : context.nudged && load();
+    }
+    const pulse = !!on;
+    if (state.nudging === pulse) return;
+    state.nudging = pulse;
+    launcher.classList.toggle("nudge", pulse);
+    emit(context, "nudge", pulse);
   };
   const context: WidgetContext = {
     version: CONTEXT_VERSION,
@@ -170,9 +177,10 @@ if (script && publicKey) {
 
   const api: DinghyApi = {
     open(options) {
+      const message = options?.message ?? context.nudged?.message;
       nudge(false);
-      if (context.chat) return context.chat.open(options?.message);
-      context.wanted = [options?.message];
+      if (context.chat) return context.chat.open(message);
+      context.wanted = [message];
       load();
     },
     close() {
@@ -243,7 +251,8 @@ if (script && publicKey) {
     const kind = attribute("launcher") ?? saved?.launcher;
     // A hidden launcher still has a drawing, for show(). hasOwn, so "toString" is no kind.
     const drawn = (Object.hasOwn(LAUNCHER_ICONS, kind as string) ? kind : "bubble") as LauncherKind;
-    launcher.className = `launcher ${drawn}`;
+    // Added, so a nudge() made before the saved look arrived keeps its pulse.
+    launcher.classList.add("launcher", drawn);
     launcher.innerHTML = LAUNCHER_ICONS[drawn];
     // As text, never markup: the title is the workspace's own.
     if (drawn === "label")

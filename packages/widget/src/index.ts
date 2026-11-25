@@ -16,6 +16,7 @@ export type {
   DinghyEvents,
   DinghyState,
   Identity,
+  NudgeOptions,
   OpenOptions,
   OutboundButton,
   OutboundChange,
