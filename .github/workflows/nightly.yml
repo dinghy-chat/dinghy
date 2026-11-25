@@ -97,7 +97,9 @@ jobs:
       - run: scripts/installer-check.sh dinghy:check
       - run: scripts/install-check.sh dinghy:check
       # Upgrades from the first release, and from the latest one, which is what installs upgrade from.
-      - run: scripts/backup-check.sh dinghy:check $(scripts/previous-releases.sh)
+      - run: |
+          previous=$(scripts/previous-releases.sh)
+          scripts/backup-check.sh dinghy:check $previous
       - run: scripts/upgrade-check.sh dinghy:check
       # The full stack under a 4 GB limit.
       - run: scripts/capacity-check.sh dinghy:check 1000 20 60 1

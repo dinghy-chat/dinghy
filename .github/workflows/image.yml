@@ -11,12 +11,11 @@ permissions:
 
 jobs:
   # The pull request suite on the tagged commit itself, because the commit a squash merge makes on main
-  # never ran it, and a tag can point anywhere.
+  # never ran it, and a tag can point anywhere. It runs next to the image checks, and publish needs both.
   test:
     uses: ./.github/workflows/ci.yml
 
   check:
-    needs: test
     runs-on: ${{ vars.RUNNER_NIGHTLY || 'ubuntu-24.04' }}
     timeout-minutes: 55
     permissions:
@@ -44,7 +43,9 @@ jobs:
         run: scripts/install-check.sh dinghy:check
       # Backup, restore, and the upgrade from the first and the latest release, which self-hosters run.
       - if: matrix.platform == 'linux/amd64'
-        run: scripts/backup-check.sh dinghy:check $(scripts/previous-releases.sh)
+        run: |
+          previous=$(scripts/previous-releases.sh)
+          scripts/backup-check.sh dinghy:check $previous
       # The image these checks ran on, not a second build. The publish job joins the two.
       - if: env.RELEASE == 'true'
         run: |
@@ -60,9 +61,9 @@ jobs:
             sleep $((attempt * 15))
           done
 
-  # A release tag such as v0.1.0, after both architectures pass.
+  # A release tag such as v0.1.0, after the tests and both architectures pass.
   publish:
-    needs: check
+    needs: [test, check]
     if: startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')
     runs-on: ${{ vars.RUNNER_PR || 'ubuntu-24.04' }}
     timeout-minutes: 5
