@@ -10,6 +10,7 @@ import { appendVisitorReply } from "./contact-checks.ts";
 import { conversation, replyAddress, visitor, widgetSettings } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace } from "./db/tenant.ts";
 import { errorAnswer, failure, NOT_FOUND } from "./errors.ts";
+import { decodeEntities } from "./html-entities.ts";
 import { sha256Hex } from "./identity.ts";
 import type { Limits } from "./limits.ts";
 import { type Signals, wakeConversation } from "./live.ts";
@@ -146,49 +147,6 @@ export function replyText(text: string): string {
 // Tags whose contents are no text, and the tags that end a line: a break and a block's end.
 const HIDDEN_TAGS = new Set(["head", "style", "script", "title"]);
 const LINE_TAGS = /^(br|\/(p|div|li|tr|table|blockquote|h[1-6]))$/;
-// HTML's named entities for Latin-1, in code point order from U+00A0, so French, Spanish and
-// German text decodes. Postal-mime has a full table but does not export it.
-const LATIN_1 = `
-  nbsp iexcl cent pound curren yen brvbar sect uml copy ordf laquo not shy reg macr deg plusmn
-  sup2 sup3 acute micro para middot cedil sup1 ordm raquo frac14 frac12 frac34 iquest Agrave
-  Aacute Acirc Atilde Auml Aring AElig Ccedil Egrave Eacute Ecirc Euml Igrave Iacute Icirc Iuml
-  ETH Ntilde Ograve Oacute Ocirc Otilde Ouml times Oslash Ugrave Uacute Ucirc Uuml Yacute THORN
-  szlig agrave aacute acirc atilde auml aring aelig ccedil egrave eacute ecirc euml igrave
-  iacute icirc iuml eth ntilde ograve oacute ocirc otilde ouml divide oslash ugrave uacute
-  ucirc uuml yacute thorn yuml`
-  .trim()
-  .split(/\s+/);
-const ENTITIES = new Map<string, string>([
-  ...LATIN_1.map((name, index): [string, string] => [name, String.fromCodePoint(0xa0 + index)]),
-  // A plain space in the chat, as mail apps pad with no-break ones.
-  ["nbsp", " "],
-  ["amp", "&"],
-  ["lt", "<"],
-  ["gt", ">"],
-  ["quot", '"'],
-  ["apos", "'"],
-  ["OElig", "Œ"],
-  ["oelig", "œ"],
-  ["ndash", "–"],
-  ["mdash", "—"],
-  ["lsquo", "‘"],
-  ["rsquo", "’"],
-  ["sbquo", "‚"],
-  ["ldquo", "“"],
-  ["rdquo", "”"],
-  ["bdquo", "„"],
-  ["hellip", "…"],
-  ["bull", "•"],
-  ["euro", "€"],
-  ["trade", "™"],
-]);
-
-/** A numeric entity, decimal or hex, or a named one from the table. Anything else stays. */
-const decodeEntity = (whole: string, name: string) => {
-  if (!name.startsWith("#")) return ENTITIES.get(name) ?? whole;
-  const code = /^#x/i.test(name) ? Number.parseInt(name.slice(2), 16) : Number(name.slice(1));
-  return code > 0 && code <= 0x10ffff ? String.fromCodePoint(code) : whole;
-};
 
 /**
  * The text of an email with only HTML: tags go, blocks and breaks end lines, entities decode. It
@@ -209,8 +167,7 @@ function htmlText(html: string): string {
     const end = HIDDEN_TAGS.has(name) ? lower.indexOf(`</${name}`, close) : close + 1;
     at = end === -1 ? html.length : end;
   }
-  return text
-    .replace(/&(#x[0-9a-f]{1,6}|#\d{1,7}|[a-z][a-z0-9]{1,7});/gi, decodeEntity)
+  return decodeEntities(text)
     .replace(/ ?\n ?/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();

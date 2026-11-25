@@ -4,6 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 export interface Draft {
   text: string;
   isNote: boolean;
+  /** The links whose card the operator removed from this draft. */
+  removedLinks?: string[];
 }
 
 export const NO_DRAFT: Draft = { text: "", isNote: false };
@@ -14,7 +16,8 @@ const isDraft = (value: unknown): value is Draft =>
   typeof value === "object" &&
   value !== null &&
   typeof (value as Draft).text === "string" &&
-  typeof (value as Draft).isNote === "boolean";
+  typeof (value as Draft).isNote === "boolean" &&
+  ((value as Draft).removedLinks?.every((link) => typeof link === "string") ?? true);
 
 // sessionStorage, so a reload of the tab keeps them and a closed tab drops them. It throws in some
 // private windows and with blocked site data, and then the drafts last until the page reloads.

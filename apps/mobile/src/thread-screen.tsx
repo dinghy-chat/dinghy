@@ -21,7 +21,7 @@ import type { EnrichedTextInputInstance } from "react-native-enriched-html";
 import type { LinkPreview } from "../../operator/src/link-preview.ts";
 import { plural, t } from "../../operator/src/text.ts";
 import { Harbor } from "../Harbor";
-import type { PendingReply } from "../outbox";
+import type { PendingReply, ReplyDraft } from "../outbox";
 import { AnchoredMenu, type MenuItem } from "./anchored-menu";
 import type { DinghyApi } from "./api";
 import { Avatar, readableError, SheetCloseButton, visitorName } from "./common";
@@ -624,7 +624,7 @@ export function ThreadScreen({
   pending: PendingReply[];
   pendingErrors: Record<string, { message: string; discardable: boolean }>;
   bottomInset: number;
-  initialDraft: string;
+  initialDraft: ReplyDraft;
   loading: boolean;
   palette: Palette;
   meId: string;
@@ -632,7 +632,7 @@ export function ThreadScreen({
   workspace: Workspace | null;
   onBack(): void;
   onDiscard(reply: PendingReply): void;
-  onDraftChange(body: string): void;
+  onDraftChange(draft: ReplyDraft): void;
   onHandoff(operatorId: string): Promise<void>;
   onError(failure: unknown): void;
   onReload(): void;

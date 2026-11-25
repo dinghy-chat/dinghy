@@ -186,6 +186,8 @@ export const fetchClientDocument: FetchClientDocument = (address) => {
       {
         method: "GET",
         lookup: guardedLookup(PUBLIC_ONLY),
+        // A pooled socket skips `lookup`, and a webhook to a private address may have opened it.
+        agent: false,
         signal: AbortSignal.timeout(DOCUMENT_TIMEOUT_MS),
         headers: { accept: "application/json", "user-agent": "Dinghy-OAuth" },
       },

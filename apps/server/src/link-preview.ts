@@ -6,11 +6,13 @@ import { firstBareLink } from "../../../packages/widget/src/markdown.ts";
 import { SESSION } from "./api-security.ts";
 import type { App } from "./app.ts";
 import { type Database, withWorkspace } from "./db/tenant.ts";
-import { MEMBER_WRITE_ERRORS, NOT_FOUND } from "./errors.ts";
+import { failure, MEMBER_WRITE_ERRORS, NOT_FOUND, RATE_LIMITED } from "./errors.ts";
+import { decodeEntities } from "./html-entities.ts";
 import { sha256Hex } from "./identity.ts";
 import { conversationParams, OPEN_TO_WELCOME, WORKSPACE_PREFIX as PREFIX } from "./member.ts";
 import { findConversation, type StoredLink } from "./messages.ts";
-import type { RateLimit } from "./rate-limit.ts";
+import { type RateLimit, tooManyRequests } from "./rate-limit.ts";
+import { MINUTE_SECONDS } from "./time.ts";
 import {
   imageFormat,
   MAX_BYTES,
@@ -23,12 +25,14 @@ import { guardedLookup, hasPrivateLiteral, PUBLIC_ONLY } from "./webhooks.ts";
 /** One deadline for a page and its image, DNS and TLS included. */
 const FETCH_DEADLINE_MS = 5000;
 const MAX_REDIRECTS = 3;
-/** A page's head is read and parsed up to this size, so a large page costs little. */
+/** A page is read up to this size, so a large page costs little. Its head comes first. */
 const PAGE_MAX_BYTES = 64 * 1024;
 const TITLE_MAX = 200;
 /** The fetches one server process runs at once. */
 const MAX_FETCHES = 4;
 const PREVIEWS_PER_MINUTE = 30;
+const BUSY_RETRY_SECONDS = 1;
+const TOO_MANY_FETCHES = failure("busy", "Too many link previews at once. Try again.");
 /** A larger thumbnail goes without, so a reply that sends it back stays small. */
 const THUMBNAIL_MAX_BYTES = 24 * 1024;
 const TOKEN_MAX = 20_000;
@@ -69,6 +73,8 @@ function get(url: URL, network: PreviewNetwork, signal: AbortSignal): Promise<In
         lookup: network.lookup,
         ...(network.port !== undefined && { port: network.port }),
         signal,
+        // A pooled socket skips `lookup`, and a webhook to a private address may have opened it.
+        agent: false,
         // An answer compressed by the sender could expand far past the limits below.
         headers: { "user-agent": USER_AGENT, "accept-encoding": "identity" },
       },
@@ -96,14 +102,10 @@ async function open(start: URL, network: PreviewNetwork, signal: AbortSignal) {
   return null;
 }
 
-/**
- * Reads at most `maxBytes`, or up to `stopAt`, then drops the connection. `complete` is false when
- * the body was longer.
- */
-async function readUpTo(response: IncomingMessage, maxBytes: number, stopAt?: string) {
+/** Reads at most `maxBytes`, then drops the connection. `complete` is false when the body was longer. */
+async function readUpTo(response: IncomingMessage, maxBytes: number) {
   const parts: Buffer[] = [];
   let size = 0;
-  let tail = "";
   try {
     for await (const part of response as AsyncIterable<Buffer>) {
       parts.push(part);
@@ -111,35 +113,11 @@ async function readUpTo(response: IncomingMessage, maxBytes: number, stopAt?: st
       if (size > maxBytes) {
         return { bytes: Buffer.concat(parts).subarray(0, maxBytes), complete: false };
       }
-      if (stopAt !== undefined) {
-        const seen = (tail + part.toString("latin1")).toLowerCase();
-        if (seen.includes(stopAt)) break;
-        tail = seen.slice(-stopAt.length);
-      }
     }
     return { bytes: Buffer.concat(parts), complete: true };
   } finally {
     response.destroy();
   }
-}
-
-const NAMED_ENTITIES: Record<string, string> = {
-  amp: "&",
-  lt: "<",
-  gt: ">",
-  quot: '"',
-  apos: "'",
-  nbsp: " ",
-};
-const ENTITY = /&(?:#(\d{1,7})|#x([\da-f]{1,6})|([a-z]{2,6}));/gi;
-
-function decodeEntities(text: string): string {
-  return text.replace(ENTITY, (whole, decimal?: string, hex?: string, name?: string) => {
-    if (name !== undefined) return NAMED_ENTITIES[name.toLowerCase()] ?? whole;
-    const code = decimal === undefined ? Number.parseInt(hex ?? "", 16) : Number(decimal);
-    const valid = code > 0 && code <= 0x10ffff && (code < 0xd800 || code > 0xdfff);
-    return valid ? String.fromCodePoint(code) : "�";
-  });
 }
 
 // Control characters, and the marks that change the direction of text, so a title cannot reorder
@@ -212,9 +190,18 @@ function charsetOf(contentType: string | undefined) {
   return parameter?.slice("charset=".length).replace(/["']/g, "").trim() || undefined;
 }
 
+const META_FIELDS = new Set(["og:title", "twitter:title", "og:image", "twitter:image"]);
+/** Elements whose text runs to their closing tag, with no tags inside. */
+const RAW_TEXT_END = new Map([
+  ["title", /<\/title/gi],
+  ["script", /<\/script/gi],
+  ["style", /<\/style/gi],
+]);
+
 /**
- * The first value of each meta tag, the first title and the declared charset, in one forward pass.
- * A comment hides what it holds, and a title runs to its `</title>`, or to the end.
+ * The first value of each meta tag a card uses, the first title and the declared charset, in one
+ * forward pass that ends with the head. A comment hides what it holds, and a title, a script or a
+ * style runs to its closing tag, or to the end.
  */
 function scanHead(html: string) {
   const meta = new Map<string, string>();
@@ -226,20 +213,24 @@ function scanHead(html: string) {
       const close = html.indexOf("-->", at + 4);
       if (close === -1) break;
       next = close + 3;
+    } else if (html.slice(at, at + 6).toLowerCase() === "</head") {
+      break;
     } else if (/^[a-z]$/i.test(html.charAt(at + 1))) {
       const tag = readTag(html, at);
-      if (tag === null) break;
+      if (tag === null || tag.name === "body") break;
       next = tag.end;
       const { attributes } = tag;
-      if (tag.name === "title" && title === undefined) {
-        const closing = /<\/title/gi;
+      const closing = RAW_TEXT_END.get(tag.name);
+      if (closing !== undefined) {
         closing.lastIndex = tag.end;
         next = closing.exec(html)?.index ?? html.length;
-        title = html.slice(tag.end, next);
+        if (tag.name === "title") title ??= html.slice(tag.end, next);
       } else if (tag.name === "meta") {
         const key = (attributes.get("property") ?? attributes.get("name"))?.toLowerCase();
         const content = attributes.get("content");
-        if (key !== undefined && content !== undefined && !meta.has(key)) meta.set(key, content);
+        if (key !== undefined && META_FIELDS.has(key) && content !== undefined && !meta.has(key)) {
+          meta.set(key, content);
+        }
         const isContentType = attributes.get("http-equiv")?.toLowerCase() === "content-type";
         charset ??= attributes.get("charset") ?? (isContentType ? charsetOf(content) : undefined);
       }
@@ -263,13 +254,14 @@ function decodePage(bytes: Uint8Array, contentType: string | undefined): string 
 
 /** The page's title and image address, from its Open Graph or Twitter tags, else its <title>. */
 export function pageFields(html: string): { title: string | null; image: string | null } {
-  const { meta, title: titleTag } = scanHead(html);
-  const titles = [meta.get("og:title"), meta.get("twitter:title"), titleTag];
-  const title = titles.map((one) => (one === undefined ? "" : cleanTitle(one))).find(Boolean);
-  const image = meta.get("og:image") ?? meta.get("twitter:image");
+  const { meta, title } = scanHead(html);
+  const firstOf = (values: (string | undefined)[], clean: (value: string) => string) =>
+    values.map((value) => (value === undefined ? "" : clean(value))).find(Boolean) ?? null;
   return {
-    title: title ?? null,
-    image: image === undefined ? null : decodeEntities(image).trim(),
+    title: firstOf([meta.get("og:title"), meta.get("twitter:title"), title], cleanTitle),
+    image: firstOf([meta.get("og:image"), meta.get("twitter:image")], (value) =>
+      decodeEntities(value).trim(),
+    ),
   };
 }
 
@@ -280,9 +272,19 @@ async function thumbnail(source: string, base: URL, network: PreviewNetwork, sig
   if (opened === null) return null;
   const { bytes, complete } = await readUpTo(opened.response, MAX_BYTES);
   if (!complete || imageFormat(bytes) === null) return null;
-  const done = await processThumbnail(bytes);
+  const done = await processThumbnail(bytes, signal);
   return typeof done === "string" || done.byteLength > THUMBNAIL_MAX_BYTES ? null : done;
 }
+
+/** `work`'s answer, or null once `signal` fires. */
+const beforeDeadline = <T>(work: Promise<T | null>, signal: AbortSignal) =>
+  Promise.race([
+    work,
+    new Promise<null>((resolve) => {
+      if (signal.aborted) resolve(null);
+      else signal.addEventListener("abort", () => resolve(null), { once: true });
+    }),
+  ]);
 
 /** The card for a link, or null when the page cannot be read or has no title. */
 export async function fetchPreview(
@@ -299,13 +301,16 @@ export async function fetchPreview(
       page.response.destroy();
       return null;
     }
-    const { bytes } = await readUpTo(page.response, PAGE_MAX_BYTES, "</head>");
+    const { bytes } = await readUpTo(page.response, PAGE_MAX_BYTES);
     const fields = pageFields(decodePage(bytes, page.response.headers["content-type"]));
     if (fields.title === null) return null;
     const image =
       fields.image === null
         ? null
-        : await thumbnail(fields.image, page.url, network, signal).catch(() => null);
+        : await beforeDeadline(
+            thumbnail(fields.image, page.url, network, signal).catch(() => null),
+            signal,
+          );
     return { url, title: fields.title, image };
   } catch {
     // A refused address, a timeout or a broken connection: the link gets no card.
@@ -405,7 +410,7 @@ const previewRoute = createRoute({
   security: SESSION,
   summary: "Preview a link for a reply: the page's title and a thumbnail",
   description:
-    "The server fetches the page. `preview` is null when the page has no title, cannot be read, or the workspace asked for more than 30 previews this minute. Send `token` and `image.data` back with the reply as `linkPreview` to show the card under it.",
+    "The server fetches the page. `preview` is null when the page has no title or cannot be read. Past 30 previews a minute in the workspace, or 4 fetches at once on the server, it answers 429 or 503: ask again later. Send `token` and `image.data` back with the reply as `linkPreview` to show the card under it.",
   request: {
     params: conversationParams,
     body: {
@@ -436,6 +441,7 @@ const previewRoute = createRoute({
       },
     },
     ...MEMBER_WRITE_ERRORS,
+    ...RATE_LIMITED,
   },
 });
 
@@ -452,16 +458,17 @@ export function registerLinkPreviewRoute(
   app.openapi(previewRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
     const { conversationId } = c.req.valid("param");
-    // Over a limit, the link gets no card, which is not an error. The slot is taken before the
-    // first await, so requests that arrive together cannot all pass the check.
-    if (fetching >= MAX_FETCHES) return c.json({ preview: null }, 200);
+    // The slot is taken before the first await, so requests that arrive together cannot all pass.
+    if (fetching >= MAX_FETCHES) {
+      c.header("retry-after", String(BUSY_RETRY_SECONDS));
+      return c.json(TOO_MANY_FETCHES, 503);
+    }
     fetching += 1;
     try {
       const found = await withWorkspace(db, id, (tx) => findConversation(tx, id, conversationId));
       if (found === null) return c.json(NOT_FOUND, 404);
-      if ((await rateLimit.hit("link-preview", id, PREVIEWS_PER_MINUTE, 60)) !== null) {
-        return c.json({ preview: null }, 200);
-      }
+      const wait = await rateLimit.hit("link-preview", id, PREVIEWS_PER_MINUTE, MINUTE_SECONDS);
+      if (wait !== null) return tooManyRequests(c, wait);
       const fetched = await fetchPreview(c.req.valid("json").url, network);
       return c.json({ preview: fetched && signedPreview(uploads, id, fetched) }, 200);
     } finally {

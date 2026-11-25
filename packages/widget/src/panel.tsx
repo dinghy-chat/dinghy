@@ -502,7 +502,7 @@ export function ChatHead({
 function LinkPreview({ link, onImageError }: { link: LinkCard; onImageError(): void }) {
   return (
     <a class="lp" href={link.url} target="_blank" rel="noopener noreferrer">
-      {link.image && <img src={link.image.url} alt="" onError={onImageError} />}
+      {link.image && <img src={link.image.url} alt="" loading="lazy" onError={onImageError} />}
       <span>
         <b>{link.title}</b>
         <small>

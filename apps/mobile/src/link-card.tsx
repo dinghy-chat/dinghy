@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import {
-  createLinkPreviews,
   type LinkCard,
-  type LinkPreview,
+  type LinkPreviewOptions,
   linkHost,
+  useLinkPreviewWith,
 } from "../../operator/src/link-preview.ts";
 import { t } from "../../operator/src/text.ts";
 import { fonts } from "./fonts";
@@ -14,20 +14,9 @@ import type { Palette } from "./theme";
 
 const THUMBNAIL_PX = 44;
 
-/** The card of the draft's first bare link while `isActive`, and the ✕ that removes it. */
-export function useLinkPreview(
-  ask: (url: string) => Promise<LinkPreview | null>,
-  draft: string,
-  isActive: boolean,
-) {
-  const [card, setCard] = useState<LinkPreview | null>(null);
-  const latestAsk = useRef(ask);
-  latestAsk.current = ask;
-  const [previews] = useState(() => createLinkPreviews((url) => latestAsk.current(url), setCard));
-  useEffect(() => previews.update(draft, isActive), [previews, draft, isActive]);
-  useEffect(() => previews.stop, [previews]);
-  return { card, remove: previews.remove };
-}
+/** The composer's link card, on this app's React. */
+export const useLinkPreview = (options: LinkPreviewOptions) =>
+  useLinkPreviewWith({ useEffect, useRef, useState }, options);
 
 /**
  * A link's card: a thumbnail, the page's title and the link's hostname. A tap opens the link.

@@ -470,12 +470,10 @@ export type NewAttachment = {
   contentType: string;
 } & ({ type: "image"; width: number; height: number } | { type: "file"; name: string });
 
+export type NewImage = Extract<NewAttachment, { type: "image" }>;
+
 /** A link's card that waits for its reply, with its thumbnail stored. */
-export type NewLink = {
-  url: string;
-  title: string;
-  image: Extract<NewAttachment, { type: "image" }> | null;
-};
+export type NewLink = { url: string; title: string; image: NewImage | null };
 
 const linkMetadata = ({ url, title, image }: NewLink): StoredLink => ({
   url,

@@ -27,9 +27,13 @@ interface TableColumn {
   name: string;
 }
 
-interface StoredDraft {
+/** An unsent reply, and the links whose card the operator removed from it. */
+export interface ReplyDraft {
   body: string;
+  removedLinks: string[];
 }
+
+const NO_DRAFT: ReplyDraft = { body: "", removedLinks: [] };
 
 interface QueueDatabase {
   execSync(sql: string): void;
@@ -76,8 +80,13 @@ export function openReplyQueue(db: QueueDatabase, scope: ReplyScope, newId: () =
     account TEXT NOT NULL,
     conversationId TEXT NOT NULL,
     body TEXT NOT NULL,
+    removedLinks TEXT,
     PRIMARY KEY (account, conversationId)
   )`);
+  const draftColumns = db.getAllSync<TableColumn>("PRAGMA table_info(public_reply_draft)");
+  if (!draftColumns.some((column) => column.name === "removedLinks")) {
+    db.execSync("ALTER TABLE public_reply_draft ADD COLUMN removedLinks TEXT");
+  }
   const account = JSON.stringify([scope.origin, scope.workspaceId, scope.operatorId]);
   const select =
     "SELECT conversationId, clientId, body, replyToMessageId, linkPreview FROM pending_reply WHERE account = ?";
@@ -93,16 +102,18 @@ export function openReplyQueue(db: QueueDatabase, scope: ReplyScope, newId: () =
             );
       return rows.map(pendingOf);
     },
-    getDraft(conversationId: string) {
-      return (
-        db.getAllSync<StoredDraft>(
-          "SELECT body FROM public_reply_draft WHERE account = ? AND conversationId = ?",
-          account,
-          conversationId,
-        )[0]?.body ?? ""
-      );
+    getDraft(conversationId: string): ReplyDraft {
+      const row = db.getAllSync<{ body: string; removedLinks: string | null }>(
+        "SELECT body, removedLinks FROM public_reply_draft WHERE account = ? AND conversationId = ?",
+        account,
+        conversationId,
+      )[0];
+      if (row === undefined) return NO_DRAFT;
+      const removedLinks =
+        row.removedLinks === null ? [] : (JSON.parse(row.removedLinks) as string[]);
+      return { body: row.body, removedLinks };
     },
-    saveDraft(conversationId: string, body: string) {
+    saveDraft(conversationId: string, { body, removedLinks }: ReplyDraft) {
       if (!body) {
         db.runSync(
           "DELETE FROM public_reply_draft WHERE account = ? AND conversationId = ?",
@@ -112,11 +123,14 @@ export function openReplyQueue(db: QueueDatabase, scope: ReplyScope, newId: () =
         return;
       }
       db.runSync(
-        `INSERT INTO public_reply_draft (account, conversationId, body) VALUES (?, ?, ?)
-         ON CONFLICT (account, conversationId) DO UPDATE SET body = excluded.body`,
+        `INSERT INTO public_reply_draft (account, conversationId, body, removedLinks)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT (account, conversationId)
+         DO UPDATE SET body = excluded.body, removedLinks = excluded.removedLinks`,
         account,
         conversationId,
         body,
+        JSON.stringify(removedLinks),
       );
     },
     enqueue(

@@ -94,11 +94,15 @@ export function isBareLink(href: string): boolean {
 export const isBareLinkText = (href: string, children: readonly unknown[]): boolean =>
   children.length === 1 && children[0] === href && isBareLink(href);
 
+/** A quick test before the parse, which most drafts do not need. */
+const HAS_WEB_ADDRESS = /https?:\/\//i;
+
 /**
  * The first link that a message writes as its bare address, outside code and quotes, or null. Only
  * this link gets a preview card.
  */
 export function firstBareLink(source: string): string | null {
+  if (!HAS_WEB_ADDRESS.test(source)) return null;
   const find = (parts: Inline[]): string | null => {
     for (const part of parts) {
       if (typeof part === "string" || part.tag === "code") continue;

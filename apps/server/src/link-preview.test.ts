@@ -1,6 +1,12 @@
 import { randomBytes, randomUUID } from "node:crypto";
-import { mkdtemp, readdir } from "node:fs/promises";
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { mkdtemp, readdir, readFile } from "node:fs/promises";
+import {
+  createServer,
+  get,
+  type IncomingMessage,
+  type Server,
+  type ServerResponse,
+} from "node:http";
 import type { LookupFunction } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -17,12 +23,12 @@ import { asOperator, callTool, withKey } from "../test/requests.ts";
 import { SITE, visitorStarts } from "../test/visitors.ts";
 import { type App, createApp } from "./app.ts";
 import { createAuth } from "./auth.ts";
-import { attachment, message, storageDeletion } from "./db/schema.ts";
+import { attachment, message, session, storageDeletion } from "./db/schema.ts";
 import type { Database } from "./db/tenant.ts";
 import { fetchPreview, type PreviewNetwork, pageFields } from "./link-preview.ts";
 import { localStore, type ObjectStore } from "./storage.ts";
 import { DAY_MS } from "./time.ts";
-import { createUploads } from "./uploads.ts";
+import { createUploads, processThumbnail } from "./uploads.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
 
 const logger = pino({ level: "silent" });
@@ -217,6 +223,40 @@ describe("fetching a page", () => {
     expect(performance.now() - started).toBeLessThan(1000);
   });
 
+  test("a fetch never takes a pooled connection, which would skip the address check", async () => {
+    await new Promise<void>((resolve, reject) => {
+      get({ host: "docs.example", port: network.port, path: "/reset", lookup: toLocal }, (answer) =>
+        answer.resume().on("end", resolve),
+      ).on("error", reject);
+    });
+    const refuse = ((_host, _options, callback) =>
+      callback(new Error("A private address"), "", 4)) as LookupFunction;
+    expect(
+      await fetchPreview("http://docs.example/reset", { ...network, lookup: refuse }),
+    ).toBeNull();
+  });
+
+  test("the head ends at its own end, and a script, a style or a comment hides its tags", () => {
+    expect(pageFields("<!-- </head> --><title>After</title>").title).toBe("After");
+    const hidden =
+      "<script>'<title>Script</title>'</script><style>a::after{content:'<meta property=og:image content=/s.png>'}</style><title>Page</title>";
+    expect(pageFields(hidden)).toEqual({ title: "Page", image: null });
+    const body =
+      '<title>Head</title></head><body><meta property="og:image" content="/body.png"><meta property="og:title" content="Body">';
+    expect(pageFields(body)).toEqual({ title: "Head", image: null });
+    expect(pageFields('<body><meta property="og:title" content="Body">').title).toBeNull();
+  });
+
+  test("named entities decode, and a blank image tag gives way to the next", () => {
+    const html =
+      '<title>Caf&eacute; &mdash; Menu</title><meta property="og:image" content=" "><meta name="twitter:image" content="/menu.png">';
+    expect(pageFields(html)).toEqual({ title: "Café — Menu", image: "/menu.png" });
+  });
+
+  test("a thumbnail whose turn comes after the deadline is skipped", async () => {
+    expect(await processThumbnail(picture, AbortSignal.abort())).toBe("too_slow");
+  });
+
   test("a page is read in the charset its header or its meta tags name", async () => {
     for (const [path, title] of [
       ["/latin1", "Café"],
@@ -238,6 +278,7 @@ describe("a reply with a link's card", () => {
   let auth: ReturnType<typeof createAuth>;
   let ana: { id: string; cookie: string };
   let keyToken: string;
+  let storeDirectory: string;
 
   const inSpace = (path: string) => `/v1/operator/workspaces/${space.id}${path}`;
 
@@ -248,18 +289,25 @@ describe("a reply with a link's card", () => {
     token: string;
   }
 
-  async function preview(
+  const askPreview = async (
     conversationId: string,
     url: string,
     by = { workspaceId: space.id, cookie: ana.cookie },
-  ): Promise<Card | null> {
-    const response = await asOperator(
+  ) =>
+    asOperator(
       app,
       by.cookie,
       "POST",
       `/v1/operator/workspaces/${by.workspaceId}/conversations/${conversationId}/link-preview`,
       { url },
     );
+
+  async function preview(
+    conversationId: string,
+    url: string,
+    by = { workspaceId: space.id, cookie: ana.cookie },
+  ): Promise<Card | null> {
+    const response = await askPreview(conversationId, url, by);
     expect(response.status).toBe(200);
     return ((await response.json()) as { preview: Card | null }).preview;
   }
@@ -270,18 +318,20 @@ describe("a reply with a link's card", () => {
     link?: { url: string; title: string; image: { url: string } | null } | null;
   }
 
+  const sendReply = (
+    conversationId: string,
+    body: string,
+    card: Card | null,
+    { server = app, cookie = ana.cookie } = {},
+  ) =>
+    asOperator(server, cookie, "POST", inSpace(`/conversations/${conversationId}/messages`), {
+      clientId: randomUUID(),
+      body,
+      linkPreview: card && { token: card.token, image: card.image?.data ?? null },
+    });
+
   async function reply(conversationId: string, body: string, card: Card | null, server = app) {
-    const response = await asOperator(
-      server,
-      ana.cookie,
-      "POST",
-      inSpace(`/conversations/${conversationId}/messages`),
-      {
-        clientId: randomUUID(),
-        body,
-        linkPreview: card && { token: card.token, image: card.image?.data ?? null },
-      },
-    );
+    const response = await sendReply(conversationId, body, card, { server });
     expect(response.status).toBe(201);
     return (await response.json()) as Line;
   }
@@ -308,7 +358,8 @@ describe("a reply with a link's card", () => {
     owner = database.connect("migrator").db;
     valkey = new Redis(VALKEY_URL);
     auth = createAuth({ db, secret: AUTH_SECRET, baseURL: PUBLIC_URL });
-    app = serverWith(localStore(await mkdtemp(join(tmpdir(), "dinghy-link-"))));
+    storeDirectory = await mkdtemp(join(tmpdir(), "dinghy-link-"));
+    app = serverWith(localStore(storeDirectory));
     space = await createWorkspace(db, "Acme", [SITE]);
     ana = await signedInOperator({
       app,
@@ -345,7 +396,9 @@ describe("a reply with a link's card", () => {
       image: { url: expect.stringContaining("/v1/files/"), width: 112, height: 112 },
     };
     expect(sent.link).toEqual(shown);
-    expect(await thumbnails(sent.id)).toHaveLength(1);
+    const [stored] = await thumbnails(sent.id);
+    const signed = Buffer.from(card?.image?.data.split(",")[1] ?? "", "base64");
+    expect(await readFile(join(storeDirectory, stored?.storageKey ?? ""))).toEqual(signed);
 
     const read = await asOperator(
       app,
@@ -429,7 +482,7 @@ describe("a reply with a link's card", () => {
     expect(await thumbnails(removed.id)).toEqual([]);
   });
 
-  test("a workspace gets 30 previews a minute, and no card past them", async () => {
+  test("a workspace gets 30 previews a minute, and is asked to wait past them", async () => {
     const busy = await createWorkspace(db, "Busy", [SITE]);
     const bo = await signedInOperator({
       app,
@@ -443,11 +496,13 @@ describe("a reply with a link's card", () => {
     const by = { workspaceId: busy.id, cookie: bo.cookie };
     const { conversationId } = await visitorStarts(app, busy.publicKey, "Many links");
     const cards = [];
-    for (let i = 0; i < 31; i += 1) {
+    for (let i = 0; i < 30; i += 1) {
       cards.push(await preview(conversationId, "http://docs.example/private-image", by));
     }
-    expect(cards.slice(0, 30).every((card) => card?.title === "Docs")).toBe(true);
-    expect(cards[30]).toBeNull();
+    expect(cards.every((card) => card?.title === "Docs")).toBe(true);
+    const over = await askPreview(conversationId, "http://docs.example/private-image", by);
+    expect(over.status).toBe(429);
+    expect(over.headers.get("retry-after")).not.toBeNull();
   });
 
   test("the longest text reply with the largest card fits the body limit", async () => {
@@ -495,7 +550,7 @@ describe("a reply with a link's card", () => {
     expect(await readdir(join(directory, space.id)).catch(() => [])).toEqual([]);
   });
 
-  test("requests that arrive together run at most 4 fetches", async () => {
+  test("requests that arrive together run at most 4 fetches, and the rest are asked to retry", async () => {
     const { conversationId } = await visitorStarts(app, space.publicKey, "Together");
     // Each request's rate limit waits until all 6 have reached it or answered, so a cap that is
     // checked before that wait and counted after it lets them all through.
@@ -509,7 +564,7 @@ describe("a reply with a link's card", () => {
     }) as typeof valkey.multi);
     let answered = 0;
     const asks = Array.from({ length: 6 }, () =>
-      preview(conversationId, "http://docs.example/gate").finally(() => {
+      askPreview(conversationId, "http://docs.example/gate").finally(() => {
         answered += 1;
       }),
     );
@@ -524,8 +579,54 @@ describe("a reply with a link's card", () => {
       response.writeHead(200, { "content-type": "text/html" });
       response.end(page("<title>Gate</title>"));
     }
-    const cards = await Promise.all(asks);
-    expect(cards.filter((one) => one !== null)).toHaveLength(4);
+    const statuses = (await Promise.all(asks)).map((response) => response.status);
+    expect(statuses.filter((status) => status === 200)).toHaveLength(4);
+    expect(statuses.filter((status) => status === 503)).toHaveLength(2);
     expect(gated).toEqual([]);
+  });
+
+  test("a reply whose operator signed out while its thumbnail was stored does not go", async () => {
+    const cy = await signedInOperator({
+      app,
+      auth,
+      owner,
+      email: "cy@example.com",
+      name: "Cy",
+      workspaceId: space.id,
+      role: "member",
+    });
+    const directory = await mkdtemp(join(tmpdir(), "dinghy-link-slow-"));
+    const local = localStore(directory);
+    let isStoring = false;
+    let finishStoring = () => {};
+    const slow: ObjectStore = {
+      ...local,
+      put: async (...args) => {
+        isStoring = true;
+        await new Promise<void>((resolve) => {
+          finishStoring = resolve;
+        });
+        return local.put(...args);
+      },
+    };
+    const { conversationId } = await visitorStarts(app, space.publicKey, "Slow store");
+    const card = await preview(conversationId, "http://docs.example/reset", {
+      workspaceId: space.id,
+      cookie: cy.cookie,
+    });
+    const sending = sendReply(conversationId, "See http://docs.example/reset", card, {
+      server: serverWith(slow),
+      cookie: cy.cookie,
+    });
+    await vi.waitFor(() => expect(isStoring).toBe(true));
+    await owner.delete(session).where(eq(session.userId, cy.id));
+    finishStoring();
+    expect((await sending).status).toBe(404);
+    const sent = await owner
+      .select()
+      .from(message)
+      .where(eq(message.conversationId, conversationId));
+    expect(sent.map((row) => row.body)).toEqual(["Slow store"]);
+    expect(await readdir(join(directory, space.id))).toEqual([]);
   });
 });

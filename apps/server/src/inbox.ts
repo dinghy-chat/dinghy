@@ -1331,7 +1331,10 @@ export function createInbox({
       };
     },
 
-    /** A text reply, or with `note` a note that only the team sees. */
+    /**
+     * A text reply, or with `note` a note that only the team sees. `check` runs in its transaction
+     * first.
+     */
     reply(
       workspaceId: string,
       actor: Actor,
@@ -1348,20 +1351,22 @@ export function createInbox({
         /** Only an operator's reply. */
         link?: NewLink | undefined;
       },
+      check?: (tx: Transaction) => Promise<void>,
     ) {
       const { note, mentions, changeRequestId, link, ...text } = input;
       // A welcome chat copies the card's thumbnail as it copies an image.
       const content = { attachment: link?.image ?? undefined, isNote: note };
       const request = changeRequestId === undefined ? text : { ...text, changeRequestId };
-      return reply(workspaceId, actor, conversationId, content, request, (tx, author) =>
-        appendMessage(
+      return reply(workspaceId, actor, conversationId, content, request, async (tx, author) => {
+        await check?.(tx);
+        return appendMessage(
           tx,
           workspaceId,
           author,
           note ? { ...text, note, mentions } : { ...text, link },
           limits,
-        ),
-      );
+        );
+      });
     },
 
     /**
@@ -1449,7 +1454,7 @@ export function refusedReply(outcome: Exclude<ReplyOutcome, { kind: "sent" | "dr
 /**
  * A reply with its link's card. The thumbnail is stored first, and goes away when the reply was a
  * retry or failed. A thumbnail that cannot be stored, or that the workspace has no room for, leaves
- * the card without one.
+ * the card without one. Storing it can take a while, so `check` reads the operator's access again.
  */
 async function replyWithLink(
   inbox: Inbox,
@@ -1459,22 +1464,24 @@ async function replyWithLink(
   conversationId: string,
   input: Parameters<Inbox["reply"]>[3],
   { image, ...link }: NonNullable<ReturnType<typeof previewFromToken>>,
+  check: (tx: Transaction) => Promise<void>,
 ): Promise<ReplyOutcome> {
   const send = (stored: NewLink["image"]) =>
-    inbox.reply(workspaceId, actor, conversationId, { ...input, link: { ...link, image: stored } });
+    inbox.reply(
+      workspaceId,
+      actor,
+      conversationId,
+      { ...input, link: { ...link, image: stored } },
+      check,
+    );
   if (image === null) return send(null);
   let isSending = false;
   const kept = await uploads
-    .receiveBytes(
-      image,
-      workspaceId,
-      async (upload) => {
-        isSending = true;
-        const outcome = await send(upload.type === "image" ? upload : null);
-        return { outcome, created: outcome.kind === "sent" && outcome.created };
-      },
-      null,
-    )
+    .keepThumbnail(image, workspaceId, async (upload) => {
+      isSending = true;
+      const outcome = await send(upload);
+      return { outcome, created: outcome.kind === "sent" && outcome.created };
+    })
     .catch((error: unknown) => {
       // The reply's own failure stands. Only the object store's leaves the card without its image.
       if (isSending) throw error;
@@ -1483,10 +1490,19 @@ async function replyWithLink(
   return kept === null || "refused" in kept ? send(null) : kept.result.outcome;
 }
 
-/** A key that was revoked during an upload. Its transaction rolls back. */
-async function keyStillHolds(db: Database, actor: KeyActor) {
-  if (!(await keyStillValid(db, actor))) throw new AccessEndedError();
-}
+/**
+ * Reads the session and membership, or the key, again in a reply's transaction, for an upload that
+ * took a while. Access that ended rolls the transaction back.
+ */
+const accessStillHolds =
+  (db: Database, actor: Actor, sessionId: string, workspaceId: string) =>
+  async (tx: Transaction) => {
+    const holds =
+      actor.kind === "key"
+        ? await keyStillValid(db, actor)
+        : await mayStillRead(tx, sessionId, actor.operatorId, workspaceId);
+    if (!holds) throw new AccessEndedError();
+  };
 
 export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrls: ImageUrls }) {
   const { db, uploads, imageUrls, limits, live, logger, stream } = options;
@@ -1557,10 +1573,16 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
       linkPreview === undefined || actor.kind !== "operator" || reply.note || uploads === undefined
         ? null
         : previewFromToken(uploads, id, reply.body, linkPreview);
+    const check = accessStillHolds(db, actor, c.get("sessionId"), id);
     const outcome =
       link === null || uploads === undefined
         ? await inbox.reply(id, actor, conversationId, reply)
-        : await replyWithLink(inbox, uploads, id, actor, conversationId, reply, link);
+        : await replyWithLink(inbox, uploads, id, actor, conversationId, reply, link, check).catch(
+            (error: unknown) => {
+              if (error instanceof AccessEndedError) return { kind: "missing" as const };
+              throw error;
+            },
+          );
     if (outcome.kind === "sent") return c.json(outcome.message, outcome.created ? 201 : 200);
     if (outcome.kind === "drafted") return c.json({ draft: outcome.draft }, 202);
     const refused = refusedReply(outcome);
@@ -1579,13 +1601,7 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
         async (tx) => (await findConversation(tx, id, conversationId)) !== null,
       );
       if (!exists) return c.json(NOT_FOUND, 404);
-      // The upload can take minutes, so the session and membership, or the key, are read again.
-      const check = async (tx: Transaction) => {
-        if (actor.kind === "key") return keyStillHolds(db, actor);
-        if (!(await mayStillRead(tx, c.get("sessionId"), actor.operatorId, id))) {
-          throw new AccessEndedError();
-        }
-      };
+      const check = accessStillHolds(db, actor, c.get("sessionId"), id);
       const outcome = await uploads
         .receive(
           c.req.raw,

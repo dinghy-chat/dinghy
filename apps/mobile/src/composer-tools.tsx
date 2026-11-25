@@ -21,6 +21,7 @@ import {
 import { markdownText } from "../../../packages/widget/src/markdown.ts";
 import { type LinkPreview, previewCard } from "../../operator/src/link-preview.ts";
 import { t } from "../../operator/src/text.ts";
+import type { ReplyDraft } from "../outbox";
 import { ApiError, type DinghyApi } from "./api";
 import { usePhotoComposer } from "./attachments";
 import { readableError } from "./common";
@@ -48,7 +49,7 @@ type ComposerProps = {
   api: DinghyApi;
   bottomInset: number;
   conversationId: string;
-  initialDraft: string;
+  initialDraft: ReplyDraft;
   inputRef: RefObject<EnrichedTextInputInstance | null>;
   keyboardVisible: boolean;
   /** The visitor's name, for the placeholder and the reply chip. */
@@ -56,7 +57,7 @@ type ComposerProps = {
   palette: Palette;
   replyingTo: Message | null;
   onCancelReply(): void;
-  onDraftChange(body: string): void;
+  onDraftChange(draft: ReplyDraft): void;
   onError(error: unknown): void;
   onNoteAdded(): void;
   onPhotoSent(): void;
@@ -138,11 +139,12 @@ export function ThreadComposer({
   onSend,
 }: ComposerProps) {
   const [mode, setMode] = useState<Mode>("reply");
-  const [replyDraft, setReplyDraft] = useState(initialDraft);
+  const [replyDraft, setReplyDraft] = useState(initialDraft.body);
+  const [removedLinks, setRemovedLinks] = useState(initialDraft.removedLinks);
   const [noteDraft, setNoteDraft] = useState("");
   const [focused, setFocused] = useState(false);
   // The field's text as it shows it, without Markdown marks. Its selection counts in this text.
-  const [initialHtml] = useState(() => draftHtml(initialDraft));
+  const [initialHtml] = useState(() => draftHtml(initialDraft.body));
   const [fieldText, setFieldText] = useState(() => draftMarkdown(initialHtml).text);
   const [selection, setSelection] = useState<Selection>({
     start: fieldText.length,
@@ -150,7 +152,7 @@ export function ThreadComposer({
   });
   const [styleState, setStyleState] = useState<OnChangeStateEvent | null>(null);
   const field = useRef({ html: initialHtml, text: fieldText, mode: "reply" as Mode });
-  const drafts = useRef({ reply: initialDraft, note: "" });
+  const drafts = useRef({ reply: initialDraft.body, note: "" });
   const [toolsOpen, setToolsOpen] = useState(false);
   const [formatting, setFormatting] = useState(false);
   const [sending, setSending] = useState(false);
@@ -227,11 +229,16 @@ export function ThreadComposer({
     if (wantsSavedReplies) void loadSavedReplies();
   }, [wantsSavedReplies]);
 
-  const linkPreview = useLinkPreview(
-    (url) => api.linkPreview(conversationId, url),
-    replyDraft,
-    !isNote,
-  );
+  const linkPreview = useLinkPreview({
+    ask: (url) => api.linkPreview(conversationId, url),
+    draft: replyDraft,
+    isActive: !isNote,
+    removedLinks,
+    setRemovedLinks: (links) => {
+      setRemovedLinks(links);
+      onDraftChange({ body: replyDraft, removedLinks: links });
+    },
+  });
 
   const photo = usePhotoComposer({
     api,
@@ -256,7 +263,7 @@ export function ThreadComposer({
       return;
     }
     setReplyDraft(body);
-    onDraftChange(body);
+    onDraftChange({ body, removedLinks });
   };
 
   /**

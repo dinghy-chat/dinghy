@@ -11670,7 +11670,7 @@
           }
         ],
         "summary": "Preview a link for a reply: the page's title and a thumbnail",
-        "description": "The server fetches the page. `preview` is null when the page has no title, cannot be read, or the workspace asked for more than 30 previews this minute. Send `token` and `image.data` back with the reply as `linkPreview` to show the card under it.",
+        "description": "The server fetches the page. `preview` is null when the page has no title or cannot be read. Past 30 previews a minute in the workspace, or 4 fetches at once on the server, it answers 429 or 503: ask again later. Send `token` and `image.data` back with the reply as `linkPreview` to show the card under it.",
         "parameters": [
           {
             "schema": {
@@ -11804,6 +11804,16 @@
           },
           "413": {
             "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "too_many_requests: over the rate limit. Retry after `retry-after`",
             "content": {
               "application/json": {
                 "schema": {

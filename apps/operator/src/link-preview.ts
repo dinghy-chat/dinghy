@@ -39,45 +39,90 @@ export const linkHost = (url: string) => (URL.canParse(url) ? new URL(url).hostn
 
 /**
  * Follows a draft and shows the card of its first bare link, or null. Only the answer to the latest
- * request counts. A card the operator removed does not come back until the draft is sent or
- * cleared, even when `isActive` turns off for a note and back on.
+ * request counts. A link in `removedLinks` gets no card. A request that failed, as on a busy server,
+ * asks again at the next edit.
  */
 export function createLinkPreviews(
   ask: (url: string) => Promise<LinkPreview | null>,
   show: (card: LinkPreview | null) => void,
 ) {
+  let draft = "";
   let link: string | null = null;
-  let length = 0;
+  let hasFailed = false;
   let latest = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const removed = new Set<string>();
   return {
-    update(draft: string, isActive: boolean) {
+    update(text: string, isActive: boolean, removedLinks: readonly string[]) {
+      const isEdit = text !== draft;
       // Several characters at once are a paste.
-      const isPaste = draft.length - length > 1;
-      length = draft.length;
-      if (draft === "") removed.clear();
-      const next = isActive ? firstBareLink(draft) : null;
-      if (next === link) return;
+      const isPaste = text.length - draft.length > 1;
+      draft = text;
+      const found = isActive ? firstBareLink(text) : null;
+      const next = found !== null && removedLinks.includes(found) ? null : found;
+      if (next === link && !(hasFailed && isEdit)) return;
       link = next;
+      hasFailed = false;
       latest += 1;
       clearTimeout(timer);
       show(null);
-      if (next === null || removed.has(next)) return;
+      if (next === null) return;
       const request = latest;
       const fetch = () =>
         ask(next).then(
           (card) => {
-            if (request === latest && !removed.has(next)) show(card);
+            if (request === latest) show(card);
           },
-          () => undefined,
+          () => {
+            if (request === latest) hasFailed = true;
+          },
         );
       timer = setTimeout(fetch, isPaste ? 0 : TYPING_PAUSE_MS);
     },
-    remove() {
-      if (link !== null) removed.add(link);
-      show(null);
-    },
     stop: () => clearTimeout(timer),
+  };
+}
+
+/** The React hooks that `useLinkPreviewWith` needs. Each app passes its own, as each bundles its React. */
+export interface ReactHooks {
+  useState<S>(initial: () => S): [S, (next: S) => void];
+  useEffect(effect: () => void, deps: readonly unknown[]): void;
+  useRef<T>(initial: T): { current: T };
+}
+
+const NO_LINKS: readonly string[] = [];
+
+export interface LinkPreviewOptions {
+  ask: (url: string) => Promise<LinkPreview | null>;
+  draft: string;
+  isActive: boolean;
+  removedLinks?: readonly string[] | undefined;
+  setRemovedLinks: (links: string[]) => void;
+}
+
+/**
+ * The card of the draft's first bare link while `isActive`, and `remove`, which adds its link to
+ * `removedLinks`. The draft keeps them, so a removed card stays away until the draft empties.
+ */
+export function useLinkPreviewWith(
+  { useEffect, useRef, useState }: ReactHooks,
+  { ask, draft, isActive, removedLinks = NO_LINKS, setRemovedLinks }: LinkPreviewOptions,
+) {
+  const [card, setCard] = useState<LinkPreview | null>(() => null);
+  const latestAsk = useRef(ask);
+  latestAsk.current = ask;
+  const [previews] = useState(() => createLinkPreviews((url) => latestAsk.current(url), setCard));
+  useEffect(
+    () => previews.update(draft, isActive, removedLinks),
+    [previews, draft, isActive, removedLinks],
+  );
+  useEffect(() => previews.stop, [previews]);
+  useEffect(() => {
+    if (draft === "" && removedLinks.length > 0) setRemovedLinks([]);
+  }, [draft, removedLinks, setRemovedLinks]);
+  return {
+    card,
+    remove: () => {
+      if (card !== null) setRemovedLinks([...removedLinks, card.url]);
+    },
   };
 }

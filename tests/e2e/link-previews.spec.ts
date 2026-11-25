@@ -27,6 +27,7 @@ test("a pasted link shows its card in the composer, and the card goes out with t
   browser,
 }) => {
   const customer = await visitor(browser, server, "/", "How do I reset my password?");
+  const other = await visitor(browser, server, "/", "Where is my order?");
   const alice = await signedIn(browser, server, "alice@example.com");
   await alice.locator(".row", { hasText: "How do I reset" }).click();
 
@@ -36,10 +37,20 @@ test("a pasted link shows its card in the composer, and the card goes out with t
   await expect(card).toContainText("Reset your password");
   await expect(card).toContainText("docs.example");
 
-  // A removed card stays removed, and the reply goes without it.
+  // A removed card stays removed with the draft, also after another conversation, and the reply
+  // goes without it.
+  const asked: string[] = [];
+  alice.on("request", (request) => {
+    if (request.url().endsWith("/link-preview")) asked.push(request.url());
+  });
   await card.getByRole("button", { name: "Remove the link preview" }).click();
   await expect(card).toHaveCount(0);
+  await alice.locator(".row", { hasText: "Where is my order" }).click();
+  // The row shows the draft while another conversation is open.
+  await alice.locator(".row", { hasText: GUIDE }).click();
+  await expect(reply).toContainText(GUIDE);
   await answer(alice, `Here: ${GUIDE} thanks`);
+  expect(asked).toEqual([]);
   await expect(
     alice.locator(".bubble-row", { hasText: "thanks" }).locator(".link-card"),
   ).toHaveCount(0);
@@ -58,5 +69,5 @@ test("a pasted link shows its card in the composer, and the card goes out with t
   await expect(shown).toHaveAttribute("href", GUIDE);
   await expect(shown).toHaveAttribute("target", "_blank");
 
-  for (const page of [customer, alice]) await page.context().close();
+  for (const page of [customer, other, alice]) await page.context().close();
 });

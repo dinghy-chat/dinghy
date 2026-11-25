@@ -251,11 +251,13 @@ export function Thread({
   // does, as in a conversation that closed meanwhile.
   const [editedDraft, setEditingDraft] = useState<SuggestedReply | null>(null);
   const editingDraft = mode === "reply" ? editedDraft : null;
-  const linkPreview = useLinkPreview(
-    (url) => api.linkPreview(conversationId, url),
-    draft.text,
-    mode === "reply" && editingDraft === null,
-  );
+  const linkPreview = useLinkPreview({
+    ask: (url) => api.linkPreview(conversationId, url),
+    draft: draft.text,
+    isActive: mode === "reply" && editingDraft === null,
+    removedLinks: draft.removedLinks,
+    setRemovedLinks: (removedLinks) => setDraft({ ...draft, removedLinks }),
+  });
   const linesNow = useRef(thread.lines);
   linesNow.current = thread.lines;
   /**
@@ -477,7 +479,7 @@ export function Thread({
             )}
             <Composer
               draft={draft.text}
-              setDraft={(text) => setDraft({ text, isNote: mode === "note" })}
+              setDraft={(text) => setDraft({ ...draft, text, isNote: mode === "note" })}
               onSend={send}
               onFiles={uploadsOn ? sendFiles : undefined}
               picks={composerPicks(savedReplies, members, meId, mode === "note")}

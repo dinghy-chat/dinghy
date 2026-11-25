@@ -2,6 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { Readable } from "node:stream";
 import { createRoute, z } from "@hono/zod-openapi";
 import { and, asc, eq, gt, inArray } from "drizzle-orm";
+import { firstBareLink } from "../../../packages/widget/src/markdown.ts";
 import {
   CAMPAIGN_GAP_HOURS_DEFAULT,
   CAMPAIGN_GAP_HOURS_MAX,
@@ -405,6 +406,33 @@ function withMappedOperators(metadata: unknown, mapOperator: (exported: string) 
             : sender,
       },
     }),
+  };
+}
+
+const ImportedLink = z.object({
+  url: z.string(),
+  title: z.string(),
+  image: z.object({ attachmentId: id }).nullable(),
+});
+
+/**
+ * A message's metadata with its link's card only when the card is for the body's first bare link,
+ * as a reply's is, so the apps open only a web address. Its thumbnail stays only when it is one of
+ * the message's own imported images, keyed by `messageId/attachmentId`.
+ */
+function withCheckedLink(
+  { link, ...metadata }: Record<string, unknown>,
+  row: { id: string; body: string | null },
+  images: Map<string, { width: number; height: number }>,
+) {
+  const card = ImportedLink.safeParse(link);
+  const isFirstLink = card.success && firstBareLink(row.body ?? "") === card.data.url;
+  if (!isFirstLink || !URL.canParse(card.data.url)) return metadata;
+  const { image, ...shown } = card.data;
+  const size = image === null ? undefined : images.get(`${row.id}/${image.attachmentId}`);
+  return {
+    ...metadata,
+    link: { ...shown, image: image && size ? { attachmentId: image.attachmentId, ...size } : null },
   };
 }
 
@@ -1045,6 +1073,11 @@ async function insertWorkspace(
       })),
     );
   }
+  const importedImages = new Map(
+    uploads.flatMap(({ messageId, id: attachmentId, width, height }) =>
+      width == null || height == null ? [] : [[`${messageId}/${attachmentId}`, { width, height }]],
+    ),
+  );
   for (const rows of batches(data.messages)) {
     await tx.insert(message).values(
       rows.map((row) => ({
@@ -1058,7 +1091,11 @@ async function insertWorkspace(
         authorApiKeyId: row.authorApiKeyId,
         clientId: row.clientId,
         body: row.body,
-        metadata: withMappedOperators(row.metadata ?? {}, mapOperator),
+        metadata: withCheckedLink(
+          withMappedOperators(row.metadata ?? {}, mapOperator),
+          row,
+          importedImages,
+        ),
         // Messages go in commit order, so a quoted one is always in already.
         replyToMessageId: row.replyToMessageId ?? null,
         editedAt: dateOrNull(row.editedAt),

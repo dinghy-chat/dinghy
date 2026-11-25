@@ -920,6 +920,67 @@ describe("files in the chat", () => {
   }, 30_000);
 });
 
+describe("link cards", () => {
+  type Row = { id: string; clientId: string; body: string | null; metadata: object };
+
+  test("a card comes along only for its body's first web address, with only its own thumbnail", async () => {
+    const card = (url: string, attachmentId: string) => ({
+      url,
+      title: "Docs",
+      image: { attachmentId, width: 112, height: 112 },
+    });
+    const imported = await edited((data) => {
+      const rows = data.messages as Row[];
+      const images = data.attachments as { id: string; messageId: string }[];
+      const byClient = (clientId: string) => rows.find((row) => row.clientId === clientId);
+      const imageOf = (row: Row | undefined) =>
+        images.find((one) => one.messageId === row?.id)?.id ?? "";
+      const withImage = byClient("operator-image");
+      const visitorImage = imageOf(byClient("visitor-image"));
+      for (const [row, body, link] of [
+        [
+          withImage,
+          "See https://docs.example/own",
+          card("https://docs.example/own", imageOf(withImage)),
+        ],
+        [
+          byClient("from-operator"),
+          "See https://docs.example/b",
+          card("https://docs.example/b", visitorImage),
+        ],
+        [byClient("from-key"), "javascript:alert(1)", card("javascript:alert(1)", visitorImage)],
+        [
+          byClient("from-visitor"),
+          "See https://docs.example/c",
+          card("https://docs.example/d", visitorImage),
+        ],
+      ] as const) {
+        if (row === undefined) throw new Error("The archive lacks a message");
+        row.body = body;
+        row.metadata = { ...row.metadata, link };
+      }
+    });
+    const target = await freshInstall();
+    await importArchive(target.db, target.store, once(imported));
+    const rows = await target.owner.select().from(message);
+    const linkOf = (clientId: string) =>
+      (rows.find((row) => row.clientId === clientId)?.metadata as { link?: unknown } | undefined)
+        ?.link;
+    // The thumbnail's size is its stored image's, whatever the card said.
+    expect(linkOf("operator-image")).toMatchObject({
+      url: "https://docs.example/own",
+      image: { width: 4, height: 3 },
+    });
+    expect(linkOf("from-operator")).toEqual({
+      url: "https://docs.example/b",
+      title: "Docs",
+      image: null,
+    });
+    expect(linkOf("from-key")).toBeUndefined();
+    expect(linkOf("from-visitor")).toBeUndefined();
+  }, 30_000);
+});
+
 describe("an operator on the new install", () => {
   test("with an account there keeps one login and joins the workspace", async () => {
     const target = await freshInstall();
