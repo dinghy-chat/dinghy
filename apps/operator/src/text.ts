@@ -1658,6 +1658,7 @@ Ask me before you change anything outside the install. Never ask for a secret or
   quoteLabel: "Go to the message from {name}",
   replyingTo: "Replying to {name}",
   cancelReply: "Cancel the reply",
+  removeLinkPreview: "Remove the link preview",
   editLabel: "Edit your reply",
   saveEdit: "Save",
   infoTitle: "Message info",

@@ -41,6 +41,7 @@ import {
 import { Body, ClientId, Filename, Mentions } from "./inputs.ts";
 import { PageContextSchema, visitorPages } from "./journey.ts";
 import { type Limits, STREAM_LIMIT, STREAM_RETRY_SECONDS } from "./limits.ts";
+import { LinkSchema, linkView, previewFromToken, SentPreview } from "./link-preview.ts";
 import { type Live, OPERATORS, wakeConversation } from "./live.ts";
 import {
   closedFailure,
@@ -77,6 +78,7 @@ import {
   markConversationRead,
   memberSender,
   type NewAttachment,
+  type NewLink,
   nextSnoozeEndMs,
   parseCursor,
   QuoteSchema,
@@ -200,6 +202,8 @@ export const InboxMessage = z
     attachment: AttachmentSchema.nullable(),
     // The message this one quotes, or null.
     replyTo: QuoteSchema.nullable(),
+    // Only for a signed-in operator: the card of the reply's first link, or null.
+    link: LinkSchema.nullable().optional(),
     // When its author last changed its text. Only an operator's text reply or note can change.
     editedAt: z.string().nullable(),
     // An operator deleted it: its body and image or file are gone, and its row stays in place.
@@ -599,6 +603,10 @@ const replyRoute = createRoute({
               description: "True for a note that only the team sees. A note is text only.",
             }),
             mentions: NOTE_MENTIONS,
+            linkPreview: SentPreview.optional().openapi({
+              description:
+                "Signed-in operators only, not on a note: the card from the link preview route. The reply goes out without it when its link is no longer the body's first bare link or the card expired.",
+            }),
             changeRequestId: z.uuid().optional().openapi({
               description:
                 "API keys only, not on a note: the operator's change request this answers, from a `draft.change_requested` event. The reply becomes a new draft that replaces the one the operator asked to change, whatever the key's reply mode and even while a person handles the conversation. Without its own `replyToMessageId` it keeps the old draft's quote.",
@@ -857,6 +865,7 @@ export function messageView(
     attachment,
     replyTo,
     outbound,
+    link: _link,
     ...message
   }: StoredMessage,
 ) {
@@ -880,6 +889,17 @@ export function messageView(
     replyTo: quoteView(replyTo),
   };
 }
+
+/** A message as the operator app shows it: with its link's card, which integrations do not get. */
+const appMessageView = (
+  uploads: Uploads | undefined,
+  workspaceId: string,
+  names: Map<string, string>,
+  message: StoredMessage,
+) => ({
+  ...messageView(uploads, workspaceId, names, message),
+  link: linkView(uploads, workspaceId, message.link),
+});
 type MessageView = ReturnType<typeof messageView>;
 
 /** The founder's picture's address, or null with none or off Dinghy Cloud. */
@@ -1182,10 +1202,11 @@ export function createInbox({
     // After the commit. A lost signal only delays delivery, because a stream reads from Postgres.
     if (result.created) wakeFor(live, workspaceId, result.visitorId, content.isNote);
     const names = new Map([[actorId(actor), actor.name]]);
+    const view = actor.kind === "operator" ? appMessageView : messageView;
     return {
       kind: "sent",
       created: result.created,
-      message: messageView(uploads, workspaceId, names, result.message),
+      message: view(uploads, workspaceId, names, result.message),
     };
   };
 
@@ -1266,7 +1287,12 @@ export function createInbox({
           unread: result.unread,
         },
         messages: result.page.messages.map((message) =>
-          messageView(uploads, workspaceId, result.names, message),
+          (operatorId === null ? messageView : appMessageView)(
+            uploads,
+            workspaceId,
+            result.names,
+            message,
+          ),
         ),
         hasMore: result.page.hasMore,
         visitorOnline: await visitorPresence.online(workspaceId, result.found.visitorId),
@@ -1317,13 +1343,20 @@ export function createInbox({
         note: boolean;
         /** Only a note's. */
         mentions?: string[] | undefined;
+        /** Only an operator's reply. */
+        link?: NewLink | undefined;
       },
     ) {
-      const { note, mentions, changeRequestId, ...text } = input;
+      const { note, mentions, changeRequestId, link, ...text } = input;
       const content = { attachment: undefined, isNote: note };
       const request = changeRequestId === undefined ? text : { ...text, changeRequestId };
       return reply(workspaceId, actor, conversationId, content, request, (tx, author) =>
-        appendMessage(tx, workspaceId, author, note ? { ...text, note, mentions } : text),
+        appendMessage(
+          tx,
+          workspaceId,
+          author,
+          note ? { ...text, note, mentions } : { ...text, link },
+        ),
       );
     },
 
@@ -1409,6 +1442,34 @@ export function refusedReply(outcome: Exclude<ReplyOutcome, { kind: "sent" | "dr
   return closedFailure(outcome.access);
 }
 
+/**
+ * A reply with its link's card. The thumbnail is stored first, and goes away when the reply was a
+ * retry or failed. A thumbnail that cannot be stored leaves the card without one.
+ */
+async function replyWithLink(
+  inbox: Inbox,
+  uploads: Uploads,
+  workspaceId: string,
+  actor: Actor,
+  conversationId: string,
+  input: Parameters<Inbox["reply"]>[3],
+  { image, ...link }: NonNullable<ReturnType<typeof previewFromToken>>,
+): Promise<ReplyOutcome> {
+  const send = (stored: NewLink["image"]) =>
+    inbox.reply(workspaceId, actor, conversationId, { ...input, link: { ...link, image: stored } });
+  if (image === null) return send(null);
+  const kept = await uploads.receiveBytes(
+    image,
+    workspaceId,
+    async (upload) => {
+      const outcome = await send(upload.type === "image" ? upload : null);
+      return { outcome, created: outcome.kind === "sent" && outcome.created };
+    },
+    null,
+  );
+  return "refused" in kept ? send(null) : kept.result.outcome;
+}
+
 /** A key that was revoked during an upload. Its transaction rolls back. */
 async function keyStillHolds(db: Database, actor: KeyActor) {
   if (!(await keyStillValid(db, actor))) throw new AccessEndedError();
@@ -1477,7 +1538,16 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
     if (input.changeRequestId !== undefined && (input.note || actor.kind !== "key")) {
       return c.json(CHANGE_REQUEST_KEYS_ONLY, 400);
     }
-    const outcome = await inbox.reply(c.get("memberWorkspaceId"), actor, conversationId, input);
+    const { linkPreview, ...reply } = input;
+    const id = c.get("memberWorkspaceId");
+    const link =
+      linkPreview === undefined || actor.kind !== "operator" || reply.note || uploads === undefined
+        ? null
+        : previewFromToken(uploads, id, reply.body, linkPreview);
+    const outcome =
+      link === null || uploads === undefined
+        ? await inbox.reply(id, actor, conversationId, reply)
+        : await replyWithLink(inbox, uploads, id, actor, conversationId, reply, link);
     if (outcome.kind === "sent") return c.json(outcome.message, outcome.created ? 201 : 200);
     if (outcome.kind === "drafted") return c.json({ draft: outcome.draft }, 202);
     const refused = refusedReply(outcome);
@@ -1546,7 +1616,7 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
       );
       if (edited.kind !== "edited") return edited;
       const names = await authorNames(tx, id, [edited.message]);
-      return { ...edited, view: messageView(uploads, id, names, edited.message) };
+      return { ...edited, view: appMessageView(uploads, id, names, edited.message) };
     });
     if (outcome.kind === "missing") return c.json(NOT_FOUND, 404);
     if (outcome.kind === "not_yours") return c.json(NOT_YOURS, 403);

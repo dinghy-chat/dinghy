@@ -1,5 +1,6 @@
 import { fetch } from "expo/fetch";
 import type { components } from "../../../packages/sdk/src/openapi.ts";
+import { type LinkPreview, sentPreview } from "../../operator/src/link-preview.ts";
 import { t } from "../../operator/src/text.ts";
 import type {
   AlertSettings,
@@ -218,11 +219,28 @@ export class DinghyApi {
     clientId: string,
     body: string,
     replyToMessageId?: string,
+    preview?: LinkPreview,
   ): Promise<Message> {
     return this.call(this.workspace(`/conversations/${conversationId}/messages`), {
       method: "POST",
-      body: JSON.stringify({ clientId, body, replyToMessageId, note: false, mentions: [] }),
+      body: JSON.stringify({
+        clientId,
+        body,
+        replyToMessageId,
+        note: false,
+        mentions: [],
+        linkPreview: preview && sentPreview(preview),
+      }),
     });
+  }
+
+  /** The card of a link in a reply, or null when its page has none. */
+  async linkPreview(conversationId: string, url: string): Promise<LinkPreview | null> {
+    const answer = await this.call<{ preview: LinkPreview | null }>(
+      this.workspace(`/conversations/${conversationId}/link-preview`),
+      { method: "POST", body: JSON.stringify({ url }) },
+    );
+    return answer.preview;
   }
 
   async uploadPhoto(

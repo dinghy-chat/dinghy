@@ -15,6 +15,7 @@ import {
 } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { ScreenStack, ScreenStackItem } from "react-native-screens";
+import type { LinkPreview } from "../operator/src/link-preview.ts";
 import { t } from "../operator/src/text.ts";
 import { createOutbox, type PendingReply } from "./outbox";
 import { AnalyticsScreen } from "./src/analytics-screen";
@@ -94,6 +95,9 @@ function SignedInApp({
       }),
     [session],
   );
+  // A reply's card, by its clientId. The outbox keeps only the text, and a card's token expires
+  // in 15 minutes, so a reply sent after a restart goes without its card.
+  const previews = useRef(new Map<string, LinkPreview>());
   const [page, setPage] = useState<TabPage>("inbox");
   const [opened, setOpened] = useState<OpenThread | null>(null);
   const openedRef = useRef(opened);
@@ -515,8 +519,10 @@ function SignedInApp({
           pending.clientId,
           pending.body,
           pending.replyToMessageId ?? undefined,
+          previews.current.get(pending.clientId),
         );
       });
+      previews.current.delete(reply.clientId);
       if (scopeRef.current !== deliveryScope) return;
       setPendingErrors((current) => {
         const next = { ...current };
@@ -546,7 +552,12 @@ function SignedInApp({
     }
   };
 
-  const send = async (conversationId: string, body: string, replyToMessageId: string | null) => {
+  const send = async (
+    conversationId: string,
+    body: string,
+    replyToMessageId: string | null,
+    preview: LinkPreview | null,
+  ) => {
     const target = threadTarget.current;
     if (!target || target.scope !== scopeKey || target.conversationId !== conversationId) {
       return;
@@ -558,6 +569,7 @@ function SignedInApp({
       setError(t("mobileReplySaveFailed", { error: readableError(failure) }));
       throw failure;
     }
+    if (preview !== null) previews.current.set(reply.clientId, preview);
     setOutboxVersion((value) => value + 1);
     void deliver(reply);
   };
@@ -911,8 +923,8 @@ function SignedInApp({
               onRetry={deliver}
               onOpenConversation={(id) => openById(id)}
               onDraftChange={(body) => saveDraft(opened.conversationId, body)}
-              onSend={(body, replyToMessageId) =>
-                send(opened.conversationId, body, replyToMessageId)
+              onSend={(body, replyToMessageId, preview) =>
+                send(opened.conversationId, body, replyToMessageId, preview)
               }
               onStatus={changeStatus}
               palette={palette}

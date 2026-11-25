@@ -567,6 +567,33 @@
         },
         "required": ["id", "authorName", "fromVisitor", "text", "hasImage"]
       },
+      "LinkCard": {
+        "type": ["object", "null"],
+        "properties": {
+          "url": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "image": {
+            "type": ["object", "null"],
+            "properties": {
+              "url": {
+                "type": "string"
+              },
+              "width": {
+                "type": "number"
+              },
+              "height": {
+                "type": "number"
+              }
+            },
+            "required": ["url", "width", "height"]
+          }
+        },
+        "required": ["url", "title", "image"]
+      },
       "OutboundButton": {
         "anyOf": [
           {
@@ -674,6 +701,9 @@
           "replyTo": {
             "$ref": "#/components/schemas/Quote"
           },
+          "link": {
+            "$ref": "#/components/schemas/LinkCard"
+          },
           "deleted": {
             "type": "boolean"
           },
@@ -715,6 +745,7 @@
           "body",
           "attachment",
           "replyTo",
+          "link",
           "deleted",
           "fromBot",
           "authorName",
@@ -1306,6 +1337,9 @@
               "replyTo": {
                 "$ref": "#/components/schemas/Quote"
               },
+              "link": {
+                "$ref": "#/components/schemas/LinkCard"
+              },
               "editedAt": {
                 "type": ["string", "null"]
               },
@@ -1663,6 +1697,21 @@
           "resolvedAt",
           "replacementDraftId"
         ]
+      },
+      "SentLinkPreview": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "maxLength": 20000
+          },
+          "image": {
+            "type": ["string", "null"],
+            "maxLength": 200000
+          }
+        },
+        "required": ["token", "image"],
+        "description": "Signed-in operators only, not on a note: the card from the link preview route. The reply goes out without it when its link is no longer the body's first bare link or the card expired."
       },
       "MessageReceipt": {
         "type": "object",
@@ -10262,6 +10311,9 @@
                     "default": [],
                     "description": "Only on a note: the members it mentions, by their operator IDs from the members list, at most 10. Each current member but the author gets an alert with the note's text, by push and by email as their email alert setting says. Other IDs are dropped."
                   },
+                  "linkPreview": {
+                    "$ref": "#/components/schemas/SentLinkPreview"
+                  },
                   "changeRequestId": {
                     "type": "string",
                     "format": "uuid",
@@ -11598,6 +11650,170 @@
           },
           "429": {
             "description": "too_many_streams: the workspace has too many open streams. Retry after `retry-after`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/link-preview": {
+      "post": {
+        "x-workspace-access": "welcome",
+        "security": [
+          {
+            "sessionCookie": []
+          }
+        ],
+        "summary": "Preview a link for a reply: the page's title and a thumbnail",
+        "description": "The server fetches the page. `preview` is null when the page has no title, cannot be read, or the workspace asked for more than 30 previews this minute. Send `token` and `image.data` back with the reply as `linkPreview` to show the card under it.",
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "workspaceId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "conversationId",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "url": {
+                    "type": "string",
+                    "maxLength": 2000
+                  }
+                },
+                "required": ["url"]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The card, or null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "preview": {
+                      "type": ["object", "null"],
+                      "properties": {
+                        "url": {
+                          "type": "string"
+                        },
+                        "title": {
+                          "type": "string"
+                        },
+                        "image": {
+                          "type": ["object", "null"],
+                          "properties": {
+                            "data": {
+                              "type": "string"
+                            },
+                            "width": {
+                              "type": "number"
+                            },
+                            "height": {
+                              "type": "number"
+                            }
+                          },
+                          "required": ["data", "width", "height"]
+                        },
+                        "token": {
+                          "type": "string"
+                        }
+                      },
+                      "required": ["url", "title", "image", "token"]
+                    }
+                  },
+                  "required": ["preview"]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "invalid_request: the request is not valid",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "unauthorized: no valid session, or the API key is not valid or was revoked. two_factor_required: the session has not passed two-step sign-in yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "payment_required: the workspace waits for payment. read_only: the subscription ended, so operators can only read and export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "suspended: the server's admin suspended the workspace. origin_not_allowed: the request did not come from this server's own pages",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "not_found: it does not exist, or this operator is not a member",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "too_large: the body is over 64 KB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "busy: the workspace is busy. Retry after `retry-after`",
             "content": {
               "application/json": {
                 "schema": {

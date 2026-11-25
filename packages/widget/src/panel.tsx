@@ -4,7 +4,7 @@
 import { type ComponentChildren, Fragment, h, type RefObject } from "preact";
 import { useEffect, useLayoutEffect, useRef, useState } from "preact/hooks";
 import { BOAT_CSS, type BoatKind, boatSvg } from "./boat.ts";
-import type { Attachment } from "./client.ts";
+import type { Attachment, LinkCard } from "./client.ts";
 import {
   acceptedFiles,
   enterSends,
@@ -109,6 +109,11 @@ textarea{flex:1;min-width:0;max-height:117px;margin:0 2px;padding:5px 0;font:inh
 .panel ::selection{background:var(--primary);color:var(--d-primary-text,#fff)}
 .mine::selection,.mine ::selection{background:var(--d-primary-text,#fff);color:var(--primary)}
 .quote b{display:block;font-size:12px}
+.lp{display:flex;align-items:center;gap:10px;min-height:40px;padding:6px 10px 6px 6px;border-radius:10px;background:var(--fog);text-decoration:none;white-space:normal}
+.lp img{flex:none;width:44px;height:44px;border-radius:8px;object-fit:cover}
+.lp span{display:grid;min-width:0;font-size:13px;line-height:18px}
+.lp b,.lp small{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.lp small{direction:rtl;text-align:left;color:var(--mute);font-size:12.5px}
 .chip{display:flex;align-items:center;gap:4px;margin-bottom:6px}
 .chip .quote{flex:1;margin:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .shot{flex:none;max-width:84%;padding:0;border:0;border-radius:18px;overflow:hidden;background:var(--paper);align-self:flex-start;cursor:zoom-in}
@@ -218,6 +223,7 @@ export interface Line {
   note?: "closed" | "reopened";
   status: "sent" | "sending" | "failed";
   quote?: Quote | null;
+  link?: LinkCard | null;
   /** Deleted by the team: its body is the placeholder, and it cannot be quoted. */
   gone?: boolean;
   /** The visitor's answer with an outbound message's button, kept for a retry. */
@@ -489,6 +495,24 @@ export function ChatHead({
   );
 }
 
+/**
+ * A link's card: a thumbnail, the page's title and the link's own hostname, which a long name loses
+ * from its start, so the part that names the site stays.
+ */
+function LinkPreview({ link }: { link: LinkCard }) {
+  return (
+    <a class="lp" href={link.url} target="_blank" rel="noopener noreferrer">
+      {link.image && <img src={link.image.url} alt="" />}
+      <span>
+        <b>{link.title}</b>
+        <small>
+          <bdi>{new URL(link.url).hostname}</bdi>
+        </small>
+      </span>
+    </a>
+  );
+}
+
 /** A quoted message: who wrote it, and its whole text. */
 function Quoted({ quote }: { quote: Quote }) {
   const standIn = quoteStandIn(quote);
@@ -585,6 +609,7 @@ export function ChatLine({
         <div class={line.fromVisitor ? "msg mine" : "msg"}>
           {line.quote && <Quoted quote={line.quote} />}
           {renderMarkdown(line.body, h)}
+          {line.link && <LinkPreview link={line.link} />}
           {onReply && (
             <button type="button" class="tool re" aria-label={t("reply")} onClick={onReply}>
               <Icon paths={REPLY_ICON} size={16} />

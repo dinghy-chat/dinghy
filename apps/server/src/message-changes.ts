@@ -2,6 +2,7 @@
 // carried it decide whether it may still change and what its receipt says.
 
 import { and, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
+import { firstBareLink } from "../../../packages/widget/src/markdown.ts";
 import {
   alertDelivery,
   attachment,
@@ -287,13 +288,19 @@ export async function editMessage(
     isNote && change.mentions !== undefined
       ? await changedMentions(tx, workspaceId, operatorId, line.metadata, change.mentions)
       : null;
+  // An edit that takes the link out of the body drops its card. A text reply's only attachment
+  // is the card's thumbnail.
+  const { link, ...withoutLink } = line.metadata as { link?: { url: string } };
+  const dropsLink = link !== undefined && firstBareLink(change.body) !== link.url;
+  if (dropsLink) await deleteAttachments(tx, workspaceId, messageId);
+  const metadata = mentions?.metadata ?? (dropsLink ? withoutLink : null);
   const [row] = await tx
     .update(message)
     .set({
       body: change.body,
       editedAt: sql`now()`,
       changedSeq: seq,
-      ...(mentions !== null && { metadata: mentions.metadata }),
+      ...(metadata !== null && { metadata }),
     })
     .where(and(eq(message.workspaceId, workspaceId), eq(message.id, messageId)))
     .returning(messageColumns);
@@ -301,6 +308,19 @@ export async function editMessage(
   await recordMessageChange(tx, workspaceId, seq, "message.updated", line, mentions?.added ?? []);
   await resendQuotes(tx, workspaceId, messageId);
   return { kind: "edited", message: stored(row), visitorId: reader.id };
+}
+
+/** Deletes a message's attachment rows. The worker deletes their stored objects. */
+async function deleteAttachments(tx: Transaction, workspaceId: string, messageId: string) {
+  const files = await tx
+    .delete(attachment)
+    .where(and(eq(attachment.workspaceId, workspaceId), eq(attachment.messageId, messageId)))
+    .returning({ storageKey: attachment.storageKey });
+  if (files.length > 0) {
+    await tx
+      .insert(storageDeletion)
+      .values(files.map(({ storageKey }) => ({ workspaceId, storageKey })));
+  }
 }
 
 type DeleteOutcome =
@@ -334,18 +354,10 @@ export async function deleteMessage(
       body: null,
       deletedAt: sql`now()`,
       changedSeq: seq,
-      metadata: sql`${message.metadata} - 'image' - 'file'`,
+      metadata: sql`${message.metadata} - 'image' - 'file' - 'link'`,
     })
     .where(and(eq(message.workspaceId, workspaceId), eq(message.id, messageId)));
-  const files = await tx
-    .delete(attachment)
-    .where(and(eq(attachment.workspaceId, workspaceId), eq(attachment.messageId, messageId)))
-    .returning({ storageKey: attachment.storageKey });
-  if (files.length > 0) {
-    await tx
-      .insert(storageDeletion)
-      .values(files.map(({ storageKey }) => ({ workspaceId, storageKey })));
-  }
+  await deleteAttachments(tx, workspaceId, messageId);
   // The outbound message it came from loses its text too.
   await tx
     .update(outboundMessage)

@@ -361,6 +361,7 @@ export interface paths {
              * @default []
              */
             mentions?: string[];
+            linkPreview?: components["schemas"]["SentLinkPreview"];
             /**
              * Format: uuid
              * @description API keys only, not on a note: the operator's change request this answers, from a `draft.change_requested` event. The reply becomes a new draft that replaces the one the operator asked to change, whatever the key's reply mode and even while a person handles the conversation. Without its own `replyToMessageId` it keeps the old draft's quote.
@@ -7892,6 +7893,15 @@ export interface components {
       text: string;
       hasImage: boolean;
     } | null;
+    LinkCard: {
+      url: string;
+      title: string;
+      image: {
+        url: string;
+        width: number;
+        height: number;
+      } | null;
+    } | null;
     /** @description `{ label, value }` answers with the label, and the visitor's message carries `button: { value, label }`. `{ label, url }` opens a page. `{ label, dismiss: true }` ends the message as `dismissed`. */
     OutboundButton:
       | {
@@ -7944,6 +7954,7 @@ export interface components {
       body: string | null;
       attachment: components["schemas"]["Attachment"];
       replyTo: components["schemas"]["Quote"];
+      link: components["schemas"]["LinkCard"];
       deleted: boolean;
       fromBot: boolean;
       authorName: string | null;
@@ -8151,6 +8162,7 @@ export interface components {
       body: string | null;
       attachment: components["schemas"]["Attachment"];
       replyTo: components["schemas"]["Quote"];
+      link?: components["schemas"]["LinkCard"];
       editedAt: string | null;
       deleted: boolean;
       readAt: string | null;
@@ -8246,6 +8258,11 @@ export interface components {
       createdAt: string;
       resolvedAt: string | null;
       replacementDraftId: string | null;
+    };
+    /** @description Signed-in operators only, not on a note: the card from the link preview route. The reply goes out without it when its link is no longer the body's first bare link or the card expired. */
+    SentLinkPreview: {
+      token: string;
+      image: string | null;
     };
     MessageReceipt: {
       readAt: string | null;

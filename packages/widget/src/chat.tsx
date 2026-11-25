@@ -104,6 +104,7 @@ function merge(lines: Line[], message: ChatMessage): Line[] {
         : (message.body ?? ""),
     attachment: attachment?.removed ? null : attachment,
     quote: message.replyTo,
+    link: message.link,
     gone: message.deleted,
     fromVisitor: message.fromVisitor,
     author:

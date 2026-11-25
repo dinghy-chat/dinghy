@@ -22,6 +22,13 @@ export interface Update {
 /** Newest first. Add a new entry at the top, in the pull request that makes the change. */
 export const UPDATES: Update[] = [
   {
+    id: "link-previews",
+    date: "2026-11-25",
+    kind: "feature",
+    title: "Link previews",
+    text: "When a reply has a link, the box shows the page's title and picture before you send it. Remove it with ✕, or send it, and the visitor sees it under your reply. Only the first link gets one, so a reply with many links stays short.",
+  },
+  {
     id: "visitor-history",
     date: "2026-11-24",
     kind: "improvement",

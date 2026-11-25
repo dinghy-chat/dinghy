@@ -19,12 +19,14 @@ import {
   type OnChangeStateEvent,
 } from "react-native-enriched-html";
 import { markdownText } from "../../../packages/widget/src/markdown.ts";
+import { type LinkPreview, previewCard } from "../../operator/src/link-preview.ts";
 import { t } from "../../operator/src/text.ts";
 import { ApiError, type DinghyApi } from "./api";
 import { usePhotoComposer } from "./attachments";
 import { readableError } from "./common";
 import { fonts } from "./fonts";
 import { Icon } from "./icon";
+import { LinkCardView, useLinkPreview } from "./link-card";
 import {
   draftHtml,
   draftMarkdown,
@@ -58,7 +60,7 @@ type ComposerProps = {
   onError(error: unknown): void;
   onNoteAdded(): void;
   onPhotoSent(): void;
-  onSend(body: string, replyToMessageId: string | null): Promise<void>;
+  onSend(body: string, replyToMessageId: string | null, preview: LinkPreview | null): Promise<void>;
 };
 
 type IconName = Parameters<typeof Icon>[0]["name"];
@@ -225,6 +227,11 @@ export function ThreadComposer({
     if (wantsSavedReplies) void loadSavedReplies();
   }, [wantsSavedReplies]);
 
+  const linkPreview = useLinkPreview(
+    (url) => api.linkPreview(conversationId, url),
+    isNote ? "" : replyDraft,
+  );
+
   const photo = usePhotoComposer({
     api,
     bottomInset,
@@ -359,7 +366,7 @@ export function ThreadComposer({
     if (!body || sending) return;
     setSending(true);
     try {
-      await onSend(body, replyingTo?.id ?? null);
+      await onSend(body, replyingTo?.id ?? null, linkPreview.card);
       clearSent("reply", body);
       onCancelReply();
     } catch {
@@ -451,6 +458,13 @@ export function ThreadComposer({
             <Icon color={palette.sub} name="x" size={16} />
           </Pressable>
         </View>
+      )}
+      {linkPreview.card !== null && (
+        <LinkCardView
+          link={previewCard(linkPreview.card)}
+          onRemove={linkPreview.remove}
+          palette={palette}
+        />
       )}
       {showTools && (
         <View style={styles.tools}>

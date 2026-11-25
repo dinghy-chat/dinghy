@@ -128,10 +128,14 @@ export function endpointProblem(url: URL, policy: WebhookPolicy): string | null 
   if (url.protocol !== "https:" && !(policy.allowPrivate && url.protocol === "http:")) {
     return WRONG_SCHEME;
   }
-  const host = url.hostname.replace(/^\[|\]$/g, "");
-  // A literal address connects without a lookup, so it is checked here.
-  if (!policy.allowPrivate && isIP(host) !== 0 && isPrivateAddress(host)) return REFUSED_ADDRESS;
+  if (!policy.allowPrivate && hasPrivateLiteral(url)) return REFUSED_ADDRESS;
   return null;
+}
+
+/** A literal address connects without a lookup, so it is checked from the URL. */
+export function hasPrivateLiteral(url: URL): boolean {
+  const host = url.hostname.replace(/^\[|\]$/g, "");
+  return isIP(host) !== 0 && isPrivateAddress(host);
 }
 
 /** Resolves a name the way a request would, and refuses it if any address it gives is private. */

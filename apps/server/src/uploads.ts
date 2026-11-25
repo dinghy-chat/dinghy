@@ -172,6 +172,11 @@ export const processLogo = (bytes: Uint8Array) =>
 export const processPicture = (bytes: Uint8Array) =>
   processPublicImage(bytes, (image) => image.resize(PICTURE_SIZE_PX, PICTURE_SIZE_PX));
 
+/** A link preview's thumbnail fills a 112-pixel square, cut from its middle. */
+export const THUMBNAIL_SIZE_PX = 112;
+export const processThumbnail = (bytes: Uint8Array) =>
+  processPublicImage(bytes, (image) => image.resize(THUMBNAIL_SIZE_PX, THUMBNAIL_SIZE_PX));
+
 /** The checked bytes of an upload, before they are stored. */
 type Checked = { data: Uint8Array; contentType: string } & (
   | { type: "image"; width: number; height: number }
@@ -201,6 +206,9 @@ export interface Uploads {
   ): Promise<{ result: T } | { refused: Refusal }>;
   url(workspaceId: string, attachmentId: string): string;
   verify(workspaceId: string, attachmentId: string, expires: string, signature: string): boolean;
+  /** Signs a link preview, so a reply can carry it back unchanged. */
+  signPreview(value: string): string;
+  verifyPreview(value: string, signature: string): boolean;
   store: ObjectStore;
   /** The separate origin that serves uploads, from UPLOADS_ORIGIN, or undefined to use the app's. */
   origin: string | undefined;
@@ -234,10 +242,14 @@ export function createUploads({
   const bufferedByWorkspace = new Map<string, number>();
   const uploadsByAddress = new Map<string, number>();
 
+  const hmac = (purpose: string, value: string) =>
+    createHmac("sha256", `dinghy-${purpose}:${secret}`).update(value).digest("base64url");
   const sign = (workspaceId: string, attachmentId: string, expires: string) =>
-    createHmac("sha256", `dinghy-image-url:${secret}`)
-      .update(`${workspaceId}/${attachmentId}/${expires}`)
-      .digest("base64url");
+    hmac("image-url", `${workspaceId}/${attachmentId}/${expires}`);
+  const matches = (expected: string, signature: string) => {
+    const given = Buffer.from(signature);
+    return expected.length === given.length && timingSafeEqual(Buffer.from(expected), given);
+  };
 
   /**
    * Only bytes that start as a PNG, JPEG or WebP reach sharp, and they stay images whatever their
@@ -342,10 +354,10 @@ export function createUploads({
     },
     verify(workspaceId, attachmentId, expires, signature) {
       if (!/^\d{1,12}$/.test(expires) || Number(expires) < now() / 1000) return false;
-      const expected = Buffer.from(sign(workspaceId, attachmentId, expires));
-      const given = Buffer.from(signature);
-      return expected.length === given.length && timingSafeEqual(expected, given);
+      return matches(sign(workspaceId, attachmentId, expires), signature);
     },
+    signPreview: (value) => hmac("link-preview", value),
+    verifyPreview: (value, signature) => matches(hmac("link-preview", value), signature),
   };
 }
 

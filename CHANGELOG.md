@@ -4,6 +4,10 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Added
+
+- An operator's reply shows a card for its first bare link: the page's title, a small thumbnail and the link's hostname. The composer shows the card before the reply goes, and a ✕ removes it. The server fetches the page and its image from public addresses only, with a 5-second limit, and a workspace may ask for 30 cards a minute. `POST /v1/operator/workspaces/{workspaceId}/conversations/{conversationId}/link-preview` returns a card, and the reply route takes it back as `linkPreview`. Messages in the operator app and the widget carry `link`. Webhooks, API keys and MCP get no `link`.
+
 ## [0.58.0] - 2026-11-25
 
 ### Added

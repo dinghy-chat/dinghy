@@ -18,6 +18,7 @@ import {
   View,
 } from "react-native";
 import type { EnrichedTextInputInstance } from "react-native-enriched-html";
+import type { LinkPreview } from "../../operator/src/link-preview.ts";
 import { plural, t } from "../../operator/src/text.ts";
 import { Harbor } from "../Harbor";
 import type { PendingReply } from "../outbox";
@@ -635,7 +636,7 @@ export function ThreadScreen({
   onHandoff(operatorId: string): Promise<void>;
   onError(failure: unknown): void;
   onReload(): void;
-  onSend(body: string, replyToMessageId: string | null): Promise<void>;
+  onSend(body: string, replyToMessageId: string | null, preview: LinkPreview | null): Promise<void>;
   onRetry(reply: PendingReply): Promise<void>;
   onAssign(): Promise<void>;
   onOpenConversation(conversationId: string): void;
@@ -1178,10 +1179,10 @@ export function ThreadScreen({
             setReplyingTo(null);
             onReload();
           }}
-          onSend={(body, replyToMessageId) => {
+          onSend={(body, replyToMessageId, preview) => {
             // A reply the operator sends shows at once, also after they scrolled up.
             list.current?.scrollToOffset({ offset: 0, animated: true });
-            return onSend(body, replyToMessageId);
+            return onSend(body, replyToMessageId, preview);
           }}
           palette={palette}
           replyingTo={replyingTo}

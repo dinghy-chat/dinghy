@@ -524,6 +524,45 @@ describe("uploads older than 12 months", () => {
     expect(listed.conversations[0]?.lastMessage).toMatchObject({ body: null, kind: "file" });
   });
 
+  test("a link card's thumbnail goes after 12 months, and the card stays without it", async () => {
+    const space = await createWorkspace(db, "Old link", [SITE]);
+    const [row] = await withWorkspace(db, space.id, (tx) =>
+      tx.insert(visitor).values({ workspaceId: space.id, userId: "v" }).returning(),
+    );
+    const attachmentId = randomUUID();
+    const link = { url: "https://docs.example/reset", title: "Reset your password" };
+    const sent = await withWorkspace(db, space.id, (tx) =>
+      appendMessage(
+        tx,
+        space.id,
+        { kind: "visitor", visitorId: row?.id ?? "" },
+        {
+          clientId: randomUUID(),
+          body: `See ${link.url}`,
+          link: {
+            ...link,
+            image: {
+              type: "image",
+              attachmentId,
+              storageKey: `${space.id}/${attachmentId}`,
+              byteSize: 100,
+              contentType: "image/webp",
+              width: 112,
+              height: 112,
+            },
+          },
+        },
+      ),
+    );
+    await owner
+      .update(attachment)
+      .set({ createdAt: new Date(uploadCutoff(new Date()).getTime() - 86_400_000) })
+      .where(eq(attachment.id, attachmentId));
+    expect(await removeOldUploads(workerDb)).toBe(1);
+    const [after] = await owner.select().from(message).where(eq(message.id, sent.message.id));
+    expect(after?.metadata).toEqual({ link: { ...link, image: null } });
+  });
+
   test("two workers at once queue each old image's file once", async () => {
     const spaces = [
       await createWorkspace(db, "Old A", [SITE]),

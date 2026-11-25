@@ -20,6 +20,13 @@ export type Attachment = { url: string; removed?: never } & (
   | { type: "file"; name: string; size: number }
 );
 
+/** A reply's card under its text: the page's title and thumbnail, and the link it opens. */
+export interface LinkCard {
+  url: string;
+  title: string;
+  image: { url: string; width: number; height: number } | null;
+}
+
 export interface ChatMessage {
   id: string;
   conversationId: string;
@@ -40,6 +47,8 @@ export interface ChatMessage {
   authorPictureUrl: string | null;
   /** The message this one quotes. Its author is an operator's first name or a key's name. */
   replyTo: Quote | null;
+  /** The card of a reply's first link. */
+  link: LinkCard | null;
   /** The team deleted it, so it shows a placeholder. */
   deleted: boolean;
   /** The outbound message this reply came from, which the widget showed apart before. */

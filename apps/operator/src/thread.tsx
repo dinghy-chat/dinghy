@@ -14,6 +14,8 @@ import { useConversationActions } from "./conversation-actions.ts";
 import type { Draft } from "./drafts.ts";
 import { Icon } from "./icons.tsx";
 import type { LabelPicks } from "./labels.tsx";
+import { LinkCardView, useLinkPreview } from "./link-card.tsx";
+import { previewCard } from "./link-preview.ts";
 import { useTabVisible } from "./live.ts";
 import { useLoad } from "./load.ts";
 import { type InfoLine, MessageInfo, QuoteChip } from "./message.tsx";
@@ -249,6 +251,10 @@ export function Thread({
   // does, as in a conversation that closed meanwhile.
   const [editedDraft, setEditingDraft] = useState<SuggestedReply | null>(null);
   const editingDraft = mode === "reply" ? editedDraft : null;
+  const linkPreview = useLinkPreview(
+    (url) => api.linkPreview(conversationId, url),
+    mode === "reply" && editingDraft === null ? draft.text : "",
+  );
   const linesNow = useRef(thread.lines);
   linesNow.current = thread.lines;
   /**
@@ -315,6 +321,7 @@ export function Thread({
       quoting === null ? null : quoteOf(quoting, quoting.authorName ?? authorOf(quoting)),
       mode === "note",
       mode === "note" ? mentionsIn(body, members, picked) : [],
+      linkPreview.card,
     );
     setQuoting(null);
   };
@@ -486,21 +493,31 @@ export function Thread({
               }
               onEscape={quoting === null ? undefined : () => setQuoting(null)}
               above={
-                editingDraft !== null ? (
-                  <DraftChip
-                    draft={editingDraft}
-                    onCancel={() => {
-                      setEditingDraft(null);
-                      setDraft({ text: "", isNote: false });
-                    }}
-                  />
-                ) : quoting === null ? undefined : (
-                  <QuoteChip
-                    quote={quoteOf(quoting, authorOf(quoting))}
-                    visitorName={visitorName}
-                    onCancel={() => setQuoting(null)}
-                  />
-                )
+                <>
+                  {editingDraft !== null ? (
+                    <DraftChip
+                      draft={editingDraft}
+                      onCancel={() => {
+                        setEditingDraft(null);
+                        setDraft({ text: "", isNote: false });
+                      }}
+                    />
+                  ) : (
+                    quoting !== null && (
+                      <QuoteChip
+                        quote={quoteOf(quoting, authorOf(quoting))}
+                        visitorName={visitorName}
+                        onCancel={() => setQuoting(null)}
+                      />
+                    )
+                  )}
+                  {linkPreview.card !== null && (
+                    <LinkCardView
+                      link={previewCard(linkPreview.card)}
+                      onRemove={linkPreview.remove}
+                    />
+                  )}
+                </>
               }
             />
           </>

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { mkdtemp, rm } from "node:fs/promises";
 import http from "node:http";
+import type { LookupFunction } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { serve } from "@hono/node-server";
@@ -54,6 +55,11 @@ import { sendOperatorMessage } from "./messages.ts";
 import { captureMail } from "./operators.ts";
 
 const OPERATOR = "00000000-0000-4000-8000-0000000000f3";
+
+const toHost = ((_hostname, options, callback) =>
+  options.all === true
+    ? callback(null, [{ address: "127.0.0.1", family: 4 }])
+    : callback(null, "127.0.0.1", 4)) as LookupFunction;
 
 const listen = (server: http.Server) =>
   new Promise<number>((resolve) => {
@@ -130,6 +136,22 @@ export async function startE2EServer(
     pushed.push(url);
     return new Response(null, { status: 201 });
   }) as typeof fetch);
+  let workspace = { id: "", publicKey: "", signingSecret: "" };
+  const host = http.createServer((req, res) => {
+    const page = hostPages[new URL(req.url ?? "/", "http://x").pathname];
+    if (page === undefined) {
+      res.writeHead(404).end();
+      return;
+    }
+    const fill = (text: string) =>
+      text.replaceAll("{{API}}", apiOrigin).replaceAll("{{PUBLIC_KEY}}", workspace.publicKey);
+    res.writeHead(200, {
+      "content-type": "text/html; charset=utf-8",
+      ...(page.csp === undefined ? {} : { "content-security-policy": fill(page.csp) }),
+    });
+    res.end(fill(page.html));
+  });
+  const hostPort = await listen(host);
   // Moves forward, so every image URL handed out so far has expired.
   let imageClockMs = 0;
   app = createApp({
@@ -154,24 +176,10 @@ export async function startE2EServer(
     operatorDirectory: operatorBundle,
     publicUrl: apiOrigin,
     ...(fetchClientDocument === undefined ? {} : { fetchClientDocument }),
+    // A link preview reaches the host site's pages by any name, as if they were public.
+    linkPreviewNetwork: { lookup: toHost, port: hostPort },
   });
 
-  let workspace = { id: "", publicKey: "", signingSecret: "" };
-  const host = http.createServer((req, res) => {
-    const page = hostPages[new URL(req.url ?? "/", "http://x").pathname];
-    if (page === undefined) {
-      res.writeHead(404).end();
-      return;
-    }
-    const fill = (text: string) =>
-      text.replaceAll("{{API}}", apiOrigin).replaceAll("{{PUBLIC_KEY}}", workspace.publicKey);
-    res.writeHead(200, {
-      "content-type": "text/html; charset=utf-8",
-      ...(page.csp === undefined ? {} : { "content-security-policy": fill(page.csp) }),
-    });
-    res.end(fill(page.html));
-  });
-  const hostPort = await listen(host);
   const hostOrigin = `http://127.0.0.1:${hostPort}`;
   workspace = await createWorkspace(db, "E2E", [hostOrigin]);
   await owner.insert(operator).values({ id: OPERATOR, name: "Seed", email: "seed@example.com" });

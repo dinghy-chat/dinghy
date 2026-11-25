@@ -16,6 +16,7 @@ import type {
 import type { Condition } from "../../server/src/conditions.ts";
 import type { EventKind, LABEL_COLORS } from "../../server/src/db/schema.ts";
 import type { OperatorNotice } from "../../server/src/live.ts";
+import { type LinkCard, type LinkPreview, sentPreview } from "./link-preview.ts";
 
 export type { CampaignDefinition, CampaignResults, CampaignSettingsView, Condition, Quote };
 export type Campaign = CampaignView;
@@ -261,6 +262,8 @@ interface MessageFields {
   attachment: Attachment | null;
   /** The message this one quotes. Its `id` is null when that message was deleted. */
   replyTo: Quote | null;
+  /** The card of a reply's first link. A message that a key or a bot wrote has none. */
+  link?: LinkCard | null;
   /** When its author last changed its text. */
   editedAt: string | null;
   /** Deleted: no body and no image or file, and the line says so. */
@@ -1202,7 +1205,10 @@ export function workspaceApi(workspaceId: string) {
         `${base}/conversations/search?q=${encodeURIComponent(query)}`,
         { signal: AbortSignal.any([signal, AbortSignal.timeout(REQUEST_TIMEOUT_MS)]) },
       ),
-    /** A reply, or with `note` a note that only the team sees, which alerts the members it mentions. */
+    /**
+     * A reply, or with `note` a note that only the team sees, which alerts the members it mentions.
+     * A reply may carry its link's card.
+     */
     reply: (
       id: string,
       clientId: string,
@@ -1210,6 +1216,7 @@ export function workspaceApi(workspaceId: string) {
       replyToMessageId: string | undefined,
       note: boolean,
       mentions: string[],
+      preview: LinkPreview | undefined,
     ) =>
       post<Message>(`${conversation(id)}/messages`, {
         clientId,
@@ -1217,7 +1224,12 @@ export function workspaceApi(workspaceId: string) {
         replyToMessageId,
         note,
         mentions,
+        linkPreview: preview && sentPreview(preview),
       }),
+    /** The card of a link in a reply, or null when its page has none. */
+    linkPreview: async (id: string, url: string) =>
+      (await post<{ preview: LinkPreview | null }>(`${conversation(id)}/link-preview`, { url }))
+        .preview,
     replyUpload: async (id: string, clientId: string, file: File, replyToMessageId?: string) => {
       const quote = replyToMessageId === undefined ? "" : `&replyToMessageId=${replyToMessageId}`;
       const name = `&filename=${encodeURIComponent(file.name)}`;

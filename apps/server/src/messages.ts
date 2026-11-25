@@ -202,6 +202,9 @@ type StoredImage = { attachmentId: string; width: number; height: number };
 /** A file that is not an image. `size` is in bytes. */
 type StoredFile = { attachmentId: string; name: string; size: number };
 
+/** The card of a reply's first bare link: the page's title, and its thumbnail when it had one. */
+export type StoredLink = { url: string; title: string; image: StoredImage | null };
+
 /** A message's image or file. One deleted after 12 months, on Dinghy Cloud, keeps only its type. */
 export type StoredAttachment =
   | ({ type: "image" } & StoredImage)
@@ -222,6 +225,7 @@ interface StoredFields {
   clientId: string;
   body: string | null;
   attachment: StoredAttachment | null;
+  link: StoredLink | null;
   replyTo: QuoteRow | null;
   editedAt: Date | null;
   /** Deleted by an operator: its body and image or file are gone, and it shows as a placeholder. */
@@ -304,6 +308,8 @@ interface MessageMetadata {
   imageRemoved?: boolean;
   file?: StoredFile;
   fileRemoved?: boolean;
+  /** Set on an operator's reply sent with its link's card. */
+  link?: StoredLink;
   /** Set on a key's reply that came through MCP, an operator's that sent a draft, and an email. */
   via?: Exclude<Channel, "api">;
   /** Set on a reply by email from an address other than the visitor's email: that address. */
@@ -363,6 +369,7 @@ export function stored({
   return {
     ...row,
     attachment: attachmentOf(meta),
+    link: meta?.link ?? null,
     fromVisitor: authorVisitorId !== null,
     deleted: deletedAt !== null,
     ...viaOf(meta, row.authorApiKeyId),
@@ -462,6 +469,19 @@ export type NewAttachment = {
   byteSize: number;
   contentType: string;
 } & ({ type: "image"; width: number; height: number } | { type: "file"; name: string });
+
+/** A link's card that waits for its reply, with its thumbnail stored. */
+export type NewLink = {
+  url: string;
+  title: string;
+  image: Extract<NewAttachment, { type: "image" }> | null;
+};
+
+const linkMetadata = ({ url, title, image }: NewLink): StoredLink => ({
+  url,
+  title,
+  image: image && { attachmentId: image.attachmentId, width: image.width, height: image.height },
+});
 
 /** What a message's metadata holds about its image or file. */
 const attachmentMetadata = ({ attachmentId, ...attachment }: NewAttachment): MessageMetadata =>
@@ -632,7 +652,7 @@ export async function appendMessage(
     /** The caller created the conversation for this message, as an outbound message does. */
     conversationCreated?: boolean;
   } & (
-    | { attachment?: NewAttachment; note?: false }
+    | { attachment?: NewAttachment; link?: NewLink | undefined; note?: false }
     | { attachment?: undefined; note: true; mentions?: string[] | undefined }
   ),
   limits: Pick<Limits, "mayStore"> = NO_LIMITS,
@@ -717,8 +737,10 @@ export async function appendMessage(
         author.kind === "operator" ? author.operatorId : null,
       )
     : [];
+  const link = input.note === true ? undefined : input.link;
   const metadata: MessageMetadata = {
     ...(upload !== undefined && attachmentMetadata(upload)),
+    ...(link !== undefined && { link: linkMetadata(link) }),
     ...sourceMetadata(input.source),
     ...(input.button !== undefined && { button: input.button }),
     ...(input.handoffTo !== undefined && { handoff: { operatorId: input.handoffTo } }),
@@ -743,17 +765,19 @@ export async function appendMessage(
     })
     .returning(messageColumns);
   if (row === undefined) throw new Error("The message insert returned no row");
-  if (upload !== undefined) {
+  // A link's thumbnail is an attachment row too, so deletes, storage and retention count it.
+  const kept = upload ?? link?.image ?? undefined;
+  if (kept !== undefined) {
     await tx.insert(attachment).values({
       workspaceId,
-      id: upload.attachmentId,
+      id: kept.attachmentId,
       messageId: row.id,
-      storageKey: upload.storageKey,
-      byteSize: upload.byteSize,
-      contentType: upload.contentType,
-      ...(upload.type === "image"
-        ? { width: upload.width, height: upload.height }
-        : { filename: upload.name }),
+      storageKey: kept.storageKey,
+      byteSize: kept.byteSize,
+      contentType: kept.contentType,
+      ...(kept.type === "image"
+        ? { width: kept.width, height: kept.height }
+        : { filename: kept.name }),
     });
   }
 
