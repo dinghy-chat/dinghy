@@ -169,7 +169,7 @@ test("a page load with no conversation asks for the look and beats, and writes n
       expect.stringMatching(/^\/v1\/widget\/wk_\w+\/appearance$/),
       expect.stringMatching(/^\/v1\/widget\/wk_\w+\/beat$/),
     ]);
-  expect(requests.filter((url) => url.endsWith("/widget/widget.js"))).toEqual([]);
+  expect(requests.filter((url) => url.includes("/widget/widget.js"))).toEqual([]);
   expect(await server.visitorCount()).toBe(before);
   await context.close();
 });
@@ -863,7 +863,7 @@ test("a failed bundle load does not disable the launcher", async ({ browser }) =
   const context = await browser.newContext();
   const page = await context.newPage();
   let failed = false;
-  await page.route("**/widget/widget.js", async (route) => {
+  await page.route(/\/widget\/widget\.js/, async (route) => {
     if (failed) return route.continue();
     failed = true;
     return route.abort();

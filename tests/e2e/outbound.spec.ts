@@ -119,32 +119,95 @@ test("recipe 1: a welcome waits on the contact until the visitor opens the chat 
   expect(listed.json.outboundMessages).toHaveLength(1);
 });
 
+type NudgeArg = boolean | { text?: string; message?: string };
+const nudge = (page: Page, on?: NudgeArg) =>
+  page.evaluate(
+    (value) =>
+      (window as unknown as { Dinghy: { nudge(on?: NudgeArg): void } }).Dinghy.nudge(value),
+    on,
+  );
+const messageBox = (page: Page) => page.getByRole("textbox", { name: "Your message" });
+
 test("the page's nudge shows a card, and its click opens the chat with the message", async ({
   page,
 }) => {
   await page.goto(`${server.hostOrigin}/app`);
-  type Nudge = { nudge(on?: boolean | { text?: string; message?: string }): void };
-  const nudge = (on?: Parameters<Nudge["nudge"]>[0]) =>
-    page.evaluate((value) => (window as unknown as { Dinghy: Nudge }).Dinghy.nudge(value), on);
   const card = page.locator(".preview");
-  await nudge({
-    text: "We saw an error while you saved. Can we help?",
+  await nudge(page, {
+    text: "We saw an error while you saved. Can we help? https://example.com",
     message: "Error ID abc123",
   });
   await expect(card).toContainText("We saw an error while you saved.");
+  // Plain text: a link would open a page as well as the chat.
+  await expect(card.locator("a")).toHaveCount(0);
   await expect(page.locator(".launcher.nudge")).toHaveCount(1);
   // Its close button stops the pulse too.
   await card.getByRole("button", { name: "Close this message" }).click();
   await expect(card).toHaveCount(0);
   await expect(page.locator(".launcher.nudge")).toHaveCount(0);
 
-  await nudge({ text: "Need a hand?", message: "Error ID def456" });
+  // The page may change and pass its object again.
+  await page.evaluate(() => {
+    const options = { text: "First error", message: "Error ID first" };
+    const win = window as unknown as { Dinghy: { nudge(on: typeof options): void } };
+    win.Dinghy.nudge(options);
+    options.text = "Need a hand?";
+    options.message = "Error ID def456";
+    win.Dinghy.nudge(options);
+  });
   // A plain nudge(), as a waiting outbound message makes, keeps the card.
-  await nudge();
+  await nudge(page);
   await card.getByText("Need a hand?").click();
-  await expect(page.getByRole("textbox", { name: "Your message" })).toHaveValue("Error ID def456");
+  await expect(messageBox(page)).toHaveValue("Error ID def456");
   await expect(card).toHaveCount(0);
   await expect(page.locator(".launcher.nudge")).toHaveCount(0);
+});
+
+test("a nudge before the saved look still pulses, and reset() drops the card", async ({ page }) => {
+  await page.addInitScript(() => {
+    (window as unknown as { Dinghy: unknown }).Dinghy = {
+      q: [["nudge", { text: "Can we help?", message: "Error ID ghi789" }]],
+    };
+  });
+  await page.goto(`${server.hostOrigin}/app`);
+  await expect(page.locator(".preview")).toContainText("Can we help?");
+  await expect(page.locator(".launcher.nudge")).toHaveCount(1);
+  // The next visitor in this browser gets neither the card nor its message.
+  await page.evaluate(() => (window as unknown as { Dinghy: { reset(): void } }).Dinghy.reset());
+  await expect(page.locator(".preview")).toHaveCount(0);
+  await page.getByRole("button", { name: /Open chat/ }).click();
+  await expect(messageBox(page)).toHaveValue("");
+});
+
+test("the nudge's message is no typing preview until the visitor changes it", async ({ page }) => {
+  await page.goto(`${server.hostOrigin}/app`);
+  await page.getByRole("button", { name: /Open chat/ }).click();
+  await say(page, "Hello");
+  await page.keyboard.press("Escape");
+  const drafts: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().endsWith("/typing")) drafts.push(request.postData() ?? "");
+  });
+  await nudge(page, { text: "Can we help?", message: "Error ID jkl012" });
+  await page.locator(".preview").getByText("Can we help?").click();
+  await expect(messageBox(page)).toHaveValue("Error ID jkl012");
+  await messageBox(page).press("End");
+  await messageBox(page).pressSequentially("!");
+  await expect.poll(() => drafts.some((body) => body.includes("jkl012!"))).toBe(true);
+  expect(drafts.some((body) => body.includes('"Error ID jkl012"'))).toBe(false);
+});
+
+test("closing the page's card keeps the pulse of a message that waits", async ({ browser }) => {
+  const user = { userId: "nudge-badge" };
+  expect(
+    (await send({ visitor: user, body: "A new import tool is out", show: "badge" })).status,
+  ).toBe(201);
+  const page = await signedInPage(browser, user.userId);
+  await expect(page.locator(".launcher.nudge .badge")).toHaveText("1");
+  await nudge(page, { text: "Can we help?" });
+  await page.locator(".preview").getByRole("button", { name: "Close this message" }).click();
+  await expect(page.locator(".preview")).toHaveCount(0);
+  await expect(page.locator(".launcher.nudge")).toHaveCount(1);
 });
 
 test("recipe 2: a message after an hour, cancelled when the domain verifies, or shown as a card", async ({

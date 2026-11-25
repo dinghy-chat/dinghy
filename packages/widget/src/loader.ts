@@ -104,6 +104,8 @@ if (script && publicKey) {
   shadow.adoptedStyleSheets = [sheet];
   // No type: a shadow root holds no form, so the button submits nothing.
   const launcher = document.createElement("button");
+  // From the start, so the chat finds it when open() comes before the saved look.
+  launcher.className = "launcher";
   launcher.setAttribute("aria-label", LAUNCHER_LABEL);
   shadow.append(launcher);
 
@@ -118,10 +120,11 @@ if (script && publicKey) {
   };
   const listeners: Listeners = {};
   const nudge = (on: boolean | NudgeOptions = true) => {
-    // The chat bundle draws the page's card, which a plain nudge() keeps. null is an object too.
+    // The chat bundle draws the page's card, which a plain nudge() keeps. A copy, as the page may
+    // change its object later. null is an object too.
     if (on !== true) {
-      context.nudged = (typeof on === "object" && on) || undefined;
-      context.chat ? context.chat.nudge() : context.nudged && load();
+      context.nudged = (typeof on === "object" && on && { ...on }) || undefined;
+      context.chat ? context.chat.nudge() : context.nudged?.text && load();
     }
     const pulse = !!on;
     if (state.nudging === pulse) return;
@@ -152,7 +155,8 @@ if (script && publicKey) {
     loading = true;
     const bundle = document.createElement("script");
     // A script added this way is async already.
-    bundle.src = `${base}widget.js`;
+    // With the version, so a bundle cached from before a release cannot answer this loader.
+    bundle.src = `${base}widget.js?v=${CONTEXT_VERSION}`;
     // A brief network failure must not disable the launcher until a reload.
     bundle.onerror = () => {
       loading = false;
@@ -166,6 +170,7 @@ if (script && publicKey) {
    * loaded yet, and the next visitor in this browser must not inherit this one's data.
    */
   const endSession = () => {
+    nudge(false);
     context.identity = context.pageContext = context.hostToken = null;
     context.wanted = undefined;
     context.chat?.session();
@@ -251,8 +256,8 @@ if (script && publicKey) {
     const kind = attribute("launcher") ?? saved?.launcher;
     // A hidden launcher still has a drawing, for show(). hasOwn, so "toString" is no kind.
     const drawn = (Object.hasOwn(LAUNCHER_ICONS, kind as string) ? kind : "bubble") as LauncherKind;
-    // Added, so a nudge() made before the saved look arrived keeps its pulse.
-    launcher.classList.add("launcher", drawn);
+    // Added, so the pulse and the open state that came before the saved look stay.
+    launcher.classList.add(drawn);
     launcher.innerHTML = LAUNCHER_ICONS[drawn];
     // As text, never markup: the title is the workspace's own.
     if (drawn === "label")

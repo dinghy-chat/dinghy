@@ -6,7 +6,7 @@ import type { ComponentChildren } from "preact";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Answer, Client, Waiting } from "./client.ts";
 import { emit } from "./page-events.ts";
-import { ChatLine, CloseButton, type Line } from "./panel.tsx";
+import { CloseButton, type Line } from "./panel.tsx";
 import {
   chosenButton,
   OUTBOUND_ANSWERED_MAX,
@@ -284,19 +284,17 @@ export function Choices({ one, onPress }: { one: Choosable; onPress(index: numbe
   );
 }
 
-const noop = () => {};
-
 /**
- * The card above the launcher: who sent it, its first lines, and an outbound message's buttons. A
- * click opens the chat.
+ * The card above the launcher: its message, then an outbound message's buttons. A click on the
+ * message opens the chat.
  */
 export function PreviewCard({
-  line,
+  message,
   onOpen,
   onClose,
   children,
 }: {
-  line: Line;
+  message: ComponentChildren;
   onOpen(): void;
   onClose(): void;
   children?: ComponentChildren;
@@ -305,7 +303,7 @@ export function PreviewCard({
     <aside class="preview" aria-live="polite" aria-label={t("outboundCard")}>
       {/* biome-ignore lint/a11y/useKeyWithClickEvents lint/a11y/noStaticElementInteractions: the launcher opens the chat from the keyboard. */}
       <div class="peek" onClick={onOpen}>
-        <ChatLine line={line} showAuthor onView={onOpen} onUploadError={noop} onRetry={noop} />
+        {message}
       </div>
       {children}
       <CloseButton label={t("outboundClose")} onClick={onClose} />

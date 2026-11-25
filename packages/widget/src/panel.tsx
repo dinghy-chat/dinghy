@@ -33,7 +33,7 @@ import { language, type TextId, t } from "./text.ts";
  * color stays, and the default one turns lighter, so the visitor's messages stand out.
  */
 const DARK =
-  "color-scheme:dark;--primary:var(--d-primary,#24456e);--paper:#14263b;--ink:#e8eef5;--fog:#1d3350;--sand:#0e1d2f;--line:#253a55;--mute:#9db0c6;--bad:#ff8077";
+  "color-scheme:dark;--primary:var(--d-primary,#24456e);--paper:#14263b;--ink:#e8eef5;--fog:#1d3350;--sand:#0e1d2f;--line:#253a55;--mute:#9db0c6;--bad:#ff8077;--choice:var(--ink)";
 
 const { primary: PRIMARY, accent: ACCENT } = DEFAULT_COLORS;
 
@@ -41,7 +41,7 @@ const { primary: PRIMARY, accent: ACCENT } = DEFAULT_COLORS;
 // no white edge where the browser blends the panel with the head it clips.
 export const CSS = `
 *{box-sizing:border-box;scrollbar-width:thin}
-.panel,.preview{--primary:var(--d-primary,${PRIMARY});--paper:#fff;--ink:#0b2239;--fog:#f1f3f6;--sand:#faf8f2;--line:#e6e8ec;--mute:#5f6e80;--bad:#c62a21;color:var(--ink);scrollbar-color:color-mix(in srgb,var(--primary) 60%,var(--line)) transparent;font:14.5px/21px var(--dinghy-font,system-ui,-apple-system,Segoe UI,Roboto,sans-serif)}
+.panel,.preview{--primary:var(--d-primary,${PRIMARY});--paper:#fff;--ink:#0b2239;--fog:#f1f3f6;--sand:#faf8f2;--line:#e6e8ec;--mute:#5f6e80;--bad:#c62a21;--choice:var(--primary);color:var(--ink);scrollbar-color:color-mix(in srgb,var(--primary) 60%,var(--line)) transparent;font:14.5px/21px var(--dinghy-font,system-ui,-apple-system,Segoe UI,Roboto,sans-serif)}
 .panel{position:absolute;right:0;bottom:0;display:flex;flex-direction:column;width:370px;max-width:calc(100vw - var(--d-x,16px) - 16px);height:560px;max-height:calc(100vh - var(--d-y,16px) - 16px);background:linear-gradient(var(--primary) 0 40px,var(--paper) 40px);border-radius:var(--dinghy-radius,var(--d-radius,16px));overflow:hidden;box-shadow:0 2px 6px rgb(13 34 64/.08),0 24px 56px rgb(13 34 64/.22)}
 .head{display:flex;align-items:center;gap:8px;padding:10px 8px 10px 14px;background:var(--primary);color:var(--d-primary-text,#fff)}
 .scene{flex:1;min-width:0;display:flex;align-items:center;gap:10px}
@@ -153,14 +153,15 @@ dialog img{display:block;max-width:95vw;max-height:95svh}
 .brand:hover{text-decoration:underline}
 :host([data-theme=dark]) :is(.panel,.preview){${DARK}}
 @media (prefers-color-scheme:dark){:host([data-theme=auto]) :is(.panel,.preview){${DARK}}}
-.preview{position:absolute;right:0;bottom:76px;display:flex;flex-direction:column;gap:6px;width:300px;max-width:calc(100vw - var(--d-x,16px) - 16px);padding:10px 12px 12px;border-radius:16px;background:var(--sand);box-shadow:0 2px 6px rgb(13 34 64/.08),0 16px 40px rgb(13 34 64/.2)}
+.preview{position:absolute;right:0;bottom:76px;display:flex;flex-direction:column;gap:6px;width:300px;max-width:calc(100vw - var(--d-x,16px) - 16px);padding:14px 16px;border-radius:16px;background:var(--paper);box-shadow:0 2px 6px rgb(13 34 64/.08),0 16px 40px rgb(13 34 64/.2)}
 .launcher[style*=none]~div .preview{bottom:0}
 :host([data-side=left]) .preview{right:auto;left:0}
-.preview .x{position:absolute;top:4px;right:4px;width:28px;height:28px;color:var(--mute)}
+.preview .x{position:absolute;top:6px;right:6px;width:28px;height:28px;color:var(--mute)}
 .peek{display:flex;flex-direction:column;gap:6px;padding-right:24px;cursor:pointer}
-.peek .msg{max-width:100%;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
+.peek .who{margin:0}
+.peek .msg{max-width:100%;margin:0;padding:0;border-radius:0;background:none;box-shadow:none;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
 .choices{display:flex;flex-wrap:wrap;gap:6px}
-.choices button{padding:6px 12px;border:1px solid var(--primary);border-radius:16px;background:var(--paper);color:var(--primary);font:inherit;font-size:13.5px;cursor:pointer}
+.choices button{padding:6px 12px;border:1px solid var(--choice);border-radius:16px;background:var(--paper);color:var(--choice);font:inherit;font-size:13.5px;cursor:pointer}
 .choices button:hover{background:var(--fog)}
 @media (prefers-reduced-motion:no-preference){.preview{animation:rise .2s ease-out}}
 @keyframes rise{from{transform:translateY(8px);opacity:0}}

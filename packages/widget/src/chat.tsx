@@ -55,16 +55,7 @@ import { larger, useUnread } from "./use-unread.ts";
 const NEW_REPLY_SHOWN_MS = 5000;
 const RETRY_LIMIT_MS = 30_000;
 
-/** The page's card as a line from nobody in particular. Its ID cannot be a message's. */
-const NUDGE_LINE: Line = {
-  id: "nudge",
-  seq: null,
-  body: "",
-  attachment: null,
-  fromVisitor: false,
-  author: null,
-  status: "sent",
-};
+const noop = () => {};
 
 /**
  * Adds a confirmed message in commit order. A pending line with the same client ID becomes this
@@ -377,7 +368,13 @@ function Chat({
   );
   usePageReports(client, token, chatted && !fullPage);
   // Only into an open conversation, and only when the workspace shows drafts.
-  useDraftPreview(client, token, openConversation && saved?.typingPreview === true, draft);
+  // The page's message is not the visitor's until they change it.
+  useDraftPreview(
+    client,
+    token,
+    openConversation && saved?.typingPreview === true,
+    draft === pageMessage.current ? "" : draft,
+  );
 
   // Like the pages, the chat's language and the page's context go only for a visitor who has
   // chatted: after the first message, on each load after that, and on each setContext(). They wait
@@ -755,19 +752,32 @@ function Chat({
 
   if (!shown) {
     // The page's card goes first, as the page asked for it at this moment.
+    // Plain text, as a link in it would open a page as well as the chat.
     if (typeof nudged?.text === "string") {
       return (
         <PreviewCard
-          line={{ ...NUDGE_LINE, body: nudged.text }}
+          message={<p class="msg">{nudged.text}</p>}
           onOpen={() => context.chat?.open(nudged.message)}
-          onClose={() => context.nudge(false)}
+          onClose={() => {
+            context.nudge(false);
+            // A waiting outbound message still pulses.
+            if (outbound.unread > 0) context.nudge(true);
+          }}
         />
       );
     }
     const { card } = outbound;
     return card === undefined ? null : (
       <PreviewCard
-        line={waitingLine(card)}
+        message={
+          <ChatLine
+            line={waitingLine(card)}
+            showAuthor
+            onView={() => setOpen(true)}
+            onUploadError={noop}
+            onRetry={noop}
+          />
+        }
         onOpen={() => setOpen(true)}
         onClose={() => outbound.hide(card.id)}
       >
