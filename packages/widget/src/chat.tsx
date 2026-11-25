@@ -392,7 +392,7 @@ function Chat({
   }, [chatted, client, context, contextVersion, fullPage, hasLanguage, token]);
 
   const outbound = useOutbound(context, client, token, {
-    open: shown,
+    open,
     seeing: shown && visible,
     reveal,
     beat,
@@ -755,8 +755,8 @@ function Chat({
   };
 
   if (!shown) {
-    // An open chat waits for its settings, and no card shows meanwhile.
-    if (open) return null;
+    // A card waits for the settings too, for its theme and words, and none shows over the chat.
+    if (open || saved === undefined) return null;
     // The page's card goes first, as the page asked for it at this moment. Its text is plain, so
     // a link in it cannot open a page as well as the chat. Closing it alone keeps the pulse of a
     // waiting outbound message.
@@ -769,9 +769,9 @@ function Chat({
             context.chat?.open(nudgeCard.message);
           }}
           onClose={() => {
+            if (outbound.unread === 0) return context.nudge(false);
             context.nudgeCard = undefined;
             context.chat?.card();
-            if (outbound.unread === 0) context.nudge(false);
           }}
         />
       );

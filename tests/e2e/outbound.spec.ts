@@ -266,11 +266,24 @@ test("calls made before the chat bundle runs settle as they would after", async 
   });
 });
 
-test("no card shows while the open chat waits for its language", async ({ page }) => {
+/** Holds the French texts until the returned function releases them. */
+async function holdFrench(page: Page) {
+  let release = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
   await page.route(/\/widget\/fr\.json/, async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await held;
     await route.continue();
   });
+  return release;
+}
+
+/** How many cards show now. A retrying assertion would wait for the held language. */
+const cardsNow = (page: Page) => page.locator(".preview").count();
+
+test("cards wait for the chat's language, and none shows over the open chat", async ({ page }) => {
+  const release = await holdFrench(page);
   await page.goto(`${server.hostOrigin}/app`);
   // A card loads the chat bundle, which then waits for its language.
   await withDinghy(page, (Dinghy) => {
@@ -278,16 +291,48 @@ test("no card shows while the open chat waits for its language", async ({ page }
     Dinghy.nudge({ text: "Earlier" });
   });
   await expect.poll(() => page.evaluate("window.Dinghy.state.ready")).toBe(true);
+  expect(await cardsNow(page)).toBe(0);
   await withDinghy(page, (Dinghy) => {
     Dinghy.open();
     Dinghy.nudge({ text: "Later" });
   });
-  // Time for the chat to draw, well before the language arrives.
-  // A count at this moment: a retry would wait until the language arrives.
-  await page.waitForTimeout(300);
-  expect(await page.locator(".preview").count()).toBe(0);
+  expect(await cardsNow(page)).toBe(0);
+
+  release();
   await expect(page.getByRole("textbox", { name: "Votre message" })).toBeVisible();
   await expect(page.locator(".preview")).toHaveCount(0);
+  await withDinghy(page, (Dinghy) => Dinghy.close());
+  const card = page.locator(".preview");
+  await expect(card).toContainText("Later");
+  await expect(card.getByRole("button", { name: "Fermer ce message" })).toBeVisible();
+});
+
+test("a message that opens the chat keeps a card made while the chat loads", async ({
+  browser,
+}) => {
+  const user = { userId: "nudge-opening" };
+  expect((await send({ visitor: user, body: "Your import is done", show: "chat" })).status).toBe(
+    201,
+  );
+  const page = await (await browser.newContext()).newPage();
+  const release = await holdFrench(page);
+  const token = await server.hostToken(user.userId);
+  await page.addInitScript((value) => {
+    (window as unknown as { Dinghy: unknown }).Dinghy = {
+      q: [
+        ["identify", value],
+        ["configure", { locale: "fr" }],
+        ["open"],
+        ["nudge", { text: "Later" }],
+      ],
+    };
+  }, token);
+  await page.goto(`${server.hostOrigin}/app`);
+  await expect.poll(() => page.evaluate("window.Dinghy.state.ready")).toBe(true);
+  release();
+  await expect(page.locator(".msg", { hasText: "Your import is done" })).toBeVisible();
+  await withDinghy(page, (Dinghy) => Dinghy.close());
+  await expect(page.locator(".preview")).toContainText("Later");
 });
 
 test("the nudge's message is no typing preview until the visitor changes it", async ({ page }) => {
