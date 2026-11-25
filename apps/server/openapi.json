@@ -719,6 +719,9 @@
           "deleted": {
             "type": "boolean"
           },
+          "read": {
+            "type": "boolean"
+          },
           "fromBot": {
             "type": "boolean"
           },
@@ -10147,6 +10150,25 @@
             "required": false,
             "name": "limit",
             "in": "query"
+          },
+          {
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": ["0"]
+                },
+                {
+                  "type": "string",
+                  "pattern": "^\\d{1,9}\\.\\d{1,18}$"
+                }
+              ],
+              "description": "Use 0 for the initial history, then the returned sync cursor for new and edited messages."
+            },
+            "required": false,
+            "description": "Use 0 for the initial history, then the returned sync cursor for new and edited messages.",
+            "name": "changesAfter",
+            "in": "query"
           }
         ],
         "responses": {
@@ -10168,6 +10190,18 @@
                     },
                     "hasMore": {
                       "type": "boolean"
+                    },
+                    "sync": {
+                      "type": "object",
+                      "properties": {
+                        "cursor": {
+                          "type": "string"
+                        },
+                        "resync": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": ["cursor", "resync"]
                     },
                     "visitorOnline": {
                       "type": ["boolean", "null"]

@@ -226,6 +226,7 @@ export interface Line {
   link?: LinkCard | null;
   /** Deleted by the team: its body is the placeholder, and it cannot be quoted. */
   gone?: boolean;
+  read?: boolean;
   /** The visitor's answer with an outbound message's button, kept for a retry. */
   button?: { outboundMessageId: string; index: number };
   /** The outbound message with buttons that this reply came from. */

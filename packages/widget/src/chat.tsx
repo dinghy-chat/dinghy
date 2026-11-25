@@ -106,6 +106,7 @@ function merge(lines: Line[], message: ChatMessage): Line[] {
     quote: message.replyTo,
     link: message.link,
     gone: message.deleted,
+    ...(message.read && { read: true }),
     fromVisitor: message.fromVisitor,
     author:
       note || message.authorId === null || message.authorName === null

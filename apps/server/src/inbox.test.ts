@@ -490,6 +490,36 @@ describe("replies", () => {
     expect(wakes).toHaveLength(2);
   });
 
+  test("thread sync sends only new and changed messages, and resets an old generation", async () => {
+    const { conversationId } = await visitorStarts(app, a.publicKey, "Question");
+    const path = inA(`/conversations/${conversationId}/messages`);
+    const first = (await (
+      await write("POST", path, { clientId: "thread-sync-first", body: "First" })
+    ).json()) as { id: string; seq: string };
+    const initial = (await (await get(`${path}?changesAfter=0`)).json()) as {
+      sync: { cursor: string };
+    };
+    const empty = await (await get(`${path}?changesAfter=${initial.sync.cursor}`)).json();
+    expect(empty).toMatchObject({
+      messages: [],
+      sync: { cursor: initial.sync.cursor, resync: false },
+    });
+    expect((await write("PATCH", `${path}/${first.id}`, { body: "Edited" })).status).toBe(200);
+    const second = (await (
+      await write("POST", path, { clientId: "thread-sync-second", body: "Second" })
+    ).json()) as { id: string };
+    const delta = await (await get(`${path}?changesAfter=${initial.sync.cursor}`)).json();
+    expect(delta.messages).toMatchObject([
+      { id: first.id, seq: first.seq, body: "Edited" },
+      { id: second.id, body: "Second" },
+    ]);
+    const old = await (await get(`${path}?changesAfter=999999999.0`)).json();
+    expect(old).toMatchObject({
+      sync: { resync: true },
+      messages: expect.arrayContaining([expect.objectContaining({ id: first.id })]),
+    });
+  });
+
   test("a retry returns the original and creates nothing", async () => {
     const { conversationId } = await visitorStarts(app, a.publicKey, "Question");
     const path = inA(`/conversations/${conversationId}/messages`);

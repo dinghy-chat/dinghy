@@ -155,6 +155,7 @@ function SignedInApp({
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [waiting, setWaiting] = useState(0);
   const [thread, setThread] = useState<Thread | null>(null);
+  const threadCache = useRef<Thread | null>(null);
   const [inboxLoading, setInboxLoading] = useState(false);
   const [threadLoading, setThreadLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -231,7 +232,11 @@ function SignedInApp({
       const requestScope = scopeKey;
       if (showLoading) setThreadLoading(true);
       try {
-        const result = await api.thread(conversationId);
+        const cached = threadCache.current;
+        const result = await api.thread(
+          conversationId,
+          cached?.conversation.id === conversationId ? cached : undefined,
+        );
         const target = threadTarget.current;
         if (
           scopeRef.current !== requestScope ||
@@ -241,6 +246,7 @@ function SignedInApp({
         ) {
           return;
         }
+        threadCache.current = result;
         setThread(result);
         setOpened((current) =>
           current?.conversationId === conversationId
@@ -312,6 +318,7 @@ function SignedInApp({
       const next = { ...route, conversation, initialDraft };
       openedRef.current = next;
       setOpened(next);
+      threadCache.current = null;
       setThread(null);
       void loadThread(conversation.id);
     },
@@ -328,6 +335,7 @@ function SignedInApp({
     openedRef.current = null;
     setThreadLoading(false);
     setOpened(null);
+    threadCache.current = null;
     setThread(null);
   }, []);
 
@@ -382,6 +390,7 @@ function SignedInApp({
           setLiveCount(null);
           setPage("inbox");
           setOpened(null);
+          threadCache.current = null;
           setThread(null);
           setInboxLoading(false);
           setThreadLoading(false);
@@ -666,6 +675,7 @@ function SignedInApp({
     setLiveCount(null);
     setPage("inbox");
     setOpened(null);
+    threadCache.current = null;
     setThread(null);
     setMe(null);
     setMembers([]);

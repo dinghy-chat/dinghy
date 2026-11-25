@@ -12,6 +12,7 @@ import { conversation, operator, visitor, workspaceMember } from "./db/schema.ts
 import type { Database } from "./db/tenant.ts";
 import { withWorkspace } from "./db/tenant.ts";
 import { newBrowserToken, normalizeOrigin, sha256Hex, verifyHostToken } from "./identity.ts";
+import { editMessage } from "./message-changes.ts";
 import { appendMessage } from "./messages.ts";
 import { tokenKind, widgetToken } from "./widget.ts";
 import { createWorkspace, type NewWorkspace } from "./workspaces.ts";
@@ -489,6 +490,37 @@ describe("signing in where the visitor chatted", () => {
     const merged = (await response.json()) as { visitorId: string; unread: number };
     expect(merged.unread).toBe(0);
     expect(await readPosition(merged.visitorId)).toBe(read);
+  });
+
+  test("a later read reply stays read when an earlier unread history merges", async () => {
+    const anonymous = await chattedVisitor();
+    const [anonymousChat] = await conversationsOf(anonymous.visitorId);
+    if (anonymousChat === undefined) throw new Error("No anonymous conversation");
+    await teamReply(anonymousChat.id);
+    const token = await hostToken({ subject: "read-before-merge" });
+    const { visitorId } = (await (await me(token)).json()) as { visitorId: string };
+    const [signedInChat] = await owner()
+      .insert(conversation)
+      .values({
+        workspaceId: a.id,
+        visitorId,
+      })
+      .returning({ id: conversation.id });
+    if (signedInChat === undefined) throw new Error("No signed-in conversation");
+    const read = await teamReply(signedInChat.id);
+    await owner().update(visitor).set({ lastReadSeq: read }).where(eq(visitor.id, visitorId));
+
+    const response = await merge(token, anonymous.token);
+    expect(await response.json()).toMatchObject({ unread: 1 });
+    const edited = await withWorkspace(db, a.id, async (tx) => {
+      const found = await tx.execute<{ id: string }>(
+        sql`select id from message where workspace_id = ${a.id} and seq = ${read}`,
+      );
+      const reply = found.rows[0];
+      if (reply === undefined) throw new Error("No reply");
+      return editMessage(tx, a.id, signedInChat.id, reply.id, OPERATOR, { body: "Changed" });
+    });
+    expect(edited.kind).toBe("seen");
   });
 
   test("only a host token merges: a browser token never takes another browser's visitor", async () => {

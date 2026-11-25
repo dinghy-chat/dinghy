@@ -12,6 +12,7 @@ import {
   MESSAGE_KINDS,
   session,
   welcomeLink,
+  workspace,
 } from "./db/schema.ts";
 import {
   type Database,
@@ -62,11 +63,13 @@ import {
   type ConversationRow,
   type ConversationSummary,
   CURSOR_PATTERN,
+  type Cursor,
   catchClosed,
   countOpenByAssignee,
   countWaiting,
   findConversation,
   findMessage,
+  formatCursor,
   InvalidReplyToError,
   isUnread,
   type KeySource,
@@ -530,6 +533,13 @@ const conversationRoute = createRoute({
         .regex(/^\d{1,18}$/)
         .default("0"),
       limit: z.coerce.number().int().min(1).max(100).default(100),
+      changesAfter: z
+        .union([z.literal("0"), z.string().regex(CURSOR_PATTERN)])
+        .optional()
+        .openapi({
+          description:
+            "Use 0 for the initial history, then the returned sync cursor for new and edited messages.",
+        }),
     }),
   },
   responses: {
@@ -542,6 +552,7 @@ const conversationRoute = createRoute({
             conversation: Conversation,
             messages: z.array(InboxMessage),
             hasMore: z.boolean(),
+            sync: z.object({ cursor: z.string(), resync: z.boolean() }).optional(),
             // A widget stream of the visitor's is open now. Null when the server cannot tell.
             visitorOnline: z.boolean().nullable(),
             // The visitor's newest pages, newest first, at most 20, as the widget reported them.
@@ -1283,19 +1294,48 @@ export function createInbox({
       conversationId: string,
       after: bigint,
       limit: number,
+      changes?: Cursor | "start",
     ) {
       const result = await withWorkspace(db, workspaceId, async (tx) => {
         const found = await findConversation(tx, workspaceId, conversationId);
         if (found === null) return null;
         const unread = await isUnread(tx, workspaceId, conversationId, operatorId);
-        const page = await listConversationMessages(tx, workspaceId, conversationId, after, limit);
+        const [feed] =
+          changes === undefined
+            ? []
+            : await tx
+                .select({ generation: workspace.feedGeneration })
+                .from(workspace)
+                .where(eq(workspace.id, workspaceId));
+        const generation = feed?.generation;
+        const resync = typeof changes === "object" && changes.generation !== generation;
+        const position =
+          changes === undefined ? after : typeof changes === "object" && !resync ? changes.seq : 0n;
+        const page = await listConversationMessages(
+          tx,
+          workspaceId,
+          conversationId,
+          position,
+          limit,
+          changes !== undefined,
+        );
+        const sync =
+          generation === undefined
+            ? undefined
+            : {
+                cursor: formatCursor({
+                  generation,
+                  seq: page.messages.at(-1)?.changeSeq ?? position,
+                }),
+                resync,
+              };
         const names = await authorNames(tx, workspaceId, page.messages);
         const pages = await visitorPages(tx, workspaceId, found.visitorId);
         const welcome = found.welcome
           ? await welcomeChat(tx, conversationId, founderPicture)
           : null;
         const receipts = await replyReceipts(tx, workspaceId, conversationId, found.visitorId);
-        return { found, unread, page, names, pages, welcome, receipts };
+        return { found, unread, page, names, pages, welcome, receipts, sync };
       });
       if (result === null) return null;
       const view = {
@@ -1316,6 +1356,7 @@ export function createInbox({
           ),
         ),
         hasMore: result.page.hasMore,
+        ...(result.sync === undefined ? {} : { sync: result.sync }),
         visitorOnline: await visitorPresence.online(workspaceId, result.found.visitorId),
         visitorPages: result.pages.map((row) => ({
           ...row,
@@ -1562,13 +1603,18 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
 
   app.openapi(conversationRoute, async (c) => {
     const { conversationId } = c.req.valid("param");
-    const { after, limit } = c.req.valid("query");
+    const { after, limit, changesAfter } = c.req.valid("query");
     const result = await inbox.read(
       c.get("memberWorkspaceId"),
       readerId(c.get("actor")),
       conversationId,
       BigInt(after),
       limit,
+      changesAfter === undefined
+        ? undefined
+        : changesAfter === "0"
+          ? "start"
+          : parseCursor(changesAfter),
     );
     if (result === null) return c.json(NOT_FOUND, 404);
     return c.json(result.view, 200);
@@ -1655,7 +1701,6 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
     const { conversationId, messageId } = c.req.valid("param");
     const copy = (await copyChange?.(id, conversationId)) ?? null;
     const outcome = await withWorkspace(db, id, async (tx) => {
-      await copy?.lock(tx);
       const edited = await editMessage(
         tx,
         id,
@@ -1663,6 +1708,7 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
         messageId,
         c.get("operatorId"),
         c.req.valid("json"),
+        copy === null ? undefined : () => copy.lock(tx),
       );
       if (edited.kind !== "edited") return edited;
       await copy?.apply(tx, messageId, edited.message.body);
@@ -1686,8 +1732,14 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
     };
     const copy = (await copyChange?.(id, conversationId)) ?? null;
     const outcome = await withWorkspace(db, id, async (tx) => {
-      await copy?.lock(tx);
-      const deleted = await deleteMessage(tx, id, conversationId, messageId, by);
+      const deleted = await deleteMessage(
+        tx,
+        id,
+        conversationId,
+        messageId,
+        by,
+        copy === null ? undefined : () => copy.lock(tx),
+      );
       if (deleted.kind === "deleted") await copy?.apply(tx, messageId, null);
       return deleted;
     });

@@ -282,23 +282,15 @@ export async function restoreDatabase({
 
       await prepare?.(restoredUrl);
       await waitForNoSessions(admin, [target, temporary]);
-      // Closed until the commit works, because a new session, such as a cron backup, would block the
-      // rename that swaps the old database back.
-      await admin.query(`ALTER DATABASE ${quote(temporary)} ALLOW_CONNECTIONS false`);
-
       const retired = `${target}_old_${randomBytes(4).toString("hex")}`;
-      await admin.query(`ALTER DATABASE ${quote(target)} RENAME TO ${quote(retired)}`);
+      await admin.query("BEGIN");
       try {
+        await admin.query(`ALTER DATABASE ${quote(target)} RENAME TO ${quote(retired)}`);
         await admin.query(`ALTER DATABASE ${quote(temporary)} RENAME TO ${quote(target)}`);
-        try {
-          await commit?.();
-          await admin.query(`ALTER DATABASE ${quote(target)} ALLOW_CONNECTIONS true`);
-        } catch (error) {
-          await admin.query(`ALTER DATABASE ${quote(target)} RENAME TO ${quote(temporary)}`);
-          throw error;
-        }
+        await commit?.();
+        await admin.query("COMMIT");
       } catch (error) {
-        await admin.query(`ALTER DATABASE ${quote(retired)} RENAME TO ${quote(target)}`);
+        await admin.query("ROLLBACK").catch(() => undefined);
         throw error;
       }
       await admin.query(`DROP DATABASE ${quote(retired)}`);

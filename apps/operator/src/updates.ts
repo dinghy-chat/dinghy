@@ -22,6 +22,13 @@ export interface Update {
 /** Newest first. Add a new entry at the top, in the pull request that makes the change. */
 export const UPDATES: Update[] = [
   {
+    id: "chat-history-and-inbox-fixes",
+    date: "2026-11-25",
+    kind: "fix",
+    title: "Older chats and read receipts",
+    text: "The mobile inbox includes older open conversations in its list and search. Visitors keep their read receipts when they sign in and their chat histories merge.",
+  },
+  {
     id: "link-previews",
     date: "2026-11-25",
     kind: "feature",

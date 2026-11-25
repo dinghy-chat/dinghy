@@ -826,13 +826,21 @@ describe("a dump and a restore", () => {
     const file = join(await mkdtemp(join(tmpdir(), "dinghy-restore-")), "dump");
     await runDump({ url: database.url("backup"), file });
     await query("update instance_setting set value = 'old data' where key = 'marker'");
+    const maintenance = new URL(database.adminUrl());
+    const databaseName = maintenance.pathname.slice(1);
+    maintenance.pathname = "/postgres";
+    const catalog = () =>
+      query(
+        `select oid from pg_database where datname = '${databaseName}'`,
+        maintenance.toString(),
+      );
+    const original = await catalog();
     await expect(
       restoreDatabase({
         adminUrl: database.adminUrl(),
         dumpFile: file,
         commit: async () => {
-          // A new session here would block the swap back, so it must not get in.
-          await expect(query("select 1")).rejects.toThrow("not currently accepting connections");
+          expect(await catalog()).toEqual(original);
           throw new Error("a secret cannot be replaced");
         },
       }),
