@@ -301,8 +301,19 @@ export function PreviewCard({
 }) {
   return (
     <aside class="preview" aria-live="polite" aria-label={t("outboundCard")}>
-      {/* biome-ignore lint/a11y/useKeyWithClickEvents lint/a11y/noStaticElementInteractions: the launcher opens the chat from the keyboard. */}
-      <div class="peek" onClick={onOpen}>
+      {/* With the launcher hidden, this is the keyboard's way into the chat. */}
+      {/* biome-ignore lint/a11y/useSemanticElements: a button cannot hold the message's blocks. */}
+      <div
+        class="peek"
+        role="button"
+        tabIndex={0}
+        onClick={onOpen}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          onOpen();
+        }}
+      >
         {message}
       </div>
       {children}

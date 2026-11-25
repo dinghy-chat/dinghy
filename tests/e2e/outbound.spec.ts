@@ -170,6 +170,13 @@ test("the page's nudge shows a card, and its click opens the chat with the messa
   await expect(card).toHaveCount(0);
   await expect(page.locator(".launcher.nudge")).toHaveCount(0);
 
+  // The keyboard opens it from the card.
+  await nudge(page, { text: "Still stuck?", message: "Error ID stu901" });
+  await card.getByRole("button", { name: "Still stuck?" }).press("Enter");
+  await expect(messageBox(page)).toHaveValue("Error ID stu901");
+  await page.keyboard.press("Escape");
+  await messageBox(page).waitFor({ state: "hidden" });
+
   // The launcher opens with the card's message too.
   await nudge(page, { text: "Still stuck?", message: "Error ID pqr678" });
   await page.getByRole("button", { name: /Open chat/ }).click();

@@ -161,7 +161,7 @@ Dinghy.nudge({
 });
 ```
 
-Your card shows `text` above the chat button, as plain text, and the button pulses. A click on the card or the button opens the chat with `message` in the message box, as `Dinghy.open({ message })` does, so the visitor sends the error ID with their question. `message` is optional. Nothing goes to the server until the visitor sends, so operators see only what the visitor sends.
+Your card shows `text` above the chat button, as plain text, and the button pulses. A click on the card or the button opens the chat with `message` in the message box, as `Dinghy.open({ message })` does, so the visitor sends the error ID with their question. `message` is optional. Your card and `message` stay in the page. Once the visitor changes the message, it is their draft, and operators see it as they type when typing previews are on. The card and the message box can be reached from the keyboard.
 
 The card's close button, `Dinghy.nudge(false)`, the next open and `Dinghy.reset()` remove your card. Another `nudge({ text })` replaces it, and a plain `nudge()` keeps it. While the chat is open, your card waits until the visitor closes it.
 

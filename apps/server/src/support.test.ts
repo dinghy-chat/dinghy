@@ -4,6 +4,7 @@ import { Redis } from "iovalkey";
 import { SignJWT } from "jose";
 import { pino } from "pino";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { CONTEXT_VERSION } from "../../../packages/widget/src/shared.ts";
 import { createTestDatabase, type TestDatabase } from "../test/database.ts";
 import { AUTH_SECRET, fromSocket, PUBLIC_URL, VALKEY_URL } from "../test/env.ts";
 import { signedInOperator } from "../test/operators.ts";
@@ -680,7 +681,7 @@ describe("chat links", () => {
     expect(response.status).toBe(200);
     const page = await response.text();
     expect(page).toContain(`data-key="${a.publicKey}"`);
-    expect(page).toContain('src="/widget/widget.js"');
+    expect(page).toContain(`src="/widget/widget.js?v=${CONTEXT_VERSION}"`);
     expect(page).not.toContain(link);
     const csp = response.headers.get("content-security-policy") ?? "";
     expect(csp).toContain("default-src 'none'");

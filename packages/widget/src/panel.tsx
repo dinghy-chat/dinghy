@@ -159,6 +159,7 @@ dialog img{display:block;max-width:95vw;max-height:95svh}
 .preview .x{position:absolute;top:6px;right:6px;width:28px;height:28px;color:var(--mute)}
 .peek{display:flex;flex-direction:column;gap:6px;padding-right:24px;cursor:pointer}
 .peek .who{margin:0}
+.peek:focus-visible{outline:2px solid var(--choice);outline-offset:4px;border-radius:6px}
 .peek .msg{max-width:100%;margin:0;padding:0;border-radius:0;background:none;box-shadow:none;display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}
 .choices{display:flex;flex-wrap:wrap;gap:6px}
 .choices button{padding:6px 12px;border:1px solid var(--choice);border-radius:16px;background:var(--paper);color:var(--choice);font:inherit;font-size:13.5px;cursor:pointer}
