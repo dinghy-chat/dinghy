@@ -717,6 +717,8 @@ export function registerBillingRoutes(
         "line_items[0][quantity]": "1",
         // Stripe sells as the merchant of record, and so collects and files the sales tax and VAT.
         "managed_payments[enabled]": "true",
+        // The page shows a field for a promotion code made in the Stripe dashboard.
+        allow_promotion_codes: "true",
         "metadata[workspace_id]": id,
         "metadata[dinghy_attempt]": String(attempt),
         "subscription_data[metadata][workspace_id]": id,
