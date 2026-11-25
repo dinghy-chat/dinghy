@@ -122,6 +122,12 @@ test("recipe 1: a welcome waits on the contact until the visitor opens the chat 
 
 const nudge = (page: Page, on?: boolean | NudgeOptions) =>
   page.evaluate((value) => (window as unknown as { Dinghy: DinghyApi }).Dinghy.nudge(value), on);
+/**
+ * Runs `calls` in the page with its `Dinghy`. They go as source, as Playwright sends a function,
+ * so they cannot read this file's variables.
+ */
+const withDinghy = (page: Page, calls: (Dinghy: DinghyApi) => void) =>
+  page.evaluate(`(${calls})(window.Dinghy)`);
 const messageBox = (page: Page) => page.getByRole("textbox", { name: "Your message" });
 const pulses = (page: Page) => page.locator(".launcher.nudge");
 
@@ -186,13 +192,12 @@ test("the page's nudge shows a card until it opens the chat with its message", a
   });
 
   await test.step("a card made right after an open waits for the close", async () => {
-    await page.evaluate(() => {
-      const { Dinghy } = window as unknown as { Dinghy: DinghyApi };
+    await withDinghy(page, (Dinghy) => {
       Dinghy.open();
       Dinghy.nudge({ text: "Come back anytime" });
     });
     await expect(messageBox(page)).toBeVisible();
-    await page.evaluate(() => (window as unknown as { Dinghy: DinghyApi }).Dinghy.close());
+    await withDinghy(page, (Dinghy) => Dinghy.close());
     await expect(card).toContainText("Come back anytime");
   });
 
@@ -219,20 +224,70 @@ test("a nudge before the saved look still pulses, and reset() drops the card", a
   await expect(messageBox(page)).toHaveValue("");
 });
 
-test("a second open() before the chat bundle runs keeps the first one's message", async ({
-  page,
-}) => {
-  await page.route(/\/widget\/widget\.js/, async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 500));
+test("calls made before the chat bundle runs settle as they would after", async ({ page }) => {
+  /** Runs the calls on a fresh page, before the chat bundle loads. */
+  const before = async (calls: (Dinghy: DinghyApi) => void) => {
+    await page.goto(`${server.hostOrigin}/app`);
+    await withDinghy(page, calls);
+  };
+
+  await test.step("a second open() keeps the first one's message", async () => {
+    await before((Dinghy) => {
+      Dinghy.open({ message: "Error 127" });
+      Dinghy.open();
+    });
+    await expect(messageBox(page)).toHaveValue("Error 127");
+  });
+
+  await test.step("a card made after an open() gives its message to the next open()", async () => {
+    await before((Dinghy) => {
+      Dinghy.open({ message: "Error A" });
+      Dinghy.nudge({ text: "Retry failed", message: "Error B" });
+      Dinghy.open();
+    });
+    await expect(messageBox(page)).toHaveValue("Error B");
+  });
+
+  await test.step("a card made after an open() waits for the close", async () => {
+    await before((Dinghy) => {
+      Dinghy.open();
+      Dinghy.nudge({ text: "Need help?" });
+    });
+    await expect(messageBox(page)).toBeVisible();
+    await withDinghy(page, (Dinghy) => Dinghy.close());
+    await expect(page.locator(".preview")).toContainText("Need help?");
+  });
+
+  await test.step("a card with no text is none, and keeps no message", async () => {
+    await before((Dinghy) => Dinghy.nudge({ text: "", message: "Error 127" }));
+    await page.getByRole("button", { name: /Open chat/ }).click();
+    await expect(messageBox(page)).toHaveValue("");
+    await expect(page.locator(".preview")).toHaveCount(0);
+  });
+});
+
+test("no card shows while the open chat waits for its language", async ({ page }) => {
+  await page.route(/\/widget\/fr\.json/, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
     await route.continue();
   });
   await page.goto(`${server.hostOrigin}/app`);
-  await page.evaluate(() => {
-    const { Dinghy } = window as unknown as { Dinghy: DinghyApi };
-    Dinghy.open({ message: "Error 127" });
-    Dinghy.open();
+  // A card loads the chat bundle, which then waits for its language.
+  await withDinghy(page, (Dinghy) => {
+    Dinghy.configure({ locale: "fr" });
+    Dinghy.nudge({ text: "Earlier" });
   });
-  await expect(messageBox(page)).toHaveValue("Error 127");
+  await expect.poll(() => page.evaluate("window.Dinghy.state.ready")).toBe(true);
+  await withDinghy(page, (Dinghy) => {
+    Dinghy.open();
+    Dinghy.nudge({ text: "Later" });
+  });
+  // Time for the chat to draw, well before the language arrives.
+  // A count at this moment: a retry would wait until the language arrives.
+  await page.waitForTimeout(300);
+  expect(await page.locator(".preview").count()).toBe(0);
+  await expect(page.getByRole("textbox", { name: "Votre message" })).toBeVisible();
+  await expect(page.locator(".preview")).toHaveCount(0);
 });
 
 test("the nudge's message is no typing preview until the visitor changes it", async ({ page }) => {
@@ -302,13 +357,14 @@ test("the page's card takes the place of a waiting card, which comes back after 
 
 test("a link in a waiting card keeps its own Enter key", async ({ browser }) => {
   const user = { userId: "card-link" };
-  const body = "Read the [import guide](https://example.com/import).";
+  const guide = `${server.hostOrigin}/app?guide`;
+  const body = `Read the [import guide](${guide}).`;
   expect((await send({ visitor: user, body, show: "preview" })).status).toBe(201);
   const page = await signedInPage(browser, user.userId);
   const link = page.locator(".preview").getByRole("link", { name: "import guide" });
   const popup = page.waitForEvent("popup");
   await link.press("Enter");
-  expect((await popup).url()).toBe("https://example.com/import");
+  expect((await popup).url()).toBe(guide);
 });
 
 test("recipe 2: a message after an hour, cancelled when the domain verifies, or shown as a card", async ({

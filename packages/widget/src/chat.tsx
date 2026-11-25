@@ -755,14 +755,19 @@ function Chat({
   };
 
   if (!shown) {
+    // An open chat waits for its settings, and no card shows meanwhile.
+    if (open) return null;
     // The page's card goes first, as the page asked for it at this moment. Its text is plain, so
     // a link in it cannot open a page as well as the chat. Closing it alone keeps the pulse of a
     // waiting outbound message.
-    if (typeof nudgeCard?.text === "string" && nudgeCard.text !== "") {
+    if (nudgeCard !== undefined) {
       return (
         <PreviewCard
           message={<p class="msg">{nudgeCard.text}</p>}
-          onOpen={() => context.chat?.open(nudgeCard.message)}
+          onOpen={() => {
+            context.nudge(false);
+            context.chat?.open(nudgeCard.message);
+          }}
           onClose={() => {
             context.nudgeCard = undefined;
             context.chat?.card();
@@ -974,16 +979,23 @@ function Root({ context }: { context: WidgetContext }) {
       wasOpen(publicKey),
   );
   const [open, setOpenState] = useState(false);
-  // The state changes at once, so a toggle() right after a close() sees it closed. An open ends
-  // the pulse and the page's card at once too, whichever way it opens, so a nudge() made right
-  // after it stays.
+  // The state changes at once, so a toggle() right after a close() sees it closed.
   const setOpen = useCallback(
     (next: boolean) => {
       context.state.open = next;
-      if (next) context.nudge(false);
       setOpenState(next);
     },
     [context],
+  );
+  // The visitor or a message opens the chat here, which ends the pulse and the page's card at
+  // once, so a nudge() made right after it stays. The loader's open() ends them itself, so an
+  // open() it replays here leaves a card the page made since.
+  const openHere = useCallback(
+    (next: boolean) => {
+      if (next) context.nudge(false);
+      setOpen(next);
+    },
+    [context, setOpen],
   );
   const [restoring, setRestoring] = useState(remembered);
   const restored = useCallback(
@@ -997,8 +1009,8 @@ function Root({ context }: { context: WidgetContext }) {
   // A message opens the chat, and the focus stays where the visitor had it.
   const reveal = useCallback(() => {
     setQuiet(true);
-    setOpen(true);
-  }, [setOpen]);
+    openHere(true);
+  }, [openHere]);
   const [session, setSession] = useState(0);
   const [prefill, setPrefill] = useState<{ text: string } | null>(null);
   const [contextVersion, setContextVersion] = useState(0);
@@ -1068,7 +1080,7 @@ function Root({ context }: { context: WidgetContext }) {
       key={session}
       context={context}
       open={open}
-      setOpen={setOpen}
+      setOpen={openHere}
       quiet={quiet}
       restoring={restoring}
       restored={restored}
