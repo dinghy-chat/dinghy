@@ -4442,22 +4442,6 @@ main:has(> .lost) {
   max-width: none;
 }
 
-.band-eyebrow {
-  display: inline-block;
-  margin-bottom: 14px;
-  padding: 5px 12px;
-  border-radius: 999px;
-  background: var(--navy);
-  color: #fff;
-  font: 650 13px/1.2 var(--body);
-  letter-spacing: .02em;
-  text-decoration: none;
-}
-
-a.band-eyebrow:hover {
-  background: var(--navy-light);
-}
-
 .story {
   margin-inline: auto;
   padding-block: clamp(36px, 4.4vw, 60px) clamp(64px, 7vw, 104px);

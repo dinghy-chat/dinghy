@@ -556,14 +556,8 @@ const BAND = (heading: string, lede: string, meta: string, extra = "") => `    <
       </div>
     </section>`;
 
-/** What a content folder is called above a page's title, and where that label links. */
-const SECTION: Record<string, { label: string; path: string }> = {
-  "Why Dinghy": { label: "Why Dinghy", path: "/open-source-live-chat" },
-  Compare: { label: "Compare", path: "/compare/" },
-  "Use cases": { label: "Use cases", path: "/for/" },
-  "Install guides": { label: "Install guides", path: "/guides/" },
-  Blog: { label: "Blog", path: "/blog/" },
-};
+/** Content folders whose name labels a card that links across folders. */
+const LABELLED_GROUPS = new Set(["Why Dinghy", "Compare", "Use cases", "Install guides", "Blog"]);
 
 /** A content page's title, from its Markdown, for the cards that link to it. */
 function headingOf(page: Page): string {
@@ -620,7 +614,7 @@ function cards(pages: Page[], from?: Page): string {
         page.group === "Blog" && page.date
           ? `${longDate(page.date)} · ${minutesToRead(page)} min read`
           : from && from.group !== page.group
-            ? (SECTION[page.group]?.label ?? "")
+            ? (LABELLED_GROUPS.has(page.group) ? page.group : "")
             : "";
       const logo = page.logo
         ? `\n          <img class="card-logo" src="/img/logos/${page.logo}.svg" width="28" height="28" alt="">`
@@ -678,14 +672,7 @@ const logoTile = (page: Page) =>
 function buildStory(page: Page): { html: string; images: string[] } {
   const doc = render(page);
   const description = page.description ?? plain(doc.lede);
-  const section = SECTION[page.group];
   const index = isIndex(page);
-  // The changelog has no section label: its title says what it is.
-  const eyebrow = !section
-    ? ""
-    : section.path !== page.path
-      ? `<a class="band-eyebrow" href="${section.path}">${section.label}</a>`
-      : `<span class="band-eyebrow">${section.label}</span>`;
   let meta = "";
   if (page.group === "Blog" && !index && page.date)
     meta = `${longDate(page.date)} · ${minutesToRead(page)} min read`;
@@ -714,7 +701,7 @@ function buildStory(page: Page): { html: string; images: string[] } {
 ${header(page.kind)}
 
   <main id="main">
-${BAND(`${logoTile(page)}${eyebrow}\n          <h1>${doc.title}</h1>`, page.description ? escape(page.description) : doc.lede, metaLine, "story-band")}
+${BAND(`${logoTile(page)}\n          <h1>${doc.title}</h1>`, page.description ? escape(page.description) : doc.lede, metaLine, "story-band")}
 
     <div class="story">
       <article class="doc story-doc">
