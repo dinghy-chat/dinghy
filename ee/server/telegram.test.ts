@@ -55,11 +55,13 @@ describe("Telegram notices", () => {
     );
   });
 
-  test("a set topic posts to its thread, and an unset one to General with no thread", async () => {
+  test("a set topic posts to its thread, and General, unset or 1, gets no thread", async () => {
     const { calls, send } = fakeFetch(ok);
-    const notify = createTelegram(settings(send, { signups: 7 }), pino({ level: "silent" }));
+    const silent = pino({ level: "silent" });
+    const notify = createTelegram(settings(send, { signups: 7, billing: 1 }), silent);
     await notify?.("signups", notice);
     await notify?.("billing", notice);
+    await createTelegram(settings(send), silent)?.("billing", notice);
     expect(calls[0]?.url).toBe(`https://api.telegram.org/bot${TOKEN}/sendMessage`);
     expect(calls[0]?.body).toEqual({
       chat_id: "-1006098886410",
@@ -69,6 +71,7 @@ describe("Telegram notices", () => {
       disable_web_page_preview: true,
     });
     expect(calls[1]?.body).not.toHaveProperty("message_thread_id");
+    expect(calls[2]?.body).not.toHaveProperty("message_thread_id");
   });
 
   test("a refused or failed send resolves, and logs a warning without the token", async () => {

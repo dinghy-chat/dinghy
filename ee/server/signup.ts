@@ -1,6 +1,6 @@
 // Licensed under the Dinghy Enterprise License. See ee/LICENSE.
 import { createRoute, z } from "@hono/zod-openapi";
-import { and, eq, isNull, sql } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 import { bodyLimit } from "hono/body-limit";
 import type { Redis } from "iovalkey";
 import type pg from "pg";
@@ -218,28 +218,6 @@ export function registerSignup(
       .catch((err: unknown) => logger.warn({ err }, "a welcome email was not sent"));
   };
 
-  /** At most once, after the commit, out of the request's way. */
-  const announce = async (
-    send: Notify,
-    created: { id: string; name: string },
-    operatorId: string,
-    email: string,
-  ) => {
-    // The function reads across workspaces for the session's own operator, so it needs no tenant.
-    const counted = await db.execute<{ n: number }>(
-      sql`select count(*)::int as n from operator_workspaces(${operatorId})`,
-    );
-    await send("signups", {
-      title: "Workspace created",
-      fields: [
-        ["Workspace", created],
-        ["Owner", email],
-        ["Mode", mode],
-        ["For this owner", `workspace #${counted.rows[0]?.n ?? 1}`],
-      ],
-    });
-  };
-
   /** A new email gets the signup link. One with an account gets a sign-in link and a note. */
   const sendLink = async (email: string) => {
     if (mailer === undefined) return;
@@ -305,12 +283,15 @@ export function registerSignup(
       return { welcomed: marked.length > 0, chatStarted: started };
     });
     if (welcomed) welcome(c.get("operatorEmail"), body.name, body.workspaceName);
-    if (notify !== undefined) {
-      const created = { id: keys.id, name: body.workspaceName };
-      announce(notify, created, operatorId, c.get("operatorEmail")).catch((err: unknown) =>
-        logger.warn({ err }, "a Telegram notice could not be made"),
-      );
-    }
+    // At most once, after the commit, out of the request's way.
+    void notify?.("signups", {
+      title: "Workspace created",
+      fields: [
+        ["Workspace", { id: keys.id, name: body.workspaceName }],
+        ["Owner", c.get("operatorEmail")],
+        ["Mode", mode],
+      ],
+    });
     if (welcomeChat !== undefined) {
       if (chatStarted) live.wake(welcomeChat.workspaceId, OPERATORS);
       else

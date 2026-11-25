@@ -113,9 +113,9 @@ Dinghy Cloud's admins hear about signups and billing in a Telegram group with to
 - `TELEGRAM_BOT_TOKEN`: the bot that posts. It can come from a file in `DINGHY_SECRETS_DIR`.
 - `TELEGRAM_CHAT_ID`: the group, such as `-1006098886410`.
 - `TELEGRAM_TOPIC_SIGNUPS`: the topic for new workspaces, a widget's first site and new operators.
-- `TELEGRAM_TOPIC_BILLING`: the topic for payments, cancellations, read-only workspaces and deletions. Each comes from a lifecycle email once its reason still holds, so it posts once per occurrence, at least once.
+- `TELEGRAM_TOPIC_BILLING`: the topic for payments, cancellations, read-only workspaces and deletions. Each comes from a lifecycle email when the worker sends it, so it posts at most once per occurrence.
 
-A topic left unset posts to the group's General topic. A notice that Telegram refuses or that times out is logged and dropped, and never fails a request or the worker.
+A topic left unset, or set to `1`, posts to the group's General topic. A notice that Telegram refuses or that times out is logged and dropped, and never fails a request or the worker.
 
 App store reviewers sign in to the Dinghy app with one account that has a fixed code, because they cannot read its mailbox. Two cloud settings turn this on. Set both or none, because the web role refuses to start with one alone. A self-hosted install leaves them unset.
 

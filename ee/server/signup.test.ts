@@ -736,8 +736,7 @@ describe("the admins' Telegram notices", () => {
         "<b>Workspace created</b>\n\n" +
         `<b>Workspace:</b> Notice &lt;Co&gt; (<code>${created.workspaceId}</code>)\n` +
         `<b>Owner:</b> ${created.email}\n` +
-        "<b>Mode:</b> early\n" +
-        "<b>For this owner:</b> workspace #1",
+        "<b>Mode:</b> early",
     });
 
     await owner

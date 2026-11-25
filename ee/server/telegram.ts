@@ -40,6 +40,9 @@ export function telegramFromConfig(config: Config): TelegramSettings | undefined
 
 const TELEGRAM_TIMEOUT_MS = 5_000;
 
+/** The General topic's thread ID, which Telegram accepts only as no thread. */
+const GENERAL_TOPIC = 1;
+
 /** Why Telegram refused a message, in its own words. */
 const telegramError = z.object({ description: z.string() });
 
@@ -81,8 +84,8 @@ export function createTelegram(
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           chat_id: settings.chatId,
-          // Telegram refuses thread 1 for the General topic, so General gets no thread at all.
-          ...(thread !== undefined && { message_thread_id: thread }),
+          // Telegram refuses thread 1, the General topic, so General gets no thread at all.
+          ...(thread !== undefined && thread !== GENERAL_TOPIC && { message_thread_id: thread }),
           text: noticeHtml(notice),
           parse_mode: "HTML",
           disable_web_page_preview: true,

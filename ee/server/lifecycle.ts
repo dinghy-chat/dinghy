@@ -622,8 +622,9 @@ async function sendLifecycleEmails({
     await withWorkspace(db, email.workspaceId, (tx) =>
       tx.update(lifecycleEmail).set({ sentAt: now, claimedUntil: null }).where(isEmail(email)),
     );
-    const notice = billingNotice(email, found.name, found.state);
-    if (notice !== undefined) await notify?.("billing", notice);
+    // Not awaited: a slow Telegram never holds up the worker's other jobs.
+    const notice = notify && billingNotice(email, found.name, found.state);
+    if (notice !== undefined) void notify?.("billing", notice);
   }
 
   /** The reason passed before the email was due, so it never goes. */
@@ -644,21 +645,13 @@ const BILLING_TITLES: Partial<Record<LifecycleEmailKind, string>> = {
   deleted: "Workspace deleted",
 };
 
-/** The kinds that end the paid time, whose notice says how long it lasted. */
-const ENDING_KINDS = new Set<LifecycleEmailKind>(["cancellation", "read_only", "deleted"]);
-
 /** The admins' notice for a billing email, or none for the onboarding and reminder kinds. */
 function billingNotice(email: ClaimedEmail, name: string, state: EmailState): Notice | undefined {
   const title = BILLING_TITLES[email.kind];
   if (title === undefined) return undefined;
   const fields: Notice["fields"] = [["Workspace", { name, id: email.workspaceId }]];
-  if (email.kind === "cancellation" && state.currentPeriodEnd !== null) {
-    fields.push(["Ends on", state.currentPeriodEnd.toISOString().slice(0, 10)]);
-  }
-  if (ENDING_KINDS.has(email.kind) && state.paidAt !== null) {
-    const days = Math.round((email.occurrenceAt.getTime() - state.paidAt.getTime()) / DAY_MS);
-    fields.push(["Paid for", `${days} days`]);
-  }
+  const end = email.kind === "cancellation" ? serviceEnd(state) : null;
+  if (end !== null) fields.push(["Service ends", end.toISOString().slice(0, 10)]);
   return { title, fields };
 }
 
