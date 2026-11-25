@@ -37,6 +37,7 @@ import { createInbox, registerInboxRoutes } from "./inbox.ts";
 import { registerKeyEvents } from "./key-events.ts";
 import { registerLabelRoutes } from "./labels.ts";
 import { NO_LIMITS } from "./limits.ts";
+import { type PreviewNetwork, registerLinkPreviewRoute } from "./link-preview.ts";
 import { type Live, noLive } from "./live.ts";
 import { createLiveVisitors, registerLiveVisitorRoutes } from "./live-visitors.ts";
 import type { Mailer } from "./mailer.ts";
@@ -144,6 +145,8 @@ export interface AppOptions {
   countryOf?: CountryOf;
   /** Fetches an OAuth client's metadata document. Tests replace it, because it needs the internet. */
   fetchClientDocument?: FetchClientDocument;
+  /** Where link previews connect. Tests point it at their own pages, which are private. */
+  linkPreviewNetwork?: PreviewNetwork;
 }
 
 export interface AppEnv {
@@ -265,6 +268,7 @@ export function createApp({
   webhooks = PUBLIC_ONLY,
   countryOf = NO_COUNTRIES,
   fetchClientDocument: fetchDocument = fetchClientDocument,
+  linkPreviewNetwork,
 }: AppOptions): App {
   const app: App = new OpenAPIHono({
     defaultHook: (result, c) => {
@@ -507,6 +511,7 @@ export function createApp({
       });
     registerInboxRoutes(app, {
       copyReply: cloud?.copyReply,
+      copyChange: cloud?.copyChange,
       founderPicture,
       db,
       uploads,
@@ -517,6 +522,9 @@ export function createApp({
       stream,
       visitorPresence,
     });
+    if (uploads !== undefined) {
+      registerLinkPreviewRoute(app, { db, uploads, rateLimit, network: linkPreviewNetwork });
+    }
     registerApiKeyRoutes(app, db, live, logger);
     // On https or a loopback address only, because OAuth 2.1 allows no other http issuer.
     const issuer = oauthIssuer(String(auth.options.baseURL));
@@ -543,6 +551,7 @@ export function createApp({
       founderPicture,
       db,
       uploads,
+      limits,
       live,
       visitorPresence,
     });

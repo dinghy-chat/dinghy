@@ -1,3 +1,5 @@
+import type { LinkPreview } from "../operator/src/link-preview.ts";
+
 export interface ReplyScope {
   origin: string;
   workspaceId: string;
@@ -9,15 +11,29 @@ export interface PendingReply {
   clientId: string;
   body: string;
   replyToMessageId: string | null;
+  /** The card the reply carries, kept so a retry after a restart still sends it. */
+  linkPreview: LinkPreview | null;
 }
+
+/** A pending reply as its row holds it, with its card as JSON. */
+type StoredReply = Omit<PendingReply, "linkPreview"> & { linkPreview: string | null };
+
+const pendingOf = ({ linkPreview, ...reply }: StoredReply): PendingReply => ({
+  ...reply,
+  linkPreview: linkPreview === null ? null : (JSON.parse(linkPreview) as LinkPreview),
+});
 
 interface TableColumn {
   name: string;
 }
 
-interface StoredDraft {
+/** An unsent reply, and the links whose card the operator removed from it. */
+export interface ReplyDraft {
   body: string;
+  removedLinks: string[];
 }
+
+const NO_DRAFT: ReplyDraft = { body: "", removedLinks: [] };
 
 interface QueueDatabase {
   execSync(sql: string): void;
@@ -50,41 +66,54 @@ export function openReplyQueue(db: QueueDatabase, scope: ReplyScope, newId: () =
     conversationId TEXT NOT NULL,
     clientId TEXT NOT NULL UNIQUE,
     body TEXT NOT NULL,
-    replyToMessageId TEXT
+    replyToMessageId TEXT,
+    linkPreview TEXT
   )`);
   const columns = db.getAllSync<TableColumn>("PRAGMA table_info(pending_reply)");
   if (!columns.some((column) => column.name === "replyToMessageId")) {
     db.execSync("ALTER TABLE pending_reply ADD COLUMN replyToMessageId TEXT");
   }
+  if (!columns.some((column) => column.name === "linkPreview")) {
+    db.execSync("ALTER TABLE pending_reply ADD COLUMN linkPreview TEXT");
+  }
   db.execSync(`CREATE TABLE IF NOT EXISTS public_reply_draft (
     account TEXT NOT NULL,
     conversationId TEXT NOT NULL,
     body TEXT NOT NULL,
+    removedLinks TEXT,
     PRIMARY KEY (account, conversationId)
   )`);
+  const draftColumns = db.getAllSync<TableColumn>("PRAGMA table_info(public_reply_draft)");
+  if (!draftColumns.some((column) => column.name === "removedLinks")) {
+    db.execSync("ALTER TABLE public_reply_draft ADD COLUMN removedLinks TEXT");
+  }
   const account = JSON.stringify([scope.origin, scope.workspaceId, scope.operatorId]);
   const select =
-    "SELECT conversationId, clientId, body, replyToMessageId FROM pending_reply WHERE account = ?";
+    "SELECT conversationId, clientId, body, replyToMessageId, linkPreview FROM pending_reply WHERE account = ?";
   return {
     list(conversationId?: string) {
-      return conversationId === undefined
-        ? db.getAllSync<PendingReply>(`${select} ORDER BY sequence`, account)
-        : db.getAllSync<PendingReply>(
-            `${select} AND conversationId = ? ORDER BY sequence`,
-            account,
-            conversationId,
-          );
+      const rows =
+        conversationId === undefined
+          ? db.getAllSync<StoredReply>(`${select} ORDER BY sequence`, account)
+          : db.getAllSync<StoredReply>(
+              `${select} AND conversationId = ? ORDER BY sequence`,
+              account,
+              conversationId,
+            );
+      return rows.map(pendingOf);
     },
-    getDraft(conversationId: string) {
-      return (
-        db.getAllSync<StoredDraft>(
-          "SELECT body FROM public_reply_draft WHERE account = ? AND conversationId = ?",
-          account,
-          conversationId,
-        )[0]?.body ?? ""
-      );
+    getDraft(conversationId: string): ReplyDraft {
+      const row = db.getAllSync<{ body: string; removedLinks: string | null }>(
+        "SELECT body, removedLinks FROM public_reply_draft WHERE account = ? AND conversationId = ?",
+        account,
+        conversationId,
+      )[0];
+      if (row === undefined) return NO_DRAFT;
+      const removedLinks =
+        row.removedLinks === null ? [] : (JSON.parse(row.removedLinks) as string[]);
+      return { body: row.body, removedLinks };
     },
-    saveDraft(conversationId: string, body: string) {
+    saveDraft(conversationId: string, { body, removedLinks }: ReplyDraft) {
       if (!body) {
         db.runSync(
           "DELETE FROM public_reply_draft WHERE account = ? AND conversationId = ?",
@@ -94,25 +123,34 @@ export function openReplyQueue(db: QueueDatabase, scope: ReplyScope, newId: () =
         return;
       }
       db.runSync(
-        `INSERT INTO public_reply_draft (account, conversationId, body) VALUES (?, ?, ?)
-         ON CONFLICT (account, conversationId) DO UPDATE SET body = excluded.body`,
+        `INSERT INTO public_reply_draft (account, conversationId, body, removedLinks)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT (account, conversationId)
+         DO UPDATE SET body = excluded.body, removedLinks = excluded.removedLinks`,
         account,
         conversationId,
         body,
+        JSON.stringify(removedLinks),
       );
     },
-    enqueue(conversationId: string, body: string, replyToMessageId: string | null = null) {
+    enqueue(
+      conversationId: string,
+      body: string,
+      replyToMessageId: string | null = null,
+      linkPreview: LinkPreview | null = null,
+    ) {
       const clientId = newId();
       runTransaction(db, () => {
         db.runSync(
           `INSERT INTO pending_reply
-             (account, conversationId, clientId, body, replyToMessageId)
-           VALUES (?, ?, ?, ?, ?)`,
+             (account, conversationId, clientId, body, replyToMessageId, linkPreview)
+           VALUES (?, ?, ?, ?, ?, ?)`,
           account,
           conversationId,
           clientId,
           body,
           replyToMessageId,
+          linkPreview === null ? null : JSON.stringify(linkPreview),
         );
         db.runSync(
           "DELETE FROM public_reply_draft WHERE account = ? AND conversationId = ?",
@@ -120,7 +158,7 @@ export function openReplyQueue(db: QueueDatabase, scope: ReplyScope, newId: () =
           conversationId,
         );
       });
-      return { conversationId, clientId, body, replyToMessageId };
+      return { conversationId, clientId, body, replyToMessageId, linkPreview };
     },
     discard(reply: PendingReply) {
       if (activeSends.has(JSON.stringify([account, reply.clientId]))) return false;
@@ -135,11 +173,9 @@ export function openReplyQueue(db: QueueDatabase, scope: ReplyScope, newId: () =
       const key = JSON.stringify([account, reply.clientId]);
       const active = activeSends.get(key);
       if (active) return active;
-      const record = db.getAllSync<PendingReply>(
-        `${select} AND clientId = ?`,
-        account,
-        reply.clientId,
-      )[0];
+      const record = db
+        .getAllSync<StoredReply>(`${select} AND clientId = ?`, account, reply.clientId)
+        .map(pendingOf)[0];
       if (!record) return;
       const send = Promise.resolve()
         .then(() => post(record))

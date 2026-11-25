@@ -15,8 +15,9 @@ import {
 } from "react-native";
 import { SafeAreaProvider, useSafeAreaInsets } from "react-native-safe-area-context";
 import { ScreenStack, ScreenStackItem } from "react-native-screens";
+import type { LinkPreview } from "../operator/src/link-preview.ts";
 import { t } from "../operator/src/text.ts";
-import { createOutbox, type PendingReply } from "./outbox";
+import { createOutbox, type PendingReply, type ReplyDraft } from "./outbox";
 import { AnalyticsScreen } from "./src/analytics-screen";
 import { ApiError, DinghyApi } from "./src/api";
 import { clearSession, readSession, saveSession } from "./src/auth";
@@ -60,7 +61,7 @@ const LIVE_COUNT_INTERVAL_MS = 30_000;
 const HIDDEN_HEADER = { hidden: true } as const;
 
 /** The conversation on top of the tabs, with the draft it opened with. */
-type OpenThread = ThreadRoute & { conversation: Conversation; initialDraft: string };
+type OpenThread = ThreadRoute & { conversation: Conversation; initialDraft: ReplyDraft };
 
 void SplashScreen.preventAutoHideAsync().catch(() => undefined);
 
@@ -302,7 +303,7 @@ function SignedInApp({
       }
       threadSerial.current += 1;
       threadRequest.current += 1;
-      let initialDraft = "";
+      let initialDraft: ReplyDraft = { body: "", removedLinks: [] };
       try {
         initialDraft = outbox.getDraft(conversation.id);
       } catch (failure) {
@@ -515,6 +516,7 @@ function SignedInApp({
           pending.clientId,
           pending.body,
           pending.replyToMessageId ?? undefined,
+          pending.linkPreview ?? undefined,
         );
       });
       if (scopeRef.current !== deliveryScope) return;
@@ -546,14 +548,19 @@ function SignedInApp({
     }
   };
 
-  const send = async (conversationId: string, body: string, replyToMessageId: string | null) => {
+  const send = async (
+    conversationId: string,
+    body: string,
+    replyToMessageId: string | null,
+    preview: LinkPreview | null,
+  ) => {
     const target = threadTarget.current;
     if (!target || target.scope !== scopeKey || target.conversationId !== conversationId) {
       return;
     }
     let reply: PendingReply;
     try {
-      reply = outbox.enqueue(conversationId, body, replyToMessageId);
+      reply = outbox.enqueue(conversationId, body, replyToMessageId, preview);
     } catch (failure) {
       setError(t("mobileReplySaveFailed", { error: readableError(failure) }));
       throw failure;
@@ -562,13 +569,13 @@ function SignedInApp({
     void deliver(reply);
   };
 
-  const saveDraft = (conversationId: string, body: string) => {
+  const saveDraft = (conversationId: string, draft: ReplyDraft) => {
     const target = threadTarget.current;
     if (!target || target.scope !== scopeKey || target.conversationId !== conversationId) {
       return;
     }
     try {
-      outbox.saveDraft(conversationId, body);
+      outbox.saveDraft(conversationId, draft);
     } catch (failure) {
       setError(t("mobileReplySaveFailed", { error: readableError(failure) }));
     }
@@ -910,9 +917,9 @@ function SignedInApp({
               }}
               onRetry={deliver}
               onOpenConversation={(id) => openById(id)}
-              onDraftChange={(body) => saveDraft(opened.conversationId, body)}
-              onSend={(body, replyToMessageId) =>
-                send(opened.conversationId, body, replyToMessageId)
+              onDraftChange={(draft) => saveDraft(opened.conversationId, draft)}
+              onSend={(body, replyToMessageId, preview) =>
+                send(opened.conversationId, body, replyToMessageId, preview)
               }
               onStatus={changeStatus}
               palette={palette}

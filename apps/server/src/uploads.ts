@@ -16,7 +16,7 @@ import {
   startsWith,
 } from "./files.ts";
 import { StorageFullError } from "./limits.ts";
-import type { NewAttachment, StoredAttachment } from "./messages.ts";
+import type { NewAttachment, NewImage, StoredAttachment } from "./messages.ts";
 import type { ObjectStore } from "./storage.ts";
 import { MINUTE_MS } from "./time.ts";
 
@@ -172,6 +172,26 @@ export const processLogo = (bytes: Uint8Array) =>
 export const processPicture = (bytes: Uint8Array) =>
   processPublicImage(bytes, (image) => image.resize(PICTURE_SIZE_PX, PICTURE_SIZE_PX));
 
+/**
+ * A link preview's thumbnail fills a 112-pixel square, cut from its middle. Its turn is skipped
+ * once `signal` fires, as the preview no longer waits for it.
+ */
+export const THUMBNAIL_SIZE_PX = 112;
+let waitingThumbnails = 0;
+export const processThumbnail = async (bytes: Uint8Array, signal: AbortSignal) => {
+  // A preview that gave up still holds its image in the queue, so the queue has a limit too.
+  if (waitingThumbnails >= MAX_WAITING_TO_DECODE) return "busy";
+  waitingThumbnails += 1;
+  const done = await inTurn(async () =>
+    signal.aborted
+      ? ("too_slow" as const)
+      : reencode(bytes, (image) => image.resize(THUMBNAIL_SIZE_PX, THUMBNAIL_SIZE_PX).webp()),
+  ).finally(() => {
+    waitingThumbnails -= 1;
+  });
+  return typeof done === "string" ? done : done.data;
+};
+
 /** The checked bytes of an upload, before they are stored. */
 type Checked = { data: Uint8Array; contentType: string } & (
   | { type: "image"; width: number; height: number }
@@ -199,8 +219,17 @@ export interface Uploads {
     commit: (upload: NewAttachment) => Promise<T>,
     filename: string | null,
   ): Promise<{ result: T } | { refused: Refusal }>;
+  /** As `receive`, for a link preview's thumbnail, which the server made and signed. */
+  keepThumbnail<T extends { created: boolean }>(
+    webp: Uint8Array,
+    workspaceId: string,
+    commit: (upload: NewImage) => Promise<T>,
+  ): Promise<{ result: T } | { refused: Refusal }>;
   url(workspaceId: string, attachmentId: string): string;
   verify(workspaceId: string, attachmentId: string, expires: string, signature: string): boolean;
+  /** Signs a link preview, so a reply can carry it back unchanged. */
+  signPreview(value: string): string;
+  verifyPreview(value: string, signature: string): boolean;
   store: ObjectStore;
   /** The separate origin that serves uploads, from UPLOADS_ORIGIN, or undefined to use the app's. */
   origin: string | undefined;
@@ -234,10 +263,14 @@ export function createUploads({
   const bufferedByWorkspace = new Map<string, number>();
   const uploadsByAddress = new Map<string, number>();
 
+  const hmac = (purpose: string, value: string) =>
+    createHmac("sha256", `dinghy-${purpose}:${secret}`).update(value).digest("base64url");
   const sign = (workspaceId: string, attachmentId: string, expires: string) =>
-    createHmac("sha256", `dinghy-image-url:${secret}`)
-      .update(`${workspaceId}/${attachmentId}/${expires}`)
-      .digest("base64url");
+    hmac("image-url", `${workspaceId}/${attachmentId}/${expires}`);
+  const matches = (expected: string, signature: string) => {
+    const given = Buffer.from(signature);
+    return expected.length === given.length && timingSafeEqual(Buffer.from(expected), given);
+  };
 
   /**
    * Only bytes that start as a PNG, JPEG or WebP reach sharp, and they stay images whatever their
@@ -260,17 +293,15 @@ export function createUploads({
     return typeof processed === "string" ? processed : { type: "image", ...processed };
   };
 
-  /** Checks and stores the bytes, then hands them to `commit`, as `receive` says. */
-  const keep = async <T extends { created: boolean }>(
-    bytes: Uint8Array,
+  /** Stores checked bytes, then hands them to `commit`, as `receive` says. */
+  const storeChecked = async <U extends { contentType: string }, T extends { created: boolean }>(
+    data: Uint8Array,
+    upload: U,
     workspaceId: string,
-    commit: (upload: NewAttachment) => Promise<T>,
-    filename: string | null,
+    commit: (
+      stored: U & { attachmentId: string; storageKey: string; byteSize: number },
+    ) => Promise<T>,
   ): Promise<{ result: T } | { refused: Refusal }> => {
-    const checked = await check(bytes, filename);
-    if (typeof checked === "string") return { refused: checked };
-
-    const { data, ...upload } = checked;
     const attachmentId = randomUUID();
     const storageKey = `${workspaceId}/${attachmentId}`;
     await store.put(storageKey, data, upload.contentType);
@@ -294,9 +325,34 @@ export function createUploads({
     return { result };
   };
 
+  /** Checks and stores the bytes, then hands them to `commit`, as `receive` says. */
+  const keep = async <T extends { created: boolean }>(
+    bytes: Uint8Array,
+    workspaceId: string,
+    commit: (upload: NewAttachment) => Promise<T>,
+    filename: string | null,
+  ): Promise<{ result: T } | { refused: Refusal }> => {
+    const checked = await check(bytes, filename);
+    if (typeof checked === "string") return { refused: checked };
+    const { data, ...upload } = checked;
+    return storeChecked(data, upload, workspaceId, commit);
+  };
+
   return {
     store,
     origin: filesOrigin,
+    keepThumbnail: (webp, workspaceId, commit) =>
+      storeChecked(
+        webp,
+        {
+          type: "image",
+          contentType: PUBLIC_IMAGE_TYPE,
+          width: THUMBNAIL_SIZE_PX,
+          height: THUMBNAIL_SIZE_PX,
+        } as const,
+        workspaceId,
+        commit,
+      ),
     receiveBytes(bytes, workspaceId, commit, filename) {
       if (bytes.byteLength > MAX_FILE_BYTES) return Promise.resolve({ refused: "too_large" });
       return keep(bytes, workspaceId, commit, filename);
@@ -342,10 +398,10 @@ export function createUploads({
     },
     verify(workspaceId, attachmentId, expires, signature) {
       if (!/^\d{1,12}$/.test(expires) || Number(expires) < now() / 1000) return false;
-      const expected = Buffer.from(sign(workspaceId, attachmentId, expires));
-      const given = Buffer.from(signature);
-      return expected.length === given.length && timingSafeEqual(expected, given);
+      return matches(sign(workspaceId, attachmentId, expires), signature);
     },
+    signPreview: (value) => hmac("link-preview", value),
+    verifyPreview: (value, signature) => matches(hmac("link-preview", value), signature),
   };
 }
 

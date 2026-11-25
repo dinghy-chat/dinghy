@@ -1,3 +1,5 @@
+import type { LinkCard } from "../../operator/src/link-preview.ts";
+
 export type Session = {
   origin: string;
   session: string;
@@ -89,6 +91,8 @@ export type Message = {
   body: string | null;
   attachment: MessageAttachment;
   replyTo: Quote | null;
+  /** The card of a reply's first link. A message that a key or a bot wrote has none. */
+  link?: LinkCard | null;
   editedAt: string | null;
   readAt: string | null;
   mentions: string[];

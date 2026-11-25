@@ -26,6 +26,7 @@ import {
 } from "./errors.ts";
 import { emailAddressHash } from "./identity.ts";
 import { noAccountMail, signInMail } from "./letter.ts";
+import { SENT_PREVIEW_MAX_BYTES } from "./link-preview.ts";
 import { createLinkLimit, createNativeEmailCodeLimit, tooManyAttempts } from "./login-limit.ts";
 import type { Mailer } from "./mailer.ts";
 import { WORKSPACE_PREFIX } from "./member.ts";
@@ -187,6 +188,9 @@ const BEFORE_SECOND_STEP = new Set([
 
 /** The routes whose body is an image, read as bytes rather than as text. */
 const PUBLIC_IMAGE_PATH = /\/(logo|picture)$/;
+/** A reply, whose body may carry a link's card on top of its text. */
+const REPLY_PATH = /\/conversations\/[^/]+\/messages$/;
+const SMALL_BODY_BYTES = 64 * 1024;
 
 interface OperatorOptions {
   appReview?: AppReview | undefined;
@@ -432,7 +436,8 @@ export function registerOperatorRoutes(
 
   app.on(["GET", "POST"], "/v1/auth/*", (c) => auth.handler(c.req.raw));
 
-  const smallBody = bodyLimit({ maxSize: 64 * 1024 });
+  const smallBody = bodyLimit({ maxSize: SMALL_BODY_BYTES });
+  const replyBody = bodyLimit({ maxSize: SMALL_BODY_BYTES + SENT_PREVIEW_MAX_BYTES });
   const imageBody = bodyLimit({
     maxSize: PUBLIC_IMAGE_MAX_BYTES,
     onError: (c) => c.json(PUBLIC_IMAGE_TOO_LARGE, 413),
@@ -441,6 +446,7 @@ export function registerOperatorRoutes(
     "/v1/operator/*",
     (c, next) => {
       if (c.req.path.endsWith("/uploads")) return next();
+      if (c.req.method === "POST" && REPLY_PATH.test(c.req.path)) return replyBody(c, next);
       return (PUBLIC_IMAGE_PATH.test(c.req.path) ? imageBody : smallBody)(c, next);
     },
     requireOperator,

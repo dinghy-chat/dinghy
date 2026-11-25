@@ -8,6 +8,8 @@ import { openReplyQueue } from "./reply-queue";
 
 const scope = { origin: "https://operator.example", workspaceId: "support", operatorId: "kim" };
 
+const draft = (body: string, removedLinks: string[] = []) => ({ body, removedLinks });
+
 function queue(db: DatabaseSync, account = scope) {
   return openReplyQueue(
     {
@@ -27,7 +29,7 @@ test("a lost acknowledgement and app restart retry the stored reply with its ori
   let db = new DatabaseSync(path);
   try {
     const outbox = queue(db);
-    outbox.saveDraft("conversation", "Your invoice is ready.");
+    outbox.saveDraft("conversation", draft("Your invoice is ready."));
     const reply = outbox.enqueue("conversation", "Your invoice is ready.", "message-to-quote");
     const committed = new Set<string>();
     await expect(
@@ -41,7 +43,7 @@ test("a lost acknowledgement and app restart retry the stored reply with its ori
     const restored = queue(db);
     expect(restored.list()).toEqual([reply]);
     expect(reply.replyToMessageId).toBe("message-to-quote");
-    expect(restored.getDraft("conversation")).toBe("");
+    expect(restored.getDraft("conversation").body).toBe("");
     const post = vi.fn(async (record: typeof reply) => {
       committed.add(record.clientId);
     });
@@ -79,23 +81,26 @@ test("another operator, workspace or instance cannot see or deliver the reply", 
   }
 });
 
-test("an unsent draft survives remount and remains scoped to its conversation and account", () => {
+test("an unsent draft and its removed cards survive remount, scoped to the conversation and account", () => {
   const directory = mkdtempSync(join(tmpdir(), "dinghy-draft-"));
   const path = join(directory, "outbox.db");
   let db = new DatabaseSync(path);
   try {
-    queue(db).saveDraft("conversation", "I will check that for you.");
+    const removed = ["https://docs.example/reset"];
+    queue(db).saveDraft("conversation", draft("See https://docs.example/reset", removed));
     db.close();
     db = new DatabaseSync(path);
 
-    expect(queue(db).getDraft("conversation")).toBe("I will check that for you.");
-    expect(queue(db).getDraft("other-conversation")).toBe("");
+    expect(queue(db).getDraft("conversation")).toEqual(
+      draft("See https://docs.example/reset", removed),
+    );
+    expect(queue(db).getDraft("other-conversation").body).toBe("");
     for (const account of [
       { ...scope, operatorId: "jo" },
       { ...scope, workspaceId: "sales" },
       { ...scope, origin: "https://team.example" },
     ]) {
-      expect(queue(db, account).getDraft("conversation")).toBe("");
+      expect(queue(db, account).getDraft("conversation").body).toBe("");
     }
   } finally {
     db.close();
@@ -107,12 +112,12 @@ test("enqueue stores the reply and clears its draft in one transaction", () => {
   const db = new DatabaseSync(":memory:");
   try {
     const outbox = queue(db);
-    outbox.saveDraft("conversation", "Draft reply");
+    outbox.saveDraft("conversation", draft("Draft reply"));
 
     const reply = outbox.enqueue("conversation", "Draft reply");
 
     expect(outbox.list()).toEqual([reply]);
-    expect(outbox.getDraft("conversation")).toBe("");
+    expect(outbox.getDraft("conversation").body).toBe("");
   } finally {
     db.close();
   }
@@ -122,7 +127,7 @@ test("a failed enqueue rolls back without losing the draft", () => {
   const db = new DatabaseSync(":memory:");
   try {
     const outbox = queue(db);
-    outbox.saveDraft("conversation", "Do not lose this");
+    outbox.saveDraft("conversation", draft("Do not lose this"));
     db.exec(`CREATE TRIGGER reject_draft_delete
       BEFORE DELETE ON public_reply_draft
       BEGIN
@@ -132,7 +137,7 @@ test("a failed enqueue rolls back without losing the draft", () => {
     expect(() => outbox.enqueue("conversation", "Do not lose this")).toThrow(
       "simulated clear failure",
     );
-    expect(outbox.getDraft("conversation")).toBe("Do not lose this");
+    expect(outbox.getDraft("conversation").body).toBe("Do not lose this");
     expect(outbox.list()).toEqual([]);
   } finally {
     db.close();
@@ -143,12 +148,12 @@ test("a new edit after enqueue becomes the next durable draft", () => {
   const db = new DatabaseSync(":memory:");
   try {
     const outbox = queue(db);
-    outbox.saveDraft("conversation", "First reply");
+    outbox.saveDraft("conversation", draft("First reply"));
     outbox.enqueue("conversation", "First reply");
 
-    outbox.saveDraft("conversation", "Follow-up written while delivery finishes");
+    outbox.saveDraft("conversation", draft("Follow-up written while delivery finishes"));
 
-    expect(outbox.getDraft("conversation")).toBe("Follow-up written while delivery finishes");
+    expect(outbox.getDraft("conversation").body).toBe("Follow-up written while delivery finishes");
   } finally {
     db.close();
   }
@@ -158,10 +163,10 @@ test("clearing a draft is durable", () => {
   const db = new DatabaseSync(":memory:");
   try {
     const outbox = queue(db);
-    outbox.saveDraft("conversation", "Temporary text");
-    outbox.saveDraft("conversation", "");
+    outbox.saveDraft("conversation", draft("Temporary text"));
+    outbox.saveDraft("conversation", draft(""));
 
-    expect(queue(db).getDraft("conversation")).toBe("");
+    expect(queue(db).getDraft("conversation").body).toBe("");
   } finally {
     db.close();
   }
@@ -171,23 +176,23 @@ test("a failed draft update keeps the last durable text", () => {
   const db = new DatabaseSync(":memory:");
   try {
     const outbox = queue(db);
-    outbox.saveDraft("conversation", "Last durable text");
+    outbox.saveDraft("conversation", draft("Last durable text"));
     db.exec(`CREATE TRIGGER reject_draft_update
       BEFORE UPDATE ON public_reply_draft
       BEGIN
         SELECT RAISE(ABORT, 'simulated storage failure');
       END`);
 
-    expect(() => outbox.saveDraft("conversation", "Text still visible in the composer")).toThrow(
-      "simulated storage failure",
-    );
-    expect(outbox.getDraft("conversation")).toBe("Last durable text");
+    expect(() =>
+      outbox.saveDraft("conversation", draft("Text still visible in the composer")),
+    ).toThrow("simulated storage failure");
+    expect(outbox.getDraft("conversation").body).toBe("Last durable text");
   } finally {
     db.close();
   }
 });
 
-test("an existing outbox adds the reply relation without losing queued messages", () => {
+test("an existing outbox adds the reply relation and the card without losing queued messages", () => {
   const db = new DatabaseSync(":memory:");
   try {
     db.exec(`CREATE TABLE pending_reply (
@@ -208,9 +213,51 @@ test("an existing outbox adds the reply relation without losing queued messages"
         clientId: "old-client",
         body: "Already queued",
         replyToMessageId: null,
+        linkPreview: null,
       },
     ]);
   } finally {
     db.close();
   }
+});
+
+test("a reply's link card survives a restart and goes with the retry", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "dinghy-outbox-"));
+  const path = join(directory, "outbox.db");
+  let db = new DatabaseSync(path);
+  try {
+    const card = {
+      url: "https://docs.example/reset",
+      title: "Reset your password",
+      image: { data: "data:image/webp;base64,AAAA", width: 112, height: 112 },
+      token: "signed",
+    };
+    const reply = queue(db).enqueue("conversation", "See https://docs.example/reset", null, card);
+    db.close();
+    db = new DatabaseSync(path);
+    const restored = queue(db);
+    expect(restored.list()).toEqual([{ ...reply, linkPreview: card }]);
+    const post = vi.fn(async (_record: typeof reply) => {});
+    await restored.deliver(reply, post);
+    expect(post).toHaveBeenCalledWith(expect.objectContaining({ linkPreview: card }));
+  } finally {
+    db.close();
+    rmSync(directory, { recursive: true });
+  }
+});
+
+test("a draft saved before removed cards were kept opens with none", () => {
+  const db = new DatabaseSync(":memory:");
+  db.exec(`CREATE TABLE public_reply_draft (
+    account TEXT NOT NULL,
+    conversationId TEXT NOT NULL,
+    body TEXT NOT NULL,
+    PRIMARY KEY (account, conversationId)
+  )`);
+  db.prepare("INSERT INTO public_reply_draft VALUES (?, ?, ?)").run(
+    JSON.stringify([scope.origin, scope.workspaceId, scope.operatorId]),
+    "conversation",
+    "Older text",
+  );
+  expect(queue(db).getDraft("conversation")).toEqual(draft("Older text"));
 });

@@ -24,6 +24,7 @@ const mine = (kind: "text" | "note"): Line => ({
   seq: 5n,
   body: "Hello",
   attachment: null,
+  link: null,
   fromVisitor: false,
   kind,
   createdAt: "2026-11-12T10:00:00.000Z",

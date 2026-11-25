@@ -41,6 +41,7 @@ import {
 import { Body, ClientId, Filename, Mentions } from "./inputs.ts";
 import { PageContextSchema, visitorPages } from "./journey.ts";
 import { type Limits, STREAM_LIMIT, STREAM_RETRY_SECONDS } from "./limits.ts";
+import { LinkSchema, linkView, previewFromToken, SentPreview } from "./link-preview.ts";
 import { type Live, OPERATORS, wakeConversation } from "./live.ts";
 import {
   closedFailure,
@@ -77,6 +78,7 @@ import {
   markConversationRead,
   memberSender,
   type NewAttachment,
+  type NewLink,
   nextSnoozeEndMs,
   parseCursor,
   QuoteSchema,
@@ -200,6 +202,8 @@ export const InboxMessage = z
     attachment: AttachmentSchema.nullable(),
     // The message this one quotes, or null.
     replyTo: QuoteSchema.nullable(),
+    // Only for a signed-in operator: the card of the reply's first link, or null.
+    link: LinkSchema.nullable().optional(),
     // When its author last changed its text. Only an operator's text reply or note can change.
     editedAt: z.string().nullable(),
     // An operator deleted it: its body and image or file are gone, and its row stays in place.
@@ -599,6 +603,10 @@ const replyRoute = createRoute({
               description: "True for a note that only the team sees. A note is text only.",
             }),
             mentions: NOTE_MENTIONS,
+            linkPreview: SentPreview.optional().openapi({
+              description:
+                "Signed-in operators only, not on a note: the card from the link preview route. The reply goes out without it when its link is no longer the body's first bare link.",
+            }),
             changeRequestId: z.uuid().optional().openapi({
               description:
                 "API keys only, not on a note: the operator's change request this answers, from a `draft.change_requested` event. The reply becomes a new draft that replaces the one the operator asked to change, whatever the key's reply mode and even while a person handles the conversation. Without its own `replyToMessageId` it keeps the old draft's quote.",
@@ -857,6 +865,7 @@ export function messageView(
     attachment,
     replyTo,
     outbound,
+    link: _link,
     ...message
   }: StoredMessage,
 ) {
@@ -880,6 +889,17 @@ export function messageView(
     replyTo: quoteView(replyTo),
   };
 }
+
+/** A message as the operator app shows it: with its link's card, which integrations do not get. */
+const appMessageView = (
+  uploads: Uploads | undefined,
+  workspaceId: string,
+  names: Map<string, string>,
+  message: StoredMessage,
+) => ({
+  ...messageView(uploads, workspaceId, names, message),
+  link: linkView(uploads, workspaceId, message.link),
+});
 type MessageView = ReturnType<typeof messageView>;
 
 /** The founder's picture's address, or null with none or off Dinghy Cloud. */
@@ -1021,7 +1041,8 @@ export type WelcomeFace = (
 
 /**
  * Cloud only: copies a reply into another workspace, in the reply's own transaction. It runs before
- * that transaction, where it can copy an image or a file, and returns what runs in it, or null.
+ * that transaction, where it can copy an image, a file or a link card's thumbnail, and returns what
+ * runs in it, or null.
  */
 export type CopyReply = (
   workspaceId: string,
@@ -1034,6 +1055,24 @@ interface ReplyCopy {
   write(tx: Transaction, append: () => Promise<Appended>): Promise<Appended>;
   /** After the transaction, with what came of it. It must not throw. */
   finish(outcome: CommitOutcome): Promise<void>;
+}
+
+/**
+ * Cloud only: gives the copy of a reply in another workspace the reply's edit or delete, in the
+ * change's own transaction. It returns what runs in it, or null.
+ */
+export type CopyChange = (
+  workspaceId: string,
+  conversationId: string,
+) => Promise<ChangeCopy | null>;
+
+interface ChangeCopy {
+  /** In the change's transaction, before the change: takes the locks that the copy needs. */
+  lock(tx: Transaction): Promise<void>;
+  /** In the change's transaction, after it: the same change to the copy, `body` null to delete. */
+  apply(tx: Transaction, messageId: string, body: string | null): Promise<void>;
+  /** After the commit. It must not throw. */
+  finish(): void;
 }
 
 /**
@@ -1111,6 +1150,7 @@ interface InboxOptions {
   stream: StreamOptions;
   visitorPresence: VisitorPresence;
   copyReply?: CopyReply | undefined;
+  copyChange?: CopyChange | undefined;
   /** The founder's picture, on Dinghy Cloud only. */
   founderPicture?: FounderPicture | undefined;
 }
@@ -1124,11 +1164,12 @@ export function createInbox({
   uploads,
   live,
   visitorPresence,
+  limits,
   copyReply,
   founderPicture = async () => null,
 }: Pick<
   InboxOptions,
-  "db" | "uploads" | "live" | "visitorPresence" | "copyReply" | "founderPicture"
+  "db" | "uploads" | "limits" | "live" | "visitorPresence" | "copyReply" | "founderPicture"
 >) {
   /**
    * Writes a reply or a note in the caller's transaction, and wakes the clients after the commit. A
@@ -1182,10 +1223,11 @@ export function createInbox({
     // After the commit. A lost signal only delays delivery, because a stream reads from Postgres.
     if (result.created) wakeFor(live, workspaceId, result.visitorId, content.isNote);
     const names = new Map([[actorId(actor), actor.name]]);
+    const view = actor.kind === "operator" ? appMessageView : messageView;
     return {
       kind: "sent",
       created: result.created,
-      message: messageView(uploads, workspaceId, names, result.message),
+      message: view(uploads, workspaceId, names, result.message),
     };
   };
 
@@ -1266,7 +1308,12 @@ export function createInbox({
           unread: result.unread,
         },
         messages: result.page.messages.map((message) =>
-          messageView(uploads, workspaceId, result.names, message),
+          (operatorId === null ? messageView : appMessageView)(
+            uploads,
+            workspaceId,
+            result.names,
+            message,
+          ),
         ),
         hasMore: result.page.hasMore,
         visitorOnline: await visitorPresence.online(workspaceId, result.found.visitorId),
@@ -1303,7 +1350,10 @@ export function createInbox({
       };
     },
 
-    /** A text reply, or with `note` a note that only the team sees. */
+    /**
+     * A text reply, or with `note` a note that only the team sees. `check` runs in its transaction
+     * first.
+     */
     reply(
       workspaceId: string,
       actor: Actor,
@@ -1317,14 +1367,25 @@ export function createInbox({
         note: boolean;
         /** Only a note's. */
         mentions?: string[] | undefined;
+        /** Only an operator's reply. */
+        link?: NewLink | undefined;
       },
+      check?: (tx: Transaction) => Promise<void>,
     ) {
-      const { note, mentions, changeRequestId, ...text } = input;
-      const content = { attachment: undefined, isNote: note };
+      const { note, mentions, changeRequestId, link, ...text } = input;
+      // A welcome chat copies the card's thumbnail as it copies an image.
+      const content = { attachment: link?.image ?? undefined, isNote: note };
       const request = changeRequestId === undefined ? text : { ...text, changeRequestId };
-      return reply(workspaceId, actor, conversationId, content, request, (tx, author) =>
-        appendMessage(tx, workspaceId, author, note ? { ...text, note, mentions } : text),
-      );
+      return reply(workspaceId, actor, conversationId, content, request, async (tx, author) => {
+        await check?.(tx);
+        return appendMessage(
+          tx,
+          workspaceId,
+          author,
+          note ? { ...text, note, mentions } : { ...text, link },
+          limits,
+        );
+      });
     },
 
     /**
@@ -1409,13 +1470,61 @@ export function refusedReply(outcome: Exclude<ReplyOutcome, { kind: "sent" | "dr
   return closedFailure(outcome.access);
 }
 
-/** A key that was revoked during an upload. Its transaction rolls back. */
-async function keyStillHolds(db: Database, actor: KeyActor) {
-  if (!(await keyStillValid(db, actor))) throw new AccessEndedError();
+/**
+ * A reply with its link's card. The thumbnail is stored first, and goes away when the reply was a
+ * retry or failed. A thumbnail that cannot be stored, or that the workspace has no room for, leaves
+ * the card without one. Storing it can take a while, so `check` reads the operator's access again.
+ */
+async function replyWithLink(
+  inbox: Inbox,
+  uploads: Uploads,
+  workspaceId: string,
+  actor: Actor,
+  conversationId: string,
+  input: Parameters<Inbox["reply"]>[3],
+  { image, ...link }: NonNullable<ReturnType<typeof previewFromToken>>,
+  check: (tx: Transaction) => Promise<void>,
+): Promise<ReplyOutcome> {
+  const send = (stored: NewLink["image"]) =>
+    inbox.reply(
+      workspaceId,
+      actor,
+      conversationId,
+      { ...input, link: { ...link, image: stored } },
+      check,
+    );
+  if (image === null) return send(null);
+  let isSending = false;
+  const kept = await uploads
+    .keepThumbnail(image, workspaceId, async (upload) => {
+      isSending = true;
+      const outcome = await send(upload);
+      return { outcome, created: outcome.kind === "sent" && outcome.created };
+    })
+    .catch((error: unknown) => {
+      // The reply's own failure stands. Only the object store's leaves the card without its image.
+      if (isSending) throw error;
+      return null;
+    });
+  return kept === null || "refused" in kept ? send(null) : kept.result.outcome;
 }
 
+/**
+ * Reads the session and membership, or the key, again in a reply's transaction, for an upload that
+ * took a while. Access that ended rolls the transaction back.
+ */
+const accessStillHolds =
+  (db: Database, actor: Actor, sessionId: string, workspaceId: string) =>
+  async (tx: Transaction) => {
+    const holds =
+      actor.kind === "key"
+        ? await keyStillValid(db, actor)
+        : await mayStillRead(tx, sessionId, actor.operatorId, workspaceId);
+    if (!holds) throw new AccessEndedError();
+  };
+
 export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrls: ImageUrls }) {
-  const { db, uploads, imageUrls, limits, live, logger, stream } = options;
+  const { db, uploads, imageUrls, limits, live, logger, stream, copyChange } = options;
   const inbox = createInbox(options);
 
   app.openapi(workspaceRoute, async (c) => {
@@ -1477,7 +1586,22 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
     if (input.changeRequestId !== undefined && (input.note || actor.kind !== "key")) {
       return c.json(CHANGE_REQUEST_KEYS_ONLY, 400);
     }
-    const outcome = await inbox.reply(c.get("memberWorkspaceId"), actor, conversationId, input);
+    const { linkPreview, ...reply } = input;
+    const id = c.get("memberWorkspaceId");
+    const link =
+      linkPreview === undefined || actor.kind !== "operator" || reply.note || uploads === undefined
+        ? null
+        : previewFromToken(uploads, id, reply.body, linkPreview);
+    const check = accessStillHolds(db, actor, c.get("sessionId"), id);
+    const outcome =
+      link === null || uploads === undefined
+        ? await inbox.reply(id, actor, conversationId, reply)
+        : await replyWithLink(inbox, uploads, id, actor, conversationId, reply, link, check).catch(
+            (error: unknown) => {
+              if (error instanceof AccessEndedError) return { kind: "missing" as const };
+              throw error;
+            },
+          );
     if (outcome.kind === "sent") return c.json(outcome.message, outcome.created ? 201 : 200);
     if (outcome.kind === "drafted") return c.json({ draft: outcome.draft }, 202);
     const refused = refusedReply(outcome);
@@ -1496,13 +1620,7 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
         async (tx) => (await findConversation(tx, id, conversationId)) !== null,
       );
       if (!exists) return c.json(NOT_FOUND, 404);
-      // The upload can take minutes, so the session and membership, or the key, are read again.
-      const check = async (tx: Transaction) => {
-        if (actor.kind === "key") return keyStillHolds(db, actor);
-        if (!(await mayStillRead(tx, c.get("sessionId"), actor.operatorId, id))) {
-          throw new AccessEndedError();
-        }
-      };
+      const check = accessStillHolds(db, actor, c.get("sessionId"), id);
       const outcome = await uploads
         .receive(
           c.req.raw,
@@ -1535,7 +1653,9 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
   app.openapi(editRoute, async (c) => {
     const id = c.get("memberWorkspaceId");
     const { conversationId, messageId } = c.req.valid("param");
+    const copy = (await copyChange?.(id, conversationId)) ?? null;
     const outcome = await withWorkspace(db, id, async (tx) => {
+      await copy?.lock(tx);
       const edited = await editMessage(
         tx,
         id,
@@ -1545,12 +1665,14 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
         c.req.valid("json"),
       );
       if (edited.kind !== "edited") return edited;
+      await copy?.apply(tx, messageId, edited.message.body);
       const names = await authorNames(tx, id, [edited.message]);
-      return { ...edited, view: messageView(uploads, id, names, edited.message) };
+      return { ...edited, view: appMessageView(uploads, id, names, edited.message) };
     });
     if (outcome.kind === "missing") return c.json(NOT_FOUND, 404);
     if (outcome.kind === "not_yours") return c.json(NOT_YOURS, 403);
     if (outcome.kind === "seen") return c.json(MESSAGE_SEEN, 409);
+    copy?.finish();
     wakeFor(live, id, outcome.visitorId, outcome.message.kind === "note");
     return c.json(outcome.view, 200);
   });
@@ -1562,11 +1684,16 @@ export function registerInboxRoutes(app: App, options: InboxOptions & { imageUrl
       operatorId: c.get("operatorId"),
       mayDeleteAnyone: allowed.settings(c.get("memberRole")),
     };
-    const outcome = await withWorkspace(db, id, (tx) =>
-      deleteMessage(tx, id, conversationId, messageId, by),
-    );
+    const copy = (await copyChange?.(id, conversationId)) ?? null;
+    const outcome = await withWorkspace(db, id, async (tx) => {
+      await copy?.lock(tx);
+      const deleted = await deleteMessage(tx, id, conversationId, messageId, by);
+      if (deleted.kind === "deleted") await copy?.apply(tx, messageId, null);
+      return deleted;
+    });
     if (outcome.kind === "missing") return c.json(NOT_FOUND, 404);
     if (outcome.kind === "not_yours") return c.json(FORBIDDEN, 403);
+    copy?.finish();
     wakeFor(live, id, outcome.visitorId, outcome.isNote);
     return c.json({ ok: true as const }, 200);
   });

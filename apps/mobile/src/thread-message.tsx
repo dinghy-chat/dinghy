@@ -19,6 +19,7 @@ import type { DinghyApi } from "./api";
 import { MessageAttachmentView } from "./attachments";
 import { fonts } from "./fonts";
 import { Icon } from "./icon";
+import { LinkCardView } from "./link-card";
 import { MessageIcon, type MessageIconName } from "./message-icon";
 import { MessageMarkdown, markdownLinks, openMarkdownLink } from "./message-markdown";
 import { canDeleteMessage, editAvailability, hasReceipt, type ReceiptState } from "./message-state";
@@ -616,6 +617,9 @@ export function ThreadMessage({
             quoteInk: palette.sub,
           }}
         />
+      )}
+      {!message.deleted && message.link && (
+        <LinkCardView link={message.link} onImageError={onAttachmentError} palette={palette} />
       )}
     </View>
   );

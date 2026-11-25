@@ -10,6 +10,7 @@ import { type CreateElement, renderMarkdown } from "../../../packages/widget/src
 import type { FileAttachment } from "./api.ts";
 import { clockTime, isToday } from "./format.ts";
 import { Icon } from "./icons.tsx";
+import { LinkCardView } from "./link-card.tsx";
 import { type Receipt, ReceiptLine } from "./receipts.tsx";
 import { t } from "./text.ts";
 import type { Line } from "./thread-lines.ts";
@@ -119,6 +120,7 @@ function Bubble({
       line.body,
       line.kind === "note" && line.authorApiKeyId !== null ? plainLinks : createElement,
     ),
+    line.link !== null && <LinkCardView link={line.link} onImageError={onUploadError} />,
   );
 }
 

@@ -67,6 +67,7 @@ import {
   recordVisitorContext,
 } from "./journey.ts";
 import { type Limits, STREAM_LIMIT, STREAM_RETRY_SECONDS } from "./limits.ts";
+import { LinkSchema, linkView } from "./link-preview.ts";
 import { type Live, OPERATORS, wakeConversation } from "./live.ts";
 import type { LiveVisitors } from "./live-visitors.ts";
 import {
@@ -450,6 +451,8 @@ const MessageSchema = z
     attachment: AttachmentSchema.nullable(),
     // The message this one quotes, or null. Its author is a first name, as on replies.
     replyTo: QuoteSchema.nullable(),
+    // The card of a reply's first link, or null.
+    link: LinkSchema.nullable(),
     // An operator deleted it, so it shows as a placeholder with no body.
     deleted: z.boolean(),
     // A reply from a workspace API key, such as the customer's own bot.
@@ -734,6 +737,7 @@ function messageView(
     handoff: _handoff,
     mentions: _mentions,
     outbound,
+    link,
     ...message
   }: VisitorMessage,
 ) {
@@ -749,6 +753,7 @@ function messageView(
     buttons: message.deleted ? [] : (outbound?.buttons ?? []),
     createdAt: createdAt.toISOString(),
     attachment: attachmentView(uploads, workspaceId, attachment),
+    link: linkView(uploads, workspaceId, link),
   };
 }
 

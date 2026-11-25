@@ -936,6 +936,18 @@ const ATTACKS: Record<string, Attack> = {
     expect(response.status).toBe(404);
     expect(await owner.select().from(attachment)).toHaveLength(before.length);
   },
+  "POST /v1/operator/workspaces/:workspaceId/conversations/:conversationId/link-preview": async ({
+    operator: as,
+    anna,
+    a,
+    b,
+    other,
+  }) => {
+    for (const space of [a.id, b.id]) {
+      const path = inWorkspace(space, `/conversations/${other.conversationId}/link-preview`);
+      expect((await as(anna, "POST", path, { url: "https://example.com/" })).status).toBe(404);
+    }
+  },
   "PATCH /v1/operator/workspaces/:workspaceId/conversations/:conversationId": async ({
     operator: as,
     anna,

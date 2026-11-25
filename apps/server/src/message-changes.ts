@@ -2,6 +2,7 @@
 // carried it decide whether it may still change and what its receipt says.
 
 import { and, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
+import { firstBareLink } from "../../../packages/widget/src/markdown.ts";
 import {
   alertDelivery,
   attachment,
@@ -180,6 +181,8 @@ async function resendQuotes(tx: Transaction, workspaceId: string, messageId: str
     where ${message.workspaceId} = ${workspaceId} and ${message.id} = quoting.id`);
 }
 
+type ChatLine = NonNullable<Awaited<ReturnType<typeof lockChatLine>>>;
+
 /** One chat line or note of this conversation, locked until commit, or undefined. */
 async function lockChatLine(
   tx: Transaction,
@@ -287,20 +290,53 @@ export async function editMessage(
     isNote && change.mentions !== undefined
       ? await changedMentions(tx, workspaceId, operatorId, line.metadata, change.mentions)
       : null;
+  const row = await writeEdit(tx, workspaceId, seq, line, change.body, mentions);
+  return { kind: "edited", message: stored(row), visitorId: reader.id };
+}
+
+/**
+ * Writes an edit's text and records it. An edit that takes the link out of the body drops its card.
+ * A text message's only attachment is the card's thumbnail.
+ */
+async function writeEdit(
+  tx: Transaction,
+  workspaceId: string,
+  seq: bigint,
+  line: ChatLine,
+  body: string,
+  mentions: { metadata: unknown; added: string[] } | null,
+) {
+  const { link, ...withoutLink } = line.metadata as { link?: { url: string } };
+  const dropsLink = link !== undefined && firstBareLink(body) !== link.url;
+  if (dropsLink) await deleteAttachments(tx, workspaceId, line.id);
+  const metadata = mentions?.metadata ?? (dropsLink ? withoutLink : null);
   const [row] = await tx
     .update(message)
     .set({
-      body: change.body,
+      body,
       editedAt: sql`now()`,
       changedSeq: seq,
-      ...(mentions !== null && { metadata: mentions.metadata }),
+      ...(metadata !== null && { metadata }),
     })
-    .where(and(eq(message.workspaceId, workspaceId), eq(message.id, messageId)))
+    .where(and(eq(message.workspaceId, workspaceId), eq(message.id, line.id)))
     .returning(messageColumns);
   if (row === undefined) throw new Error("The message update returned no row");
   await recordMessageChange(tx, workspaceId, seq, "message.updated", line, mentions?.added ?? []);
-  await resendQuotes(tx, workspaceId, messageId);
-  return { kind: "edited", message: stored(row), visitorId: reader.id };
+  await resendQuotes(tx, workspaceId, line.id);
+  return row;
+}
+
+/** Deletes a message's attachment rows. The worker deletes their stored objects. */
+async function deleteAttachments(tx: Transaction, workspaceId: string, messageId: string) {
+  const files = await tx
+    .delete(attachment)
+    .where(and(eq(attachment.workspaceId, workspaceId), eq(attachment.messageId, messageId)))
+    .returning({ storageKey: attachment.storageKey });
+  if (files.length > 0) {
+    await tx
+      .insert(storageDeletion)
+      .values(files.map(({ storageKey }) => ({ workspaceId, storageKey })));
+  }
 }
 
 type DeleteOutcome =
@@ -327,35 +363,50 @@ export async function deleteMessage(
   if (line === undefined) return { kind: "missing" };
   if (!by.mayDeleteAnyone && line.authorOperatorId !== by.operatorId) return { kind: "not_yours" };
   const deleted = { kind: "deleted", visitorId: reader.id, isNote: line.kind === "note" } as const;
-  if (line.deletedAt !== null) return deleted;
+  if (line.deletedAt === null) await writeDelete(tx, workspaceId, seq, line);
+  return deleted;
+}
+
+/** Clears a message's body, image, file and card, and records it. */
+async function writeDelete(tx: Transaction, workspaceId: string, seq: bigint, line: ChatLine) {
   await tx
     .update(message)
     .set({
       body: null,
       deletedAt: sql`now()`,
       changedSeq: seq,
-      metadata: sql`${message.metadata} - 'image' - 'file'`,
+      metadata: sql`${message.metadata} - 'image' - 'file' - 'link'`,
     })
-    .where(and(eq(message.workspaceId, workspaceId), eq(message.id, messageId)));
-  const files = await tx
-    .delete(attachment)
-    .where(and(eq(attachment.workspaceId, workspaceId), eq(attachment.messageId, messageId)))
-    .returning({ storageKey: attachment.storageKey });
-  if (files.length > 0) {
-    await tx
-      .insert(storageDeletion)
-      .values(files.map(({ storageKey }) => ({ workspaceId, storageKey })));
-  }
+    .where(and(eq(message.workspaceId, workspaceId), eq(message.id, line.id)));
+  await deleteAttachments(tx, workspaceId, line.id);
   // The outbound message it came from loses its text too.
   await tx
     .update(outboundMessage)
     .set({ body: null })
     .where(
-      and(eq(outboundMessage.workspaceId, workspaceId), eq(outboundMessage.messageId, messageId)),
+      and(eq(outboundMessage.workspaceId, workspaceId), eq(outboundMessage.messageId, line.id)),
     );
   await recordMessageChange(tx, workspaceId, seq, "message.deleted", line, []);
-  await resendQuotes(tx, workspaceId, messageId);
-  return deleted;
+  await resendQuotes(tx, workspaceId, line.id);
+}
+
+/**
+ * Gives a copy of a message, such as a welcome chat's, the edit or the delete (`body` null) of its
+ * original. False when the copy is gone. The caller holds the workspace lock.
+ */
+export async function changeCopy(
+  tx: Transaction,
+  workspaceId: string,
+  conversationId: string,
+  copyId: string,
+  body: string | null,
+): Promise<boolean> {
+  const seq = await nextSeq(tx, workspaceId);
+  const line = await lockChatLine(tx, workspaceId, conversationId, copyId);
+  if (line === undefined || line.deletedAt !== null) return false;
+  if (body === null) await writeDelete(tx, workspaceId, seq, line);
+  else await writeEdit(tx, workspaceId, seq, line, body, null);
+  return true;
 }
 
 /** When the first email that carried this message was sent. Null when none did, or it was pruned. */

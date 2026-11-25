@@ -48,7 +48,8 @@ export async function removeOldUploads(db: Database, now = new Date()): Promise<
       await tx
         .update(message)
         .set({
-          metadata: sql`(${message.metadata} - 'image' - 'file') || jsonb_build_object(case when ${message.metadata} ? 'file' then 'fileRemoved' else 'imageRemoved' end, true)`,
+          // A link card's thumbnail leaves its card with no image, and its text reply stays as it was.
+          metadata: sql`case when ${message.metadata} ? 'link' then jsonb_set(${message.metadata}, '{link,image}', 'null') else (${message.metadata} - 'image' - 'file') || jsonb_build_object(case when ${message.metadata} ? 'file' then 'fileRemoved' else 'imageRemoved' end, true) end`,
         })
         .where(
           and(

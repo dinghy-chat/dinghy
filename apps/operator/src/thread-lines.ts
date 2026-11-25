@@ -20,6 +20,7 @@ import {
   type WelcomeChat,
   type WorkspaceApi,
 } from "./api.ts";
+import { type LinkCard, type LinkPreview, previewCard } from "./link-preview.ts";
 import { useLatestLoad } from "./load.ts";
 import type { TextId } from "./text.ts";
 import { failureText } from "./ui.tsx";
@@ -33,6 +34,9 @@ interface LineFields {
   attachment: Message["attachment"];
   /** Held until the server confirms it, so a retry can send it again. */
   file?: File;
+  /** The card a pending reply sends, held as the file is. */
+  preview?: LinkPreview;
+  link: LinkCard | null;
   fromVisitor: boolean;
   /** `closed` and `reopened` are status lines, and a `note` is the team's own. */
   kind: Message["kind"];
@@ -75,6 +79,7 @@ function merge(lines: Line[], message: Message): Line[] {
     authorName: message.authorName,
     status: "sent",
     replyTo: message.replyTo,
+    link: message.link ?? null,
     editedAt: message.editedAt,
     deleted: message.deleted,
     ...viaOf(message),
@@ -176,7 +181,7 @@ export function useThreadLines({
     reloadAll();
   };
 
-  const deliver = async ({ id, body, file, replyTo, kind, mentions }: Line) => {
+  const deliver = async ({ id, body, file, preview, replyTo, kind, mentions }: Line) => {
     setLines((current) =>
       current.map((line) => (line.id === id ? { ...line, status: "sending" } : line)),
     );
@@ -184,7 +189,7 @@ export function useThreadLines({
     try {
       const sent =
         file === undefined
-          ? await api.reply(conversationId, id, body, replyToId, kind === "note", mentions)
+          ? await api.reply(conversationId, id, body, replyToId, kind === "note", mentions, preview)
           : await api.replyUpload(conversationId, id, file, replyToId);
       setLines((current) => merge(current, sent));
       onChanged();
@@ -215,6 +220,7 @@ export function useThreadLines({
     seq: null,
     body,
     attachment: null,
+    link: null,
     fromVisitor: false,
     kind,
     authorOperatorId: meId,
@@ -232,9 +238,21 @@ export function useThreadLines({
     button: null,
   });
 
-  /** Sends a reply, or a note that only the team sees, which alerts the members it mentions. */
-  const sendText = (body: string, quote: Quote | null, isNote: boolean, mentions: string[]) => {
-    const line = pending(body, quote, isNote ? "note" : "text", mentions);
+  /**
+   * Sends a reply, or a note that only the team sees, which alerts the members it mentions. A
+   * reply's card shows at once, so the log keeps its height when the server confirms it.
+   */
+  const sendText = (
+    body: string,
+    quote: Quote | null,
+    isNote: boolean,
+    mentions: string[],
+    preview: LinkPreview | null,
+  ) => {
+    const line: Line = {
+      ...pending(body, quote, isNote ? "note" : "text", mentions),
+      ...(preview !== null && { preview, link: previewCard(preview) }),
+    };
     setLines((current) => [...current, line]);
     void deliver(line);
   };

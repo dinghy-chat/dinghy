@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { markdownHtml, markdownText, parseMarkdown, plainText } from "./markdown.ts";
+import { firstBareLink, markdownHtml, markdownText, parseMarkdown, plainText } from "./markdown.ts";
 
 test("bold, italic and inline code", () => {
   expect(markdownHtml("**Hi** *there* `npm i`")).toBe(
@@ -126,4 +126,18 @@ test("a quote's text drops the marks, keeps link words, snake_case and line brea
     "Bold and it code docs\nitem_one\ntwo",
   );
   expect(plainText("é".repeat(300))).toHaveLength(300);
+});
+
+test("the first bare link, outside labels, code and quotes, gets the card", () => {
+  expect(firstBareLink("See https://a.example/x. Or https://b.example")).toBe(
+    "https://a.example/x",
+  );
+  expect(firstBareLink("[Docs](https://a.example) and **https://b.example**")).toBe(
+    "https://b.example",
+  );
+  expect(firstBareLink("`https://a.example`\n> https://b.example\n- https://c.example")).toBe(
+    "https://c.example",
+  );
+  expect(firstBareLink("```\nhttps://a.example\n```")).toBeNull();
+  expect(firstBareLink("No link here")).toBeNull();
 });

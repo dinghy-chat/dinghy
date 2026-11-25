@@ -94,6 +94,39 @@ export function isBareLink(href: string): boolean {
 export const isBareLinkText = (href: string, children: readonly unknown[]): boolean =>
   children.length === 1 && children[0] === href && isBareLink(href);
 
+/** A quick test before the parse, which most drafts do not need. */
+const HAS_WEB_ADDRESS = /https?:\/\//i;
+
+/**
+ * The first link that a message writes as its bare address, outside code and quotes, or null. Only
+ * this link gets a preview card.
+ */
+export function firstBareLink(source: string): string | null {
+  if (!HAS_WEB_ADDRESS.test(source)) return null;
+  const find = (parts: Inline[]): string | null => {
+    for (const part of parts) {
+      if (typeof part === "string" || part.tag === "code") continue;
+      if (part.tag === "a" && isBareLinkText(part.href, part.children)) return part.href;
+      const found = part.tag === "a" ? null : find(part.children);
+      if (found !== null) return found;
+    }
+    return null;
+  };
+  for (const block of parseMarkdown(source)) {
+    const items =
+      block.tag === "p"
+        ? [block.children]
+        : block.tag === "ul" || block.tag === "ol"
+          ? block.items
+          : [];
+    for (const item of items) {
+      const found = find(item);
+      if (found !== null) return found;
+    }
+  }
+  return null;
+}
+
 /** Splits a message into paragraphs, code blocks and lists. */
 export function parseMarkdown(source: string): Block[] {
   const lines = source.replace(/\r\n?/g, "\n").split("\n");
