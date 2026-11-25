@@ -830,7 +830,11 @@ async function replyEmailPlan(
         isNull(message.authorVisitorId),
         isChat(),
         isNull(message.deletedAt),
-        gt(message.seq, target.lastReadSeq),
+        isNull(message.readAt),
+        gt(
+          message.seq,
+          sql`greatest(${target.lastReadSeq}::bigint, ${conversation.visitorReadSeq})`,
+        ),
         notExists(carriedByTranscript(workspaceId, visitorId)),
         mayGoByEmail(),
       ),

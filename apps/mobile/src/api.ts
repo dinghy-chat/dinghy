@@ -18,6 +18,7 @@ import type {
 } from "./types";
 
 const REQUEST_TIMEOUT_MS = 30_000;
+const THREAD_RELOAD_MS = 10 * 60_000;
 const UPLOAD_TIMEOUT_MS = 5 * 60_000;
 export const MAX_PROFILE_IMAGE_BYTES = 2 * 1024 * 1024;
 export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -179,35 +180,62 @@ export class DinghyApi {
   }
 
   async conversations(): Promise<{ conversations: Conversation[]; waiting: number }> {
-    const page = await this.call<{ conversations: Conversation[]; waiting: number }>(
-      this.workspace("/conversations?status=open&limit=100"),
-    );
-    return {
-      ...page,
-      conversations: page.conversations.map((item) => this.withVisitorPicture(item)),
-    };
+    const query = new URLSearchParams({ status: "open", limit: "100" });
+    const conversations = new Map<string, Conversation>();
+    let waiting = 0;
+    for (;;) {
+      const page = await this.call<{
+        conversations: Conversation[];
+        waiting: number;
+        hasMore: boolean;
+      }>(this.workspace(`/conversations?${query}`));
+      if (!query.has("beforeId")) waiting = page.waiting;
+      for (const item of page.conversations) {
+        if (!conversations.has(item.id)) conversations.set(item.id, this.withVisitorPicture(item));
+      }
+      const last = page.conversations.at(-1);
+      if (!page.hasMore || !last) break;
+      query.set("beforeUpdatedAt", last.updatedAt);
+      query.set("beforeId", last.id);
+    }
+    return { conversations: [...conversations.values()], waiting };
   }
 
-  async thread(conversationId: string): Promise<Thread> {
+  async thread(conversationId: string, previous?: Thread): Promise<Thread> {
+    const now = Date.now();
+    const reuse =
+      previous?.sync !== undefined && now - (previous.refreshedAt ?? 0) < THREAD_RELOAD_MS;
+    const messagesById = new Map(
+      (reuse ? previous.messages : []).map((message) => [message.id, message]),
+    );
+    let refreshedAt = reuse ? previous.refreshedAt : now;
     let after = "0";
-    const messages: Message[] = [];
+    let changesAfter = reuse ? previous.sync?.cursor : "0";
     let page: Thread;
     do {
-      page = await this.call(
-        this.workspace(
-          `/conversations/${conversationId}/messages?after=${encodeURIComponent(after)}`,
-        ),
-      );
-      messages.push(...page.messages);
+      const query = new URLSearchParams({ after });
+      if (changesAfter !== undefined) query.set("changesAfter", changesAfter);
+      page = await this.call(this.workspace(`/conversations/${conversationId}/messages?${query}`));
+      // Older servers ignore changesAfter and return ordinary pages from the start.
+      if (page.sync?.resync || (changesAfter !== undefined && page.sync === undefined)) {
+        messagesById.clear();
+        refreshedAt = now;
+      }
+      for (const message of page.messages) messagesById.set(message.id, message);
+      changesAfter = page.sync?.cursor;
       const last = page.messages.at(-1);
       if (!last) break;
       after = last.seq;
     } while (page.hasMore);
+    const messages = [...messagesById.values()].sort((a, b) =>
+      BigInt(a.seq) < BigInt(b.seq) ? -1 : 1,
+    );
     const firstText = messages.find((message) => !message.deleted && message.kind === "text");
     const subject =
       page.conversation.subject ?? firstText?.body?.split("\n", 1)[0]?.trim().slice(0, 120) ?? null;
     return {
       ...page,
+      ...(refreshedAt === undefined ? {} : { refreshedAt }),
       conversation: this.withVisitorPicture({ ...page.conversation, subject }),
       messages,
       hasMore: false,

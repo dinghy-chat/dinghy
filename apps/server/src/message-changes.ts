@@ -6,6 +6,7 @@ import { firstBareLink } from "../../../packages/widget/src/markdown.ts";
 import {
   alertDelivery,
   attachment,
+  conversation,
   event,
   type MessagePayload,
   message,
@@ -18,11 +19,13 @@ import type { Transaction } from "./db/tenant.ts";
 import {
   conversationVisitor,
   isWritten,
+  joinVisitor,
   mentionable,
   messageColumns,
   nextSeq,
   type StoredMessage,
   stored,
+  visitorReadSeq,
   wantsWebhook,
 } from "./messages.ts";
 import { RETENTION_MS } from "./time.ts";
@@ -104,9 +107,16 @@ export async function replyReceipts(
   notEmailed: bigint[];
 }> {
   const [reader] = await tx
-    .select({ lastReadSeq: visitor.lastReadSeq })
-    .from(visitor)
-    .where(and(eq(visitor.workspaceId, workspaceId), eq(visitor.id, visitorId)));
+    .select({ lastReadSeq: visitorReadSeq })
+    .from(conversation)
+    .innerJoin(visitor, joinVisitor())
+    .where(
+      and(
+        eq(conversation.workspaceId, workspaceId),
+        eq(conversation.id, conversationId),
+        eq(conversation.visitorId, visitorId),
+      ),
+    );
   const coverage = await emailCoverage(tx, workspaceId, conversationId, visitorId);
   // The outbound messages that no email may carry, though an email's range holds them.
   const leftOut = await tx
@@ -201,6 +211,7 @@ async function lockChatLine(
       metadata: message.metadata,
       deletedAt: message.deletedAt,
       createdAt: message.createdAt,
+      readAt: message.readAt,
     })
     .from(message)
     .where(
@@ -227,9 +238,9 @@ async function visitorMaySee(
   workspaceId: string,
   conversationId: string,
   reader: { id: string; lastReadSeq: bigint },
-  line: { seq: bigint; createdAt: Date; metadata: unknown },
+  line: { seq: bigint; createdAt: Date; readAt: Date | null; metadata: unknown },
 ): Promise<boolean> {
-  if (reader.lastReadSeq >= line.seq) return true;
+  if (line.readAt !== null || reader.lastReadSeq >= line.seq) return true;
   if (Date.now() - line.createdAt.getTime() >= RETENTION_MS) return true;
   const coverage = await emailCoverage(tx, workspaceId, conversationId, reader.id);
   return carrying(coverage, line).some((email) => email.state !== "failed");
@@ -273,10 +284,12 @@ export async function editMessage(
   operatorId: string,
   /** Mentions left out keep the note's. */
   change: { body: string; mentions?: string[] | undefined },
+  lockCopy?: () => Promise<void>,
 ): Promise<EditOutcome> {
-  const seq = await nextSeq(tx, workspaceId);
   const reader = await conversationVisitor(tx, workspaceId, conversationId, "no key update");
   if (reader === undefined) return { kind: "missing" };
+  await lockCopy?.();
+  const seq = await nextSeq(tx, workspaceId);
   const line = await lockChatLine(tx, workspaceId, conversationId, messageId);
   if (line === undefined || line.deletedAt !== null) return { kind: "missing" };
   const isNote = line.kind === "note";
@@ -355,10 +368,12 @@ export async function deleteMessage(
   conversationId: string,
   messageId: string,
   by: { operatorId: string; mayDeleteAnyone: boolean },
+  lockCopy?: () => Promise<void>,
 ): Promise<DeleteOutcome> {
-  const seq = await nextSeq(tx, workspaceId);
   const reader = await conversationVisitor(tx, workspaceId, conversationId, "no key update");
   if (reader === undefined) return { kind: "missing" };
+  await lockCopy?.();
+  const seq = await nextSeq(tx, workspaceId);
   const line = await lockChatLine(tx, workspaceId, conversationId, messageId);
   if (line === undefined) return { kind: "missing" };
   if (!by.mayDeleteAnyone && line.authorOperatorId !== by.operatorId) return { kind: "not_yours" };

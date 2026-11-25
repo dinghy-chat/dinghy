@@ -455,6 +455,7 @@ const MessageSchema = z
     link: LinkSchema.nullable(),
     // An operator deleted it, so it shows as a placeholder with no body.
     deleted: z.boolean(),
+    read: z.boolean().optional(),
     // A reply from a workspace API key, such as the customer's own bot.
     fromBot: z.boolean(),
     // A reply's author: an operator's first name, or a key's name. Null for the visitor's own.

@@ -34,6 +34,11 @@ export async function mergeBrowserVisitor(
   // In the order a send and a delete take them, so a send to either visitor waits for the merge.
   await lockVisitors(tx, workspaceId, [source.id, targetId]);
   await lockWorkspace(tx, workspaceId);
+  await tx.execute(sql`
+    UPDATE conversation AS c SET visitor_read_seq = greatest(c.visitor_read_seq, v.last_read_seq)
+    FROM visitor AS v
+    WHERE c.workspace_id = ${workspaceId} AND v.workspace_id = c.workspace_id
+      AND c.visitor_id = v.id AND v.id IN (${source.id}, ${targetId})`);
   const merged = await mergeVisitorRow(tx, workspaceId, source.id, targetId);
   if (!merged) return false;
   const moved = await moveVisitorRows(tx, workspaceId, source.id, targetId);
@@ -68,7 +73,7 @@ async function mergeVisitorRow(
         JOIN conversation AS c ON c.workspace_id = m.workspace_id AND c.id = m.conversation_id
         WHERE m.workspace_id = t.workspace_id AND c.visitor_id IN (s.id, t.id)
           AND m.author_visitor_id IS NULL AND ${isChat(sql`m.kind`)} AND m.deleted_at IS NULL
-          AND m.seq > CASE WHEN c.visitor_id = s.id THEN s.last_read_seq ELSE t.last_read_seq END
+          AND m.read_at IS NULL AND m.seq > c.visitor_read_seq
       ), greatest(t.last_read_seq, s.last_read_seq)))
     FROM visitor AS s
     WHERE t.workspace_id = ${workspaceId} AND t.id = ${targetId}

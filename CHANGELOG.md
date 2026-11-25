@@ -4,6 +4,13 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Fixed
+
+- Database restore switches databases atomically. A stopped restore cannot leave the configured database name missing.
+- Operator edits and deletes take locks in the same order as visitor replies to prevent deadlocks.
+- A visitor who signs in keeps their read receipts when their chat histories merge.
+- The mobile inbox includes older open conversations in its list and search. Open threads fetch new and changed messages from servers that support incremental refresh.
+
 ## [0.59.0] - 2026-11-25
 
 ### Added

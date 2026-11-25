@@ -51,6 +51,7 @@ export interface ChatMessage {
   link: LinkCard | null;
   /** The team deleted it, so it shows a placeholder. */
   deleted: boolean;
+  read?: boolean;
   /** The outbound message this reply came from, which the widget showed apart before. */
   outboundId: string | null;
   /** That outbound message's buttons. Empty otherwise. */

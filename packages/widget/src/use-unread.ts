@@ -55,6 +55,7 @@ export function useUnread(
             !line.fromVisitor &&
             !line.note &&
             !line.gone &&
+            !line.read &&
             line.seq !== null &&
             line.seq > lastRead,
         ).length

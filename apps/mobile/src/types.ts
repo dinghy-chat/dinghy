@@ -117,6 +117,8 @@ export type Thread = {
   conversation: Conversation;
   messages: Message[];
   hasMore: boolean;
+  sync?: { cursor: string; resync: boolean };
+  refreshedAt?: number;
   visitorOnline: boolean | null;
   receipts: ReplyReceipts;
 };

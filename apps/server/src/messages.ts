@@ -257,7 +257,10 @@ type MessageVia =
 export type StoredMessage = StoredFields & MessageVia;
 
 /** A message the visitor may get: any kind but a note. */
-export type VisitorMessage = StoredMessage & { kind: (typeof VISITOR_KINDS)[number] };
+export type VisitorMessage = StoredMessage & {
+  kind: (typeof VISITOR_KINDS)[number];
+  read?: boolean;
+};
 
 /** The message as a visitor's, for a read that left notes out. Throws on a note, which is a bug. */
 export function visitorMessage(one: StoredMessage): VisitorMessage {
@@ -960,7 +963,11 @@ export async function readState(
           isNull(message.authorVisitorId),
           isChat(),
           isNull(message.deletedAt),
-          gt(message.seq, row.lastReadSeq),
+          isNull(message.readAt),
+          gt(
+            message.seq,
+            sql`greatest(${row.lastReadSeq}::bigint, ${conversation.visitorReadSeq})`,
+          ),
         ),
       ),
   );
@@ -1004,7 +1011,12 @@ export async function markRead(
         inArray(message.conversationId, visitorConversations(tx, workspaceId, visitorId)),
         isNull(message.authorVisitorId),
         isChat(),
+        isNull(message.readAt),
         gt(message.seq, before.lastReadSeq),
+        sql`${message.seq} > (
+          select c.visitor_read_seq from conversation c
+          where c.workspace_id = ${message.workspaceId} and c.id = ${message.conversationId}
+        )`,
         lte(message.seq, moved.lastReadSeq),
       ),
     )
@@ -1067,7 +1079,10 @@ export async function listVisitorMessages(
   // A note is the team's own, so the visitor never gets it.
   const read = (condition: SQL | undefined, order: AnyColumn) =>
     tx
-      .select(messageColumns)
+      .select({
+        ...messageColumns,
+        read: sql<boolean>`${message.readAt} is not null or ${message.seq} <= ${conversation.visitorReadSeq}`,
+      })
       .from(message)
       .innerJoin(
         conversation,
@@ -1092,7 +1107,7 @@ export async function listVisitorMessages(
   );
   const changed = await read(gt(message.changedSeq, position.seq), message.changedSeq);
   const rows = [...fresh, ...changed]
-    .map((row) => visitorMessage(stored(row)))
+    .map(({ read, ...row }) => ({ ...visitorMessage(stored(row)), ...(read && { read }) }))
     .sort((one, other) => (one.changeSeq < other.changeSeq ? -1 : 1));
   const page = rows.slice(0, limit);
   const last = page.at(-1);
@@ -1234,6 +1249,12 @@ function withSnooze<Row extends { snoozed: boolean; snoozedUntil: Date | null }>
   return { ...row, snooze: snoozed ? { until: snoozedUntil } : null };
 }
 
+/** The visitor-wide cursor and any earlier read this conversation kept through a merge. */
+export const visitorReadSeq =
+  sql<bigint>`greatest(${visitor.lastReadSeq}, ${conversation.visitorReadSeq})`.mapWith(
+    visitor.lastReadSeq,
+  );
+
 /** Joins a conversation to its visitor, inside the same workspace. */
 export function joinVisitor() {
   return and(
@@ -1254,7 +1275,7 @@ export async function conversationVisitor(
   lock?: "no key update",
 ) {
   const query = tx
-    .select({ id: visitor.id, email: visitor.email, lastReadSeq: visitor.lastReadSeq })
+    .select({ id: visitor.id, email: visitor.email, lastReadSeq: visitorReadSeq })
     .from(conversation)
     .innerJoin(visitor, joinVisitor())
     .where(and(eq(conversation.workspaceId, workspaceId), eq(conversation.id, conversationId)));
@@ -1782,7 +1803,11 @@ export async function listConversationMessages(
   conversationId: string,
   after: bigint,
   limit: number,
+  byChange = false,
 ): Promise<{ messages: StoredMessage[]; hasMore: boolean }> {
+  const position = byChange
+    ? sql<bigint>`coalesce(${message.changedSeq}, ${message.seq})`
+    : sql<bigint>`${message.seq}`;
   const rows = await tx
     .select(messageColumns)
     .from(message)
@@ -1790,10 +1815,10 @@ export async function listConversationMessages(
       and(
         eq(message.workspaceId, workspaceId),
         eq(message.conversationId, conversationId),
-        gt(message.seq, after),
+        gt(position, after),
       ),
     )
-    .orderBy(asc(message.seq))
+    .orderBy(asc(position))
     .limit(limit + 1);
   return { messages: rows.slice(0, limit).map(stored), hasMore: rows.length > limit };
 }

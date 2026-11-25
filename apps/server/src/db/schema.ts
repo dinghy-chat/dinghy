@@ -400,6 +400,8 @@ export const conversation = pgTable(
     // The last message a sent transcript carried. A close's transcript starts after it. It is kept
     // here because finished deliveries are deleted after 30 days.
     transcriptSentSeq: bigint("transcript_sent_seq", { mode: "bigint" }),
+    // A history merge can lower the visitor-wide cursor without undoing reads in this conversation.
+    visitorReadSeq: bigint("visitor_read_seq", { mode: "bigint" }).notNull().default(sql`0`),
     createdAt: createdAt(),
     // Milliseconds, the precision of a JSON date, so a paging cursor can name a row exactly.
     updatedAt: timestamp("updated_at", { withTimezone: true, precision: 3 }).notNull().defaultNow(),
@@ -522,6 +524,11 @@ export const message = pgTable(
     ),
     unique("message_seq_key").on(table.workspaceId, table.seq),
     index("message_conversation_idx").on(table.workspaceId, table.conversationId, table.seq),
+    index("message_conversation_change_idx").on(
+      table.workspaceId,
+      table.conversationId,
+      sql`coalesce(${table.changedSeq}, ${table.seq})`,
+    ),
     // Deleting a quoted row clears its replies' quote, which this finds.
     index("message_reply_to_idx").on(table.workspaceId, table.replyToMessageId),
     // The widget's stream reads the messages an edit or a delete sent again after its cursor.

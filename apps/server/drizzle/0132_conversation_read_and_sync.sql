@@ -1,0 +1,2 @@
+ALTER TABLE "conversation" ADD COLUMN "visitor_read_seq" bigint DEFAULT 0 NOT NULL;--> statement-breakpoint
+CREATE INDEX "message_conversation_change_idx" ON "message" USING btree ("workspace_id","conversation_id",coalesce("changed_seq", "seq"));

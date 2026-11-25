@@ -187,6 +187,7 @@ const ExportFile = z.strictObject({
       startedBy: z.enum(CONVERSATION_STARTERS),
       // A file from before transcripts started at the last sent one has none.
       transcriptSentSeq: seq.nullable().default(null),
+      visitorReadSeq: seq.default("0"),
       createdAt: date,
       updatedAt: date,
     }),
@@ -646,6 +647,7 @@ async function readWorkspace(
           handoffByApiKeyId: row.handoffByApiKeyId,
           startedBy: row.startedBy,
           transcriptSentSeq: row.transcriptSentSeq?.toString() ?? null,
+          visitorReadSeq: row.visitorReadSeq.toString(),
           createdAt: iso(row.createdAt),
           updatedAt: iso(row.updatedAt),
         })),
@@ -1068,6 +1070,7 @@ async function insertWorkspace(
         handoffByApiKeyId: row.handoffByApiKeyId,
         startedBy: row.startedBy,
         transcriptSentSeq: row.transcriptSentSeq === null ? null : BigInt(row.transcriptSentSeq),
+        visitorReadSeq: BigInt(row.visitorReadSeq),
         createdAt: new Date(row.createdAt),
         updatedAt: new Date(row.updatedAt),
       })),

@@ -246,6 +246,8 @@ export interface paths {
         query?: {
           after?: string;
           limit?: number;
+          /** @description Use 0 for the initial history, then the returned sync cursor for new and edited messages. */
+          changesAfter?: "0" | string;
         };
         header?: never;
         path: {
@@ -266,6 +268,10 @@ export interface paths {
               conversation: components["schemas"]["Conversation"];
               messages: components["schemas"]["InboxMessage"][];
               hasMore: boolean;
+              sync?: {
+                cursor: string;
+                resync: boolean;
+              };
               visitorOnline: boolean | null;
               visitorPages: components["schemas"]["PageView"][];
               welcome: components["schemas"]["WelcomeChat"];
@@ -7960,6 +7966,7 @@ export interface components {
       replyTo: components["schemas"]["Quote"];
       link: components["schemas"]["LinkCard"];
       deleted: boolean;
+      read?: boolean;
       fromBot: boolean;
       authorName: string | null;
       authorPictureUrl: string | null;
