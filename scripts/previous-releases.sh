@@ -9,7 +9,9 @@ set -euo pipefail
 published() {
   local error
   error=$(docker manifest inspect "ghcr.io/dinghy-chat/dinghy:$1" 2>&1 >/dev/null) && return 0
-  case "$error" in *"manifest unknown"* | *"no such manifest"*) return 1 ;; esac
+  # GHCR answers "manifest unknown" for a missing tag. Docker also prints "no such manifest" for a
+  # 401, so that one counts as an error.
+  case "$error" in *"manifest unknown"*) return 1 ;; esac
   echo "previous-releases: cannot read ghcr.io/dinghy-chat/dinghy:$1: $error" >&2
   exit 1
 }
