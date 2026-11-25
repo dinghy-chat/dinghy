@@ -55,6 +55,14 @@ export interface CloudSettings {
   welcome?: WelcomeSettings | undefined;
   /** Admin notices about signups and billing, in a Telegram group. Off when unset. */
   telegram?: TelegramSettings | undefined;
+  /** Dinghy's PostHog project, which the cloud's app reports to. Off when unset. */
+  analytics?: Analytics | undefined;
+}
+
+/** A PostHog project: its public key and the address that takes its events. */
+interface Analytics {
+  key: string;
+  host: string;
 }
 
 /** The cloud's settings, or none on a self-hosted install, which leaves them all unset. */
@@ -67,7 +75,15 @@ export function cloudFromConfig(config: Config): CloudSettings | undefined {
     workspaceId === undefined || operatorEmail === undefined
       ? undefined
       : { workspaceId, operatorEmail };
-  return { billing, signup: config.CLOUD_SIGNUP, welcome, telegram: telegramFromConfig(config) };
+  const key = config.CLOUD_POSTHOG_KEY;
+  const analytics = key === undefined ? undefined : { key, host: config.CLOUD_POSTHOG_HOST };
+  return {
+    billing,
+    signup: config.CLOUD_SIGNUP,
+    welcome,
+    telegram: telegramFromConfig(config),
+    analytics,
+  };
 }
 
 /** Why the web role cannot start with these settings, or null when it can. */
@@ -95,6 +111,8 @@ export interface CloudDeps {
 export interface Cloud {
   billing: boolean;
   signup: SignupMode;
+  /** Where the app reports its page views, or null without analytics. */
+  analytics: Analytics | null;
   /** Cancels the subscription before the owner's delete. A throw stops the delete. */
   beforeDelete: ((workspaceId: string) => Promise<void>) | undefined;
   now: () => Date;
@@ -144,6 +162,7 @@ export function createCloud(
   return {
     billing: client !== undefined,
     signup,
+    analytics: settings?.analytics ?? null,
     now: client?.now ?? (() => new Date()),
     limits,
     contact: CLOUD_CONTACT,

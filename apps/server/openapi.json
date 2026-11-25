@@ -167,11 +167,23 @@
             "type": ["string", "null"],
             "enum": ["payment", "early", null]
           },
+          "analytics": {
+            "type": ["object", "null"],
+            "properties": {
+              "key": {
+                "type": "string"
+              },
+              "host": {
+                "type": "string"
+              }
+            },
+            "required": ["key", "host"]
+          },
           "email": {
             "type": "boolean"
           }
         },
-        "required": ["name", "version", "billing", "signup", "email"]
+        "required": ["name", "version", "billing", "signup", "analytics", "email"]
       },
       "WidgetPublicAppearance": {
         "type": "object",

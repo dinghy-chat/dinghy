@@ -31,6 +31,18 @@ test("the page's CSP allows fonts from this server and no inline style", async (
   expect(csp).toContain("style-src 'self';");
 });
 
+test("the page may send to the cloud's PostHog host only when the server names one", async () => {
+  const csp = async (analyticsOrigin?: string) => {
+    const app: App = new OpenAPIHono();
+    registerOperatorApp(app, PUBLIC, { analyticsOrigin });
+    return (await app.request("/")).headers.get("content-security-policy");
+  };
+  expect(await csp()).toContain("connect-src 'self';");
+  expect(await csp("https://eu.i.posthog.com")).toContain(
+    "connect-src 'self' https://eu.i.posthog.com;",
+  );
+});
+
 test.each([
   "/settings",
   "/settings/team",

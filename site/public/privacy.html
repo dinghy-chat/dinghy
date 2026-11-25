@@ -25,6 +25,7 @@
   <link rel="preload" href="/fonts/hanken-grotesk-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/css/site.css">
   <script type="module" src="/js/docs.js"></script>
+  <script src="/js/analytics.js" async></script>
   <script src="https://app.dinghy.chat/widget/loader.js" data-key="wk_f2dce993672e6c0e4e08e116323ffe7e" async></script>
 </head>
 <body>
@@ -51,7 +52,7 @@
       <div class="docs-grid docs-band-grid">
         <div class="docs-band-text">
           <h1>Privacy policy</h1>
-          <p class="lede">What data Dinghy Cloud keeps, why, and for how long. Last updated on 13 November 2026.</p>
+          <p class="lede">What data Dinghy Cloud keeps, why, and for how long. Last updated on 25 November 2026.</p>
         </div>
       </div>
       <div class="water docs-water" data-scene="band" aria-hidden="true">
@@ -79,6 +80,7 @@
 <li>For every request: the IP address, which the server uses to stop abuse. It also appears in short-term server logs.</li>
 </ul>
 <p>We use no advertising or tracking cookies. The chat widget sends the page address without its query string or fragment, the page title, the referring site's origin when available, and a temporary tab ID. Dinghy uses this data to show who is on the site now and to count visits and page views. It stores hourly site totals for 182 days without a persistent visitor ID in those totals.</p>
+<p>Dinghy's own website and app send page views to PostHog, so we can see how people find Dinghy and where signup stops. On the website, clicks go too. This uses no cookies and stores nothing in the browser, and PostHog keeps no full IP address. In the app, the events carry the operator's ID, and never an email address, a query string or chat content.</p>
 <p>After a visitor sends a chat message, the widget stores a token in their browser so they can continue the conversation. See <a href="/for/privacy">what the widget sends and stores</a>.</p>
 
 <h2>How we use it</h2>
@@ -97,6 +99,7 @@
 <tr><td>Cloudflare</td><td>DNS, the website, and the nightly backup copy</td><td>Europe and global</td></tr>
 <tr><td>Stripe</td><td>Payments, and the seller of record for each sale</td><td>Global</td></tr>
 <tr><td>Shipmail</td><td>Email that the service sends</td><td>Europe</td></tr>
+<tr><td>PostHog</td><td>Page views on this website and in the app, without cookies</td><td>EU</td></tr>
 <tr><td>Sentry</td><td>Error reports, without request data</td><td>Europe</td></tr>
 </tbody>
 </table></div>

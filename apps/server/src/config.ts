@@ -105,6 +105,16 @@ const schema = z.object({
   TELEGRAM_CHAT_ID: z.string().min(1).optional(),
   TELEGRAM_TOPIC_SIGNUPS: z.coerce.number().int().positive().optional(),
   TELEGRAM_TOPIC_BILLING: z.coerce.number().int().positive().optional(),
+  // Cloud only. The cloud's own app reports page views and signup steps to Dinghy's PostHog project,
+  // with this public project key. Without the cloud's settings, the app ignores it.
+  CLOUD_POSTHOG_KEY: z
+    .string()
+    .regex(/^phc_\w+$/)
+    .optional(),
+  CLOUD_POSTHOG_HOST: z
+    .url()
+    .default("https://eu.i.posthog.com")
+    .transform((url) => url.replace(/\/+$/, "")),
   // Optional, for an app store's review of the Dinghy app. This one account signs in to the app
   // with this fixed six-digit code instead of an emailed one, and no email goes to it. Both or none.
   APP_REVIEW_EMAIL: z

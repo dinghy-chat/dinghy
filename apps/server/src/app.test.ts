@@ -111,6 +111,7 @@ describe("/v1", () => {
         .version,
       billing: false,
       signup: null,
+      analytics: null,
       // This app has no mail server, so the server's admin hands out sign-in links.
       email: false,
     });

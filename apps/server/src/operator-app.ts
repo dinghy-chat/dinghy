@@ -34,9 +34,17 @@ export function registerOperatorApp(
     billing = false,
     signup = false,
     uploadsOrigin,
-  }: { billing?: boolean; signup?: boolean; uploadsOrigin?: string | undefined } = {},
+    analyticsOrigin,
+  }: {
+    billing?: boolean;
+    signup?: boolean;
+    uploadsOrigin?: string | undefined;
+    /** Dinghy Cloud's PostHog address, the one other place the app may send to. */
+    analyticsOrigin?: string | undefined;
+  } = {},
 ): void {
   const images = uploadsOrigin === undefined ? "" : ` ${uploadsOrigin}`;
+  const analytics = analyticsOrigin === undefined ? "" : ` ${analyticsOrigin}`;
   const page = async () => {
     const html = await readFile(join(directory, "index.html"), "utf8").catch(() => null);
     if (html === null) return null;
@@ -45,7 +53,7 @@ export function registerOperatorApp(
         ...SECURITY,
         "content-type": "text/html; charset=utf-8",
         "cache-control": "no-cache",
-        "content-security-policy": `default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:${images}; connect-src 'self'${images}; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
+        "content-security-policy": `default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:${images}; connect-src 'self'${images}${analytics}; manifest-src 'self'; worker-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`,
       },
     });
   };

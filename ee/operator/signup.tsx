@@ -17,6 +17,7 @@ import { AuthPage } from "../../apps/operator/src/scene.tsx";
 import { type TextId, t } from "../../apps/operator/src/text.ts";
 import { ErrorNote, Field, failureText } from "../../apps/operator/src/ui.tsx";
 import { DeleteWorkspaceDialog } from "../../apps/operator/src/workspace.tsx";
+import { trackEvent } from "./analytics.ts";
 import { CHECKOUT_FAILURES } from "./billing.tsx";
 
 const POLL_MS = 2000;
@@ -44,6 +45,7 @@ export function Signup({ early }: { early: boolean }) {
     setBusy(true);
     try {
       await signUp(email.trim());
+      trackEvent("signup email sent");
       setSentTo(email.trim());
     } catch (failure) {
       setError(failureText(failure, { 429: "tooManyAttempts" }));
@@ -111,6 +113,7 @@ export function Onboarding({
       setError(failureText(failure, { 429: "tooManyRequests" }));
       return;
     }
+    trackEvent("workspace created", { early });
     if (early) {
       navigate(`/?workspace=${workspaceId}`);
       return;
@@ -287,6 +290,7 @@ export function BillingReturn({ workspaceId }: { workspaceId: string }) {
         (one) => one.workspaceId === workspaceId && one.active && !one.readOnly,
       );
       if (ready) {
+        trackEvent("subscription paid");
         navigate(`/?workspace=${workspaceId}`);
         return;
       }

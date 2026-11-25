@@ -7796,6 +7796,10 @@ export interface components {
       billing: boolean;
       /** @enum {string|null} */
       signup: "payment" | "early" | null;
+      analytics: {
+        key: string;
+        host: string;
+      } | null;
       email: boolean;
     };
     WidgetPublicAppearance: {

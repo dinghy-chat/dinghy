@@ -193,6 +193,8 @@ const metaRoute = createRoute({
               billing: z.boolean(),
               // How cloud signup works on this server, or null where nobody can sign up.
               signup: z.enum(["payment", "early"]).nullable(),
+              // Dinghy Cloud's own product analytics, or null on every other server.
+              analytics: z.object({ key: z.string(), host: z.string() }).nullable(),
               // Whether sign-in links go by email. Without, the server's admin hands them out.
               email: z.boolean(),
             })
@@ -397,6 +399,7 @@ export function createApp({
       version,
       billing: cloud?.billing ?? false,
       signup: cloud?.signup ?? null,
+      analytics: cloud?.analytics ?? null,
       email: auth !== undefined && mailer !== undefined,
     }),
   );
@@ -648,6 +651,7 @@ export function createApp({
       billing: cloud?.billing ?? false,
       signup: cloud !== undefined,
       uploadsOrigin: uploads?.origin,
+      analyticsOrigin: cloud?.analytics?.host,
     });
   if (widgetDirectory !== undefined) registerWidgetFiles(app, widgetDirectory);
 
