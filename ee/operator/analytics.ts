@@ -6,15 +6,15 @@ import type { Meta } from "../../apps/operator/src/api.ts";
  * names a project, so a self-hosted app loads nothing. PostHog's cookie is shared with dinghy.chat, so
  * a visit to the website and the signup that follows belong to one person.
  *
- * A signed-in operator's screens show their customers' chats, so replay masks all text there and
- * blocks images in messages. Typed text is always masked. Addresses lose their query, which can hold
- * a sign-in token.
+ * The workspace's screens show customers' chats, so replay blocks them whole: it records the sidebar
+ * and the clicks, and an empty box for the rest. Clicks carry no text or attributes, typed text is
+ * masked, and addresses lose their query, which can hold a sign-in token.
  */
 type Method = "capture" | "identify" | "reset";
 type PostHog = Record<Method, (...args: unknown[]) => void>;
 
-/** Pages that show only the operator's own account, where replay keeps the text. */
-const OWN_PAGES = new Set(["/signup", "/link", "/billing/return"]);
+/** The Inbox's content area, and the dialogs and toasts outside it. */
+const CUSTOMER_DATA = ".stage, dialog, .toasts";
 const METHODS: Method[] = ["capture", "identify", "reset"];
 
 let operatorId: string | null = null;
@@ -22,25 +22,17 @@ let operatorId: string | null = null;
 /** The stub until PostHog's script loads, then PostHog itself, which replaces it on `window`. */
 const posthog = () => (window as unknown as { posthog?: PostHog }).posthog;
 
-/** Drops the query from this app's own addresses, wherever an event carries one. */
-function withoutQuery(value: unknown): unknown {
-  return typeof value === "string" && value.startsWith(location.origin)
-    ? value.split("?")[0]
-    : value;
+/**
+ * Drops the query from every address of this app in an event, wherever PostHog put it: properties,
+ * person properties, heatmap keys, web vitals and the replay. The match stops before a quote or a
+ * backslash, so the JSON stays valid.
+ */
+function stripQueries<T>(event: T): T {
+  if (event === null) return event;
+  const origin = location.origin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const withQuery = new RegExp(`(${origin}[^"\\\\?#\\s]*)[?#][^"\\\\\\s]*`, "g");
+  return JSON.parse(JSON.stringify(event).replace(withQuery, "$1"));
 }
-
-function stripQueries(event: { properties?: Record<string, unknown> } | null) {
-  const properties = event?.properties;
-  for (const bag of [properties, properties?.$set, properties?.$set_once]) {
-    if (typeof bag !== "object" || bag === null) continue;
-    const values = bag as Record<string, unknown>;
-    for (const key of Object.keys(values)) values[key] = withoutQuery(values[key]);
-  }
-  return event;
-}
-
-const maskText = (text: string) =>
-  operatorId === null || OWN_PAGES.has(location.pathname) ? text : text.replace(/\S/g, "*");
 
 /** Loads PostHog with the project the server names, or nothing with none. */
 export function startAnalytics(analytics: Meta["analytics"]): void {
@@ -51,16 +43,18 @@ export function startAnalytics(analytics: Meta["analytics"]): void {
     capture_pageview: "history_change",
     // Surveys add inline styles, which the app's CSP blocks.
     disable_surveys: true,
+    // A click's text and attributes can be a customer's.
+    mask_all_text: true,
+    mask_all_element_attributes: true,
+    // PostHog's own requests, which skip before_send, mask these query parameters.
+    mask_personal_data_properties: true,
+    custom_personal_data_properties: ["token", "for", "workspace"],
     before_send: stripQueries,
     session_recording: {
       maskAllInputs: true,
-      maskTextSelector: "*",
-      maskTextFn: maskText,
-      blockSelector: ".msg img",
-      maskCapturedNetworkRequestFn: (request: { name: string }) => ({
-        ...request,
-        name: request.name.split("?")[0],
-      }),
+      blockSelector: CUSTOMER_DATA,
+      // Network timings would list the addresses of customers' images.
+      maskCapturedNetworkRequestFn: () => null,
     },
   };
   // PostHog's script reads `_i`, then runs the calls queued in this array.
@@ -70,6 +64,8 @@ export function startAnalytics(analytics: Meta["analytics"]): void {
   });
   for (const method of METHODS)
     Object.assign(stub, { [method]: (...args: unknown[]) => stub.push([method, ...args]) });
+  // The account may have loaded before the server's settings did.
+  if (operatorId !== null) stub.push(["identify", operatorId]);
   (window as unknown as { posthog: unknown }).posthog = stub;
   const script = document.createElement("script");
   script.src = `${analytics.host.replace(".i.posthog.com", "-assets.i.posthog.com")}/static/array.js`;
