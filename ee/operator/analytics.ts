@@ -13,8 +13,8 @@ import type { Meta } from "../../apps/operator/src/api.ts";
 type Method = "capture" | "identify" | "reset";
 type PostHog = Record<Method, (...args: unknown[]) => void>;
 
-/** The Inbox's content area, and the dialogs and toasts outside it. */
-const CUSTOMER_DATA = ".stage, dialog, .toasts";
+/** The Inbox's content area, and the dialogs, toasts and tooltips outside it. */
+const CUSTOMER_DATA = ".stage, dialog, .toasts, .tooltip";
 const METHODS: Method[] = ["capture", "identify", "reset"];
 
 let operatorId: string | null = null;
@@ -43,6 +43,8 @@ export function startAnalytics(analytics: Meta["analytics"]): void {
     capture_pageview: "history_change",
     // Surveys add inline styles, which the app's CSP blocks.
     disable_surveys: true,
+    // Replay blocks the screens a heatmap would show, and their buckets are keyed by full address.
+    enable_heatmaps: false,
     // A click's text and attributes can be a customer's.
     mask_all_text: true,
     mask_all_element_attributes: true,
