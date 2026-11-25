@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.58.0] - 2026-11-25
+
 ### Added
 
 - Dinghy Cloud's Stripe Checkout shows an "Add promotion code" field, so a code made in the Stripe dashboard can give a customer a discount, such as a free first month.
@@ -872,7 +874,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.57.0...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.58.0...HEAD
+[0.58.0]: https://github.com/dinghy-chat/dinghy/compare/v0.57.0...v0.58.0
 [0.57.0]: https://github.com/dinghy-chat/dinghy/compare/v0.56.0...v0.57.0
 [0.56.0]: https://github.com/dinghy-chat/dinghy/compare/v0.55.0...v0.56.0
 [0.55.0]: https://github.com/dinghy-chat/dinghy/compare/v0.54.1...v0.55.0
