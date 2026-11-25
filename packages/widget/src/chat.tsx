@@ -367,8 +367,8 @@ function Chat({
     open && visible,
   );
   usePageReports(client, token, chatted && !fullPage);
-  // Only into an open conversation, and only when the workspace shows drafts.
-  // The page's message is not the visitor's until they change it.
+  // Only into an open conversation, only when the workspace shows drafts, and not the page's
+  // message until the visitor changes it.
   useDraftPreview(
     client,
     token,
@@ -751,8 +751,9 @@ function Chat({
   };
 
   if (!shown) {
-    // The page's card goes first, as the page asked for it at this moment.
-    // Plain text, as a link in it would open a page as well as the chat.
+    // The page's card goes first, as the page asked for it at this moment. Its text is plain, so
+    // a link in it cannot open a page as well as the chat. Closing it keeps the pulse of a waiting
+    // outbound message.
     if (typeof nudgeCard?.text === "string") {
       return (
         <PreviewCard
@@ -760,25 +761,25 @@ function Chat({
           onOpen={() => context.chat?.open(nudgeCard.message)}
           onClose={() => {
             context.nudge(false);
-            // A waiting outbound message still pulses.
             if (outbound.unread > 0) context.nudge(true);
           }}
         />
       );
     }
     const { card } = outbound;
+    const openChat = () => setOpen(true);
     return card === undefined ? null : (
       <PreviewCard
         message={
           <ChatLine
             line={waitingLine(card)}
             showAuthor
-            onView={() => setOpen(true)}
+            onView={openChat}
             onUploadError={noop}
             onRetry={noop}
           />
         }
-        onOpen={() => setOpen(true)}
+        onOpen={openChat}
         onClose={() => outbound.hide(card.id)}
       >
         <Choices one={card} onPress={(index) => choose(card, index)} />

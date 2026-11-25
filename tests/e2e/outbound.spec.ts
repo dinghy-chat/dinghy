@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { type Browser, expect, type Page, test } from "@playwright/test";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
+import type { DinghyApi, NudgeOptions } from "../../packages/widget/src/shared.ts";
 import { say } from "./chat.ts";
 
 // The recipes of docs/outbound-messages.md, against a real server: a welcome that waits until the
@@ -119,68 +120,67 @@ test("recipe 1: a welcome waits on the contact until the visitor opens the chat 
   expect(listed.json.outboundMessages).toHaveLength(1);
 });
 
-type NudgeArg = boolean | { text?: string; message?: string };
-const nudge = (page: Page, on?: NudgeArg) =>
-  page.evaluate(
-    (value) =>
-      (window as unknown as { Dinghy: { nudge(on?: NudgeArg): void } }).Dinghy.nudge(value),
-    on,
-  );
+const nudge = (page: Page, on?: boolean | NudgeOptions) =>
+  page.evaluate((value) => (window as unknown as { Dinghy: DinghyApi }).Dinghy.nudge(value), on);
 const messageBox = (page: Page) => page.getByRole("textbox", { name: "Your message" });
+const pulses = (page: Page) => page.locator(".launcher.nudge");
 
-test("the page's nudge shows a card, and its click opens the chat with the message", async ({
-  page,
-}) => {
+async function closeChat(page: Page) {
+  await page.keyboard.press("Escape");
+  await expect(messageBox(page)).toBeHidden();
+}
+
+test("the page's nudge shows a card until it opens the chat with its message", async ({ page }) => {
   await page.goto(`${server.hostOrigin}/app`);
   const card = page.locator(".preview");
-  await nudge(page, {
-    text: "We saw an error while you saved. Can we help? https://example.com",
-    message: "Error ID abc123",
+
+  await test.step("the card shows plain text, and its close button stops the pulse", async () => {
+    await nudge(page, { text: "We saw an error. Can we help? https://example.com" });
+    await expect(card).toContainText("We saw an error.");
+    await expect(card.locator("a")).toHaveCount(0);
+    await expect(pulses(page)).toHaveCount(1);
+    await card.getByRole("button", { name: "Close this message" }).click();
+    await expect(card).toHaveCount(0);
+    await expect(pulses(page)).toHaveCount(0);
   });
-  await expect(card).toContainText("We saw an error while you saved.");
-  // Plain text: a link would open a page as well as the chat.
-  await expect(card.locator("a")).toHaveCount(0);
-  await expect(page.locator(".launcher.nudge")).toHaveCount(1);
-  // Its close button stops the pulse too.
-  await card.getByRole("button", { name: "Close this message" }).click();
-  await expect(card).toHaveCount(0);
-  await expect(page.locator(".launcher.nudge")).toHaveCount(0);
 
-  // The page may change and pass its object again.
-  await page.evaluate(() => {
-    const options = { text: "First error", message: "Error ID first" };
-    const win = window as unknown as { Dinghy: { nudge(on: typeof options): void } };
-    win.Dinghy.nudge(options);
-    options.text = "Need a hand?";
-    options.message = "Error ID def456";
-    win.Dinghy.nudge(options);
+  await test.step("nudge(false) removes the card", async () => {
+    await nudge(page, { text: "Still stuck?" });
+    await expect(card).toHaveCount(1);
+    await nudge(page, false);
+    await expect(card).toHaveCount(0);
+    await expect(pulses(page)).toHaveCount(0);
   });
-  // A plain nudge(), as a waiting outbound message makes, keeps the card.
-  await nudge(page);
-  await card.getByText("Need a hand?").click();
-  await expect(messageBox(page)).toHaveValue("Error ID def456");
-  await expect(card).toHaveCount(0);
-  await expect(page.locator(".launcher.nudge")).toHaveCount(0);
-  await page.keyboard.press("Escape");
-  await messageBox(page).waitFor({ state: "hidden" });
 
-  await nudge(page, { text: "Still stuck?", message: "Error ID mno345" });
-  await expect(card).toContainText("Still stuck?");
-  await nudge(page, false);
-  await expect(card).toHaveCount(0);
-  await expect(page.locator(".launcher.nudge")).toHaveCount(0);
+  await test.step("a reused object updates the card, and a plain nudge() keeps it", async () => {
+    await page.evaluate(() => {
+      const options = { text: "First error", message: "Error ID first" };
+      const { Dinghy } = window as unknown as { Dinghy: DinghyApi };
+      Dinghy.nudge(options);
+      options.text = "Need a hand?";
+      options.message = "Error ID def456";
+      Dinghy.nudge(options);
+      Dinghy.nudge();
+    });
+    await card.getByText("Need a hand?").click();
+    await expect(messageBox(page)).toHaveValue("Error ID def456");
+    await expect(card).toHaveCount(0);
+    await expect(pulses(page)).toHaveCount(0);
+    await closeChat(page);
+  });
 
-  // The keyboard opens it from the card.
-  await nudge(page, { text: "Still stuck?", message: "Error ID stu901" });
-  await card.getByRole("button", { name: "Still stuck?" }).press("Enter");
-  await expect(messageBox(page)).toHaveValue("Error ID stu901");
-  await page.keyboard.press("Escape");
-  await messageBox(page).waitFor({ state: "hidden" });
+  await test.step("the keyboard opens the chat from the card", async () => {
+    await nudge(page, { text: "Still stuck?", message: "Error ID stu901" });
+    await card.getByRole("button", { name: "Still stuck?" }).press("Enter");
+    await expect(messageBox(page)).toHaveValue("Error ID stu901");
+    await closeChat(page);
+  });
 
-  // The launcher opens with the card's message too.
-  await nudge(page, { text: "Still stuck?", message: "Error ID pqr678" });
-  await page.getByRole("button", { name: /Open chat/ }).click();
-  await expect(messageBox(page)).toHaveValue("Error ID pqr678");
+  await test.step("the launcher opens the chat with the card's message", async () => {
+    await nudge(page, { text: "Still stuck?", message: "Error ID pqr678" });
+    await page.getByRole("button", { name: /Open chat/ }).click();
+    await expect(messageBox(page)).toHaveValue("Error ID pqr678");
+  });
 });
 
 test("a nudge before the saved look still pulses, and reset() drops the card", async ({ page }) => {
@@ -191,7 +191,7 @@ test("a nudge before the saved look still pulses, and reset() drops the card", a
   });
   await page.goto(`${server.hostOrigin}/app`);
   await expect(page.locator(".preview")).toContainText("Can we help?");
-  await expect(page.locator(".launcher.nudge")).toHaveCount(1);
+  await expect(pulses(page)).toHaveCount(1);
   // The next visitor in this browser gets neither the card nor its message.
   await page.evaluate(() => (window as unknown as { Dinghy: { reset(): void } }).Dinghy.reset());
   await expect(page.locator(".preview")).toHaveCount(0);
@@ -203,7 +203,7 @@ test("the nudge's message is no typing preview until the visitor changes it", as
   await page.goto(`${server.hostOrigin}/app`);
   await page.getByRole("button", { name: /Open chat/ }).click();
   await say(page, "Hello");
-  await page.keyboard.press("Escape");
+  await closeChat(page);
   const drafts: string[] = [];
   page.on("request", (request) => {
     if (request.url().endsWith("/typing")) drafts.push(request.postData() ?? "");
@@ -227,7 +227,7 @@ test("closing the page's card keeps the pulse of a message that waits", async ({
   await nudge(page, { text: "Can we help?" });
   await page.locator(".preview").getByRole("button", { name: "Close this message" }).click();
   await expect(page.locator(".preview")).toHaveCount(0);
-  await expect(page.locator(".launcher.nudge")).toHaveCount(1);
+  await expect(pulses(page)).toHaveCount(1);
 });
 
 test("the page's card takes the place of a waiting card, which comes back after it", async ({

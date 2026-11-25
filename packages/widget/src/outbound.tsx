@@ -301,7 +301,6 @@ export function PreviewCard({
 }) {
   return (
     <aside class="preview" aria-live="polite" aria-label={t("outboundCard")}>
-      {/* With the launcher hidden, this is the keyboard's way into the chat. */}
       {/* biome-ignore lint/a11y/useSemanticElements: a button cannot hold the message's blocks. */}
       <div
         class="peek"
