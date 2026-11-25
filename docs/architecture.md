@@ -113,7 +113,7 @@ Dinghy Cloud's admins hear about signups and billing in a Telegram group with to
 - `TELEGRAM_BOT_TOKEN`: the bot that posts. It can come from a file in `DINGHY_SECRETS_DIR`.
 - `TELEGRAM_CHAT_ID`: the group, such as `-1006098886410`.
 - `TELEGRAM_TOPIC_SIGNUPS`: the topic for new workspaces, a widget's first site and new operators.
-- `TELEGRAM_TOPIC_BILLING`: the topic for payments, cancellations, read-only workspaces and deletions. Each comes from a lifecycle email when the worker sends it, so it posts at most once per occurrence.
+- `TELEGRAM_TOPIC_BILLING`: the topic for payments, cancellations, read-only workspaces and deletions. Each comes from a lifecycle email when the worker sends it. Delivery is best effort: a notice can be lost, and rarely posted twice.
 
 A topic left unset, or set to `1`, posts to the group's General topic. A notice that Telegram refuses or that times out is logged and dropped, and never fails a request or the worker.
 
