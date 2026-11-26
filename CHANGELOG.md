@@ -7,6 +7,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 ### Fixed
 
 - The mobile inbox shows one preview per chat, with the latest message.
+- A pasted address with no scheme, such as `example.com`, no longer sends its Markdown in a reply from the mobile app.
+- A reply that can no longer change shows why in the mobile app's edit sheet, not behind it.
 
 ## [0.60.0] - 2026-11-26
 

@@ -198,6 +198,7 @@ function EditSheet({
   message,
   onChanged,
   onClose,
+  onError,
   palette,
   visible,
 }: {
@@ -207,6 +208,7 @@ function EditSheet({
   message: Message;
   onChanged(): void;
   onClose(): void;
+  onError(error: unknown): void;
   palette: Palette;
   visible: boolean;
 }) {
@@ -214,14 +216,12 @@ function EditSheet({
   const [saving, setSaving] = useState(false);
   // The sheet covers the screen's error banner, so a failed save shows its error here.
   const [error, setError] = useState("");
-  const [tooLate, setTooLate] = useState(false);
   useEffect(() => {
     if (!visible) return;
     setDraft(message.body ?? "");
     setError("");
-    setTooLate(false);
   }, [message.body, visible]);
-  const blocked = !draft.trim() || saving || tooLate;
+  const blocked = !draft.trim() || saving;
   const save = async () => {
     const body = draft.trim();
     if (blocked) return;
@@ -237,8 +237,10 @@ function EditSheet({
       onClose();
       onChanged();
     } catch (failure) {
-      if (failure instanceof ApiError && failure.code === "message_seen") {
-        setTooLate(true);
+      if (failure instanceof ApiError && failure.status === 401) {
+        // The app signs the operator out.
+        onError(failure);
+      } else if (failure instanceof ApiError && failure.code === "message_seen") {
         setError(t("mobileEditTooLate"));
         // The thread then shows the reply as read, and its menu greys out Edit.
         onChanged();
@@ -763,6 +765,7 @@ export function ThreadMessage({
         message={message}
         onChanged={onChanged}
         onClose={() => setEditOpen(false)}
+        onError={onError}
         palette={palette}
         visible={editOpen}
       />

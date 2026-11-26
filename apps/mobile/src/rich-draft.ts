@@ -9,6 +9,7 @@ import {
   FENCE,
   isBareLinkText,
   parseMarkdown,
+  SAFE_LINK,
 } from "../../../packages/widget/src/markdown.ts";
 import { linkHref, toMarkdown } from "../../operator/src/rich-text.ts";
 
@@ -147,6 +148,17 @@ const CONTAINERS: Record<string, Container> = {
   codeblock: "code",
 };
 
+/** A domain or email address with no scheme, such as "example.com/a" or "hi@example.com". */
+const NO_SCHEME = /^([^\s@/:]+@)?[\w-]+(\.[\w-]+)+([/:?#]|$)/;
+
+/**
+ * A pasted link's address as a message can hold it: a domain or email address gets its scheme, or
+ * the message would show its Markdown. Any other address a message cannot link, such as "/pricing"
+ * or "tel:", gives undefined, and its words stay text.
+ */
+const pastedHref = (href: string) =>
+  SAFE_LINK.test(href) ? href : NO_SCHEME.test(href) ? linkHref(href) : undefined;
+
 /** The editor's lines. Underline, strikethrough, headings, mentions and images keep only their text. */
 function linesOf(html: string): Line[] {
   const lines: Line[] = [];
@@ -164,9 +176,7 @@ function linesOf(html: string): Line[] {
     if (text !== undefined) {
       const run: Run = { text: decode(text) };
       for (const [tag, mark] of Object.entries(MARK_TAGS)) if (counts[tag]) run[mark] = true;
-      // A pasted link with no scheme, such as "example.com", gets one, or the message shows its
-      // Markdown, as the message only links a web or email address.
-      const href = linkHref(hrefs.at(-1) ?? "");
+      const href = pastedHref(hrefs.at(-1) ?? "");
       if (href && !isBareLinkText(href, [run.text])) run.href = href;
       line ??= [];
       line.push(run);
