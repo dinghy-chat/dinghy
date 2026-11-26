@@ -22,6 +22,13 @@ export interface Update {
 /** Newest first. Add a new entry at the top, in the pull request that makes the change. */
 export const UPDATES: Update[] = [
   {
+    id: "mobile-pasted-links",
+    date: "2026-11-26",
+    kind: "fix",
+    title: "Pasted links in the mobile app",
+    text: "A pasted address such as example.com no longer shows as Markdown in your reply. When a reply can no longer change, the edit sheet says why.",
+  },
+  {
     id: "mobile-inbox-last-message",
     date: "2026-11-26",
     kind: "fix",

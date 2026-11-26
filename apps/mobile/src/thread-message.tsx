@@ -15,8 +15,9 @@ import {
 import { plainText } from "../../../packages/widget/src/markdown.ts";
 import { t } from "../../operator/src/text.ts";
 import { AnchoredMenu, type MenuItem } from "./anchored-menu";
-import type { DinghyApi } from "./api";
+import { ApiError, type DinghyApi } from "./api";
 import { MessageAttachmentView } from "./attachments";
+import { readableError } from "./common";
 import { fonts } from "./fonts";
 import { Icon } from "./icon";
 import { LinkCardView } from "./link-card";
@@ -213,13 +214,19 @@ function EditSheet({
 }) {
   const [draft, setDraft] = useState(message.body ?? "");
   const [saving, setSaving] = useState(false);
+  // The sheet covers the screen's error banner, so a failed save shows its error here.
+  const [error, setError] = useState("");
   useEffect(() => {
-    if (visible) setDraft(message.body ?? "");
+    if (!visible) return;
+    setDraft(message.body ?? "");
+    setError("");
   }, [message.body, visible]);
+  const blocked = !draft.trim() || saving;
   const save = async () => {
     const body = draft.trim();
-    if (!body || saving) return;
+    if (blocked) return;
     setSaving(true);
+    setError("");
     try {
       await api.editMessage(
         conversationId,
@@ -230,7 +237,16 @@ function EditSheet({
       onClose();
       onChanged();
     } catch (failure) {
-      onError(failure);
+      if (failure instanceof ApiError && failure.status === 401) {
+        // The app signs the operator out.
+        onError(failure);
+      } else if (failure instanceof ApiError && failure.code === "message_seen") {
+        setError(t("mobileEditTooLate"));
+        // The thread reloads, so its menu shows whether the reply was read.
+        onChanged();
+      } else {
+        setError(readableError(failure));
+      }
     } finally {
       setSaving(false);
     }
@@ -265,15 +281,23 @@ function EditSheet({
           textAlignVertical="top"
           value={draft}
         />
+        {error !== "" && (
+          <Text
+            accessibilityRole="alert"
+            style={{ color: palette.danger, fontFamily: fonts.body, fontSize: 15, lineHeight: 21 }}
+          >
+            {error}
+          </Text>
+        )}
         <Pressable
           accessibilityRole="button"
-          disabled={!draft.trim() || saving}
+          disabled={blocked}
           onPress={() => void save()}
           style={({ pressed }) => [
             messageStyles.save,
             {
               backgroundColor: palette.blue,
-              opacity: !draft.trim() || saving ? 0.45 : pressed ? 0.7 : 1,
+              opacity: blocked ? 0.45 : pressed ? 0.7 : 1,
             },
           ]}
         >

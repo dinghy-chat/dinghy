@@ -614,6 +614,9 @@ export function ThreadComposer({
               ol: { markerColor: ink },
               ul: { bulletColor: ink },
             }}
+            // The editor would link "example.com" with no scheme, which the message shows as
+            // Markdown. The message links web addresses itself.
+            linkRegex={null}
             onBlur={() => setFocused(false)}
             onChangeHtml={(event) => changeHtml(event.nativeEvent.value)}
             onChangeSelection={({ nativeEvent: { start, end } }) => {
