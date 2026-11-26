@@ -82,6 +82,8 @@ const en = {
   mobileSendReply: "Send reply",
   mobileEditMessageTitle: "Edit message",
   mobileSavingChanges: "Saving…",
+  mobileEditTooLate:
+    "The visitor has already read this reply, or it went out by email, so it can no longer change. Delete it and send a new reply instead.",
   mobileSwipeToReply: "Swipe to reply",
   // Native conversation header and composer, build 6.
   mobileVisitorTimeThere: "{time} there",

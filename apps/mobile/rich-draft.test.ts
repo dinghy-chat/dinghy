@@ -36,6 +36,14 @@ describe("draftHtml", () => {
 });
 
 describe("draftMarkdown", () => {
+  test("gives a link with no scheme its scheme, and drops a link no message can hold", () => {
+    const html =
+      '<html><p>Delete <a href="news.example.com">news.example.com</a>, write to <a href="hello@example.com">us</a> or <a href="javascript:alert(1)">run</a></p></html>';
+    expect(draftMarkdown(html).markdown).toBe(
+      "Delete [news.example.com](https://news.example.com), write to [us](mailto:hello@example.com) or run",
+    );
+  });
+
   test("reads the editor's own HTML, with its line breaks around tags", () => {
     const html =
       "<html>\n<p>Hello <b>world</b> &amp; <i>you</i></p>\n<br>\n<ul>\n<li>one</li>\n<li><code>two</code></li>\n</ul>\n</html>";

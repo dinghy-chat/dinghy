@@ -19,7 +19,7 @@ export type Block =
 const MAX_DEPTH = 4;
 export const SAFE_LINK = /^(https?:\/\/|mailto:)[^\s]+$/i;
 // A bare link stops before trailing punctuation, so "see https://a.example." keeps its period.
-const BARE_LINK = /https?:\/\/[^\s<>"]*[^\s<>"'.,;:!?)\]]/iy;
+export const BARE_LINK = /https?:\/\/[^\s<>"]*[^\s<>"'.,;:!?)\]]/iy;
 export const FENCE = /^\s*```/;
 const LIST_ITEM = /^\s*(?:[-*+]|(\d{1,9})[.)])\s+(.*)$/;
 const QUOTE = /^\s*> ?(.*)$/;

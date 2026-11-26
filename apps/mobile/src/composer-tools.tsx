@@ -18,7 +18,7 @@ import {
   type EnrichedTextInputInstance,
   type OnChangeStateEvent,
 } from "react-native-enriched-html";
-import { markdownText } from "../../../packages/widget/src/markdown.ts";
+import { BARE_LINK, markdownText } from "../../../packages/widget/src/markdown.ts";
 import { type LinkPreview, previewCard } from "../../operator/src/link-preview.ts";
 import { t } from "../../operator/src/text.ts";
 import type { ReplyDraft } from "../outbox";
@@ -69,6 +69,12 @@ type IconName = Parameters<typeof Icon>[0]["name"];
 type Selection = { start: number; end: number };
 
 /** Turns a format on or off at the selection, or for the next words typed. */
+/**
+ * The addresses the field links as they are typed or pasted: the web addresses a message links.
+ * The editor's default also links "example.com" with no scheme, which the message shows as Markdown.
+ */
+const EDITOR_LINK = new RegExp(BARE_LINK.source, "i");
+
 const TOGGLE: Record<InlineFormat, (input: EnrichedTextInputInstance) => void> = {
   bold: (input) => input.toggleBold(),
   italic: (input) => input.toggleItalic(),
@@ -614,6 +620,7 @@ export function ThreadComposer({
               ol: { markerColor: ink },
               ul: { bulletColor: ink },
             }}
+            linkRegex={EDITOR_LINK}
             onBlur={() => setFocused(false)}
             onChangeHtml={(event) => changeHtml(event.nativeEvent.value)}
             onChangeSelection={({ nativeEvent: { start, end } }) => {

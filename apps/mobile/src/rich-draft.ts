@@ -10,7 +10,7 @@ import {
   isBareLinkText,
   parseMarkdown,
 } from "../../../packages/widget/src/markdown.ts";
-import { toMarkdown } from "../../operator/src/rich-text.ts";
+import { linkHref, toMarkdown } from "../../operator/src/rich-text.ts";
 
 type Inline = Extract<Block, { tag: "p" }>["children"][number];
 
@@ -164,8 +164,10 @@ function linesOf(html: string): Line[] {
     if (text !== undefined) {
       const run: Run = { text: decode(text) };
       for (const [tag, mark] of Object.entries(MARK_TAGS)) if (counts[tag]) run[mark] = true;
-      const href = hrefs.at(-1);
-      if (href !== undefined && !isBareLinkText(href, [run.text])) run.href = href;
+      // A pasted link with no scheme, such as "example.com", gets one, or the message shows its
+      // Markdown, as the message only links a web or email address.
+      const href = linkHref(hrefs.at(-1) ?? "");
+      if (href && !isBareLinkText(href, [run.text])) run.href = href;
       line ??= [];
       line.push(run);
       continue;

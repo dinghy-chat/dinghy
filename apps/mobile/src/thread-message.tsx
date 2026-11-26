@@ -15,8 +15,9 @@ import {
 import { plainText } from "../../../packages/widget/src/markdown.ts";
 import { t } from "../../operator/src/text.ts";
 import { AnchoredMenu, type MenuItem } from "./anchored-menu";
-import type { DinghyApi } from "./api";
+import { ApiError, type DinghyApi } from "./api";
 import { MessageAttachmentView } from "./attachments";
+import { readableError } from "./common";
 import { fonts } from "./fonts";
 import { Icon } from "./icon";
 import { LinkCardView } from "./link-card";
@@ -197,7 +198,6 @@ function EditSheet({
   message,
   onChanged,
   onClose,
-  onError,
   palette,
   visible,
 }: {
@@ -207,19 +207,26 @@ function EditSheet({
   message: Message;
   onChanged(): void;
   onClose(): void;
-  onError(error: unknown): void;
   palette: Palette;
   visible: boolean;
 }) {
   const [draft, setDraft] = useState(message.body ?? "");
   const [saving, setSaving] = useState(false);
+  // The sheet covers the screen's error banner, so a failed save shows its error here.
+  const [error, setError] = useState("");
+  const [tooLate, setTooLate] = useState(false);
   useEffect(() => {
-    if (visible) setDraft(message.body ?? "");
+    if (!visible) return;
+    setDraft(message.body ?? "");
+    setError("");
+    setTooLate(false);
   }, [message.body, visible]);
+  const blocked = !draft.trim() || saving || tooLate;
   const save = async () => {
     const body = draft.trim();
-    if (!body || saving) return;
+    if (blocked) return;
     setSaving(true);
+    setError("");
     try {
       await api.editMessage(
         conversationId,
@@ -230,7 +237,14 @@ function EditSheet({
       onClose();
       onChanged();
     } catch (failure) {
-      onError(failure);
+      if (failure instanceof ApiError && failure.code === "message_seen") {
+        setTooLate(true);
+        setError(t("mobileEditTooLate"));
+        // The thread then shows the reply as read, and its menu greys out Edit.
+        onChanged();
+      } else {
+        setError(readableError(failure));
+      }
     } finally {
       setSaving(false);
     }
@@ -265,15 +279,23 @@ function EditSheet({
           textAlignVertical="top"
           value={draft}
         />
+        {error !== "" && (
+          <Text
+            accessibilityRole="alert"
+            style={{ color: palette.danger, fontFamily: fonts.body, fontSize: 15, lineHeight: 21 }}
+          >
+            {error}
+          </Text>
+        )}
         <Pressable
           accessibilityRole="button"
-          disabled={!draft.trim() || saving}
+          disabled={blocked}
           onPress={() => void save()}
           style={({ pressed }) => [
             messageStyles.save,
             {
               backgroundColor: palette.blue,
-              opacity: !draft.trim() || saving ? 0.45 : pressed ? 0.7 : 1,
+              opacity: blocked ? 0.45 : pressed ? 0.7 : 1,
             },
           ]}
         >
@@ -741,7 +763,6 @@ export function ThreadMessage({
         message={message}
         onChanged={onChanged}
         onClose={() => setEditOpen(false)}
-        onError={onError}
         palette={palette}
         visible={editOpen}
       />
