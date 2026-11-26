@@ -12,7 +12,6 @@ import {
   useWindowDimensions,
   View,
 } from "react-native";
-import { plainText } from "../../../packages/widget/src/markdown.ts";
 import { t } from "../../operator/src/text.ts";
 import { Harbor } from "../Harbor";
 import type { PendingReply } from "../outbox";
@@ -22,6 +21,7 @@ import { Avatar, elapsedLabel, readableError, visitorName } from "./common";
 import { DeleteAccountSheet } from "./delete-account-sheet";
 import { fonts } from "./fonts";
 import { Icon } from "./icon";
+import { inboxPreview } from "./inbox-preview";
 import { inboxStyles as screen } from "./inbox-styles";
 import type { PushStatus } from "./notifications";
 import { ProfileSheet } from "./profile-sheet";
@@ -75,31 +75,6 @@ function normalized(value: string): string {
   return value.trim().replaceAll(/\s+/g, " ").toLocaleLowerCase();
 }
 
-function rowText(conversation: Conversation): { subject: string; preview: string | null } {
-  const body = plainText(conversation.lastMessage?.body ?? "");
-  const suppliedSubject = conversation.subject?.trim() ?? "";
-  if (!suppliedSubject) {
-    const [first = "", ...rest] = body.split(/\r?\n/);
-    const preview = rest.join(" ").trim();
-    return {
-      subject: first || t("mobileAttachment"),
-      preview: preview && normalized(preview) !== normalized(first) ? preview : null,
-    };
-  }
-  const bodyLines = body.split(/\r?\n/);
-  const withoutSubject =
-    normalized(bodyLines[0] ?? "") === normalized(suppliedSubject)
-      ? bodyLines.slice(1).join(" ").trim()
-      : body;
-  return {
-    subject: suppliedSubject,
-    preview:
-      withoutSubject && normalized(withoutSubject) !== normalized(suppliedSubject)
-        ? withoutSubject
-        : null,
-  };
-}
-
 function ownerLabel(conversation: Conversation, meId: string): string {
   if (conversation.assigneeOperatorId === null) return t("unassigned");
   if (conversation.assigneeOperatorId === meId) return t("mobileHarborYou");
@@ -119,7 +94,7 @@ function ConversationRow({
   onPress(): void;
 }) {
   const name = visitorName(conversation);
-  const copy = rowText(conversation);
+  const preview = inboxPreview(conversation.lastMessage);
   const waits = isWaiting(conversation);
   const late = waits && isLate(conversation);
   const botHandoff = conversation.bot != null && conversation.handler?.kind !== "bot";
@@ -156,12 +131,9 @@ function ConversationRow({
             </Text>
           </View>
         </View>
-        <Text numberOfLines={1} style={[screen.rowSubject, { color: palette.ink }]}>
-          {copy.subject}
-        </Text>
-        {copy.preview !== null && (
+        {preview !== null && (
           <Text numberOfLines={1} style={[screen.rowPreview, { color: palette.sub }]}>
-            {copy.preview}
+            {preview}
           </Text>
         )}
         <View style={screen.rowMetaLine}>
@@ -505,10 +477,14 @@ export function InboxScreen({
   const wanted = normalized(query);
   const searchResults = conversations.filter((conversation) => {
     if (!wanted || !isInScope(conversation, scope, meId)) return false;
-    const copy = rowText(conversation);
-    return normalized(
-      `${visitorName(conversation)} ${conversation.visitor.email ?? ""} ${copy.subject} ${copy.preview ?? ""} ${conversation.lastMessage?.body ?? ""}`,
-    ).includes(wanted);
+    const fields = [
+      visitorName(conversation),
+      conversation.visitor.email,
+      conversation.subject,
+      inboxPreview(conversation.lastMessage),
+      conversation.lastMessage?.body,
+    ];
+    return normalized(fields.join(" ")).includes(wanted);
   });
   const searching = query.trim().length > 0;
   const visibleCount = groupOrder.reduce((count, group) => count + groups[group].length, 0);

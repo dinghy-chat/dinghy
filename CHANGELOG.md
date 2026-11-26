@@ -4,6 +4,10 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Fixed
+
+- The mobile inbox shows one preview per chat, with the latest message.
+
 ## [0.60.0] - 2026-11-26
 
 ### Added
