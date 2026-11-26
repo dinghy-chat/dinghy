@@ -52,6 +52,7 @@ Set `--dinghy-font`, `--dinghy-radius` and `--dinghy-launcher-radius` on the `di
 | `Dinghy.setContext(data)`               | Unsigned facts for operators, such as a plan. Up to 20 keys, each a short string, a number, a boolean or `null`    |
 | `Dinghy.configure(options)`             | Changes `primary`, `accent`, `position`, `offsetX`, `offsetY` and `zIndex` now, and `locale` before the chat opens |
 | `Dinghy.nudge()`, `Dinghy.nudge(false)` | Pulses the launcher until the next open, or stops it. A waiting outbound message starts it too                     |
+| `Dinghy.nudge({ text, message })`       | Pulses the launcher and shows `text` in a card above it. A click opens the chat with `message`, which is optional  |
 | `Dinghy.on(event, callback)`            | Calls `callback` on each event, and returns a function that removes it                                             |
 | `Dinghy.state`                          | `{ ready, open, unread, conversation, visitorId, nudging }`. `visitorId` is null before the visitor exists         |
 

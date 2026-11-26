@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { and, eq, gt, sql } from "drizzle-orm";
 import { html, raw } from "hono/html";
-import type { Locale } from "../../../packages/widget/src/shared.ts";
+import { CONTEXT_VERSION, type Locale } from "../../../packages/widget/src/shared.ts";
 import type { App } from "./app.ts";
 import { chatLink, visitor, widgetSettings, workspace } from "./db/schema.ts";
 import { type Database, type Transaction, withWorkspace, workspaceAccess } from "./db/tenant.ts";
@@ -175,7 +175,7 @@ export function registerChatPage(app: App, { db, rateLimit, uploadsOrigin }: Cha
     const lang = found.locale === null ? "" : html` lang="${found.locale}"`;
     const tagLocale = found.locale === null ? "" : html` data-locale="${found.locale}"`;
     return c.html(
-      html`<!doctype html><html${lang}><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${found.title ?? PAGE_TITLE}</title><script src="/widget/page.js" data-key="${found.publicKey}"${tagLocale} defer></script><script src="/widget/widget.js" defer></script><noscript>${words.noScript}</noscript></html>`,
+      html`<!doctype html><html${lang}><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex"><title>${found.title ?? PAGE_TITLE}</title><script src="/widget/page.js?v=${CONTEXT_VERSION}" data-key="${found.publicKey}"${tagLocale} defer></script><script src="/widget/widget.js?v=${CONTEXT_VERSION}" defer></script><noscript>${words.noScript}</noscript></html>`,
       200,
       { ...SECURITY, "content-security-policy": chatCsp },
     );

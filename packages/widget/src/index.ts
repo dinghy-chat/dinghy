@@ -16,6 +16,7 @@ export type {
   DinghyEvents,
   DinghyState,
   Identity,
+  NudgeOptions,
   OpenOptions,
   OutboundButton,
   OutboundChange,
@@ -56,7 +57,12 @@ function forward<M extends Exclude<keyof DinghyApi, "on" | "state">>(
   ...args: Parameters<DinghyApi[M]>
 ): void {
   const api = loaded();
-  if (api === undefined) enqueue([method, ...args]);
+  // A copy of each object, as the loader reads it later and the page may change it meanwhile.
+  if (api === undefined)
+    enqueue([
+      method,
+      ...args.map((value) => (value && typeof value === "object" ? { ...value } : value)),
+    ]);
   else (api[method] as (...values: unknown[]) => void)(...args);
 }
 

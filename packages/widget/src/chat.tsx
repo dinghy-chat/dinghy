@@ -38,6 +38,7 @@ import {
   BOT_TYPING_MS,
   CONTEXT_VERSION,
   MESSAGE_MAX,
+  type NudgeOptions,
   type QueuedCall,
   readToken,
   rememberOpen,
@@ -53,6 +54,8 @@ import { larger, useUnread } from "./use-unread.ts";
 
 const NEW_REPLY_SHOWN_MS = 5000;
 const RETRY_LIMIT_MS = 30_000;
+
+const noop = () => {};
 
 /**
  * Adds a confirmed message in commit order. A pending line with the same client ID becomes this
@@ -149,6 +152,8 @@ interface ChatProps {
   reveal(): void;
   /** Grows with each beat that says an outbound message waits. */
   beat: number;
+  /** The card that Dinghy.nudge() asked for. */
+  nudgeCard: NudgeOptions | undefined;
 }
 
 /**
@@ -168,6 +173,7 @@ function Chat({
   saved,
   reveal,
   beat,
+  nudgeCard,
 }: ChatProps) {
   const { publicKey, base } = context;
   const fullPage = context.page === true;
@@ -294,8 +300,12 @@ function Chat({
   }, [identity, renewing, renewAttempt, visible]);
 
   // The page's message fills an empty box, or takes the place of the page's last message. A draft
-  // the visitor typed or changed stays.
+  // the visitor typed or changed stays. Once the visitor edits or sends it, it is theirs.
   const pageMessage = useRef<string | null>(null);
+  const typeDraft = (value: string) => {
+    pageMessage.current = null;
+    setDraft(value);
+  };
   useEffect(() => {
     if (prefill === null) return;
     setDraft((current) => {
@@ -361,8 +371,14 @@ function Chat({
     open && visible,
   );
   usePageReports(client, token, chatted && !fullPage);
-  // Only into an open conversation, and only when the workspace shows drafts.
-  useDraftPreview(client, token, openConversation && saved?.typingPreview === true, draft);
+  // Only into an open conversation, only when the workspace shows drafts, and not the page's
+  // message until the visitor changes it.
+  useDraftPreview(
+    client,
+    token,
+    openConversation && saved?.typingPreview === true,
+    draft === pageMessage.current ? "" : draft,
+  );
 
   // Like the pages, the chat's language and the page's context go only for a visitor who has
   // chatted: after the first message, on each load after that, and on each setContext(). They wait
@@ -376,7 +392,7 @@ function Chat({
   }, [chatted, client, context, contextVersion, fullPage, hasLanguage, token]);
 
   const outbound = useOutbound(context, client, token, {
-    open: shown,
+    open,
     seeing: shown && visible,
     reveal,
     beat,
@@ -706,7 +722,7 @@ function Chat({
     event.preventDefault();
     const body = draft.trim();
     if (body === "") return;
-    setDraft("");
+    typeDraft("");
     clearPrefill(null);
     sendLine(body, { quote: quoting });
     setQuoting(null);
@@ -739,14 +755,45 @@ function Chat({
   };
 
   if (!shown) {
+    // A card waits for the settings too, for its theme and words, and none shows over the chat.
+    if (open || saved === undefined) return null;
+    // The page's card goes first, as the page asked for it at this moment. Its text is plain, so
+    // a link in it cannot open a page as well as the chat. Closing it alone keeps the pulse of a
+    // waiting outbound message.
+    if (nudgeCard !== undefined) {
+      return (
+        <PreviewCard
+          message={<p class="msg">{nudgeCard.text}</p>}
+          onOpen={() => {
+            context.nudge(false);
+            context.chat?.open(nudgeCard.message);
+          }}
+          onClose={() => {
+            if (outbound.unread === 0) return context.nudge(false);
+            context.nudgeCard = undefined;
+            context.chat?.card();
+          }}
+        />
+      );
+    }
     const { card } = outbound;
+    const openChat = () => setOpen(true);
     return card === undefined ? null : (
       <PreviewCard
-        one={card}
-        onOpen={() => setOpen(true)}
+        message={
+          <ChatLine
+            line={waitingLine(card)}
+            showAuthor
+            onView={openChat}
+            onUploadError={noop}
+            onRetry={noop}
+          />
+        }
+        onOpen={openChat}
         onClose={() => outbound.hide(card.id)}
-        onPress={(index) => choose(card, index)}
-      />
+      >
+        <Choices one={card} onPress={(index) => choose(card, index)} />
+      </PreviewCard>
     );
   }
   const everChatted = chatted || lines.length > 0;
@@ -908,7 +955,7 @@ function Chat({
         <Composer
           draft={draft}
           inputRef={input}
-          onDraft={setDraft}
+          onDraft={typeDraft}
           onSubmit={submit}
           onFiles={sendFiles}
           filesAllowed={saved.visitorFiles}
@@ -932,32 +979,43 @@ function Root({ context }: { context: WidgetContext }) {
       wasOpen(publicKey),
   );
   const [open, setOpenState] = useState(false);
+  // The state changes at once, so a toggle() right after a close() sees it closed.
+  const setOpen = useCallback(
+    (next: boolean) => {
+      context.state.open = next;
+      setOpenState(next);
+    },
+    [context],
+  );
+  // The visitor or a message opens the chat here, which ends the pulse and the page's card at
+  // once, so a nudge() made right after it stays. The loader's open() ends them itself, so an
+  // open() it replays here leaves a card the page made since.
+  const openHere = useCallback(
+    (next: boolean) => {
+      if (next) context.nudge(false);
+      setOpen(next);
+    },
+    [context, setOpen],
+  );
   const [restoring, setRestoring] = useState(remembered);
   const restored = useCallback(
     (reopen: boolean) => {
       setRestoring(false);
-      if (!reopen) return;
-      context.state.open = true;
-      setOpenState(true);
+      if (reopen) setOpen(true);
     },
-    [context],
+    [setOpen],
   );
-  // The state changes at once, so a toggle() right after a close() sees it closed.
-  const setOpen = (next: boolean) => {
-    context.state.open = next;
-    setOpenState(next);
-  };
   const [quiet, setQuiet] = useState(remembered);
   // A message opens the chat, and the focus stays where the visitor had it.
   const reveal = useCallback(() => {
     setQuiet(true);
-    context.state.open = true;
-    setOpenState(true);
-  }, [context]);
+    openHere(true);
+  }, [openHere]);
   const [session, setSession] = useState(0);
   const [prefill, setPrefill] = useState<{ text: string } | null>(null);
   const [contextVersion, setContextVersion] = useState(0);
   const [beat, setBeat] = useState(0);
+  const [nudgeCard, setNudgeCard] = useState(context.nudgeCard);
   const [saved, setSaved] = useState<SavedAppearance>();
   // The loader's answer, which also gave the launcher its look. The theme is the panel's alone.
   // With no answer the defaults apply, as on the launcher. A workspace that serves no widget has
@@ -980,15 +1038,13 @@ function Root({ context }: { context: WidgetContext }) {
     const handlers = {
       open(message: string | undefined) {
         setRestoring(false);
-        context.state.open = true;
-        setOpenState(true);
+        setOpen(true);
         setQuiet(false);
         if (typeof message === "string") setPrefill({ text: message.slice(0, MESSAGE_MAX) });
       },
       close: () => {
         setRestoring(false);
-        context.state.open = false;
-        setOpenState(false);
+        setOpen(false);
       },
       session: () => {
         // A reset leaves no identity, and the next visitor must not get this one's draft. Nor its
@@ -999,6 +1055,7 @@ function Root({ context }: { context: WidgetContext }) {
       },
       context: () => setContextVersion((current) => current + 1),
       outbound: () => setBeat((current) => current + 1),
+      card: () => setNudgeCard(context.nudgeCard),
     };
     context.chat = handlers;
     context.state.ready = true;
@@ -1006,7 +1063,7 @@ function Root({ context }: { context: WidgetContext }) {
     const { wanted } = context;
     context.wanted = undefined;
     if (wanted !== undefined) handlers.open(wanted[0]);
-  }, [context]);
+  }, [context, setOpen]);
   const shown = useRef(false);
   useEffect(() => {
     if (open === shown.current) return;
@@ -1016,8 +1073,6 @@ function Root({ context }: { context: WidgetContext }) {
     launcher?.classList.toggle("opened", open);
     // The focused element is gone after a close, so a keyboard user returns to the launcher.
     if (!open) launcher?.focus();
-    // The pulse lasts until the next open, whichever way it opens.
-    if (open) context.nudge(false);
     emit(context, open ? "open" : "close", undefined);
   }, [context, open]);
   return (
@@ -1025,7 +1080,7 @@ function Root({ context }: { context: WidgetContext }) {
       key={session}
       context={context}
       open={open}
-      setOpen={setOpen}
+      setOpen={openHere}
       quiet={quiet}
       restoring={restoring}
       restored={restored}
@@ -1035,6 +1090,7 @@ function Root({ context }: { context: WidgetContext }) {
       saved={saved}
       reveal={reveal}
       beat={beat}
+      nudgeCard={nudgeCard}
     />
   );
 }

@@ -9,6 +9,12 @@ export interface OpenOptions {
   message?: string;
 }
 
+/** A card above the launcher, from the page. A click on it or on the launcher opens the chat. */
+export interface NudgeOptions extends OpenOptions {
+  /** The card's text, shown as plain text. */
+  text: string;
+}
+
 /**
  * The languages the widget speaks. English is in the chat bundle, and each other one is a file
  * beside it.
@@ -272,8 +278,12 @@ export interface DinghyApi {
   reset(): void;
   setContext(data: PageContext): void;
   configure(options: Appearance): void;
-  /** Pulses the launcher until the next open, or with false stops it. */
-  nudge(on?: boolean): void;
+  /**
+   * Pulses the launcher until the next open. `false` stops the pulse and removes the card. With
+   * options, a card with `text` shows above the launcher, the next open fills the message box with
+   * `message`, and a later call with options replaces the card.
+   */
+  nudge(on?: boolean | NudgeOptions): void;
   /** Calls `callback` on each event, and returns a function that removes it. */
   on<E extends DinghyEvent>(event: E, callback: (data: DinghyEvents[E]) => void): () => void;
   readonly state: DinghyState;
@@ -292,6 +302,8 @@ interface ChatHandlers {
   context(): void;
   /** The loader's beat says outbound messages wait for this visitor. */
   outbound(): void;
+  /** nudge() changed the page's card. */
+  card(): void;
 }
 
 /** Each event's callbacks. The loader keeps them, and the chat bundle calls them. */
@@ -302,7 +314,7 @@ export type Listeners = { [E in DinghyEvent]?: Set<(data: DinghyEvents[E]) => vo
  * bundle: a tab keeps the loader it started with for days, and the chat bundle replaces a loader
  * with another number instead of reading a context it does not know.
  */
-export const CONTEXT_VERSION = 3;
+export const CONTEXT_VERSION = 4;
 
 /** What the loader hands to the chat bundle. */
 export interface WidgetContext {
@@ -332,6 +344,8 @@ export interface WidgetContext {
   pages?: string[];
   /** An open() made before the chat bundle ran, with its message. */
   wanted?: [string | undefined] | undefined;
+  /** The card that nudge() asked for, until the next open, nudge(false) or another card. */
+  nudgeCard?: NudgeOptions | undefined;
   /** The loader's `Dinghy.state`, which the chat bundle keeps up to date. */
   state: DinghyState;
   listeners: Listeners;

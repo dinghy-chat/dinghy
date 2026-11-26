@@ -82,6 +82,15 @@ test("calls before the loader runs wait in its queue, and an early on() can stil
   expect(heard).toEqual([2]);
 });
 
+test("a queued call keeps its options as they were when the page called", async () => {
+  const { init } = await import("./index.ts");
+  const options = { text: "Can we help?", message: "Error 1" };
+  init({ url: "https://chat.example.com/", key: "wk_test" }).nudge(options);
+  options.message = "Error 2";
+  const queue = (globalThis as Slot).Dinghy as { q: QueuedCall[] };
+  expect(queue.q).toEqual([["nudge", { text: "Can we help?", message: "Error 1" }]]);
+});
+
 test("once the loader runs, calls go straight to it", async () => {
   const { Dinghy } = await import("./index.ts");
   const calls: unknown[][] = [];

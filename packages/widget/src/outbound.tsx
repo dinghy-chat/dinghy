@@ -2,10 +2,11 @@
 // Outbound messages: what the team sent this visitor outside any conversation. They wait as a badge,
 // a card above the launcher or the open chat, until the visitor answers, dismisses or leaves them.
 // All of this is in the chat bundle, so the loader only learns from its beat that one waits.
+import type { ComponentChildren } from "preact";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { Answer, Client, Waiting } from "./client.ts";
 import { emit } from "./page-events.ts";
-import { ChatLine, CloseButton, type Line } from "./panel.tsx";
+import { CloseButton, type Line } from "./panel.tsx";
 import {
   chosenButton,
   OUTBOUND_ANSWERED_MAX,
@@ -283,33 +284,40 @@ export function Choices({ one, onPress }: { one: Choosable; onPress(index: numbe
   );
 }
 
-const noop = () => {};
-
-/** The card above the launcher: who sent it, its first lines, and its buttons. A click opens the chat. */
+/**
+ * The card above the launcher: its message, then an outbound message's buttons. A click on the
+ * message opens the chat.
+ */
 export function PreviewCard({
-  one,
+  message,
   onOpen,
   onClose,
-  onPress,
+  children,
 }: {
-  one: Waiting;
+  message: ComponentChildren;
   onOpen(): void;
   onClose(): void;
-  onPress(index: number): void;
+  children?: ComponentChildren;
 }) {
   return (
     <aside class="preview" aria-live="polite" aria-label={t("outboundCard")}>
-      {/* biome-ignore lint/a11y/useKeyWithClickEvents lint/a11y/noStaticElementInteractions: the launcher opens the chat from the keyboard. */}
-      <div class="peek" onClick={onOpen}>
-        <ChatLine
-          line={waitingLine(one)}
-          showAuthor
-          onView={onOpen}
-          onUploadError={noop}
-          onRetry={noop}
-        />
+      {/* biome-ignore lint/a11y/useSemanticElements: a button cannot hold the message's blocks. */}
+      <div
+        class="peek"
+        role="button"
+        tabIndex={0}
+        onClick={onOpen}
+        onKeyDown={(event) => {
+          // Only on the card itself, so a link in the message keeps its own keys.
+          if (event.target !== event.currentTarget || (event.key !== "Enter" && event.key !== " "))
+            return;
+          event.preventDefault();
+          onOpen();
+        }}
+      >
+        {message}
       </div>
-      <Choices one={one} onPress={onPress} />
+      {children}
       <CloseButton label={t("outboundClose")} onClick={onClose} />
     </aside>
   );
