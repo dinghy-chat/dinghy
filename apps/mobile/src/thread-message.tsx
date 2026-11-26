@@ -242,7 +242,7 @@ function EditSheet({
         onError(failure);
       } else if (failure instanceof ApiError && failure.code === "message_seen") {
         setError(t("mobileEditTooLate"));
-        // The thread then shows the reply as read, and its menu greys out Edit.
+        // The thread reloads, so its menu shows whether the reply was read.
         onChanged();
       } else {
         setError(readableError(failure));

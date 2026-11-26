@@ -7,6 +7,7 @@ import {
   type Block,
   escapeHtml,
   FENCE,
+  isBareLink,
   isBareLinkText,
   parseMarkdown,
   SAFE_LINK,
@@ -42,7 +43,7 @@ function runsOf(parts: Inline[], marks: Omit<Run, "text"> = {}): Run[] {
   return parts.flatMap((part): Run[] => {
     if (typeof part === "string") return [{ ...marks, text: part }];
     if (part.tag === "code") return [{ ...marks, code: true, text: part.text }];
-    // A bare link stays text, as the editor finds links in text itself.
+    // A bare link stays text, as the message links it itself.
     if (part.tag === "a" && !isBareLinkText(part.href, part.children)) {
       return runsOf(part.children, { ...marks, href: part.href });
     }
@@ -149,15 +150,18 @@ const CONTAINERS: Record<string, Container> = {
 };
 
 /** A domain or email address with no scheme, such as "example.com/a" or "hi@example.com". */
-const NO_SCHEME = /^([^\s@/:]+@)?[\w-]+(\.[\w-]+)+([/:?#]|$)/;
+const NO_SCHEME = /^([^\s@/:]+@)?[\p{L}\p{N}_-]+(\.[\p{L}\p{N}_-]+)+([/:?#]|$)/u;
 
 /**
  * A pasted link's address as a message can hold it: a domain or email address gets its scheme, or
  * the message would show its Markdown. Any other address a message cannot link, such as "/pricing"
  * or "tel:", gives undefined, and its words stay text.
  */
-const pastedHref = (href: string) =>
-  SAFE_LINK.test(href) ? href : NO_SCHEME.test(href) ? linkHref(href) : undefined;
+function pastedHref(href: string): string | undefined {
+  const trimmed = href.trim();
+  if (SAFE_LINK.test(trimmed)) return trimmed;
+  return NO_SCHEME.test(trimmed) ? linkHref(trimmed) : undefined;
+}
 
 /** The editor's lines. Underline, strikethrough, headings, mentions and images keep only their text. */
 function linesOf(html: string): Line[] {
@@ -177,7 +181,8 @@ function linesOf(html: string): Line[] {
       const run: Run = { text: decode(text) };
       for (const [tag, mark] of Object.entries(MARK_TAGS)) if (counts[tag]) run[mark] = true;
       const href = pastedHref(hrefs.at(-1) ?? "");
-      if (href && !isBareLinkText(href, [run.text])) run.href = href;
+      // Words that are a web address link to it, so an edited pasted address keeps no old target.
+      if (href && !isBareLink(run.text.trim())) run.href = href;
       line ??= [];
       line.push(run);
       continue;
