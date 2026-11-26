@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.60.0] - 2026-11-26
+
 ### Added
 
 - `Dinghy.nudge({ text, message })` shows `text` in a card above the chat button. The card comes from your page, and nothing goes to the server until the visitor changes or sends the message. A click on the card or the button opens the chat with `message` in the message box, such as an error ID after a failed save.
@@ -904,7 +906,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.59.1...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.60.0...HEAD
+[0.60.0]: https://github.com/dinghy-chat/dinghy/compare/v0.59.1...v0.60.0
 [0.59.1]: https://github.com/dinghy-chat/dinghy/compare/v0.59.0...v0.59.1
 [0.59.0]: https://github.com/dinghy-chat/dinghy/compare/v0.58.0...v0.59.0
 [0.58.0]: https://github.com/dinghy-chat/dinghy/compare/v0.57.0...v0.58.0
