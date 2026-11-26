@@ -22,6 +22,13 @@ export interface Update {
 /** Newest first. Add a new entry at the top, in the pull request that makes the change. */
 export const UPDATES: Update[] = [
   {
+    id: "mobile-inbox-last-message",
+    date: "2026-11-26",
+    kind: "fix",
+    title: "One message preview per chat",
+    text: "Each chat in the mobile inbox shows a single preview of the latest message.",
+  },
+  {
     id: "nudge-card",
     date: "2026-11-25",
     kind: "feature",

@@ -154,7 +154,6 @@ export const inboxStyles = StyleSheet.create({
   rowName: { flex: 1, fontFamily: fonts.semibold, fontSize: 19, letterSpacing: -0.35 },
   timeLine: { flexDirection: "row", alignItems: "center", gap: 3 },
   rowTime: { fontFamily: fonts.medium, fontSize: 14, fontVariant: ["tabular-nums"] },
-  rowSubject: { fontFamily: fonts.semibold, fontSize: 18, letterSpacing: -0.28, marginTop: 3 },
   rowPreview: { fontFamily: fonts.body, fontSize: 17, letterSpacing: -0.12, marginTop: 2 },
   rowMetaLine: {
     flexDirection: "row",
