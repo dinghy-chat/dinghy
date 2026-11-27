@@ -28,13 +28,13 @@
     "test:e2e": "playwright test --project=chromium"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.6.6",
+    "@biomejs/biome": "^2.6.9",
     "@playwright/test": "^1.65.1",
     "@types/node": "24",
-    "knip": "^6.45.0",
-    "marked": "^18.1.3",
+    "knip": "^6.48.0",
+    "marked": "^18.3.0",
     "typescript": "^7.0.2",
-    "vitest": "^5.1.0"
+    "vitest": "^5.1.1"
   },
   "overrides": {
     "esbuild": "^0.28.2"
