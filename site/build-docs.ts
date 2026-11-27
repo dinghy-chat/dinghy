@@ -25,7 +25,7 @@ const ANALYTICS = '<script src="/js/analytics.js" async></script>';
 const PUBLIC = "site/public";
 const CONTENT = "site/content";
 /** The folders this script owns. It empties them before it writes. */
-export const OWNED_DIRS = ["docs", "for", "compare", "guides", "blog", "changelog"].map((dir) => join(PUBLIC, dir));
+export const OWNED_DIRS = ["docs", "for", "compare", "tools", "templates", "guides", "blog", "changelog"].map((dir) => join(PUBLIC, dir));
 
 interface Page {
   kind: "docs" | "content";
@@ -173,6 +173,8 @@ const DOCS_PAGES: Page[] = DOCS.map((entry, index) => ({
 const GROUPS: [string, string][] = [
   ["", "Why Dinghy"],
   ["compare", "Compare"],
+  ["tools", "Free tools"],
+  ["templates", "Templates"],
   ["for", "Use cases"],
   ["guides", "Install guides"],
   ["blog", "Blog"],
@@ -365,8 +367,10 @@ function render(page: Page): Rendered {
       },
       image({ href, text }) {
         const target = rewriteLink(href, page);
-        images.push(target.slice(1));
-        const [width, height] = pngSize(target.slice(1));
+        // An illustration already lives in site/public. Any other image is copied there.
+        const isPublic = target.startsWith("/img/");
+        if (!isPublic) images.push(target.slice(1));
+        const [width, height] = pngSize(isPublic ? join(PUBLIC, target) : target.slice(1));
         return `<img src="${escape(target)}" width="${width}" height="${height}" alt="${escape(text)}" loading="lazy">`;
       },
       codespan({ text }) {
@@ -456,6 +460,7 @@ function head(page: Page, heading: string, description: string): string {
   const docs = page.kind === "docs";
   const fullTitle = docs ? (page.path === "/docs/" ? "Dinghy docs" : `${page.nav}: Dinghy docs`) : (page.title ?? heading);
   const data = docs ? "" : articleData(page, heading, description);
+  const script = docs ? "docs" : page.group === "Free tools" ? "tools" : "page";
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -482,7 +487,7 @@ function head(page: Page, heading: string, description: string): string {
   <link rel="preload" href="/fonts/gabarito-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/fonts/hanken-grotesk-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/css/site.css">
-  <script type="module" src="/js/${docs ? "docs" : "page"}.js"></script>${data}
+  <script type="module" src="/js/${script}.js"></script>${data}
   ${ANALYTICS}
   ${WIDGET}
 </head>`;
@@ -560,7 +565,7 @@ const BAND = (heading: string, lede: string, meta: string, extra = "") => `    <
     </section>`;
 
 /** Content folders whose name labels a card that links across folders. */
-const LABELLED_GROUPS = new Set(["Why Dinghy", "Compare", "Use cases", "Install guides", "Blog"]);
+const LABELLED_GROUPS = new Set(["Why Dinghy", "Compare", "Free tools", "Templates", "Use cases", "Install guides", "Blog"]);
 
 /** A content page's title, from its Markdown, for the cards that link to it. */
 function headingOf(page: Page): string {
@@ -603,6 +608,8 @@ function updatesList(): string {
 
 const CARD_ACTION: Record<string, string> = {
   Compare: "Compare",
+  "Free tools": "Open the tool",
+  Templates: "Get the templates",
   "Use cases": "See how",
   "Install guides": "Open the guide",
   Blog: "Read the post",
