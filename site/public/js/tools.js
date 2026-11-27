@@ -10,7 +10,10 @@ import {
   downtimeFor,
   durationParts,
   formatDuration,
+  linkHtml,
   logShare,
+  mailtoLink,
+  mailtoVerdict,
   nps,
   npsVerdict,
   PERIOD_SECONDS,
@@ -20,12 +23,16 @@ import {
   staffing,
   uptimeFor,
   uptimeVerdict,
+  whatsappLink,
+  whatsappNumber,
+  whatsappVerdict,
 } from "./tool-math.js";
 
 const URL_WRITE_DELAY_MS = 300;
 const COPIED_LABEL_MS = 1800;
 const FACE_COUNT = 20;
 const MAX_FLEET = 48;
+const FIELDS = "input[name], textarea[name]";
 const PERIODS = ["day", "week", "month", "year"];
 const PERIOD_NAMES = { day: "Per day", week: "Per week", month: "Per month", year: "Per year" };
 const LOG_TICKS = [
@@ -205,7 +212,8 @@ function drawLadder(visual, ladder) {
 
 /**
  * Each tool reads its inputs by name and returns what to show, or null when they make no sense:
- * text for each [data-out], a verdict, a summary to copy and a function that draws the visual.
+ * text for each [data-out], a verdict, and a summary to copy or the texts its [data-copies] buttons
+ * copy. A calculator also draws its visual.
  */
 const TOOLS = {
   nps: (input) => {
@@ -315,15 +323,42 @@ const TOOLS = {
       draw: (visual) => drawStaffing(visual, result, input),
     };
   },
+  mailto: (input) => {
+    const result = mailtoLink(input);
+    if (!result) return null;
+    const html = linkHtml(result.link, "Email us");
+    return {
+      out: { link: result.link, html, length: numberText(result.link.length, 0), recipients: numberText(result.recipients, 0) },
+      verdict: mailtoVerdict(result.link, result.recipients),
+      copies: { link: result.link, html },
+    };
+  },
+  whatsapp: (input) => {
+    const phone = whatsappNumber(input.country, input.phone);
+    const link = phone && whatsappLink(phone.number, input.message);
+    if (!link) return null;
+    const html = linkHtml(link, "Chat on WhatsApp");
+    return {
+      out: { link, html, digits: numberText(phone.number.length, 0), length: numberText(input.message.length, 0) },
+      verdict: whatsappVerdict(phone),
+      copies: { link, html },
+    };
+  },
 };
+
+const copies = new WeakMap();
 
 /** The inputs by name, or null when a field is empty or breaks its min, max or step. */
 function readInputs(pane) {
   const input = {};
   let isValid = true;
-  for (const field of pane.querySelectorAll("input[name]")) {
+  for (const field of pane.querySelectorAll(FIELDS)) {
     if (field.type === "radio") {
       if (field.checked) input[field.name] = field.value;
+      continue;
+    }
+    if (field.type !== "number") {
+      input[field.name] = field.value;
       continue;
     }
     const isFieldValid = field.value !== "" && field.validity.valid;
@@ -365,11 +400,13 @@ function update(pane) {
   const verdict = pane.querySelector("[data-verdict]");
   verdict.textContent = result.verdict.text;
   verdict.dataset.tone = result.verdict.tone;
-  result.draw(pane.querySelector("[data-visual]"));
+  result.draw?.(pane.querySelector("[data-visual]"));
   for (const link of pane.querySelectorAll("a[data-link]")) {
     link.search = new URLSearchParams(result.links).toString();
   }
-  pane.dataset.summary = result.summary;
+  for (const link of pane.querySelectorAll("a[data-href]")) link.href = result.copies[link.dataset.href];
+  if (result.summary) pane.dataset.summary = result.summary;
+  copies.set(pane, result.copies);
 }
 
 /** Keeps each slider and preset chip in step with its number field. */
@@ -414,15 +451,16 @@ function addSteppers(card) {
 
 function fieldSpec(card) {
   const spec = {};
-  for (const field of card.querySelectorAll("input[name]")) {
-    spec[field.name] = field.type === "radio" ? [...(spec[field.name] ?? []), field.value] : "number";
+  for (const field of card.querySelectorAll(FIELDS)) {
+    if (field.type === "radio") spec[field.name] = [...(spec[field.name] ?? []), field.value];
+    else spec[field.name] = field.type === "number" ? "number" : "text";
   }
   return spec;
 }
 
 function applyQuery(card) {
   const values = parseQuery(location.search, fieldSpec(card));
-  for (const field of card.querySelectorAll("input[name]")) {
+  for (const field of card.querySelectorAll(FIELDS)) {
     const value = values[field.name];
     if (value === undefined) continue;
     if (field.type === "radio") field.checked = field.value === value;
@@ -432,7 +470,7 @@ function applyQuery(card) {
 
 function writeQuery(card) {
   const params = new URLSearchParams();
-  for (const field of card.querySelectorAll("input[name]")) {
+  for (const field of card.querySelectorAll(FIELDS)) {
     if (field.closest("[hidden]") || (field.type === "radio" && !field.checked)) continue;
     params.set(field.name, field.value);
   }
@@ -445,15 +483,25 @@ function showMode(card) {
   for (const pane of card.querySelectorAll("[data-tool]")) pane.hidden = pane.dataset.tool !== mode;
 }
 
+/** Sends a PostHog event, when analytics.js has set PostHog up and no blocker stopped it. */
+function track(event, pane) {
+  window.posthog?.capture?.(event, { tool: pane.dataset.tool, page_path: location.pathname });
+}
+
+function copyText(button, pane) {
+  if (button.dataset.copies) return copies.get(pane)?.[button.dataset.copies] ?? "";
+  return button.dataset.share === "link" ? location.href : `${pane.dataset.summary}\n${location.href}`;
+}
+
 async function copy(card, button) {
   writeQuery(card);
   const pane = button.closest("[data-tool]");
-  const text = button.dataset.share === "link" ? location.href : `${pane.dataset.summary}\n${location.href}`;
   const label = button.querySelector("span");
   button.dataset.label ??= label.textContent;
   try {
-    await navigator.clipboard.writeText(text);
+    await navigator.clipboard.writeText(copyText(button, pane));
     label.textContent = "Copied";
+    track(button.dataset.share === "link" ? "tool link copied" : "tool result copied", pane);
   } catch {
     label.textContent = "Copy failed";
   }
@@ -464,13 +512,15 @@ async function copy(card, button) {
 }
 
 function decorateButtons(card) {
-  for (const button of card.querySelectorAll("[data-share]")) {
+  for (const button of card.querySelectorAll("[data-share], [data-copies]")) {
     const label = document.createElement("span");
     label.textContent = button.textContent;
     button.innerHTML = button.dataset.share === "link" ? ICONS.link : ICONS.copy;
     button.append(label);
   }
 }
+
+let isUsed = false;
 
 function setUp(card) {
   applyQuery(card);
@@ -484,13 +534,17 @@ function setUp(card) {
     if (field.dataset.for) setField(pane.querySelector(`[name="${field.dataset.for}"]`), field.value);
     else if (pane) update(pane);
     else showMode(card);
+    if (!isUsed) {
+      isUsed = true;
+      track("tool used", pane ?? card.querySelector("[data-tool]:not([hidden])"));
+    }
     clearTimeout(writeTimer);
     writeTimer = setTimeout(() => writeQuery(card), URL_WRITE_DELAY_MS);
   });
   card.addEventListener("click", (event) => {
-    const button = event.target.closest("button[data-share], button[data-preset]");
+    const button = event.target.closest("button[data-share], button[data-copies], button[data-preset]");
     if (!button) return;
-    if (button.dataset.share) copy(card, button);
+    if (button.dataset.preset === undefined) copy(card, button);
     else setField(button.closest("[data-tool]").querySelector(`[name="${button.dataset.preset}"]`), button.value);
   });
   for (const pane of card.querySelectorAll("[data-tool]")) update(pane);

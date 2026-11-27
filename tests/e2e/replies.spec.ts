@@ -107,6 +107,9 @@ test("an operator edits a reply before the visitor sees it, and deletes a messag
 
   await messageAction(alice, "Plese never", "Edit");
   const editor = alice.getByRole("textbox", { name: "Edit your reply" });
+  // Tiptap focuses the editor a frame after it shows, with the caret at the end, which would undo
+  // the selection that fill() replaces.
+  await expect(editor).toBeFocused();
   await editor.fill("Please never send that here.");
   await editor.press("Enter");
   const edited = alice.locator(".bubble-row", { hasText: "Please never send that here." });
@@ -152,6 +155,9 @@ test("an edit that fails keeps the editor and its text, with the reason", async 
 
   await messageAction(alice, "It left on Monday.", "Edit");
   const editor = alice.getByRole("textbox", { name: "Edit your reply" });
+  // Tiptap focuses the editor a frame after it shows, with the caret at the end, which would undo
+  // the selection that fill() replaces.
+  await expect(editor).toBeFocused();
   await editor.fill("It left on Tuesday.");
   // The visitor reads the reply while the operator edits it, so the save is refused.
   await customer.getByRole("button", { name: "Open chat" }).click();

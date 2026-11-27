@@ -1,14 +1,14 @@
 ---
-title: Free customer support calculators: NPS, CSAT, Erlang C | Dinghy
+title: Free tools for support teams: calculators and link generators | Dinghy
 nav: All free tools
-description: Free calculators for support teams. NPS, CSAT, Erlang C staffing for live chat, uptime and SLA downtime, and average handle time. They run in your browser.
+description: Free tools for support teams. NPS, CSAT, Erlang C staffing, uptime and handle time calculators, plus mailto and WhatsApp link generators. They run in your browser.
 date: 2026-11-27
 updated: 2026-11-27
 order: 0
 ---
 
-# Free calculators for support teams
+# Free tools for support teams
 
-Five small calculators for the numbers support teams get asked about. Each one does the math in your browser, with no sign-up. Each page also explains the formula, with a worked example.
+Small calculators for the numbers support teams get asked about, and two link generators for the ways customers reach you. Each one runs in your browser, with no sign-up, and each page explains how it works.
 
 <!-- pages -->

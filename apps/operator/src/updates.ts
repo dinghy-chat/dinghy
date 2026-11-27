@@ -22,6 +22,13 @@ export interface Update {
 /** Newest first. Add a new entry at the top, in the pull request that makes the change. */
 export const UPDATES: Update[] = [
   {
+    id: "hidden-tab-online",
+    date: "2026-11-27",
+    kind: "fix",
+    title: "Online from a background tab",
+    text: "If you switched tabs while Dinghy opened, visitors could see Away, we reply now and then. That tab now keeps you online.",
+  },
+  {
     id: "mobile-pasted-links",
     date: "2026-11-26",
     kind: "fix",

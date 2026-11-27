@@ -4,6 +4,10 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+### Fixed
+
+- An operator app tab that went to the background while it opened now counts as hidden. Before, it kept a live connection and marked the operator online for 30 seconds at a time, so the widget could say "Away, we reply" while the inbox was open in that tab.
+
 ## [0.60.1] - 2026-11-26
 
 ### Fixed

@@ -1,5 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
 import { expect, type Page, test } from "@playwright/test";
+import { WEBHOOK_EVENTS } from "../../apps/operator/src/api.ts";
 import { startE2EServer } from "../../apps/server/test/e2e-server.ts";
 import { visitor } from "./chat.ts";
 import { inboxFilter, showStatus } from "./filters.ts";
@@ -800,7 +801,7 @@ test("the install code is one colored line, and a webhook's events are checkboxe
   await page.getByRole("button", { name: "Cancel" }).click();
   await expect(events).toHaveCount(0);
   await page.getByRole("button", { name: "New webhook" }).click();
-  await expect(events).toHaveCount(18);
+  await expect(events).toHaveCount(WEBHOOK_EVENTS.length);
   await expect(
     page.getByRole("checkbox", { name: /A message is sent\s*message\.created/ }),
   ).toBeChecked();

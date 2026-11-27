@@ -215,6 +215,15 @@ test.describe("reduced motion", () => {
       return (canvas as HTMLCanvasElement).toDataURL();
     });
 
+  const isDrawn = (page: Page) =>
+    page.getByRole("img", { name: /^A gull/ }).evaluate((canvas) => {
+      const drawn = canvas as HTMLCanvasElement;
+      const blank = document.createElement("canvas");
+      blank.width = drawn.width;
+      blank.height = drawn.height;
+      return drawn.toDataURL() !== blank.toDataURL();
+    });
+
   test("the operator app's gull moves by default", async ({ browser }) => {
     const context = await browser.newContext();
     const page = await context.newPage();
@@ -227,9 +236,15 @@ test.describe("reduced motion", () => {
   test("the operator app's gull keeps still too, and still squawks when clicked", async ({
     browser,
   }) => {
-    const context = await browser.newContext({ reducedMotion: "reduce" });
+    // A pane this wide fits the gull at its first scale, so no resize redraws it.
+    const context = await browser.newContext({
+      reducedMotion: "reduce",
+      viewport: { width: 1600, height: 900 },
+    });
     const page = await context.newPage();
     await openLink(page, await server.signInLink("anna@example.com"));
+    // The canvas shows before its first frame is drawn.
+    await expect.poll(() => isDrawn(page)).toBe(true);
     const still = await gullFrame(page);
     await page.waitForTimeout(400);
     expect(await gullFrame(page)).toBe(still);
