@@ -475,23 +475,39 @@ for (const order of ["a reply, then a close", "a close, then a reply"]) {
     const held = new Promise<void>((resolve) => {
       release = resolve;
     });
+    let saved = () => {};
+    const savedOnServer = new Promise<void>((resolve) => {
+      saved = resolve;
+    });
     await alice.route(closing ? /\/conversations\/[^/]+$/ : /\/messages$/, async (route) => {
-      const method = route.request().method();
-      if (method === (closing ? "PATCH" : "POST")) await held;
-      await route.continue();
+      if (route.request().method() !== (closing ? "PATCH" : "POST")) return route.continue();
+      if (!closing) {
+        await held;
+        return route.continue();
+      }
+      // The server closes the conversation now, and the app hears of it once released.
+      const response = await route.fetch();
+      saved();
+      await held;
+      await route.fulfill({ response });
     });
     await row(alice, texts[0] ?? "").click();
     const reply = alice.getByRole("textbox", { name: "Your reply" });
     const close = alice.getByRole("button", { name: "Close", exact: true });
-    if (closing) await close.click();
+    const reopen = alice.getByRole("button", { name: "Reopen" });
+    if (closing) {
+      await close.click();
+      await savedOnServer;
+    }
     await reply.fill("Sent around the close");
     await reply.press("Enter");
     if (!closing) {
       await close.click();
-      await expect(alice.getByRole("button", { name: "Reopen" })).toBeVisible();
+      await expect(reopen).toBeVisible();
     }
     release();
 
+    await expect(reopen).toBeVisible();
     await expect(alice.locator(".retry")).toBeVisible();
     await expect(alice.getByText("Sent around the close")).toBeVisible();
     for (const page of [...visitors, alice]) await page.context().close();

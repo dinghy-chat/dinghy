@@ -24,6 +24,11 @@ interface Rung {
   isMet: boolean;
   marginSeconds: number;
 }
+interface WhatsappNumber {
+  number: string;
+  repeatsCode: boolean;
+  isInternational: boolean;
+}
 interface ToolMath {
   npsVerdict(score: number): Verdict;
   csatVerdict(percent: number): Verdict;
@@ -34,7 +39,18 @@ interface ToolMath {
   durationParts(totalSeconds: number): [string, string][];
   logShare(seconds: number): number;
   axisFor(value: number): { end: number; step: number };
-  parseQuery(search: string, fields: Record<string, "number" | string[]>): Record<string, string>;
+  parseQuery(
+    search: string,
+    fields: Record<string, "number" | "text" | string[]>,
+  ): Record<string, string>;
+  linkHtml(href: string, text: string): string;
+  mailtoLink(
+    fields: Record<"to" | "cc" | "bcc" | "subject" | "body", string>,
+  ): { link: string; recipients: number } | null;
+  mailtoVerdict(link: string, recipients: number): Verdict;
+  whatsappNumber(countryCode: string, phone: string): WhatsappNumber | null;
+  whatsappLink(number: string, message: string): string | null;
+  whatsappVerdict(number: WhatsappNumber): Verdict;
   nps(
     promoters: number,
     passives: number,
@@ -284,5 +300,115 @@ describe("parseQuery", () => {
     expect(math.parseQuery("?promoters=-3&period=decade&other=1", fields)).toEqual({});
     expect(math.parseQuery("?promoters=1e9", { promoters: "number" })).toEqual({});
     expect(math.parseQuery("?promoters=%3Cscript%3E", { promoters: "number" })).toEqual({});
+  });
+
+  test("reads text as typed, up to 2,000 characters", () => {
+    expect(math.parseQuery("?subject=Hi%20%26%20bye%0A", { subject: "text" })).toEqual({
+      subject: "Hi & bye\n",
+    });
+    expect(math.parseQuery(`?body=${"a".repeat(2001)}`, { body: "text" })).toEqual({});
+  });
+});
+
+describe("linkHtml", () => {
+  test("escapes the address and the text", () => {
+    expect(math.linkHtml("mailto:a@b.co?cc=c@d.co&subject=%22Hi%22", "Mail <us>")).toBe(
+      '<a href="mailto:a@b.co?cc=c@d.co&amp;subject=%22Hi%22">Mail &lt;us&gt;</a>',
+    );
+  });
+});
+
+describe("mailto links", () => {
+  const empty = { to: "", cc: "", bcc: "", subject: "", body: "" };
+
+  test("encode spaces as %20 and line breaks as %0D%0A, as RFC 6068 asks", () => {
+    expect(
+      math.mailtoLink({
+        ...empty,
+        to: "hello@example.com",
+        subject: "Order #12 & refund",
+        body: "Hi,\nthanks+bye\r\nAnna",
+      }),
+    ).toEqual({
+      link: "mailto:hello@example.com?subject=Order%20%2312%20%26%20refund&body=Hi%2C%0D%0Athanks%2Bbye%0D%0AAnna",
+      recipients: 1,
+    });
+  });
+
+  test("join addresses with commas, whatever separates them", () => {
+    expect(
+      math.mailtoLink({
+        ...empty,
+        to: "a@x.com; b+tag@y.org",
+        cc: "c@z.io\nd@z.io",
+        bcc: " e@w.co ",
+      }),
+    ).toEqual({
+      link: "mailto:a@x.com,b%2Btag@y.org?cc=c@z.io,d@z.io&bcc=e@w.co",
+      recipients: 5,
+    });
+  });
+
+  test("leave out empty fields, and reject what isn't an address", () => {
+    expect(math.mailtoLink({ ...empty, subject: "  " })).toEqual({
+      link: "mailto:",
+      recipients: 0,
+    });
+    expect(math.mailtoLink({ ...empty, to: "hello at example.com" })).toBeNull();
+    expect(math.mailtoLink({ ...empty, cc: "hello@example" })).toBeNull();
+  });
+
+  test("the verdict flags a missing address and a long link", () => {
+    expect(math.mailtoVerdict("mailto:", 0).tone).toBe("fair");
+    expect(math.mailtoVerdict(`mailto:a@b.co?body=${"x".repeat(2000)}`, 1).tone).toBe("fair");
+    expect(math.mailtoVerdict("mailto:a@b.co", 1).tone).toBe("good");
+  });
+});
+
+describe("WhatsApp links", () => {
+  test("a number drops spaces, dashes, brackets, the plus and leading zeros", () => {
+    expect(math.whatsappNumber("+44", "07700 900-123")).toEqual({
+      number: "447700900123",
+      repeatsCode: false,
+      isInternational: false,
+    });
+    expect(math.whatsappNumber("001", "(415) 555-0100")?.number).toBe("14155550100");
+    expect(math.whatsappNumber("44", "+44 (0) 7700 900123")).toEqual({
+      number: "447700900123",
+      repeatsCode: false,
+      isInternational: true,
+    });
+    expect(math.whatsappNumber("1", "0044 7700 900123")?.number).toBe("447700900123");
+  });
+
+  test("a number flags a repeated country code and rejects wrong lengths", () => {
+    expect(math.whatsappNumber("44", "447700900123")?.repeatsCode).toBe(true);
+    expect(math.whatsappNumber("", "7700900123")).toBeNull();
+    expect(math.whatsappNumber("44", "12")).toBeNull();
+    expect(math.whatsappNumber("44", "1234567890123456")).toBeNull();
+    expect(math.whatsappNumber("", "")).toEqual({
+      number: "",
+      repeatsCode: false,
+      isInternational: false,
+    });
+  });
+
+  test("a link uses wa.me with the message URL-encoded", () => {
+    expect(math.whatsappLink("447700900123", "Hi! Is it in stock?\nThanks")).toBe(
+      "https://wa.me/447700900123?text=Hi!%20Is%20it%20in%20stock%3F%0AThanks",
+    );
+    expect(math.whatsappLink("447700900123", " ")).toBe("https://wa.me/447700900123");
+    expect(math.whatsappLink("", "I'm in")).toBe("https://wa.me/?text=I'm%20in");
+    expect(math.whatsappLink("", "")).toBeNull();
+  });
+
+  test("the verdict names the number", () => {
+    expect(
+      math.whatsappVerdict({ number: "447700900123", repeatsCode: false, isInternational: false })
+        .text,
+    ).toBe("Opens a chat with +447700900123.");
+    expect(
+      math.whatsappVerdict({ number: "", repeatsCode: false, isInternational: false }).tone,
+    ).toBe("fair");
   });
 });

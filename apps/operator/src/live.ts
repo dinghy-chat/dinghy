@@ -65,6 +65,8 @@ export function useTabVisible(): boolean {
   useEffect(() => {
     const onVisibility = () => setVisible(document.visibilityState === "visible");
     document.addEventListener("visibilitychange", onVisibility);
+    // The tab can change between the first render and this effect, with no event left to say so.
+    onVisibility();
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, []);
   return visible;

@@ -5912,4 +5912,73 @@ a.tool-button.is-quiet {
   stroke-linecap: round;
   stroke-linejoin: round;
 }
+
+/* Link generators: text fields, and the link they make as code on the navy panel. */
+.tool-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.tool-pair.is-phone {
+  grid-template-columns: minmax(0, 5fr) minmax(0, 9fr);
+}
+
+.tool-input.is-text input,
+.tool-input textarea {
+  font: 500 17px/1.4 var(--body);
+  letter-spacing: 0;
+}
+
+.tool-input:has(textarea) {
+  align-items: stretch;
+}
+
+.tool-input textarea {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  min-height: 132px;
+  padding: 10px;
+  border: 0;
+  background: transparent;
+  color: var(--navy);
+  resize: vertical;
+}
+
+.tool-input textarea:focus {
+  outline: none;
+}
+
+.tool-unit.is-before {
+  padding: 0 0 0 10px;
+  font: 650 20px/1 var(--body);
+}
+
+.tool-unit.is-before + input {
+  padding-left: 2px;
+}
+
+.tool-code {
+  max-height: 15.5em;
+  margin: 0;
+  overflow: auto;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: rgb(255 255 255 / .07);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / .14);
+  color: #fff;
+  font: 500 14.5px/1.55 var(--mono);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.tool-code.is-hero {
+  font-size: 16.5px;
+  font-weight: 600;
+}
+
+.tool-pane.is-invalid .tool-code {
+  opacity: .3;
+}
 /* End of free tools */

@@ -158,3 +158,33 @@ test("a hidden tab keeps its operator online, and the header marks them", async 
   await ben.context().close();
   await context.close();
 });
+
+test("a tab hidden while the inbox opens beats as hidden, so its mark lasts", async ({
+  browser,
+}) => {
+  const anna = await signedIn(browser, server, "anna@example.com");
+  const hiddenBeats: boolean[] = [];
+  anna.on("request", (request) => {
+    if (request.url().endsWith("/presence") && request.method() === "PUT") {
+      hiddenBeats.push((request.postDataJSON() as { hidden: boolean }).hidden);
+    }
+  });
+  // React runs effects after the first draw, so a tab that hides as the inbox first draws has no
+  // listener yet.
+  await anna.addInitScript(() => {
+    const watcher = new MutationObserver(() => {
+      if (document.querySelector("nav.nav") === null) return;
+      watcher.disconnect();
+      Object.defineProperty(document, "visibilityState", {
+        configurable: true,
+        get: () => "hidden",
+      });
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    watcher.observe(document, { childList: true, subtree: true });
+  });
+  await anna.reload();
+  await expect(anna.getByRole("button", { name: "Analytics" })).toBeVisible();
+  await expect.poll(() => hiddenBeats.at(-1)).toBe(true);
+  await anna.context().close();
+});

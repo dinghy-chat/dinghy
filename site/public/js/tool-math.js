@@ -1,4 +1,4 @@
-// The math behind the free calculators. Pure functions, so tests/tools.test.ts can check them.
+// The math behind the free tools. Pure functions, so tests/tools.test.ts can check them.
 
 const SECONDS_PER_MINUTE = 60;
 const MINUTES_PER_HOUR = 60;
@@ -239,18 +239,101 @@ export function axisFor(value) {
 }
 
 const QUERY_NUMBER = /^\d{1,12}(\.\d{1,8})?$/;
+const MAX_QUERY_TEXT_CHARS = 2000;
+
+const queryAccepts = (accepts, value) => {
+  if (accepts === "number") return QUERY_NUMBER.test(value);
+  if (accepts === "text") return value.length <= MAX_QUERY_TEXT_CHARS;
+  return accepts.includes(value);
+};
 
 /**
- * The values a query string gives for a tool's fields. `fields` maps each name to "number" or to
- * the values it accepts. Anything else in the query is dropped.
+ * The values a query string gives for a tool's fields. `fields` maps each name to "number", "text"
+ * or the values it accepts. Anything else in the query is dropped.
  */
 export function parseQuery(search, fields) {
   const params = new URLSearchParams(search);
   const values = {};
   for (const [name, accepts] of Object.entries(fields)) {
     const value = params.get(name);
-    if (value === null) continue;
-    if (accepts === "number" ? QUERY_NUMBER.test(value) : accepts.includes(value)) values[name] = value;
+    if (value !== null && queryAccepts(accepts, value)) values[name] = value;
   }
   return values;
+}
+
+const HTML_ESCAPES = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" };
+
+/** An HTML link to paste into a page. */
+export function linkHtml(href, text) {
+  const escapeHtml = (value) => value.replace(/[&<>"]/g, (char) => HTML_ESCAPES[char]);
+  return `<a href="${escapeHtml(href)}">${escapeHtml(text)}</a>`;
+}
+
+const EMAIL_ADDRESS = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
+/** Mail apps differ on how long a mailto link may be, so the verdict warns past this. */
+const LONG_MAILTO_CHARS = 2000;
+
+/** The addresses in a field, split on commas, semicolons and spaces. */
+const splitAddresses = (text) => text.split(/[\s,;]+/).filter(Boolean);
+
+/** Percent-encodes a subject or body as RFC 6068 asks: spaces as %20, each line break as %0D%0A. */
+const encodeMailto = (text) => encodeURIComponent(text.replace(/\r\n|\r|\n/g, "\r\n"));
+
+const encodeAddresses = (addresses) =>
+  addresses.map((address) => encodeURIComponent(address).replaceAll("%40", "@")).join(",");
+
+/** A mailto link and its recipient count, or null when an address is not an email address. */
+export function mailtoLink({ to, cc, bcc, subject, body }) {
+  const lists = { to: splitAddresses(to), cc: splitAddresses(cc), bcc: splitAddresses(bcc) };
+  const addresses = Object.values(lists).flat();
+  if (!addresses.every((address) => EMAIL_ADDRESS.test(address))) return null;
+  const headers = [];
+  for (const name of ["cc", "bcc"]) if (lists[name].length) headers.push(`${name}=${encodeAddresses(lists[name])}`);
+  if (subject.trim()) headers.push(`subject=${encodeMailto(subject)}`);
+  if (body.trim()) headers.push(`body=${encodeMailto(body)}`);
+  const query = headers.length ? `?${headers.join("&")}` : "";
+  return { link: `mailto:${encodeAddresses(lists.to)}${query}`, recipients: addresses.length };
+}
+
+/** A plain-words reading of a mailto link. */
+export function mailtoVerdict(link, recipients) {
+  if (recipients === 0) return { tone: "fair", text: "No address yet. The mail app opens a draft with an empty To line." };
+  if (link.length > LONG_MAILTO_CHARS)
+    return { tone: "fair", text: "That's a long link. Some mail apps cut long bodies, so keep it short." };
+  return { tone: "good", text: "Ready. A click opens a new email in the visitor's mail app." };
+}
+
+/** E.164 caps a full phone number at 15 digits. */
+const MAX_PHONE_DIGITS = 15;
+const MIN_PHONE_DIGITS = 7;
+
+/**
+ * The full number WhatsApp wants: country code first, digits only, no plus and no leading zeros.
+ * A number typed with + or 00 in front already has its country code. An empty number gives "".
+ * Null when the number can't be right.
+ */
+export function whatsappNumber(countryCode, phone) {
+  const isInternational = /^\s*(\+|00)/.test(phone);
+  const national = phone.replaceAll("(0)", "").replace(/\D/g, "").replace(/^0+/, "");
+  if (!national) return { number: "", repeatsCode: false, isInternational };
+  const country = isInternational ? "" : countryCode.replace(/\D/g, "").replace(/^0+/, "");
+  if (!isInternational && !country) return null;
+  const number = country + national;
+  if (number.length < MIN_PHONE_DIGITS || number.length > MAX_PHONE_DIGITS) return null;
+  return { number, repeatsCode: Boolean(country) && national.startsWith(country), isInternational };
+}
+
+/** A click to chat link, as WhatsApp's FAQ describes, or null with neither number nor message. */
+export function whatsappLink(number, message) {
+  if (!number && !message.trim()) return null;
+  return `https://wa.me/${number}${message.trim() ? `?text=${encodeURIComponent(message)}` : ""}`;
+}
+
+/** A plain-words reading of a WhatsApp number. */
+export function whatsappVerdict({ number, repeatsCode, isInternational }) {
+  if (!number) return { tone: "fair", text: "No number. The visitor picks who to send the message to." };
+  if (repeatsCode)
+    return { tone: "fair", text: "The number starts with the country code too. If you typed it twice, remove it from the number." };
+  if (isInternational) return { tone: "good", text: `Opens a chat with +${number}, using the country code you typed in the number.` };
+  return { tone: "good", text: `Opens a chat with +${number}.` };
 }
