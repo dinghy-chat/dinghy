@@ -345,6 +345,13 @@ interface Rendered {
   images: string[];
 }
 
+/** A quote under a bold "Before" or "After" line shows as a chat reply, with the line as its label. */
+const chatQuotes = (html: string) =>
+  html.replace(/<p><strong>(Before|After)<\/strong><\/p>\n<blockquote>/g, (_match, label: string) => {
+    const kind = `is-${label.toLowerCase()}`;
+    return `<p class="chat-label ${kind}">${label}</p>\n<blockquote class="${kind}">`;
+  });
+
 function render(page: Page): Rendered {
   const liftLede = !page.description;
   const sections: { id: string; text: string }[] = [];
@@ -435,7 +442,7 @@ function render(page: Page): Rendered {
     !(ledeToken as Tokens.Paragraph).tokens.some((token) => token.type === "image");
   const lede = isLede ? marked.parseInline((ledeToken as Tokens.Paragraph).text) : "";
   const body = tokens.filter((_, index) => index !== titleAt && (!lede || index !== ledeAt));
-  const html = marked.parser(body);
+  const html = chatQuotes(marked.parser(body));
   return { title, lede: typeof lede === "string" ? lede : "", html, sections, images };
 }
 

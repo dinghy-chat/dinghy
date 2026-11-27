@@ -4622,6 +4622,55 @@ main:has(> .lost) {
   }
 }
 
+/* Quotes on content pages are chat replies: each paragraph is a bubble. A "Before" reply is grey. */
+.story-doc blockquote {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 12px 0 26px;
+}
+
+.story-doc blockquote p {
+  max-width: min(88%, 560px);
+  margin: 0;
+  padding: 11px 16px;
+  border-radius: 20px 20px 20px 6px;
+  background: var(--blue);
+  color: #fff;
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+.story-doc blockquote.is-before p {
+  background: var(--fog);
+  color: var(--mute);
+}
+
+.story-doc .chat-label {
+  display: inline-block;
+  margin: 22px 0 0;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font: 700 12px/1.4 var(--body);
+  letter-spacing: .05em;
+  text-transform: uppercase;
+}
+
+.story-doc .chat-label.is-before {
+  background: #fde8e6;
+  color: #b4231b;
+}
+
+.story-doc .chat-label.is-after {
+  background: #e2f5ea;
+  color: #12693f;
+}
+
+.story-doc blockquote.is-before + .chat-label.is-after {
+  margin-top: 4px;
+}
+
 /* Cards that link to other content pages */
 .cards {
   display: grid;
