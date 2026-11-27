@@ -4,6 +4,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 
 ## [Unreleased]
 
+## [0.60.2] - 2026-11-27
+
 ### Fixed
 
 - An operator app tab that went to the background while it opened now counts as hidden. Before, it kept a live connection and marked the operator online for 30 seconds at a time, so the widget could say "Away, we reply" while the inbox was open in that tab.
@@ -918,7 +920,8 @@ This file lists the changes in each release of Dinghy. Its format follows [Keep 
 - Workspace export and import, workspace suspension, a separate origin for images, health checks and metrics.
 - AGPL for the server, MIT for the widget, and the cloud's billing code in `ee/`, which stays off unless its settings are set.
 
-[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.60.1...HEAD
+[Unreleased]: https://github.com/dinghy-chat/dinghy/compare/v0.60.2...HEAD
+[0.60.2]: https://github.com/dinghy-chat/dinghy/compare/v0.60.1...v0.60.2
 [0.60.1]: https://github.com/dinghy-chat/dinghy/compare/v0.60.0...v0.60.1
 [0.60.0]: https://github.com/dinghy-chat/dinghy/compare/v0.59.1...v0.60.0
 [0.59.1]: https://github.com/dinghy-chat/dinghy/compare/v0.59.0...v0.59.1
