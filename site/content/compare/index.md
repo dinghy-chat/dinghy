@@ -55,8 +55,8 @@ Every plan, the add-ons and what 1, 3 or 5 people pay.
 Dinghy can't import from other chat tools. Your old conversations stay where they are.
 
 1. Set up Dinghy and copy your tag from Settings > Install.
-2. Take the old chat's snippet off your site and paste the Dinghy tag where it was, usually just before `</body>`. The [install guides](/guides/) show where that is on each platform.
-3. Add your site under **Allowed sites** in Settings > Install.
+2. Add your site under **Allowed sites** in Settings > Install, so the chat works the moment the tag goes live.
+3. Take the old chat's snippet off your site and paste the Dinghy tag where it was, usually just before `</body>`. The [install guides](/guides/) show where that is on each platform. Then send yourself a test message.
 4. Keep the old account for a few weeks so you can answer what's still open there. Then cancel it.
 
 If your old chat showed who was signed in, Dinghy does that too, with a short token your server signs. See [Show who is chatting](/docs/add-to-your-site#show-who-is-chatting).
