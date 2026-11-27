@@ -60,8 +60,8 @@ Dinghy Cloud is $9 a month per workspace, flat, for up to 5 people and 1 GB of f
 
 ## When Dinghy isn't the right fit
 
-- More than 5 people answer chats. Dinghy Cloud stops at 5. Self-hosting has no limit, but then you run the server.
-- You want a product tour builder, a standalone email marketing tool or a built-in help center. Intercom has a wider set of tools. See [Dinghy vs Intercom](/compare/intercom).
+- More than 5 people answer chats. Dinghy Cloud stops at 5. Self-hosting has no limit, but then you run the server. The [staffing calculator](/tools/staffing-calculator) tells you how many people your chat volume needs.
+- You want a product tour builder, a standalone email marketing tool or a built-in help center. Intercom has a wider set of tools. See [Dinghy vs Intercom](/compare/intercom), and [Intercom pricing](/compare/intercom-pricing) for what the seats and Fin cost.
 - You want a hosted AI agent that answers first with no setup, trained on your help center. Dinghy has no AI of its own. Your own agent can answer through MCP or the API, and by default a person approves its drafts. See [Live chat for AI agents](/for/ai-agents) and [why we work this way](/blog/bring-your-own-ai-agent).
 - You need a native mobile SDK. There isn't one. The widget is for websites and web apps.
 

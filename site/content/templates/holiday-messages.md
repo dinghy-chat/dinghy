@@ -14,7 +14,7 @@ image: holiday-messages
 
 A holiday message has to answer two questions. When are you closed, and when will someone reply? Put both in the first line, with real dates. The season greeting is optional, and short is better. Below are templates for a holiday hours notice, a chat away message, a support out of office email and a few greetings that don't read like a greeting card.
 
-![A sailboat at anchor next to a small island with a palm tree and a hammock, under a crescent moon](/img/illustrations/holiday-messages.png)
+![A sailboat at anchor next to a small island with a palm tree and a hammock, under a crescent moon](/img/illustrations/holiday-messages.webp)
 
 ## The placeholders
 

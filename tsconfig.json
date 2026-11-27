@@ -27,6 +27,7 @@
     "ee",
     "tests",
     "site/build-docs.ts",
+    "site/build-og.ts",
     "vitest.config.ts",
     "vitest.site.config.ts",
     "playwright.config.ts"

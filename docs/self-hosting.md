@@ -113,7 +113,7 @@ Image and file links then use that origin, with the same short-lived signed URLs
 
 ### Replies by email
 
-A visitor who left your site gets your team's replies and the transcript by email. With replies by email on, they can answer that email, and their answer lands in the conversation as if they had written in the chat. It is off until you set `INBOUND_EMAIL_DOMAIN` and a receiver for its mail, and it needs a mail server for the emails that go out (`SMTP_URL`).
+A visitor who left your site gets your team's replies and the transcript by email. [Live chat transcripts](https://dinghy.chat/blog/live-chat-transcripts) covers when to send one and how long to keep it. With replies by email on, they can answer that email, and their answer lands in the conversation as if they had written in the chat. It is off until you set `INBOUND_EMAIL_DOMAIN` and a receiver for its mail, and it needs a mail server for the emails that go out (`SMTP_URL`).
 
 Each email to a visitor then has its own reply address, `reply+<workspace>.<token>@<INBOUND_EMAIL_DOMAIN>`, which leads to that one conversation. Mail apps show the workspace's name with it. The address works until 90 days after its last use. Mail to it reaches Dinghy in one of two ways, and both can be on at once:
 

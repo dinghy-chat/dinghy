@@ -31,7 +31,7 @@ Standard and Plus have a 15-day free trial, no card needed. Pro goes through sal
 
 ## The charges people miss
 
-**AI resolutions.** Help Scout's AI agent is $0.75 per resolution, billed monthly. A resolution is a conversation the AI closes without a person. You don't pay when the customer asks for more help. New accounts get 3 months of unlimited resolutions free, and you can set a monthly cap. On the Free plan, each AI answer still counts toward the 25 contacts. When you hit the cap, the AI agent stops until the next cycle.
+**AI resolutions.** Help Scout's AI agent is an add-on called Envoy, at $0.75 per resolution, billed monthly. A resolution is a conversation the AI closes without a person. You don't pay when the customer asks for more help. New accounts get 3 months of unlimited resolutions free, and you can set a monthly cap. On the Free plan, each AI answer still counts toward the 25 contacts. When you hit the cap, the AI agent stops until the next cycle.
 
 The free months make the first bill look small. If the AI resolves 300 conversations a month, month four costs $225 more than month three.
 
@@ -77,7 +77,7 @@ Up to 5 users, 1 inbox, 1 docs site and 25 contacts a month.
 
 ### How much is Help Scout's AI?
 
-$0.75 per resolution. New accounts get 3 months of unlimited resolutions free, and you can set a monthly cap. On the Free plan, AI answers count toward the 25 contacts.
+The Envoy add-on is $0.75 per resolution. New accounts get 3 months of unlimited resolutions free, and you can set a monthly cap. On the Free plan, AI answers count toward the 25 contacts.
 
 ### Does Help Scout include live chat?
 

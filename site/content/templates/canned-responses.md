@@ -14,7 +14,7 @@ image: canned-responses
 
 A canned response is a reply you write once and reuse whenever the same question comes in. Below are 60 of them, grouped by situation, ready to copy. If you've typed the same answer three times this week, it should probably be one of these.
 
-![A hand picks a message bubble from a crate of ready replies on a dock, next to a small sailboat](/img/illustrations/canned-responses.png)
+![A hand picks a message bubble from a crate of ready replies on a dock, next to a small sailboat](/img/illustrations/canned-responses.webp)
 
 The catch is that a reply people can tell is canned makes them feel processed. So the examples here are short and plain, and each group says what to change before you send.
 

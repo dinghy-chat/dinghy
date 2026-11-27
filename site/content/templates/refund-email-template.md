@@ -14,7 +14,7 @@ image: refund-email
 
 Start with the decision. If the money's on its way, say how much, where it's going and when it'll show up, all in the first two lines. If it's a no or a not yet, say why and what happens next. Below are templates for a full refund, a partial one, a refusal and a delay, each with a subject line you can keep.
 
-![An envelope with a coin inside floats on the water like a paper boat, next to a small sailboat](/img/illustrations/refund-email.png)
+![An envelope with a coin inside floats on the water like a paper boat, next to a small sailboat](/img/illustrations/refund-email.webp)
 
 ## The placeholders
 

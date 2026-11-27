@@ -49,7 +49,7 @@ Erlang C is a queueing formula from the early 1900s, named after A. K. Erlang, w
 
 The work arriving is called traffic, measured in erlangs. One erlang is enough work to keep one chat slot busy for a full hour. Multiply chats per hour by the handle time in hours to get traffic. If you get 20 chats an hour and each takes 10 minutes, that's 20 times 10 divided by 60, or 3.33 erlangs. With fewer than 4 chat slots, the queue grows forever. At 2 chats at once, that's 2 people. Erlang C tells you how many you need to hit your wait target, which is 3 here.
 
-![Small crewed sailboats leave a harbor to meet chat bubbles floating on the water](/img/illustrations/staffing-calculator.png)
+![Small crewed sailboats leave a harbor to meet chat bubbles floating on the water](/img/illustrations/staffing-calculator.webp)
 
 ## The Erlang C formula with a worked example
 

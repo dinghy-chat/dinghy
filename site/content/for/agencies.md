@@ -49,7 +49,7 @@ If a client moves to their own server later, the owner downloads an export from 
 
 - You want one bill for all your clients. On Dinghy Cloud, each workspace is its own $9 subscription.
 - You want to resell chat under your own brand to many clients from one self-hosted server. The self-hosted version can't create extra workspaces from the app.
-- A client needs more than 5 people answering on the cloud, or wants a shared email inbox, WhatsApp and social messages next to the chat. Dinghy is website chat. A reply reaches a visitor by email only when they've left the chat.
+- A client needs more than 5 people answering on the cloud, or wants a shared email inbox, WhatsApp and social messages next to the chat. Dinghy is website chat. A reply reaches a visitor by email only when they've left the chat. [Front](/compare/front) puts email, SMS and social in one inbox.
 - A client wants a ready-made AI agent trained on their help center, or needs a built-in help center. Dinghy has neither. It has no AI of its own, but the client's own bot can answer through MCP or the API. See [Live chat for AI agents](/for/ai-agents).
 
 ## Get started

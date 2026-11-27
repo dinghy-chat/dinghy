@@ -13,7 +13,7 @@ image: customer-service-phrases
 
 The best customer service phrases in live chat are short, specific and sound like one person talking. The worst ones come from call-center scripts: "We apologize for any inconvenience", "Your satisfaction is our priority", "Is there anything else I can help you with today?" A visitor reads those as a sign that nobody's really there.
 
-![Two speech bubbles between a harbor house and a sailboat, joined by a line of signal flags](/img/illustrations/customer-service-phrases.png)
+![Two speech bubbles between a harbor house and a sailboat, joined by a line of signal flags](/img/illustrations/customer-service-phrases.webp)
 
 Small teams have an advantage here. The visitor knows they might be talking to the founder. Write like it.
 
@@ -21,7 +21,7 @@ Small teams have an advantage here. The visitor knows they might be talking to t
 
 Most good chat phrases follow four habits:
 
-![Four panels show the habits behind good chat replies: put the answer first, say what happens next with a time, use the visitor's words, and keep one idea per message.](/img/illustrations/customer-service-phrases-four-habits.png)
+![Four panels show the habits behind good chat replies: put the answer first, say what happens next with a time, use the visitor's words, and keep one idea per message.](/img/illustrations/customer-service-phrases-four-habits.webp)
 
 - Answer first, then explain. The visitor asked a question. The first line is the answer.
 - Say what happens next, with a time. "I'll check" means nothing. "I'll check and reply here by 3 p.m." is a promise they can hold you to.
@@ -48,7 +48,7 @@ If you need a minute, say so:
 
 Ask for everything you need in one message. Three rounds of "can you tell me X?" feels like an interrogation.
 
-![Before, three separate questions arrive one after another while the visitor waits; after, one message asks for the email, the order number and the browser together.](/img/illustrations/customer-service-phrases-ask-once.png)
+![Before, three separate questions arrive one after another while the visitor waits; after, one message asks for the email, the order number and the browser together.](/img/illustrations/customer-service-phrases-ask-once.webp)
 
 **Before**
 > Can you please provide your email address?
@@ -104,7 +104,7 @@ Then keep the promise. If tomorrow noon comes and you still don't know, write an
 
 Tell the visitor who's taking over and why. Don't make them repeat the story.
 
-![Before, the visitor is sent to a vague department and has to repeat the story; after, Sam passes everything the visitor said to Lea, who replies in the same chat.](/img/illustrations/customer-service-phrases-handoff.png)
+![Before, the visitor is sent to a vague department and has to repeat the story; after, Sam passes everything the visitor said to Lea, who replies in the same chat.](/img/illustrations/customer-service-phrases-handoff.webp)
 
 **Before**
 > I will transfer you to the appropriate department.
@@ -166,4 +166,4 @@ Once you've typed the same answer twice, save it. Most chat tools have saved rep
 
 A saved reply should still read like a person wrote it. Keep each one short, and edit it to fit the chat before you send. Dinghy's saved replies have no placeholders for the visitor's name, because most visitors never give one, so write them to work without it.
 
-Our [canned responses templates](/templates/canned-responses) have ready-made replies for common questions, written in the style above. Copy the ones you need and change the facts to yours.
+Our [canned responses templates](/templates/canned-responses) have ready-made replies for common questions, written in the style above. Copy the ones you need and change the facts to yours. For complaints, apologies and follow-up emails, use the [customer service response templates](/templates/customer-service-response-templates).

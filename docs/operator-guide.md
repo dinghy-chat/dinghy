@@ -97,7 +97,7 @@ Under a number, a change compares it with the period of the same length just bef
 
 A first reply can come from a person on your team or from software that uses an [API key](api.md#api-keys). Both count. On Dinghy Cloud, the welcome chat counts nowhere.
 
-Below are the conversations per day, **Who sent the first reply**, by person or API key, the busiest hours, as a grid of weekdays by hours where a darker square means more conversations started then, and **Conversations by label**, which counts the period's conversations by each label they have now. Hold the pointer over a bar, a square or a point of a small line to see its number. With no conversation in the period, the tab says so.
+Below are the conversations per day, **Who sent the first reply**, by person or API key, the busiest hours, as a grid of weekdays by hours where a darker square means more conversations started then, and **Conversations by label**, which counts the period's conversations by each label they have now. Hold the pointer over a bar, a square or a point of a small line to see its number. With no conversation in the period, the tab says so. To turn your busiest hours into the number of people you need on shift, use the [staffing calculator](https://dinghy.chat/tools/staffing-calculator).
 
 The **Your site** tab shows the same period for the site: the visits with their chart per day, page views, the chat rate (chats that visitors started per visit) and the busiest moment, the most people on the site at once. Each compares with the period just before once Dinghy has counted the site for that long. **Top pages** and **Top sources** list the pages people saw most and the sites they came from. A visit is a page opened from another site or from nowhere, so a click from one of your pages to the next is not a new one. Dinghy counts each hour with no cookie and no stored ID, and keeps the hours 182 days.
 
@@ -244,6 +244,8 @@ Someone in two workspaces switches between them with the workspace name at the t
 
 Outside these hours, the chat's header shows your away message from **Settings > Appearance** and "We're back Monday at 9:00 AM", on the visitor's own clock and with the date when that is more than 6 days away, in place of **Online** or the usual reply time, even when a member is online. It asks for the visitor's email before the first message, or after it for a visitor who has chatted, whatever the email setting says, so your reply can reach them. It asks only when your server sends email, and never a visitor your site signed in or one whose email Dinghy already has. A new visitor gives the email before they can write. Nothing is added to the conversation. Inside the hours, the header works as before. Pages of your site that open after a save follow the change within 5 minutes.
 
+The hours repeat every week. For a holiday, change that week's ranges and the away message, and put them back after. The [holiday messages](https://dinghy.chat/templates/holiday-messages) have away messages you can paste in.
+
 ## The other settings
 
 **Settings > Install** has four sections. Owners and admins see it.
@@ -259,7 +261,7 @@ Outside these hours, the chat's header shows your away message from **Settings >
 
 ### Saved replies
 
-**Settings > Saved replies** holds the replies your team writes once and inserts with **/**. Every member can add, change and delete them. **New saved reply** asks for a **Shortcut**, of lowercase letters, digits and dashes, such as `refund-policy`, and the **Text**, with the same formatting as a message. A workspace keeps up to 200, and no two saved replies share a shortcut. A saved reply has no placeholders, such as the visitor's name, because most visitors do not give one. Bots read them too, through the API and MCP, so they can answer in your team's words.
+**Settings > Saved replies** holds the replies your team writes once and inserts with **/**. Every member can add, change and delete them. **New saved reply** asks for a **Shortcut**, of lowercase letters, digits and dashes, such as `refund-policy`, and the **Text**, with the same formatting as a message. A workspace keeps up to 200, and no two saved replies share a shortcut. A saved reply has no placeholders, such as the visitor's name, because most visitors do not give one. Bots read them too, through the API and MCP, so they can answer in your team's words. To start from examples, copy a few [canned responses](https://dinghy.chat/templates/canned-responses) and change the facts to yours.
 
 ### Labels
 

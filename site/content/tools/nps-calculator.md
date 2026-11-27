@@ -53,7 +53,7 @@ You ask one question, "On a scale of 0 to 10, how likely are you to recommend us
 
 Passives count toward the total but not toward the score. That's why moving someone from 6 to 7 helps your score, and moving someone from 8 to 9 helps it too.
 
-![A lighthouse beam shows a score dial over small sailboats at sea](/img/illustrations/nps-calculator.png)
+![A lighthouse beam shows a score dial over small sailboats at sea](/img/illustrations/nps-calculator.webp)
 
 ## The NPS formula
 

@@ -14,7 +14,7 @@ image: response-templates
 
 These are for the replies that are hard to write. A complaint, an angry customer, an apology, a handoff to someone senior, a follow-up nobody asked for. Each situation has a short chat version and a longer email version. Copy one, fill in the brackets, and change at least one sentence so it's about this customer.
 
-![Blank message cards laid out on a chart table with a compass, and a sailboat outside the porthole](/img/illustrations/response-templates.png)
+![Blank message cards laid out on a chart table with a compass, and a sailboat outside the porthole](/img/illustrations/response-templates.webp)
 
 For quick everyday answers, like greetings or password resets, see the [canned responses](/templates/canned-responses).
 

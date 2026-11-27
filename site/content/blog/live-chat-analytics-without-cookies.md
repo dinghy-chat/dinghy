@@ -20,7 +20,7 @@ In **Visitors**, choose **Waiting**. You can see how long each person has waited
 
 In **Analytics > Your site**, pick 7, 30 or 90 days. The page shows visits, page views, chat rate, peak live traffic, top pages and top referring sites. Chat rate divides the number of conversations that visitors started by the number of visits. A comparison with the previous period appears once you have enough history for both periods.
 
-![Chat rate is the number of conversations that visitors started divided by the number of visits, for a period of 7, 30 or 90 days.](/img/illustrations/live-chat-analytics-without-cookies-chat-rate.png)
+![Chat rate is the number of conversations that visitors started divided by the number of visits, for a period of 7, 30 or 90 days.](/img/illustrations/live-chat-analytics-without-cookies-chat-rate.webp)
 
 Open **Conversations** for support numbers such as reply times, volume and busy hours. If traffic is steady but replies take longer, check when conversations arrive. If visits rose but chats stayed flat, look at the pages and sources that brought in the traffic. These are totals for the workspace. There’s no purchase attribution.
 
@@ -28,7 +28,7 @@ Open **Conversations** for support numbers such as reply times, volume and busy 
 
 A page sends a small presence request when it loads and about once a minute while its tab is visible. It includes the page address without its query string or fragment, the title, and a temporary tab ID. The first request also carries the referring site's origin when the browser provides it. The server looks up the country from the request's IP address. Live tab data expires 90 seconds after its last request.
 
-![A visible tab sends a small presence request about once a minute with the page address minus its query string, the title and a temporary tab ID; live data expires after 90 seconds, hourly totals stay 182 days, and nothing uses cookies.](/img/illustrations/live-chat-analytics-without-cookies-presence.png)
+![A visible tab sends a small presence request about once a minute with the page address minus its query string, the title and a temporary tab ID; live data expires after 90 seconds, hourly totals stay 182 days, and nothing uses cookies.](/img/illustrations/live-chat-analytics-without-cookies-presence.webp)
 
 Dinghy keeps hourly site totals for 182 days. The widget uses no cookies, and the totals have no persistent visitor ID. The conversation count comes from chats visitors started, and the live tab data is separate from those totals.
 

@@ -17,7 +17,7 @@ We ran Dinghy on a 4 GB server and used another server to open chats, send messa
 
 The server under test was a Hetzner CX23 in Falkenstein, 2 shared vCPUs and 4 GB of memory. It ran the real install, the same `compose.yaml` the install script gives you, with one process doing both web requests and background jobs.
 
-![A second server in the same data center played the visitors and sent chats, messages and 3.9 MB photos to the server under test, which has 2 vCPUs and 4 GB and sent a push for each message to a stand-in push service.](/img/illustrations/one-small-server-test-setup.png)
+![A second server in the same data center played the visitors and sent chats, messages and 3.9 MB photos to the server under test, which has 2 vCPUs and 4 GB and sent a push for each message to a stand-in push service.](/img/illustrations/one-small-server-test-setup.webp)
 
 A second CX23 in the same data center played the visitors. It opened chats, sent messages and uploaded photos.
 
@@ -33,7 +33,7 @@ The install used about 185 MB at idle.
 
 Not memory. Even at the peak, most of the 4 GB was free.
 
-![Memory peaked at 539 MB of 4 GB, so it was not the limit; the limit was messages in one workspace taking turns on one database row, and photo uploads past the ceiling were refused.](/img/illustrations/one-small-server-bottleneck.png)
+![Memory peaked at 539 MB of 4 GB, so it was not the limit; the limit was messages in one workspace taking turns on one database row, and photo uploads past the ceiling were refused.](/img/illustrations/one-small-server-bottleneck.webp)
 
 The limit was messages per second in one workspace. At 50 a second everything stayed quick. When we asked for 100, the server managed about 90, and messages started arriving 9 to 15 seconds late. Messages in one workspace take turns on one database row, and that puts a ceiling on each workspace.
 

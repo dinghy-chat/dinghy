@@ -25,7 +25,7 @@ Sign up there with the same email you use on the cloud. When the workspace arriv
 
 On Dinghy Cloud, an owner opens **Settings > Workspace** and selects **Download an export**.
 
-![An owner downloads one export file from Dinghy Cloud with conversations, contacts, outbound messages, team settings and attachments, carries it to their own server and runs the import there, while chats that arrive later stay on the cloud.](/img/illustrations/move-to-your-own-server-export-import.png)
+![An owner downloads one export file from Dinghy Cloud with conversations, contacts, outbound messages, team settings and attachments, carries it to their own server and runs the import there, while chats that arrive later stay on the cloud.](/img/illustrations/move-to-your-own-server-export-import.webp)
 
 Copy the file to your server and run these from the folder with `compose.yaml`:
 
@@ -56,7 +56,7 @@ If your site tells Dinghy [who is chatting](/docs/add-to-your-site#show-who-is-c
 
 API keys arrive revoked, because their tokens never leave the old server. If a bot or an AI agent answers your chats, create a new key in Settings > API & webhooks and give it to the bot. An agent that connected through OAuth, like Claude Code, just connects again. The export doesn't hold webhooks either. Add them again in the same place, and give each receiving app its new signing secret.
 
-![The import brings over conversations, contacts, the public key and allowed sites, while the chat tag's address, the signing secret, API keys and webhooks need to be redone by hand.](/img/illustrations/move-to-your-own-server-what-moves.png)
+![The import brings over conversations, contacts, the public key and allowed sites, while the chat tag's address, the signing secret, API keys and webhooks need to be redone by hand.](/img/illustrations/move-to-your-own-server-what-moves.webp)
 
 ## Once it's working
 

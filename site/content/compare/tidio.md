@@ -29,7 +29,7 @@ Use Tidio if your store needs an AI agent for common questions, flows and e-comm
 | Saved replies and typing preview | Included | From Human only Growth, $41 a month on annual billing |
 | Self-hosting | Free, open source | Not possible |
 
-Sources: [Tidio’s pricing page](https://www.tidio.com/pricing/), [its Human only price table](https://www.tidio.com/blog/chatbot-pricing/) and [the November 16 plan change](https://help.tidio.com/articles/which-upgrades/). Older subscriptions can keep their old terms. [All the prices side by side](/compare/).
+Sources: [Tidio’s pricing page](https://www.tidio.com/pricing/), [its Human only price table](https://www.tidio.com/blog/chatbot-pricing/) and [the November 16 plan change](https://help.tidio.com/articles/which-upgrades/). Older subscriptions can keep their old terms. [Tidio pricing](/compare/tidio-pricing) has every plan and its conversation limit. [All the prices side by side](/compare/).
 
 ## The conversation count
 

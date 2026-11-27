@@ -14,7 +14,7 @@ image: chatbot-vs-live-chat
 
 For a team of one to five people, start with live chat. Questions about an account, a bill or whether your product fits are where a person wins the customer. A bot earns its place on the routine ones, such as where you ship or how to reset a password, especially at night when nobody's around.
 
-![Two sailboats head for the same buoy, one steered by a robot and one by a person](/img/illustrations/chatbot-vs-live-chat.png)
+![Two sailboats head for the same buoy, one steered by a robot and one by a person](/img/illustrations/chatbot-vs-live-chat.webp)
 
 So the question isn't really bot or chat. It's how much of the answering you hand to a bot, and what you pay for each answer.
 
@@ -22,7 +22,7 @@ So the question isn't really bot or chat. It's how much of the answering you han
 
 A bot is good at questions that have one right answer, written down somewhere, that people ask over and over:
 
-![Routine questions that have one written answer go to the bot, and questions about an account or a bill, angry visitors and people about to buy go to a person.](/img/illustrations/chatbot-vs-live-chat-who-answers.png)
+![Routine questions that have one written answer go to the bot, and questions about an account or a bill, angry visitors and people about to buy go to a person.](/img/illustrations/chatbot-vs-live-chat-who-answers.webp)
 
 - "Do you ship to Canada?"
 - "How do I reset my password?"
@@ -49,7 +49,7 @@ For a small company, the last one matters most. Your visitors chat with you beca
 
 What you pay depends on what the vendor counts. Some charge per outcome or resolution, and others include a pool of AI credits in the plan. Here's what four of them list today.
 
-![With 200 chats a month and a bot that resolves half, $0.99 per outcome comes to $99 before seats, and to $198 if the 100 handoffs are billed too.](/img/illustrations/chatbot-vs-live-chat-per-outcome-bill.png)
+![With 200 chats a month and a bot that resolves half, $0.99 per outcome comes to $99 before seats, and to $198 if the 100 handoffs are billed too.](/img/illustrations/chatbot-vs-live-chat-per-outcome-bill.webp)
 
 | Vendor | What you pay for AI | Unit |
 |---|---|---|
@@ -60,7 +60,7 @@ What you pay depends on what the vendor counts. Some charge per outcome or resol
 
 Intercom also offers Fin on top of another helpdesk, with no seat cost but a minimum monthly commitment, and its page gives 50 outcomes as an example. [Tidio](https://www.tidio.com/pricing/) doesn't price Lyro per answer on its self-serve plans. Its Starter plan with Lyro is $390 billed annually for 50 AI and human conversations a month, and its page says the AI plans cost more than Human only for the same quota.
 
-Take a team with 200 chats a month where the bot resolves half. On Intercom, those 100 resolutions cost $99 a month before seats. If Fin also hands off the other 100 through a configured procedure, that's $198. At Zendesk's listed pay-as-you-go rate, it's up to $200, less what your plan includes. If your account has the dollar allowance, ask Zendesk for your rates. Either way the bill grows with your traffic, so a busy launch month raises it. Zendesk lets you pause the bot when the allowance runs out, which caps the bill but leaves visitors with no bot.
+Take a team with 200 chats a month where the bot resolves half. On Intercom, those 100 resolutions cost $99 a month before seats, and [Intercom pricing](/compare/intercom-pricing) has the seat prices. If Fin also hands off the other 100 through a configured procedure, that's $198. At Zendesk's listed pay-as-you-go rate, it's up to $200, less what your plan includes. If your account has the dollar allowance, ask Zendesk for your rates. Either way the bill grows with your traffic, so a busy launch month raises it. Zendesk lets you pause the bot when the allowance runs out, which caps the bill but leaves visitors with no bot.
 
 Read what counts before you compare rates. [Intercom](https://www.intercom.com/help/en/articles/8205718-fin-ai-agent-outcomes) counts a resolution when the customer doesn't ask for more help after Fin's last answer, and also bills the handoffs and sales outcomes above. Zendesk's [newer tiers](https://support.zendesk.com/hc/en-us/articles/9570369117338-About-automated-resolution-tiers) count only resolutions that pass an extra check by its own AI. Per-resolution pricing gives the vendor a reason to call a conversation resolved, so the definition matters as much as the price.
 
@@ -68,7 +68,7 @@ Read what counts before you compare rates. [Intercom](https://www.intercom.com/h
 
 There's a third option. The bot writes a draft, and someone on your team reads it, fixes it if needed, and sends it.
 
-![The bot writes a draft and a person reads, fixes and sends it, which works at 200 chats a month but not at 20,000.](/img/illustrations/chatbot-vs-live-chat-draft-then-send.png)
+![The bot writes a draft and a person reads, fixes and sends it, which works at 200 chats a month but not at 20,000.](/img/illustrations/chatbot-vs-live-chat-draft-then-send.webp)
 
 A draft saves time when checking it is faster than writing the answer yourself. For a question you've answered fifty times, it usually is. And the visitor only sees what someone on your team sends. Check any fact or promise in a draft before you hit send. If you have to look up every detail anyway, skip the draft, write the reply yourself and save it for next time.
 

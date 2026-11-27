@@ -32,7 +32,7 @@ Dinghy Cloud gives you 1 GB of files per workspace, images included, kept for 12
 
 ## Quick answers to the same questions
 
-Save your shipping times and return policy as saved replies. Type **/** in the reply box to insert one. Labels like `returns` or `sizing` sort the inbox, and Analytics counts them, next to your reply times and busiest hours. Business hours tell customers when you're back, and ask for their email when you're closed.
+Save your shipping times and return policy as saved replies. Type **/** in the reply box to insert one. If you'd rather not write them from scratch, start from these [canned responses](/templates/canned-responses), and use the [refund email templates](/templates/refund-email-template) when a refund needs a longer answer. Labels like `returns` or `sizing` sort the inbox, and Analytics counts them, next to your reply times and busiest hours. Business hours tell customers when you're back, and ask for their email when you're closed.
 
 ## Add it to your store
 
@@ -45,11 +45,11 @@ Add your store's address under Allowed sites in Settings > Install. Add your `my
 
 ## Busy season costs the same
 
-Dinghy Cloud doesn't count conversations or contacts. December with three times the chats costs the same $9 as a quiet February. The limits are 5 people and 1 GB of files. [What other tools cost](/compare/).
+Dinghy Cloud doesn't count conversations or contacts. December with three times the chats costs the same $9 as a quiet February. For the days you close, there are [holiday messages](/templates/holiday-messages) for the chat and your email. The limits are 5 people and 1 GB of files. [What other tools cost](/compare/).
 
 ## When Dinghy isn't the right fit
 
-- You want order lookups, product cards or cart details in the chat. Dinghy shows the pages a customer looked at, and facts your page sends with `Dinghy.setContext()`, like a cart total. Your store has to supply those details.
+- You want order lookups, product cards or cart details in the chat. Dinghy shows the pages a customer looked at, and facts your page sends with `Dinghy.setContext()`, like a cart total. Your store has to supply those details. If you want the orders inside the inbox, look at [Gorgias](/compare/gorgias), which pulls Shopify orders into each conversation.
 - You want a ready-made abandoned-cart integration. Dinghy can show a [proactive message](/blog/proactive-live-chat) on a store page, or send one when your backend reports an event. It doesn't read your cart on its own.
 - You want Instagram, WhatsApp or your support email in the same inbox. Dinghy is website chat, plus email replies to visitors who left.
 - You want a ready-made bot that answers "where's my order?" at 3 a.m. with no setup. Dinghy has no AI of its own. If you build or run your own bot, it can answer through MCP or the API, and by default its replies wait as drafts for you. See [Live chat for AI agents](/for/ai-agents).

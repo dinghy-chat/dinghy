@@ -52,7 +52,7 @@ Or skip the server and use Dinghy Cloud, $9 a month for up to 5 people. A worksp
 
 - Your questions are better answered in public. If the same question comes up a hundred times, GitHub Discussions or a forum leaves an answer the next person can find. A chat leaves it in one inbox.
 - Nobody on the project can watch the inbox. If nobody checks the inbox, use an issue tracker.
-- You want a hosted AI agent that reads your docs and answers with no setup. Dinghy has no AI of its own. You can connect your own bot through MCP or the API, and by default its replies wait as drafts for a person. See [Live chat for AI agents](/for/ai-agents).
+- You want a hosted AI agent that reads your docs and answers with no setup. Dinghy has no AI of its own. You can connect your own bot through MCP or the API, and by default its replies wait as drafts for a person. See [Live chat for AI agents](/for/ai-agents). [Chatbot vs live chat](/blog/chatbot-vs-live-chat) explains when a bot helps and what it costs per answer.
 - You want a community chat where users talk to each other. Dinghy is one visitor talking to your team.
 
 ## Get started

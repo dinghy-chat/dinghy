@@ -13,7 +13,7 @@ image: chat-transcripts
 
 A chat transcript is the written record of a live chat conversation. It holds every message from the visitor and your team, in order, with times. Most chat tools let you email it to the visitor, keep it in the inbox and export it.
 
-![A long scroll of chat bubbles unrolls from a ship's logbook, next to a quill and a ship in a bottle](/img/illustrations/chat-transcripts.png)
+![A long scroll of chat bubbles unrolls from a ship's logbook, next to a quill and a ship in a bottle](/img/illustrations/chat-transcripts.webp)
 
 The useful questions are when to send it, how long to keep it and how to get rid of it. Here's how we think about each, for a team of a few people.
 
@@ -33,7 +33,7 @@ Don't send it for a chat that ended with "thanks, that's all". And don't send a 
 
 Dinghy emails transcripts only to visitors who gave an email, and only if your install has a mail server. Dinghy Cloud has one. A self-hosted server needs `SMTP_URL`.
 
-![When a conversation closes, Dinghy waits 5 minutes and then emails the visitor both sides of the chat without internal notes, and reopening the conversation within those 5 minutes cancels the email.](/img/illustrations/live-chat-transcripts-close-and-send.png)
+![When a conversation closes, Dinghy waits 5 minutes and then emails the visitor both sides of the chat without internal notes, and reopening the conversation within those 5 minutes cancels the email.](/img/illustrations/live-chat-transcripts-close-and-send.webp)
 
 - When you close a conversation, Dinghy waits 5 minutes, then emails the visitor the chat so far, both sides. If nobody on the team replied, or the visitor unsubscribed from your emails, nothing goes out. The email has a link to continue the chat.
 - If you reopen the conversation within those 5 minutes, the email is cancelled.
@@ -59,7 +59,7 @@ Then actually delete. A retention policy that nobody runs is just a sentence in 
 
 Here's what Dinghy does today, from its docs:
 
-![Four bars compare how long Dinghy keeps data: message text until someone deletes it, images and files on Dinghy Cloud for 12 months, pages seen after a chat for 90 days at most, and site analytics totals for 182 days.](/img/illustrations/live-chat-transcripts-retention.png)
+![Four bars compare how long Dinghy keeps data: message text until someone deletes it, images and files on Dinghy Cloud for 12 months, pages seen after a chat for 90 days at most, and site analytics totals for 182 days.](/img/illustrations/live-chat-transcripts-retention.webp)
 
 | Data | How long |
 |---|---|
@@ -87,7 +87,7 @@ Before you pick any chat tool, check what its export holds. Some only export a c
 
 In Dinghy, owners and admins can delete:
 
-![On a self-hosted server with the built-in backup, a deleted chat stays in the newest 7 nightly backups and is gone from them about a week later, because each night drops the oldest copy.](/img/illustrations/live-chat-transcripts-backups.png)
+![On a self-hosted server with the built-in backup, a deleted chat stays in the newest 7 nightly backups and is gone from them about a week later, because each night drops the oldest copy.](/img/illustrations/live-chat-transcripts-backups.webp)
 
 - One conversation, with its images and files, from the conversation's **…** menu.
 - Several at once, from the Inbox, with **Delete** in the **More actions** menu.
