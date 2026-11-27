@@ -3,15 +3,17 @@ title: How to add a live chat widget to a Next.js app | Dinghy
 nav: Next.js
 description: Add the Dinghy live chat to a Next.js app with next/script in the root layout. And how to show which signed-in user is chatting.
 date: 2026-11-08
-updated: 2026-11-22
+updated: 2026-11-27
 order: 4
 card: next/script in the root layout
 logo: nextdotjs
 ---
 
-# Add live chat to Next.js
+# Add a live chat widget to Next.js
 
-In Next.js, the chat goes in your root layout with the built-in `Script` component. It loads once and stays across page changes.
+In Next.js, the chat goes in your root layout with the built-in `Script` component. It loads once and stays across page changes. Follow the steps for the App Router or Pages Router.
+
+If your app has accounts, you can also [identify signed-in visitors](#show-who-is-chatting). Your server signs their identity so the same conversation follows them across devices.
 
 ## Get your tag
 

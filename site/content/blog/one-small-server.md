@@ -3,7 +3,7 @@ title: 5,000 live chats on a 4 GB server: our load test | Dinghy
 nav: One small server, 5,000 chats
 description: We load-tested the full Dinghy install on one Hetzner CX23 with 2 vCPUs and 4 GB. It held 5,000 open chats with uploads in 539 MB. Here's what broke first.
 date: 2026-11-08
-updated: 2026-11-14
+updated: 2026-11-27
 order: 1
 card: 5,000 open chats on one small server, in 539 MB
 ---
@@ -42,4 +42,16 @@ The day before, we tested open connections alone, no background jobs and no phot
 
 No HTTPS on the server under test, and in real life encryption costs some CPU. The push service was a stand-in, not Apple's or Google's. Email was off, and photos stayed on the server's disk instead of S3. And it was all one workspace. Separate workspaces don't share that database row, so they should handle more messages in total. We haven't measured it.
 
-The [measurements page](/docs/measurements) has every number, plus the commands to run the test yourself. Getting different results? [Email us](mailto:hello@dinghy.chat), I'd like to know.
+## Run the benchmark yourself
+
+On a Linux machine with Docker and Compose, clone the release below. The runner starts an isolated Dinghy stack, generates chats and uploads, and removes the stack when it finishes.
+
+```sh
+git clone --branch v0.60.1 --depth 1 https://github.com/dinghy-chat/dinghy.git
+cd dinghy
+scripts/capacity-check.sh ghcr.io/dinghy-chat/dinghy:0.60.1 1000 20 60 1
+```
+
+The last four arguments specify open connections, messages per second, test seconds and uploads per second. The command prints a JSON record with peak memory, delivery times, failures and the alert backlog. We ran this version locally on Nov 27, 2026. It opened 1,000 connections, delivered all 1,195 messages and accepted all 59 uploads.
+
+For the original 5,000-connection workload, use `5000 20 60 1`. Run the load generator on a second machine to keep its resource use out of the server measurement. The [measurements page](/docs/measurements#2026-11-06-the-full-install-on-a-real-cx23) has the remote command, the original results and the test limits. Getting different results? [Email us](mailto:hello@dinghy.chat), I'd like to know.

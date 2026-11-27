@@ -397,6 +397,15 @@ main {
   white-space: nowrap;
 }
 
+.hero-paths {
+  margin: 12px 0 0;
+}
+
+.compare-links {
+  margin-top: 16px;
+  text-align: center;
+}
+
 .hero-agent {
   margin-top: 8px;
 }
@@ -481,33 +490,6 @@ main {
 .hero-agent-copy.is-done .hero-agent-tip {
   opacity: 1;
   transform: translate(-50%, 0);
-}
-
-/* A tool's logo set in the lede, before its name. */
-.hero-ai-item {
-  color: var(--navy);
-  font-weight: 600;
-  white-space: nowrap;
-}
-
-.hero-ai-item svg {
-  width: .9em;
-  height: .9em;
-  margin-right: .25em;
-  vertical-align: -.1em;
-}
-
-/* A competitor's logo set in the headline, sized to the text. */
-.hero-brand {
-  display: inline-flex;
-  align-items: center;
-  gap: .18em;
-}
-
-.hero-brand img {
-  width: .82em;
-  height: .82em;
-  border-radius: .2em;
 }
 
 .sky {

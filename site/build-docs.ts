@@ -473,7 +473,7 @@ function head(page: Page, heading: string, description: string): string {
   <meta property="og:image" content="${SITE}/og.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="A boat on the water, with the words: Live chat for your website 80% cheaper than Crisp. A table shows that screenshots in chat, analytics and connecting your AI cost $95 a month on Crisp, and $9 on Dinghy.">
+  <meta property="og:image:alt" content="Dinghy. Open-source live chat for your website. One shared inbox. Self-host or use Dinghy Cloud.">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="${escape(fullTitle)}">
   <meta name="twitter:description" content="${escape(description)}">

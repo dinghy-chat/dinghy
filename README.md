@@ -4,6 +4,8 @@
 
 A small open-source live support chat that you can run on one small server.
 
+[Dinghy website](https://dinghy.chat/) · [Product demo](https://dinghy.chat/#features)
+
 ![A visitor and an operator chat in Dinghy](docs/media/demo.gif)
 
 On a new Linux server:

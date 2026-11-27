@@ -4,6 +4,7 @@
 const HOST = "https://eu.i.posthog.com";
 
 window.posthog = Object.assign([], {
+  capture: (...args) => window.posthog.push(["capture", ...args]),
   people: [],
   _i: [
     [
@@ -22,3 +23,19 @@ script.src = `${HOST.replace(".i.posthog.com", "-assets.i.posthog.com")}/static/
 script.async = true;
 script.crossOrigin = "anonymous";
 document.head.append(script);
+
+document.addEventListener("click", (event) => {
+  const link = event.target instanceof Element && event.target.closest("a[href]");
+  if (!(link instanceof HTMLAnchorElement)) return;
+  const target = new URL(link.href);
+  if (target.origin === "https://app.dinghy.chat" && target.pathname === "/signup") {
+    window.posthog.capture("cloud signup clicked", { page_path: location.pathname });
+  }
+  if (
+    target.origin === location.origin &&
+    target.pathname === "/docs/self-hosting" &&
+    location.pathname !== target.pathname
+  ) {
+    window.posthog.capture("self-host guide clicked", { page_path: location.pathname });
+  }
+});
