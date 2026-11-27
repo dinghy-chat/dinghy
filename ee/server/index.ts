@@ -14,6 +14,7 @@ import type { Live, Signals } from "../../apps/server/src/live.ts";
 import type { Mailer } from "../../apps/server/src/mailer.ts";
 import type { RateLimit } from "../../apps/server/src/rate-limit.ts";
 import type { ObjectStore } from "../../apps/server/src/storage.ts";
+import { captureWidgetInstall } from "./analytics.ts";
 import {
   type BillingOptions,
   billingFromConfig,
@@ -159,10 +160,12 @@ export function createCloud(
   const welcome = settings?.welcome;
   const notify = createTelegram(settings?.telegram, logger);
   const maxOperators = settings?.limits?.maxOperators ?? MAX_OPERATORS;
+  const analytics = settings?.analytics;
+  const telegramNotice = notify && createCloudNotice({ db, logger, notify, maxOperators });
   return {
     billing: client !== undefined,
     signup,
-    analytics: settings?.analytics ?? null,
+    analytics: analytics ?? null,
     now: client?.now ?? (() => new Date()),
     limits,
     contact: CLOUD_CONTACT,
@@ -170,7 +173,16 @@ export function createCloud(
       welcome === undefined ? undefined : createCopyReply({ db, limits, live, logger, store }),
     copyChange: welcome === undefined ? undefined : createCopyChange({ db, live }),
     welcomeFace: welcome === undefined ? undefined : welcomeFace(welcome),
-    notice: notify && createCloudNotice({ db, logger, notify, maxOperators }),
+    notice:
+      analytics === undefined
+        ? telegramNotice
+        : (event) => {
+            telegramNotice?.(event);
+            if (event.kind !== "widget_installed") return;
+            void captureWidgetInstall(analytics, event.workspaceId).catch(() =>
+              logger.warn({ workspaceId: event.workspaceId }, "widget install analytics failed"),
+            );
+          },
     beforeDelete:
       client &&
       (async (workspaceId) => {

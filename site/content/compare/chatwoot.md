@@ -1,22 +1,24 @@
 ---
-title: Lighter Chatwoot alternative: Dinghy vs Chatwoot
+title: A lightweight self-hosted Chatwoot alternative | Dinghy
 nav: Dinghy vs Chatwoot
-description: Compare Dinghy and Chatwoot for self-hosted chat: server requirements, channels, campaigns, AI and the cost for a small team.
+description: Compare Dinghy and Chatwoot for self-hosted website chat. See what each runs, which channels it supports, and how to try Dinghy.
 date: 2026-11-08
-updated: 2026-11-22
+updated: 2026-11-27
 priceChecked: 2026-11-22
 order: 6
 card: Website chat, self-hosting and other support channels
 stat: $19/agent
 ---
 
-# Dinghy vs Chatwoot
+# A lightweight self-hosted Chatwoot alternative
 
-Chatwoot is an open-source Intercom alternative. Live chat, email, WhatsApp and more, plus a help center and AI. Dinghy is website chat and a team inbox, and it emails your reply to visitors who already left. No other channels.
+Dinghy gives a small team a website chat widget and a shared inbox. Use Chatwoot if your team needs email and WhatsApp in the same inbox, a help center, or a built-in AI assistant.
 
 ## Which one fits
 
-Use Chatwoot for multiple channels, a help center, automation rules or a built-in AI assistant. To self-host it, you'll run a Rails app with background workers. For website chat, Dinghy runs as one app with Postgres and Valkey on a small server.
+Dinghy runs as one application process with Postgres and Valkey. In our [load test](/blog/one-small-server), the full install peaked at 539 MB with 5,000 open connections on one 4 GB server. Chatwoot's server figures below come from its deployment docs.
+
+[Try the Dinghy chat](/#features) or [install it on a Linux server](/docs/self-hosting).
 
 ## Self-hosting
 
@@ -28,7 +30,7 @@ Use Chatwoot for multiple channels, a help center, automation rules or a built-i
 | License | AGPL 3.0, widget MIT, cloud billing in `ee/` under a source-available license | MIT, with an `enterprise/` folder under its own license |
 | Paid features when self-hosted | None | Some |
 
-Chatwoot publishes its [server requirements](https://www.chatwoot.com/docs/self-hosted/deployment/requirements/) and [license](https://github.com/chatwoot/chatwoot/blob/develop/LICENSE). The Dinghy number is from [our load test](/docs/measurements): one Hetzner CX23 ran the full install with 5,000 open chat connections in under 600 MB.
+Chatwoot publishes its [server requirements](https://www.chatwoot.com/docs/self-hosted/deployment/requirements/) and [license](https://github.com/chatwoot/chatwoot/blob/develop/LICENSE). See [Dinghy's measurements](/docs/measurements) for the workload, timings and test limits.
 
 ## Hosted plans
 
@@ -55,4 +57,10 @@ You get a shared inbox with saved replies, labels and [campaigns](/blog/proactiv
 
 ## Moving over
 
-Dinghy can’t import Chatwoot conversations. [Switch your site to Dinghy](/compare/#moving-over-from-another-chat).
+Keep access to your Chatwoot history. Dinghy starts with an empty inbox.
+
+1. Set up Dinghy on a test page. Add that page's origin in **Settings > Install**.
+2. Send a test message from the widget. Reply from the shared inbox and check the visitor receives it.
+3. Add your production site's origin. Replace the Chatwoot widget tag with the Dinghy tag when your team is ready to switch.
+
+Keep the previous widget tag handy so you can restore it if necessary. See [how to add the chat to your website](/docs/add-to-your-site).

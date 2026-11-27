@@ -3,7 +3,7 @@ title: Open-source live chat you can host yourself | Dinghy
 nav: Open-source live chat
 description: Dinghy is an open-source live chat for your website. Run it free on one small server with one script, or we host it for $9 a month.
 date: 2026-11-08
-updated: 2026-11-22
+updated: 2026-11-27
 order: 1
 card: Free on your server, or $9 on ours
 ---
@@ -11,6 +11,8 @@ card: Free on your server, or $9 on ours
 # Open-source live chat you can host yourself
 
 Dinghy is open-source live chat for your website. Run it on your own server for free, or pay us $9 a month to run it for you on Dinghy Cloud. Same code either way.
+
+Try the chat widget on the [Dinghy homepage](/#features). When you are ready, [install Dinghy on your server](/docs/self-hosting) or [create a Dinghy Cloud workspace](https://app.dinghy.chat/signup).
 
 ## The short version
 
@@ -63,6 +65,7 @@ You can still bring your own AI agent. It connects through the MCP server or the
 
 ## How it compares
 
+- [Compare open-source live chat tools](/compare/open-source), including their licenses and server requirements
 - [Dinghy vs Chatwoot](/compare/chatwoot), another self-hosted option
 - [Dinghy vs Intercom](/compare/intercom)
 - [Dinghy vs Crisp](/compare/crisp)

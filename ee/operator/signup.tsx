@@ -113,7 +113,7 @@ export function Onboarding({
       setError(failureText(failure, { 429: "tooManyRequests" }));
       return;
     }
-    trackEvent("workspace created", { early });
+    trackEvent("workspace created", { early, workspace_id: workspaceId });
     if (early) {
       navigate(`/?workspace=${workspaceId}`);
       return;

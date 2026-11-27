@@ -3,16 +3,16 @@ title: Crisp alternative with one flat price: Dinghy vs Crisp
 nav: Dinghy vs Crisp
 description: Crisp has a free plan and a $45 Mini plan. Dinghy is open source and free to self-host, and Dinghy Cloud is $9 a month for up to 5 people.
 date: 2026-11-08
-updated: 2026-11-24
+updated: 2026-11-27
 priceChecked: 2026-11-24
 order: 3
 card: Both priced per workspace. Crisp Mini is $45, Dinghy Cloud $9
 stat: Free, then $45
 ---
 
-# Dinghy vs Crisp
+# Dinghy vs Crisp for a small support team
 
-Crisp and Dinghy Cloud charge per workspace. Crisp has a free plan for two people. Dinghy costs $9 a month for up to five.
+Crisp Free can suit two people who need basic website chat. Dinghy suits teams that want screenshots in chat, one shared inbox, or the option to run chat on their own server.
 
 ## Which one fits
 
