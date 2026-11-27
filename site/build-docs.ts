@@ -308,6 +308,7 @@ const ALIASES: Record<string, [CodeLanguage, string]> = {
   php: ["html", "PHP"],
   python: ["text", "Python"],
   go: ["text", "Go"],
+  template: ["text", "Template"],
 };
 
 function codeBlock(text: string, fence: string, id: string): string {
@@ -317,7 +318,8 @@ function codeBlock(text: string, fence: string, id: string): string {
     (line) => lang !== "sh" || line.tokens.some((token) => token.text.trim()),
   );
   const body = lines.map((line) => lineHtml(line, lang));
-  const kind = lang === "sh" ? "" : " terminal-plain";
+  // A reply template wraps like prose instead of scrolling sideways.
+  const kind = lang === "sh" ? "" : fence === "template" ? " terminal-plain terminal-text" : " terminal-plain";
   return `<div class="terminal doc-code${kind}">
 <div class="terminal-bar"><span>${label ?? CODE_LABELS[lang]}</span><button class="copy" type="button" data-copy="${id}"><span data-copy-label>Copy</span></button></div>
 <pre class="terminal-code" id="${id}"><code>${body.join("\n")}</code></pre>
