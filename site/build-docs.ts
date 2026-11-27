@@ -23,6 +23,8 @@ const WIDGET =
 /** Analytics and session replay for Dinghy's PostHog project, on every page. The CSP in _headers allows it. */
 const ANALYTICS = '<script src="/js/analytics.js" async></script>';
 const PUBLIC = "site/public";
+/** Illustrations show with no frame. Each has a smaller copy in cards/ for the cards that link to its page. */
+const ILLUSTRATIONS = "/img/illustrations/";
 const CONTENT = "site/content";
 /** The folders this script owns. It empties them before it writes. */
 export const OWNED_DIRS = ["docs", "for", "compare", "tools", "templates", "guides", "blog", "changelog"].map((dir) => join(PUBLIC, dir));
@@ -48,6 +50,8 @@ interface Page {
   stat?: string | undefined;
   /** For content pages: a logo in site/public/img/logos, by file name without .svg. */
   logo?: string | undefined;
+  /** For content pages: an illustration in site/public/img/illustrations/cards, by file name without .png. */
+  image?: string | undefined;
   order: number;
 }
 
@@ -221,6 +225,7 @@ function contentPages(): Page[] {
         card: meta.card,
         stat: meta.stat,
         logo: meta.logo,
+        image: meta.image,
         order: Number(meta.order ?? 50),
       };
     })
@@ -373,7 +378,8 @@ function render(page: Page): Rendered {
         const isPublic = target.startsWith("/img/");
         if (!isPublic) images.push(target.slice(1));
         const [width, height] = pngSize(isPublic ? join(PUBLIC, target) : target.slice(1));
-        return `<img src="${escape(target)}" width="${width}" height="${height}" alt="${escape(text)}" loading="lazy">`;
+        const cls = target.startsWith(ILLUSTRATIONS) ? ' class="illustration"' : "";
+        return `<img${cls} src="${escape(target)}" width="${width}" height="${height}" alt="${escape(text)}" loading="lazy">`;
       },
       codespan({ text }) {
         // A short name never breaks across lines. A long value, such as a URL, may.
@@ -618,6 +624,9 @@ const CARD_ACTION: Record<string, string> = {
   "Why Dinghy": "Read more",
 };
 
+/** The size of every card illustration, which site/public/img/illustrations/cards holds at one size. */
+const CARD_IMAGE = [600, 400] as const;
+
 function cards(pages: Page[], from?: Page): string {
   const items = pages
     .map((page) => {
@@ -631,7 +640,10 @@ function cards(pages: Page[], from?: Page): string {
       const logo = page.logo
         ? `\n          <img class="card-logo" src="/img/logos/${page.logo}.svg" width="28" height="28" alt="">`
         : "";
-      const top = `${logo}${kicker ? `\n          <span class="card-kicker">${escape(kicker)}</span>` : ""}`;
+      const image = page.image
+        ? `\n          <span class="card-image"><img src="${ILLUSTRATIONS}cards/${page.image}.png" width="${CARD_IMAGE[0]}" height="${CARD_IMAGE[1]}" alt="" loading="lazy"></span>`
+        : "";
+      const top = `${image}${logo}${kicker ? `\n          <span class="card-kicker">${escape(kicker)}</span>` : ""}`;
       const stat = page.stat
         ? `<span class="card-stat"><span>${escape(page.stat)}</span>${/^(\$|Free)/.test(page.stat) ? '<span class="card-stat-us">Dinghy $9</span>' : ""}</span>`
         : "";

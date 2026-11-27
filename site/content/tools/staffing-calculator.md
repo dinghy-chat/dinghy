@@ -6,30 +6,40 @@ date: 2026-11-27
 updated: 2026-11-27
 order: 3
 card: How many people you need on shift to answer chats in time
+image: staffing-calculator
 ---
 
 # Erlang C calculator for live chat staffing
 
 Enter how many chats you get in your busiest hour, how long one takes and how fast you want someone to pick each one up. The calculator uses the Erlang C formula to find the fewest people on shift who hit that target, then adds shrinkage for breaks and time off.
 
-<div class="tool" data-tool="staffing">
-<div class="tool-fields">
-<label class="tool-field"><span class="tool-label">Chats per hour</span><span class="tool-hint">In your busiest hour</span><input type="number" name="perHour" value="20" min="0" step="any" inputmode="decimal"></label>
-<label class="tool-field"><span class="tool-label">Average handle time</span><span class="tool-hint">Minutes per chat, with wrap-up</span><input type="number" name="handleMinutes" value="10" min="0" step="any" inputmode="decimal"></label>
-<label class="tool-field"><span class="tool-label">Chats at once</span><span class="tool-hint">Per person. Use 1 for phone calls</span><input type="number" name="concurrency" value="2" min="1" step="1" inputmode="numeric"></label>
-<label class="tool-field"><span class="tool-label">Pick up within</span><span class="tool-hint">Seconds until an agent is free to take the chat</span><input type="number" name="targetSeconds" value="60" min="0" step="any" inputmode="decimal"></label>
-<label class="tool-field"><span class="tool-label">Service level target</span><span class="tool-hint">Percent of chats picked up in time</span><input type="number" name="targetPercent" value="80" min="0" max="100" step="any" inputmode="decimal"></label>
-<label class="tool-field"><span class="tool-label">Shrinkage</span><span class="tool-hint">Percent of paid time not on chat</span><input type="number" name="shrinkagePercent" value="30" min="0" max="100" step="any" inputmode="decimal"></label>
+<div class="tool">
+<div class="tool-pane" data-tool="staffing">
+<div class="tool-inputs">
+<p class="tool-kicker">Your busiest hour</p>
+<div class="tool-field"><label class="tool-label" for="staff-per-hour"><b>Chats per hour</b><span>New chats in that hour</span></label><div class="tool-input"><input id="staff-per-hour" type="number" name="perHour" value="20" min="0" step="any" inputmode="decimal"><span class="tool-unit">chats/h</span></div><input class="tool-range" type="range" min="1" max="120" step="1" data-for="perHour" tabindex="-1" aria-hidden="true"></div>
+<div class="tool-field"><label class="tool-label" for="staff-handle"><b>Average handle time</b><span>Per chat, with wrap-up</span></label><div class="tool-input"><input id="staff-handle" type="number" name="handleMinutes" value="10" min="0" step="any" inputmode="decimal"><span class="tool-unit">min</span></div><input class="tool-range" type="range" min="1" max="45" step="1" data-for="handleMinutes" tabindex="-1" aria-hidden="true"></div>
+<div class="tool-field"><label class="tool-label" for="staff-concurrency"><b>Chats at once</b><span>Per person. Use 1 for phone calls</span></label><div class="tool-input" data-stepper><input id="staff-concurrency" type="number" name="concurrency" value="2" min="1" step="1" inputmode="numeric"></div></div>
+<p class="tool-kicker">Your target</p>
+<div class="tool-field is-row"><label class="tool-label" for="staff-seconds"><b>Pick up within</b><span>Until an agent is free</span></label><div class="tool-input"><input id="staff-seconds" type="number" name="targetSeconds" value="60" min="0" step="any" inputmode="decimal"><span class="tool-unit">s</span></div></div>
+<div class="tool-field is-row"><label class="tool-label" for="staff-percent"><b>Service level</b><span>Chats picked up in time</span></label><div class="tool-input"><input id="staff-percent" type="number" name="targetPercent" value="80" min="0" max="100" step="any" inputmode="decimal"><span class="tool-unit">%</span></div></div>
+<div class="tool-field is-row"><label class="tool-label" for="staff-shrinkage"><b>Shrinkage</b><span>Paid time not on chat</span></label><div class="tool-input"><input id="staff-shrinkage" type="number" name="shrinkagePercent" value="30" min="0" max="100" step="any" inputmode="decimal"><span class="tool-unit">%</span></div></div>
 </div>
-<div class="tool-result" aria-live="polite">
-<p class="tool-answer"><span class="tool-answer-label">People on shift</span><span class="tool-answer-value" data-out="agents">3</span></p>
-<dl class="tool-stats">
-<div><dt>To schedule, with shrinkage</dt><dd data-out="scheduled">5</dd></div>
-<div><dt>Chats picked up in time</dt><dd data-out="serviceLevel">88.6%</dd></div>
+<div class="tool-result">
+<div class="tool-live" aria-live="polite">
+<p class="tool-kicker">People on shift</p>
+<p class="tool-big" data-out="agents">3</p>
+<p class="tool-verdict" data-verdict data-tone="info">Schedule 5 people so 3 are on chat after breaks and time off.</p>
+<p class="tool-error" data-error hidden>Enter chats and a handle time above zero, at least 1 chat at once, a target between 0% and 100%, and shrinkage under 100%.</p>
+</div>
+<div class="tool-visual" data-visual></div>
+<dl class="tool-stats is-three">
 <div><dt>Average wait</dt><dd data-out="wait">33 s</dd></div>
 <div><dt>Occupancy</dt><dd data-out="occupancy">56%</dd></div>
+<div><dt>Erlangs</dt><dd data-out="traffic">3.33</dd></div>
 </dl>
-<p class="tool-error" data-error hidden>Enter chats and a handle time above zero, at least 1 chat at once, a target between 0% and 100%, and shrinkage under 100%.</p>
+<div class="tool-actions"><button type="button" class="tool-button" data-share="result">Copy result</button><button type="button" class="tool-button is-quiet" data-share="link">Copy link</button><span class="visually-hidden" role="status" data-status></span></div>
+</div>
 </div>
 </div>
 

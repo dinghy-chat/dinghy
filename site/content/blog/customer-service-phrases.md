@@ -6,6 +6,7 @@ date: 2026-11-27
 updated: 2026-11-27
 order: 50
 card: What to say in chat, what to drop, and rewrites
+image: customer-service-phrases
 ---
 
 # Customer service phrases for live chat
@@ -19,6 +20,8 @@ Small teams have an advantage here. The visitor knows they might be talking to t
 ## The rules behind the phrases
 
 Most good chat phrases follow four habits:
+
+![Four panels show the habits behind good chat replies: put the answer first, say what happens next with a time, use the visitor's words, and keep one idea per message.](/img/illustrations/customer-service-phrases-four-habits.png)
 
 - Answer first, then explain. The visitor asked a question. The first line is the answer.
 - Say what happens next, with a time. "I'll check" means nothing. "I'll check and reply here by 3 p.m." is a promise they can hold you to.
@@ -44,6 +47,8 @@ If you need a minute, say so:
 ## Asking for details
 
 Ask for everything you need in one message. Three rounds of "can you tell me X?" feels like an interrogation.
+
+![Before, three separate questions arrive one after another while the visitor waits; after, one message asks for the email, the order number and the browser together.](/img/illustrations/customer-service-phrases-ask-once.png)
 
 **Before**
 > Can you please provide your email address?
@@ -98,6 +103,8 @@ Then keep the promise. If tomorrow noon comes and you still don't know, write an
 ## Handing off to a teammate
 
 Tell the visitor who's taking over and why. Don't make them repeat the story.
+
+![Before, the visitor is sent to a vague department and has to repeat the story; after, Sam passes everything the visitor said to Lea, who replies in the same chat.](/img/illustrations/customer-service-phrases-handoff.png)
 
 **Before**
 > I will transfer you to the appropriate department.

@@ -7,6 +7,7 @@ updated: 2026-11-27
 order: 3
 card: Approve, partial, deny or delay, each with a subject line
 stat: 12 templates
+image: refund-email
 ---
 
 # Refund email templates

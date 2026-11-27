@@ -6,6 +6,7 @@ date: 2026-11-09
 updated: 2026-11-22
 order: 4
 card: What a new hire, more chats and a badge do to the bill
+image: live-chat-cost-small-team
 ---
 
 # What a 3-person team pays for live chat in 2026
@@ -24,6 +25,8 @@ Say you’re three people with one website and about 80 chats a month. Then you 
 | Chatwoot Startups | $57 |
 | LiveChat Essential | $57 to $75 |
 | Intercom Essential | $57 to $87 |
+
+![A year of a three-person team on a timeline: a fourth hire in month four, about 300 chats in month six, removing the badge in month nine and the AI pitch in month twelve.](/img/illustrations/live-chat-cost-small-team-year-timeline.png)
 
 tawk.to is free for all three people in this example. The free plans from Crisp and Chatwoot cover two.
 
@@ -58,6 +61,8 @@ Our team says no to all of it, so the totals below leave AI out. Dinghy has no A
 ## A year later
 
 Four people, one busy month behind them, and no badge where they could pay to remove it:
+
+![Over the year, per-seat plans step up when the fourth person joins in month four, a free plan steps up in month nine to remove the badge, and a flat plan stays level.](/img/illustrations/live-chat-cost-small-team-price-lines.png)
 
 | Product | Month one | Month twelve |
 |---|---|---|

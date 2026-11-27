@@ -7,6 +7,7 @@ updated: 2026-11-27
 order: 2
 card: Complaints, apologies, escalations and follow-ups, for chat and email
 stat: 27 templates
+image: response-templates
 ---
 
 # Customer service response templates

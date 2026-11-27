@@ -7,6 +7,7 @@ updated: 2026-11-27
 order: 4
 card: Holiday hours, away messages and greetings that aren't cringe
 stat: 22 templates
+image: holiday-messages
 ---
 
 # Holiday messages for customers

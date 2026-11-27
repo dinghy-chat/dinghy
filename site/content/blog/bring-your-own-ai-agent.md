@@ -6,6 +6,7 @@ date: 2026-11-08
 updated: 2026-11-22
 order: 2
 card: Your agent drafts, your team sends, the price stays flat
+image: bring-your-own-ai-agent
 ---
 
 # Bring your own AI agent to your live chat
@@ -18,6 +19,8 @@ Dinghy Cloud is $9 a month per workspace for up to five people. We don't charge 
 
 Dinghy has an MCP server at `/v1/mcp` and an HTTP API. Claude Code, Cursor and other clients that support remote MCP can connect with OAuth. You approve it on Dinghy's consent page, pick a workspace and an access level, and it never sees your password. A bot on a server uses an API key instead.
 
+![A laptop agent connects through MCP after a consent page, a server bot connects with an API key, and both reach the conversations, saved replies and internal notes in a Dinghy workspace.](/img/illustrations/bring-your-own-ai-agent-connect.png)
+
 With that, an agent can:
 
 - Read conversations, the visitor's details and the pages they saw.
@@ -28,6 +31,8 @@ With that, an agent can:
 ## Drafts first
 
 A new key or connection starts in **Drafts only**. The agent's reply waits under the conversation as a suggestion, marked with the bot's name. The visitor sees nothing yet. A person clicks **Send**, **Edit** or **Discard**.
+
+![A bot's draft waits under the conversation, out of the visitor's sight, until a person chooses to send, edit or discard it, and only an owner or admin can switch the bot to send directly.](/img/illustrations/bring-your-own-ai-agent-drafts-first.png)
 
 You can also ask a bot to try again. Select **Ask to change** and tell it what to fix, such as “shorter” or “in Spanish.” A bot that supports revisions replaces its own draft for you to review. Enable it for the bot’s API key in **Settings > API & webhooks**. See [Ask to change](/docs/agents#ask-to-change).
 

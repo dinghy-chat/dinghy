@@ -6,6 +6,7 @@ date: 2026-11-09
 updated: 2026-11-22
 order: 6
 card: One install script, a domain and a small server
+image: self-host-live-chat
 ---
 
 # Self-host a live chat on one small server
@@ -31,6 +32,8 @@ Ports 80 and 443 have to be open, in your host's firewall too if it has one. Het
 ## The install
 
 The [self-hosting guide](/docs/self-hosting) has the clone command for the latest release. Clone the repo, step into it and run:
+
+![One install script installs Docker, checks the domain and ports, starts the chat with an HTTPS certificate, and prints a backup key, a website tag and a sign-in link that expires after 15 minutes.](/img/illustrations/self-host-live-chat-install.png)
 
 ```sh
 sudo ./install.sh
@@ -65,6 +68,8 @@ docker compose up -d --wait
 ## Backups that would survive a dead disk
 
 The nightly backup keeps the last 7, on the same disk as everything else. That covers a bad upgrade. It doesn't cover a dead disk. Fill in the `BACKUP_S3_*` settings in `.env` and each backup also goes, encrypted, to a bucket somewhere else.
+
+![Two panels compare the last 7 nightly backups kept on the server's own disk, all lost when that disk dies, with encrypted copies also sent to a bucket somewhere else.](/img/illustrations/self-host-live-chat-offsite-backup.png)
 
 Keep a copy of `.env` and the backup key off the server too. Use the backup and `.env` to restore the server. If you use S3 for chat uploads, keep a separate backup of that bucket.
 

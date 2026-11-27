@@ -7,6 +7,7 @@ updated: 2026-11-27
 order: 1
 card: Ready-to-use replies for chat and email, grouped by situation
 stat: 60 examples
+image: canned-responses
 ---
 
 # Canned responses that don't sound canned

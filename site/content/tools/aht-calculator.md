@@ -6,24 +6,37 @@ date: 2026-11-27
 updated: 2026-11-27
 order: 5
 card: Chat time plus wrap-up time, divided by conversations
+image: aht-calculator
 ---
 
 # AHT calculator
 
 Average handle time, or AHT, is how long a conversation keeps someone on your team busy, from the moment they pick it up to the last note after it. Add up the chat time and the wrap-up time, then divide by the number of conversations.
 
-<div class="tool" data-tool="aht">
-<div class="tool-fields">
-<label class="tool-field"><span class="tool-label">Chat or call time</span><span class="tool-hint">Total minutes. For calls, include hold time</span><input type="number" name="chat" value="1200" min="0" step="any" inputmode="decimal"></label>
-<label class="tool-field"><span class="tool-label">Wrap-up time</span><span class="tool-hint">Notes and follow-up, total, in minutes</span><input type="number" name="wrapUp" value="300" min="0" step="any" inputmode="decimal"></label>
-<label class="tool-field"><span class="tool-label">Conversations</span><span class="tool-hint">Handled in the same period</span><input type="number" name="conversations" value="150" min="1" step="1" inputmode="numeric"></label>
+<div class="tool">
+<div class="tool-pane" data-tool="aht">
+<div class="tool-inputs">
+<p class="tool-kicker">Your totals for one period</p>
+<div class="tool-field"><label class="tool-label" for="aht-chat" data-swatch="chat"><b>Chat or call time</b><span>Total. For calls, include hold time</span></label><div class="tool-input"><input id="aht-chat" type="number" name="chat" value="1200" min="0" step="any" inputmode="decimal"><span class="tool-unit">min</span></div></div>
+<div class="tool-field"><label class="tool-label" for="aht-wrap" data-swatch="wrap"><b>Wrap-up time</b><span>Notes and follow-up, total</span></label><div class="tool-input"><input id="aht-wrap" type="number" name="wrapUp" value="300" min="0" step="any" inputmode="decimal"><span class="tool-unit">min</span></div></div>
+<div class="tool-field"><label class="tool-label" for="aht-conversations"><b>Conversations</b><span>Handled in the same period</span></label><div class="tool-input" data-stepper><input id="aht-conversations" type="number" name="conversations" value="150" min="1" step="1" inputmode="numeric"></div></div>
+<p class="tool-formula"><span class="tool-kicker">The math</span><span class="tool-sum">(<span data-out="chat">1,200</span> + <span data-out="wrapUp">300</span> min) ÷ <span data-out="conversations">150</span> = <b data-out="ahtText">10 min</b></span></p>
 </div>
-<div class="tool-result" aria-live="polite">
-<p class="tool-answer"><span class="tool-answer-label">Average handle time</span><span class="tool-answer-value" data-out="aht">10 min</span></p>
-<dl class="tool-stats">
-<div><dt>In minutes</dt><dd data-out="minutes">10</dd></div>
-</dl>
+<div class="tool-result">
+<div class="tool-live" aria-live="polite">
+<p class="tool-kicker">Average handle time</p>
+<p class="tool-big" data-out="aht">10<small>min</small></p>
+<p class="tool-verdict" data-verdict data-tone="info">Your chats are shorter than the 8 min 25 s average in LiveChat's report.</p>
 <p class="tool-error" data-error hidden>Enter at least one conversation, with no negative times.</p>
+</div>
+<div class="tool-visual" data-visual></div>
+<dl class="tool-stats is-three">
+<div><dt data-swatch="chat">Chat</dt><dd data-out="chatEach">8 min</dd></div>
+<div><dt data-swatch="wrap">Wrap-up</dt><dd data-out="wrapEach">2 min</dd></div>
+<div><dt>Per hour, one by one</dt><dd data-out="perHour">6</dd></div>
+</dl>
+<div class="tool-actions"><button type="button" class="tool-button" data-share="result">Copy result</button><button type="button" class="tool-button is-quiet" data-share="link">Copy link</button><a class="tool-button is-quiet" data-link href="/tools/staffing-calculator">Plan staff with this AHT</a><span class="visually-hidden" role="status" data-status></span></div>
+</div>
 </div>
 </div>
 

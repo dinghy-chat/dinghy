@@ -6,20 +6,35 @@ date: 2026-11-27
 updated: 2026-11-27
 order: 2
 card: Satisfied responses over total responses, as a percent
+image: csat-calculator
 ---
 
 # CSAT calculator
 
 Your CSAT score is the share of people who said they were satisfied. On a 1 to 5 scale, that's everyone who picked 4 or 5, as [Qualtrics explains](https://www.qualtrics.com/experience-management/customer/what-is-csat/). Enter your counts and the score updates as you type.
 
-<div class="tool" data-tool="csat">
-<div class="tool-fields">
-<label class="tool-field"><span class="tool-label">Satisfied responses</span><span class="tool-hint">Rated 4 or 5 out of 5</span><input type="number" name="satisfied" value="170" min="0" step="1" inputmode="numeric"></label>
-<label class="tool-field"><span class="tool-label">Total responses</span><span class="tool-hint">Every rating you got</span><input type="number" name="total" value="200" min="1" step="1" inputmode="numeric"></label>
+<div class="tool">
+<div class="tool-pane" data-tool="csat">
+<div class="tool-inputs">
+<p class="tool-kicker">Your ratings</p>
+<div class="tool-field"><label class="tool-label" for="csat-satisfied"><b>Satisfied responses</b><span>Rated 4 or 5 out of 5</span></label><div class="tool-input" data-stepper><input id="csat-satisfied" type="number" name="satisfied" value="170" min="0" step="1" inputmode="numeric"></div></div>
+<div class="tool-field"><label class="tool-label" for="csat-total"><b>Total responses</b><span>Every rating you got</span></label><div class="tool-input" data-stepper><input id="csat-total" type="number" name="total" value="200" min="1" step="1" inputmode="numeric"></div></div>
+<p class="tool-formula"><span class="tool-kicker">The math</span><span class="tool-sum"><span data-out="satisfied">170</span> ÷ <span data-out="total">200</span> × 100 = <b data-out="score">85%</b></span></p>
 </div>
-<div class="tool-result" aria-live="polite">
-<p class="tool-answer"><span class="tool-answer-label">Your CSAT</span><span class="tool-answer-value" data-out="score">85%</span></p>
+<div class="tool-result">
+<div class="tool-live" aria-live="polite">
+<p class="tool-kicker">Your CSAT</p>
+<p class="tool-big" data-out="score">85%</p>
+<p class="tool-verdict" data-verdict data-tone="good">Above the 79.9% live chat average in Comm100's report.</p>
 <p class="tool-error" data-error hidden>Enter at least one response, and no more satisfied responses than total responses.</p>
+</div>
+<div class="tool-visual" data-visual></div>
+<dl class="tool-stats">
+<div><dt>Not satisfied</dt><dd data-out="unhappy">30</dd></div>
+<div><dt>One rating moves it</dt><dd data-out="swing">0.5 points</dd></div>
+</dl>
+<div class="tool-actions"><button type="button" class="tool-button" data-share="result">Copy result</button><button type="button" class="tool-button is-quiet" data-share="link">Copy link</button><span class="visually-hidden" role="status" data-status></span></div>
+</div>
 </div>
 </div>
 

@@ -6,27 +6,38 @@ date: 2026-11-27
 updated: 2026-11-27
 order: 1
 card: Promoters, passives and detractors in, a score from -100 to 100 out
+image: nps-calculator
 ---
 
 # NPS calculator
 
 Type how many people answered 9 or 10, 7 or 8, and 0 to 6 to "How likely are you to recommend us to a friend?". Your Net Promoter Score updates as you type.
 
-<div class="tool" data-tool="nps">
-<div class="tool-fields">
-<label class="tool-field"><span class="tool-label">Promoters</span><span class="tool-hint">Answered 9 or 10</span><input type="number" name="promoters" value="60" min="0" step="1" inputmode="numeric"></label>
-<label class="tool-field"><span class="tool-label">Passives</span><span class="tool-hint">Answered 7 or 8</span><input type="number" name="passives" value="25" min="0" step="1" inputmode="numeric"></label>
-<label class="tool-field"><span class="tool-label">Detractors</span><span class="tool-hint">Answered 0 to 6</span><input type="number" name="detractors" value="15" min="0" step="1" inputmode="numeric"></label>
+<div class="tool">
+<div class="tool-pane" data-tool="nps">
+<div class="tool-inputs">
+<p class="tool-kicker">Your survey answers</p>
+<div class="tool-field"><label class="tool-label" for="nps-promoters" data-swatch="good"><b>Promoters</b><span>Answered 9 or 10</span></label><div class="tool-input" data-stepper><input id="nps-promoters" type="number" name="promoters" value="60" min="0" step="1" inputmode="numeric"></div></div>
+<div class="tool-field"><label class="tool-label" for="nps-passives" data-swatch="fair"><b>Passives</b><span>Answered 7 or 8</span></label><div class="tool-input" data-stepper><input id="nps-passives" type="number" name="passives" value="25" min="0" step="1" inputmode="numeric"></div></div>
+<div class="tool-field"><label class="tool-label" for="nps-detractors" data-swatch="poor"><b>Detractors</b><span>Answered 0 to 6</span></label><div class="tool-input" data-stepper><input id="nps-detractors" type="number" name="detractors" value="15" min="0" step="1" inputmode="numeric"></div></div>
+<p class="tool-formula"><span class="tool-kicker">The math</span><span class="tool-sum"><span data-out="promoters">60%</span> promoters − <span data-out="detractors">15%</span> detractors = <b data-out="score">+45</b></span></p>
 </div>
-<div class="tool-result" aria-live="polite">
-<p class="tool-answer"><span class="tool-answer-label">Your NPS</span><span class="tool-answer-value" data-out="score">+45</span></p>
-<dl class="tool-stats">
-<div><dt>Promoters</dt><dd data-out="promoters">60%</dd></div>
-<div><dt>Passives</dt><dd data-out="passives">25%</dd></div>
-<div><dt>Detractors</dt><dd data-out="detractors">15%</dd></div>
-<div><dt>Responses</dt><dd data-out="total">100</dd></div>
-</dl>
+<div class="tool-result">
+<div class="tool-live" aria-live="polite">
+<p class="tool-kicker">Your NPS</p>
+<p class="tool-big" data-out="score">+45</p>
+<p class="tool-verdict" data-verdict data-tone="good">Above the B2B SaaS average of 41.</p>
 <p class="tool-error" data-error hidden>Enter at least one response, with no negative counts.</p>
+</div>
+<div class="tool-visual" data-visual></div>
+<dl class="tool-stats is-three">
+<div><dt data-swatch="good">Promoters</dt><dd data-out="promoters">60%</dd></div>
+<div><dt data-swatch="fair">Passives</dt><dd data-out="passives">25%</dd></div>
+<div><dt data-swatch="poor">Detractors</dt><dd data-out="detractors">15%</dd></div>
+</dl>
+<p class="tool-note"><span data-out="total">100</span> responses. One detractor who turns promoter adds <span data-out="swing">2 points</span>. The marks show Retently's 2026 averages: 41 for B2B SaaS and 61 for ecommerce.</p>
+<div class="tool-actions"><button type="button" class="tool-button" data-share="result">Copy result</button><button type="button" class="tool-button is-quiet" data-share="link">Copy link</button><span class="visually-hidden" role="status" data-status></span></div>
+</div>
 </div>
 </div>
 

@@ -7,6 +7,7 @@ updated: 2026-11-27
 priceChecked: 2026-11-27
 order: 50
 card: When a bot helps, when it annoys, and what each answer costs
+image: chatbot-vs-live-chat
 ---
 
 # Chatbot vs live chat for a small team
@@ -20,6 +21,8 @@ So the question isn't really bot or chat. It's how much of the answering you han
 ## Where a bot helps
 
 A bot is good at questions that have one right answer, written down somewhere, that people ask over and over:
+
+![Routine questions that have one written answer go to the bot, and questions about an account or a bill, angry visitors and people about to buy go to a person.](/img/illustrations/chatbot-vs-live-chat-who-answers.png)
 
 - "Do you ship to Canada?"
 - "How do I reset my password?"
@@ -46,6 +49,8 @@ For a small company, the last one matters most. Your visitors chat with you beca
 
 What you pay depends on what the vendor counts. Some charge per outcome or resolution, and others include a pool of AI credits in the plan. Here's what four of them list today.
 
+![With 200 chats a month and a bot that resolves half, $0.99 per outcome comes to $99 before seats, and to $198 if the 100 handoffs are billed too.](/img/illustrations/chatbot-vs-live-chat-per-outcome-bill.png)
+
 | Vendor | What you pay for AI | Unit |
 |---|---|---|
 | [Intercom Fin](https://www.intercom.com/pricing) | $0.99 per outcome, plus seats | At most one charge per conversation. A [configured handoff](https://www.intercom.com/help/en/articles/8205718-fin-ai-agent-outcomes) to a person also counts, and a booked sales call or trial costs $9.99 |
@@ -62,6 +67,8 @@ Read what counts before you compare rates. [Intercom](https://www.intercom.com/h
 ## Let the bot draft and a person send
 
 There's a third option. The bot writes a draft, and someone on your team reads it, fixes it if needed, and sends it.
+
+![The bot writes a draft and a person reads, fixes and sends it, which works at 200 chats a month but not at 20,000.](/img/illustrations/chatbot-vs-live-chat-draft-then-send.png)
 
 A draft saves time when checking it is faster than writing the answer yourself. For a question you've answered fifty times, it usually is. And the visitor only sees what someone on your team sends. Check any fact or promise in a draft before you hit send. If you have to look up every detail anyway, skip the draft, write the reply yourself and save it for next time.
 

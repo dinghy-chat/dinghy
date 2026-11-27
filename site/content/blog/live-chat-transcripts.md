@@ -6,6 +6,7 @@ date: 2026-11-27
 updated: 2026-11-27
 order: 50
 card: Send them, keep them as long as you need, delete the rest
+image: chat-transcripts
 ---
 
 # Chat transcripts
@@ -32,6 +33,8 @@ Don't send it for a chat that ended with "thanks, that's all". And don't send a 
 
 Dinghy emails transcripts only to visitors who gave an email, and only if your install has a mail server. Dinghy Cloud has one. A self-hosted server needs `SMTP_URL`.
 
+![When a conversation closes, Dinghy waits 5 minutes and then emails the visitor both sides of the chat without internal notes, and reopening the conversation within those 5 minutes cancels the email.](/img/illustrations/live-chat-transcripts-close-and-send.png)
+
 - When you close a conversation, Dinghy waits 5 minutes, then emails the visitor the chat so far, both sides. If nobody on the team replied, or the visitor unsubscribed from your emails, nothing goes out. The email has a link to continue the chat.
 - If you reopen the conversation within those 5 minutes, the email is cancelled.
 - After the first transcript, each one holds only the messages since the last transcript the visitor got, so they don't get the whole chat twice.
@@ -55,6 +58,8 @@ Then actually delete. A retention policy that nobody runs is just a sentence in 
 ## What Dinghy keeps, and for how long
 
 Here's what Dinghy does today, from its docs:
+
+![Four bars compare how long Dinghy keeps data: message text until someone deletes it, images and files on Dinghy Cloud for 12 months, pages seen after a chat for 90 days at most, and site analytics totals for 182 days.](/img/illustrations/live-chat-transcripts-retention.png)
 
 | Data | How long |
 |---|---|
@@ -81,6 +86,8 @@ Before you pick any chat tool, check what its export holds. Some only export a c
 ## Delete transcripts
 
 In Dinghy, owners and admins can delete:
+
+![On a self-hosted server with the built-in backup, a deleted chat stays in the newest 7 nightly backups and is gone from them about a week later, because each night drops the oldest copy.](/img/illustrations/live-chat-transcripts-backups.png)
 
 - One conversation, with its images and files, from the conversation's **…** menu.
 - Several at once, from the Inbox, with **Delete** in the **More actions** menu.

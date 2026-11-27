@@ -6,39 +6,50 @@ date: 2026-11-27
 updated: 2026-11-27
 order: 4
 card: 99.9% is about 43 minutes a month. Turn any SLA into downtime and back
+image: uptime-calculator
 ---
 
 # Uptime and SLA calculator
 
-99.9% uptime allows about 1 minute 26 seconds of downtime a day, 43 minutes 50 seconds a month and 8 hours 46 minutes a year. Type any uptime percent below to see its downtime, or enter an outage to see the percent it leaves you with.
+99.9% uptime allows about 1 minute 26 seconds of downtime a day, 43 minutes 50 seconds a month and 8 hours 46 minutes a year. Type any uptime percent below to see its downtime, or switch to downtime and enter an outage to see the percent it leaves you with.
 
-<div class="tool" data-tool="uptime">
-<p class="tool-title">Uptime to allowed downtime</p>
-<div class="tool-fields">
-<label class="tool-field"><span class="tool-label">Uptime</span><span class="tool-hint">Percent, such as 99.9 or 99.95</span><input type="number" name="uptime" value="99.9" min="0" max="100" step="any" inputmode="decimal"></label>
+<div class="tool">
+<div class="tool-switch">
+<fieldset class="tool-modes"><legend class="visually-hidden">What to work out</legend><div class="tool-segments"><label><input type="radio" name="mode" value="uptime" checked>Find downtime</label><label><input type="radio" name="mode" value="downtime">Find uptime</label></div></fieldset>
+<div class="tool-pane" data-tool="uptime">
+<div class="tool-inputs">
+<div class="tool-field"><label class="tool-label" for="uptime-percent"><b>Uptime</b><span>Such as 99.9 or 99.95</span></label><div class="tool-input"><input id="uptime-percent" type="number" name="uptime" value="99.9" min="0" max="100" step="any" inputmode="decimal"><span class="tool-unit">%</span></div></div>
+<div class="tool-chips" role="group" aria-label="Common SLAs"><button type="button" class="tool-chip" data-preset="uptime" value="99">99%</button><button type="button" class="tool-chip" data-preset="uptime" value="99.5">99.5%</button><button type="button" class="tool-chip" data-preset="uptime" value="99.9">99.9%</button><button type="button" class="tool-chip" data-preset="uptime" value="99.95">99.95%</button><button type="button" class="tool-chip" data-preset="uptime" value="99.99">99.99%</button><button type="button" class="tool-chip" data-preset="uptime" value="99.999">99.999%</button></div>
+<p class="tool-formula"><span class="tool-kicker">The math</span><span class="tool-sum"><span data-out="downShare">0.1%</span> of a 30.44 day month = <b data-out="monthText">43 min 50 s</b></span></p>
 </div>
-<div class="tool-result" aria-live="polite">
-<dl class="tool-stats">
-<div><dt>Per day</dt><dd data-out="day">1 min 26 s</dd></div>
-<div><dt>Per week</dt><dd data-out="week">10 min 5 s</dd></div>
-<div><dt>Per month</dt><dd data-out="month">43 min 50 s</dd></div>
-<div><dt>Per year</dt><dd data-out="year">8 h 45 min 58 s</dd></div>
-</dl>
+<div class="tool-result">
+<div class="tool-live" aria-live="polite">
+<p class="tool-kicker">Allowed downtime a month</p>
+<p class="tool-big" data-out="month">43<small>min</small>50<small>s</small></p>
+<p class="tool-verdict" data-verdict data-tone="info">What Google promise for one Compute Engine instance.</p>
 <p class="tool-error" data-error hidden>Enter a percent from 0 to 100.</p>
 </div>
+<div class="tool-visual" data-visual></div>
+<div class="tool-actions"><button type="button" class="tool-button" data-share="result">Copy result</button><button type="button" class="tool-button is-quiet" data-share="link">Copy link</button><span class="visually-hidden" role="status" data-status></span></div>
 </div>
-
-<div class="tool" data-tool="downtime">
-<p class="tool-title">Downtime to uptime percent</p>
-<div class="tool-fields">
-<label class="tool-field"><span class="tool-label">Hours down</span><span class="tool-hint">Whole or part hours</span><input type="number" name="hours" value="0" min="0" step="any" inputmode="decimal"></label>
-<label class="tool-field"><span class="tool-label">Minutes down</span><span class="tool-hint">Added to the hours</span><input type="number" name="minutes" value="45" min="0" step="any" inputmode="decimal"></label>
-<label class="tool-field"><span class="tool-label">Seconds down</span><span class="tool-hint">Added to the minutes</span><input type="number" name="seconds" value="0" min="0" step="any" inputmode="decimal"></label>
-<label class="tool-field"><span class="tool-label">Period</span><span class="tool-hint">Month and year are averages</span><select name="period"><option value="day">Day</option><option value="week">Week</option><option value="month" selected>Month</option><option value="year">Year</option></select></label>
 </div>
-<div class="tool-result" aria-live="polite">
-<p class="tool-answer"><span class="tool-answer-label">Uptime</span><span class="tool-answer-value" data-out="uptime">99.8973%</span></p>
+<div class="tool-pane" data-tool="downtime" hidden>
+<div class="tool-inputs">
+<div class="tool-field" role="group" aria-labelledby="down-label"><p class="tool-label" id="down-label"><b>Downtime</b><span>Hours, minutes and seconds add up</span></p><div class="tool-trio"><div class="tool-input"><input id="down-hours" type="number" name="hours" value="0" min="0" step="any" inputmode="decimal" aria-label="Hours down"><span class="tool-unit">h</span></div><div class="tool-input"><input id="down-minutes" type="number" name="minutes" value="45" min="0" step="any" inputmode="decimal" aria-label="Minutes down"><span class="tool-unit">min</span></div><div class="tool-input"><input id="down-seconds" type="number" name="seconds" value="0" min="0" step="any" inputmode="decimal" aria-label="Seconds down"><span class="tool-unit">s</span></div></div></div>
+<fieldset class="tool-field"><legend class="tool-label"><b>Period</b><span>Month and year are averages</span></legend><div class="tool-segments"><label><input type="radio" name="period" value="day">Day</label><label><input type="radio" name="period" value="week">Week</label><label><input type="radio" name="period" value="month" checked>Month</label><label><input type="radio" name="period" value="year">Year</label></div></fieldset>
+<p class="tool-formula"><span class="tool-kicker">The math</span><span class="tool-sum">(<span data-out="periodSeconds">2,629,800</span> − <span data-out="downSeconds">2,700</span> s) ÷ <span data-out="periodSeconds">2,629,800</span> s = <b data-out="uptime">99.8973%</b></span></p>
+</div>
+<div class="tool-result">
+<div class="tool-live" aria-live="polite">
+<p class="tool-kicker">Uptime for the <span data-out="period">month</span></p>
+<p class="tool-big" data-out="uptime">99.8973%</p>
+<p class="tool-verdict" data-verdict data-tone="fair">Meets a 99.5% SLA. Misses 99.9% by 1 min 10 s.</p>
 <p class="tool-error" data-error hidden>Enter a downtime that fits in the period, with no negative values.</p>
+</div>
+<div class="tool-visual" data-visual></div>
+<div class="tool-actions"><button type="button" class="tool-button" data-share="result">Copy result</button><button type="button" class="tool-button is-quiet" data-share="link">Copy link</button><span class="visually-hidden" role="status" data-status></span></div>
+</div>
+</div>
 </div>
 </div>
 
@@ -109,4 +120,4 @@ About 8.6 seconds a day, 1 minute a week, 4 minutes 23 seconds a month and 52 mi
 
 ### How do I calculate uptime from downtime?
 
-Subtract the downtime from the length of the period, divide by the length of the period, and multiply by 100. Use the second calculator above to do it for a day, week, month or year.
+Subtract the downtime from the length of the period, divide by the length of the period, and multiply by 100. Switch the calculator above to downtime to do it for a day, week, month or year.
