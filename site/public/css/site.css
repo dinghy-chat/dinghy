@@ -360,6 +360,11 @@ main {
   flex: none;
 }
 
+.github-link .external {
+  margin-left: -3px;
+  opacity: .6;
+}
+
 /* Hero */
 .hero {
   position: relative;
