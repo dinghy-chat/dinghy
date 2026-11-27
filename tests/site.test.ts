@@ -86,12 +86,30 @@ describe.each(pages)("%s", (page) => {
     expect(html).toMatch(/<title>[^<]+<\/title>/);
     expect(html).toMatch(/<meta name="description" content="[^"]+">/);
     expect(html).toMatch(/<link rel="canonical" href="https:\/\/dinghy\.chat\/[^"]*">/);
-    expect(html).toMatch(/<meta property="og:image" content="https:\/\/dinghy\.chat\/og\.png">/);
+    const image = html.match(
+      /<meta property="og:image" content="https:\/\/dinghy\.chat(\/[^"]+)">/,
+    )?.[1];
+    expect(image).toBeDefined();
+    expect(html).toContain(`<meta name="twitter:image" content="https://dinghy.chat${image}">`);
   });
 
   test("it has one h1", () => {
     expect(html.match(/<h1\b/g)).toHaveLength(1);
   });
+});
+
+const articles = pages.filter((page) =>
+  readPage(page).includes('<meta property="og:type" content="article">'),
+);
+
+test.each(articles)("%s has a share image of its own, at 1200x630", (page) => {
+  const image =
+    readPage(page).match(
+      /<meta property="og:image" content="https:\/\/dinghy\.chat(\/[^"]+)">/,
+    )?.[1] ?? "";
+  expect(image).toMatch(/^\/img\/og\/[a-z0-9-]+\.png$/);
+  const png = readFileSync(join(PUBLIC, image));
+  expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([1200, 630]);
 });
 
 test("the share image exists", () => {

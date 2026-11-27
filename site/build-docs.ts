@@ -22,10 +22,12 @@ const WIDGET =
   '<script src="https://app.dinghy.chat/widget/loader.js" data-key="wk_f2dce993672e6c0e4e08e116323ffe7e" async></script>';
 /** Analytics and session replay for Dinghy's PostHog project, on every page. The CSP in _headers allows it. */
 const ANALYTICS = '<script src="/js/analytics.js" async></script>';
-const PUBLIC = "site/public";
+export const PUBLIC = "site/public";
+/** Illustrations show with no frame. Each has a smaller copy in cards/ for the cards that link to its page. */
+const ILLUSTRATIONS = "/img/illustrations/";
 const CONTENT = "site/content";
 /** The folders this script owns. It empties them before it writes. */
-export const OWNED_DIRS = ["docs", "for", "compare", "guides", "blog", "changelog"].map((dir) => join(PUBLIC, dir));
+export const OWNED_DIRS = ["docs", "for", "compare", "tools", "templates", "guides", "blog", "changelog"].map((dir) => join(PUBLIC, dir));
 
 interface Page {
   kind: "docs" | "content";
@@ -48,6 +50,8 @@ interface Page {
   stat?: string | undefined;
   /** For content pages: a logo in site/public/img/logos, by file name without .svg. */
   logo?: string | undefined;
+  /** For content pages: an illustration in site/public/img/illustrations/cards, by file name without .webp. */
+  image?: string | undefined;
   order: number;
 }
 
@@ -173,6 +177,8 @@ const DOCS_PAGES: Page[] = DOCS.map((entry, index) => ({
 const GROUPS: [string, string][] = [
   ["", "Why Dinghy"],
   ["compare", "Compare"],
+  ["tools", "Free tools"],
+  ["templates", "Templates"],
   ["for", "Use cases"],
   ["guides", "Install guides"],
   ["blog", "Blog"],
@@ -219,6 +225,7 @@ function contentPages(): Page[] {
         card: meta.card,
         stat: meta.stat,
         logo: meta.logo,
+        image: meta.image,
         order: Number(meta.order ?? 50),
       };
     })
@@ -231,12 +238,12 @@ function contentPages(): Page[] {
     );
 }
 
-const CONTENT_PAGES = contentPages();
+export const CONTENT_PAGES = contentPages();
 const ALL_PAGES = [...DOCS_PAGES, ...CONTENT_PAGES];
 
 const fileFor = (path: string) => join(PUBLIC, path.endsWith("/") ? `${path}index.html` : `${path}.html`);
 
-const escape = (text: string) =>
+export const escape = (text: string) =>
   text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
 const plain = (html: string) =>
@@ -270,6 +277,9 @@ function rewriteLink(href: string, from: Page): string {
 
 const ICON_GITHUB =
   '<svg width="20" height="20" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0 0 16 8c0-4.42-3.58-8-8-8z"/></svg>';
+/** Marks a link that leaves the site. Phosphor's arrow-up-right, bold. */
+const ICON_EXTERNAL =
+  '<svg class="external" width="14" height="14" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path d="M204,64V168a12,12,0,0,1-24,0V93L72.49,200.49a12,12,0,0,1-17-17L163,76H88a12,12,0,0,1,0-24H192A12,12,0,0,1,204,64Z"/></svg>';
 const ICON_CHEVRON =
   '<svg width="18" height="18" viewBox="0 0 256 256" fill="currentColor" aria-hidden="true"><path class="duo" d="M208,96l-80,80L48,96Z"/><path d="M215.39,92.94A8,8,0,0,0,208,88H48a8,8,0,0,0-5.66,13.66l80,80a8,8,0,0,0,11.32,0l80-80A8,8,0,0,0,215.39,92.94ZM128,164.69,67.31,104H188.69Z"/></svg>';
 
@@ -306,6 +316,7 @@ const ALIASES: Record<string, [CodeLanguage, string]> = {
   php: ["html", "PHP"],
   python: ["text", "Python"],
   go: ["text", "Go"],
+  template: ["text", "Template"],
 };
 
 function codeBlock(text: string, fence: string, id: string): string {
@@ -315,17 +326,26 @@ function codeBlock(text: string, fence: string, id: string): string {
     (line) => lang !== "sh" || line.tokens.some((token) => token.text.trim()),
   );
   const body = lines.map((line) => lineHtml(line, lang));
-  const kind = lang === "sh" ? "" : " terminal-plain";
+  // A reply template wraps like prose instead of scrolling sideways.
+  const kind = lang === "sh" ? "" : fence === "template" ? " terminal-plain terminal-text" : " terminal-plain";
   return `<div class="terminal doc-code${kind}">
 <div class="terminal-bar"><span>${label ?? CODE_LABELS[lang]}</span><button class="copy" type="button" data-copy="${id}"><span data-copy-label>Copy</span></button></div>
 <pre class="terminal-code" id="${id}"><code>${body.join("\n")}</code></pre>
 </div>\n`;
 }
 
-/** Reads a PNG's size from its header, so the page saves the image's room before it loads. */
-function pngSize(file: string): [number, number] {
+/** Reads a PNG's or WebP's size from its header, so the page saves the image's room before it loads. */
+function imageSize(file: string): [number, number] {
   const header = readFileSync(file);
-  return [header.readUInt32BE(16), header.readUInt32BE(20)];
+  if (header.toString("ascii", 0, 4) !== "RIFF") return [header.readUInt32BE(16), header.readUInt32BE(20)];
+  // WebP stores the size by chunk type: https://developers.google.com/speed/webp/docs/riff_container
+  const chunk = header.toString("ascii", 12, 16);
+  if (chunk === "VP8X") return [header.readUIntLE(24, 3) + 1, header.readUIntLE(27, 3) + 1];
+  if (chunk === "VP8L") {
+    const bits = header.readUInt32LE(21);
+    return [(bits & 0x3fff) + 1, ((bits >> 14) & 0x3fff) + 1];
+  }
+  return [header.readUInt16LE(26) & 0x3fff, header.readUInt16LE(28) & 0x3fff];
 }
 
 interface Rendered {
@@ -335,6 +355,13 @@ interface Rendered {
   sections: { id: string; text: string }[];
   images: string[];
 }
+
+/** A quote under a bold "Before" or "After" line shows as a chat reply, with the line as its label. */
+const chatQuotes = (html: string) =>
+  html.replace(/<p><strong>(Before|After)<\/strong><\/p>\n<blockquote>/g, (_match, label: string) => {
+    const kind = `is-${label.toLowerCase()}`;
+    return `<p class="chat-label ${kind}">${label}</p>\n<blockquote class="${kind}">`;
+  });
 
 function render(page: Page): Rendered {
   const liftLede = !page.description;
@@ -365,9 +392,12 @@ function render(page: Page): Rendered {
       },
       image({ href, text }) {
         const target = rewriteLink(href, page);
-        images.push(target.slice(1));
-        const [width, height] = pngSize(target.slice(1));
-        return `<img src="${escape(target)}" width="${width}" height="${height}" alt="${escape(text)}" loading="lazy">`;
+        // An illustration already lives in site/public. Any other image is copied there.
+        const isPublic = target.startsWith("/img/");
+        if (!isPublic) images.push(target.slice(1));
+        const [width, height] = imageSize(isPublic ? join(PUBLIC, target) : target.slice(1));
+        const cls = target.startsWith(ILLUSTRATIONS) ? ' class="illustration"' : "";
+        return `<img${cls} src="${escape(target)}" width="${width}" height="${height}" alt="${escape(text)}" loading="lazy">`;
       },
       codespan({ text }) {
         // A short name never breaks across lines. A long value, such as a URL, may.
@@ -423,7 +453,7 @@ function render(page: Page): Rendered {
     !(ledeToken as Tokens.Paragraph).tokens.some((token) => token.type === "image");
   const lede = isLede ? marked.parseInline((ledeToken as Tokens.Paragraph).text) : "";
   const body = tokens.filter((_, index) => index !== titleAt && (!lede || index !== ledeAt));
-  const html = marked.parser(body);
+  const html = chatQuotes(marked.parser(body));
   return { title, lede: typeof lede === "string" ? lede : "", html, sections, images };
 }
 
@@ -432,6 +462,12 @@ const longDate = (date: string) => {
   const [year, month, day] = date.split("-").map(Number);
   return `${MONTHS[(month ?? 1) - 1]} ${day}, ${year}`;
 };
+
+/** The size of every share image. */
+export const OG_SIZE = [1200, 630] as const;
+
+/** A content page's share image, which `bun run og:build` renders from its title, illustration and logo. */
+export const ogImageFor = (page: Page) => `/img/og/${page.path.slice(1).replace(/\/$/, "").replaceAll("/", "-")}.png`;
 
 /** Structured data for a content page. The CSP allows it: a browser never runs a JSON block. */
 function articleData(page: Page, headline: string, description: string): string {
@@ -443,7 +479,7 @@ function articleData(page: Page, headline: string, description: string): string 
     datePublished: page.date,
     dateModified: page.updated,
     mainEntityOfPage: SITE + page.path,
-    image: `${SITE}/og.png`,
+    image: SITE + ogImageFor(page),
     author: { "@type": "Organization", name: "Dinghy", url: `${SITE}/` },
     publisher: { "@type": "Organization", name: "Dinghy", url: `${SITE}/` },
   };
@@ -456,6 +492,11 @@ function head(page: Page, heading: string, description: string): string {
   const docs = page.kind === "docs";
   const fullTitle = docs ? (page.path === "/docs/" ? "Dinghy docs" : `${page.nav}: Dinghy docs`) : (page.title ?? heading);
   const data = docs ? "" : articleData(page, heading, description);
+  const image = SITE + (docs ? "/og.png" : ogImageFor(page));
+  const alt = docs
+    ? "A boat on the water, with the words: Live chat for your website 80% cheaper than Crisp. A table shows that screenshots in chat, analytics and connecting your AI cost $95 a month on Crisp, and $9 on Dinghy."
+    : `${heading}, on a yellow band above the water with Dinghy's boat.`;
+  const script = docs ? "docs" : page.group === "Free tools" ? "tools" : "page";
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -470,19 +511,19 @@ function head(page: Page, heading: string, description: string): string {
   <meta property="og:url" content="${url}">
   <meta property="og:title" content="${escape(fullTitle)}">
   <meta property="og:description" content="${escape(description)}">
-  <meta property="og:image" content="${SITE}/og.png">
-  <meta property="og:image:width" content="1200">
-  <meta property="og:image:height" content="630">
-  <meta property="og:image:alt" content="A boat on the water, with the words: Live chat for your website 80% cheaper than Crisp. A table shows that screenshots in chat, analytics and connecting your AI cost $95 a month on Crisp, and $9 on Dinghy.">
+  <meta property="og:image" content="${image}">
+  <meta property="og:image:width" content="${OG_SIZE[0]}">
+  <meta property="og:image:height" content="${OG_SIZE[1]}">
+  <meta property="og:image:alt" content="${escape(alt)}">
   <meta name="twitter:card" content="summary_large_image">
   <meta name="twitter:title" content="${escape(fullTitle)}">
   <meta name="twitter:description" content="${escape(description)}">
-  <meta name="twitter:image" content="${SITE}/og.png">
+  <meta name="twitter:image" content="${image}">
   <link rel="icon" href="/icon.svg" type="image/svg+xml">
   <link rel="preload" href="/fonts/gabarito-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/fonts/hanken-grotesk-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/css/site.css">
-  <script type="module" src="/js/${docs ? "docs" : "page"}.js"></script>${data}
+  <script type="module" src="/js/${script}.js"></script>${data}
   ${ANALYTICS}
   ${WIDGET}
 </head>`;
@@ -493,7 +534,7 @@ export function header(kind: Page["kind"]): string {
   const docs = kind === "docs";
   const current = docs ? ' aria-current="page"' : "";
   const github = docs
-    ? `\n        <a class="github-link" data-wave-link href="${REPO}">${ICON_GITHUB}<span>GitHub</span></a>`
+    ? `\n        <a class="github-link" data-wave-link href="${REPO}" target="_blank" rel="noopener">${ICON_GITHUB}<span>GitHub</span>${ICON_EXTERNAL}<span class="visually-hidden"> (opens in a new tab)</span></a>`
     : "";
   return `  <header class="site-header">
     <div class="header-bar">
@@ -521,13 +562,12 @@ const FOOTER = `  <footer>
     </div>
   </footer>`;
 
+/** The docs sidebar, with a link to the changelog, which is a content page. */
 function pageList(current: Page): string {
-  const pages = current.kind === "docs" ? DOCS_PAGES : CONTENT_PAGES;
-  const groups = [...new Set(pages.map((page) => page.group))];
+  const groups = [...new Set(DOCS_PAGES.map((page) => page.group))];
   const lists = groups
     .map((group) => {
-      const links = pages
-        .filter((page) => page.group === group)
+      const links = DOCS_PAGES.filter((page) => page.group === group)
         .map((page) => {
           const here = page === current ? ' aria-current="page"' : "";
           return `<li><a href="${page.path}"${here}>${page.nav}</a></li>`;
@@ -537,12 +577,7 @@ function pageList(current: Page): string {
       return `${title}\n        <ul>\n          ${links}\n        </ul>`;
     })
     .join("");
-  // The docs also link the changelog, which is a content page.
-  const updates =
-    current.kind === "docs"
-      ? '\n        <p class="docs-group">Updates</p>\n        <ul>\n          <li><a href="/changelog/">What\'s new</a></li>\n        </ul>'
-      : "";
-  return lists + updates;
+  return `${lists}\n        <p class="docs-group">Updates</p>\n        <ul>\n          <li><a href="/changelog/">What's new</a></li>\n        </ul>`;
 }
 
 const BAND = (heading: string, lede: string, meta: string, extra = "") => `    <section class="docs-band${extra ? ` ${extra}` : ""}" data-hero data-pause-offscreen>
@@ -560,10 +595,10 @@ const BAND = (heading: string, lede: string, meta: string, extra = "") => `    <
     </section>`;
 
 /** Content folders whose name labels a card that links across folders. */
-const LABELLED_GROUPS = new Set(["Why Dinghy", "Compare", "Use cases", "Install guides", "Blog"]);
+const LABELLED_GROUPS = new Set(["Why Dinghy", "Compare", "Free tools", "Templates", "Use cases", "Install guides", "Blog"]);
 
 /** A content page's title, from its Markdown, for the cards that link to it. */
-function headingOf(page: Page): string {
+export function headingOf(page: Page): string {
   const { body } = frontMatter(readFileSync(page.file, "utf8"));
   return (body.match(/^# (.+)$/m)?.[1] ?? page.nav).replace(/[`*_]/g, "");
 }
@@ -603,11 +638,16 @@ function updatesList(): string {
 
 const CARD_ACTION: Record<string, string> = {
   Compare: "Compare",
+  "Free tools": "Open the tool",
+  Templates: "Get the templates",
   "Use cases": "See how",
   "Install guides": "Open the guide",
   Blog: "Read the post",
   "Why Dinghy": "Read more",
 };
+
+/** The size of every card illustration, which site/public/img/illustrations/cards holds at one size. */
+const CARD_IMAGE = [600, 400] as const;
 
 function cards(pages: Page[], from?: Page): string {
   const items = pages
@@ -622,7 +662,10 @@ function cards(pages: Page[], from?: Page): string {
       const logo = page.logo
         ? `\n          <img class="card-logo" src="/img/logos/${page.logo}.svg" width="28" height="28" alt="">`
         : "";
-      const top = `${logo}${kicker ? `\n          <span class="card-kicker">${escape(kicker)}</span>` : ""}`;
+      const image = page.image
+        ? `\n          <span class="card-image"><img src="${ILLUSTRATIONS}cards/${page.image}.webp" width="${CARD_IMAGE[0]}" height="${CARD_IMAGE[1]}" alt="" loading="lazy"></span>`
+        : "";
+      const top = `${image}${logo}${kicker ? `\n          <span class="card-kicker">${escape(kicker)}</span>` : ""}`;
       const stat = page.stat
         ? `<span class="card-stat"><span>${escape(page.stat)}</span>${/^(\$|Free)/.test(page.stat) ? '<span class="card-stat-us">Dinghy $9</span>' : ""}</span>`
         : "";

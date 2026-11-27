@@ -25,7 +25,7 @@ const SCENES = {
     layers: LAYERS,
     frontFrom: 2,
     shore: true,
-    boats: [{ size: [44, 58], layer: 1, at: 0.78, speed: -10 }],
+    boats: [{ size: [44, 58], layer: 1, at: 0.62, speed: 10 }],
   },
 };
 

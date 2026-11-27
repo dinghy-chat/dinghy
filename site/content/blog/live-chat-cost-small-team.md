@@ -6,6 +6,7 @@ date: 2026-11-09
 updated: 2026-11-22
 order: 4
 card: What a new hire, more chats and a badge do to the bill
+image: live-chat-cost-small-team
 ---
 
 # What a 3-person team pays for live chat in 2026
@@ -25,6 +26,8 @@ Say you’re three people with one website and about 80 chats a month. Then you 
 | LiveChat Essential | $57 to $75 |
 | Intercom Essential | $57 to $87 |
 
+![A year of a three-person team on a timeline: a fourth hire in month four, about 300 chats in month six, removing the badge in month nine and the AI pitch in month twelve.](/img/illustrations/live-chat-cost-small-team-year-timeline.webp)
+
 tawk.to is free for all three people in this example. The free plans from Crisp and Chatwoot cover two.
 
 ## Month four, someone joins
@@ -39,7 +42,7 @@ Crisp Mini already covers four people, so it stays at $45. Tidio Starter include
 
 The team launches something, and chats jump to about 300 that month.
 
-Tidio’s Human only Starter price in the table covers 100 conversations a month. Human only Growth starts at $41 a month billed annually or $49 billed monthly for 200. With 300 chats, check the price for a 300-conversation quota. The starting price does not cover that volume.
+Tidio’s Human only Starter price in the table covers 100 conversations a month. Human only Growth starts at $41 a month billed annually or $49 billed monthly for 200. With 300 chats, check the price for a 300-conversation quota. The starting price does not cover that volume. [Tidio pricing](/compare/tidio-pricing) lists every quota.
 
 ## Month nine, the badge
 
@@ -51,13 +54,15 @@ On tawk.to that's $29 a month. Tidio offers branding removal as a paid add-on. O
 
 The team looks at adding AI. Costs depend on what the vendor charges for, from resolved conversations to bundles of credits.
 
-Intercom's Fin costs $0.99 per outcome, on top of seats. If Fin resolves 100 chats a month, that's $99 more. Tidio’s Starter with Lyro AI starts at $390 billed annually for 50 AI and human conversations a month. tawk.to's AI Assist starts at $29 a month. Chatwoot's paid plans come with some Captain AI credits, then it's $20 per 1,000.
+Intercom's Fin costs $0.99 per outcome, on top of seats. If Fin resolves 100 chats a month, that's $99 more. Tidio’s Starter with Lyro AI starts at $390 billed annually for 50 AI and human conversations a month. tawk.to's AI Assist starts at $29 a month. Chatwoot's paid plans come with some Captain AI credits, then it's $20 per 1,000. [Chatbot vs live chat](/blog/chatbot-vs-live-chat) explains what each of these AI fees counts.
 
 Our team says no to all of it, so the totals below leave AI out. Dinghy has no AI of its own and no AI fee. If you want a bot, you connect your own through MCP or the API and pay only your model provider. See [Bring your own AI agent](/blog/bring-your-own-ai-agent).
 
 ## A year later
 
 Four people, one busy month behind them, and no badge where they could pay to remove it:
+
+![Over the year, per-seat plans step up when the fourth person joins in month four, a free plan steps up in month nine to remove the badge, and a flat plan stays level.](/img/illustrations/live-chat-cost-small-team-price-lines.webp)
 
 | Product | Month one | Month twelve |
 |---|---|---|
@@ -69,7 +74,7 @@ Four people, one busy month behind them, and no badge where they could pay to re
 | LiveChat | $57 to $75 | $76 to $100 |
 | Intercom | $57 to $87 | $76 to $116, before any Fin answers |
 
-These are bills for two example months. They leave out taxes and any model bill for a bot you run yourself.
+These are bills for two example months. They leave out taxes and any model bill for a bot you run yourself. [Intercom pricing](/compare/intercom-pricing) shows how Fin answers add up.
 
 ## Why our line is flat
 

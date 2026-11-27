@@ -3,8 +3,8 @@ title: Help Scout alternative for live chat: Dinghy vs Help Scout
 nav: Dinghy vs Help Scout
 description: Help Scout is a help desk with chat from $25 to $30 a user. Dinghy is only website chat: $9 a month for up to 5 people, or free to self-host.
 date: 2026-11-09
-updated: 2026-11-22
-priceChecked: 2026-11-22
+updated: 2026-11-27
+priceChecked: 2026-11-27
 order: 8
 card: Email support, help articles and website chat
 stat: $25/user
@@ -25,20 +25,20 @@ Use Help Scout if most of your support comes by email and you also need chat and
 | 1 person | $9 a month | $25 to $30 a month |
 | 3 people | $9 a month | $75 to $90 a month |
 | 5 people | $9 a month | $125 to $150 a month |
-| Live chat on the free plan | No free plan | No. Free has email and a knowledge base, with 25 contacts per month |
+| Live chat on the free plan | No free plan | No. Free has email, a knowledge base and a Beacon contact form, with 25 contacts per month |
 | Email inbox and knowledge base | No. Replies go by email to a visitor who left | Yes |
-| AI answers | None built in. Your own agent drafts replies, no AI fee | $0.75 per resolution, if you turn them on |
+| AI agent | None built in. Your own agent drafts replies, no AI fee | Envoy add-on, $0.75 per resolution |
 | Self-hosting | Free, open source | Not possible |
 | Free trial | None | 15 days, no card |
 
-Help Scout prices are from [Help Scout’s pricing page](https://www.helpscout.com/pricing/). Standard costs $25 per user per month on annual billing and $30 on monthly billing. AI answers are $0.75 per resolution if you turn them on. [All the prices side by side](/compare/).
+Help Scout prices are from [Help Scout’s pricing page](https://www.helpscout.com/pricing/). Standard costs $25 per user per month on annual billing and $30 on monthly billing. The AI agent is an add-on called Envoy, at $0.75 per resolution. On the free plan, Beacon has help articles and a contact form, per [Help Scout's free plan article](https://docs.helpscout.com/article/1597-free-plan). [Help Scout pricing](/compare/help-scout-pricing) goes through every plan and the extra charges. [All the prices side by side](/compare/).
 
 ## What Help Scout does that Dinghy doesn't
 
 - A shared email inbox.
 - A knowledge base, and the Beacon widget that puts help articles and contact options on your site.
 - SMS, WhatsApp, Instagram and Messenger on Standard.
-- Built-in AI answers and workflows.
+- An AI agent, Envoy, sold per resolution, and workflows.
 - A free plan for email and help articles.
 
 If your customers mostly email you, use Help Scout.

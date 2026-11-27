@@ -6,6 +6,7 @@ date: 2026-11-09
 updated: 2026-11-22
 order: 3
 card: A ping every 25 seconds, and cursors so nothing gets lost
+image: sse-behind-cloudflare
 ---
 
 # How Dinghy keeps live chat open behind Cloudflare
@@ -18,6 +19,8 @@ Anything between the browser and your server can decide an idle connection is de
 
 The browser sends a message with a plain `POST`. It gets messages over server-sent events, or SSE. That's one long HTTP response the server keeps adding to.
 
+![The browser sends each message as a POST with its own ID and receives everything over one long SSE stream, which the server fills when a Valkey signal tells it to read new events from Postgres.](/img/illustrations/sse-behind-cloudflare-post-and-sse.webp)
+
 Caddy, nginx and Cloudflare can proxy an SSE stream as a long HTTP response. If nginx buffers it, messages can arrive late. Dinghy sends `X-Accel-Buffering: no` to tell nginx to stream it.
 
 Each message gets an ID made by the browser, 32 random hex characters. If the network drops halfway through a send, the browser sends it again with the same ID, and the server hands back the first copy instead of saving a second one. Rate limits work like for any request, with a status code and a `Retry-After` header.
@@ -29,6 +32,8 @@ A stream holds no database connection while nothing happens. When something new 
 ## The timeout, and the ping
 
 A Cloudflare 524 can occur when the origin takes too long to respond. Cloudflare calls it the Proxy Read Timeout. Its [connection limits page](https://developers.cloudflare.com/fundamentals/reference/connection-limits/) lists a 125-second default. Only Enterprise plans can change it.
+
+![On a stream that sat idle for 180 seconds, a ping every 25 seconds reset the proxy's clock, so the 125-second timeout never ran out.](/img/illustrations/sse-behind-cloudflare-ping-timeline.webp)
 
 So every 25 seconds, each Dinghy stream writes one line:
 
@@ -51,6 +56,8 @@ The server says why it's closing with a `close` event, like `lifetime`, `expired
 ## Picking up where it left off
 
 Every event in a workspace has a cursor, like `generation.seq`, and the number only goes up. A message and its event are saved in the same Postgres transaction, so an event can never show up behind a cursor the client already has.
+
+![When a stream drops, the browser reconnects with the last cursor it saw, and the server replays every event after that cursor before the stream is live again.](/img/illustrations/sse-behind-cloudflare-cursor-catch-up.webp)
 
 When a stream drops, the browser reconnects with the last cursor it saw. The server replays everything after it, sends `ready`, and the stream is live again.
 

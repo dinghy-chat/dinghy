@@ -27,7 +27,9 @@ No passwords. You sign in with a link sent to your email, and you can add a code
 
 A visitor who writes while you're offline can leave an email in the chat. If they've left the page when you reply, the answer goes to their inbox. They can answer from their mail app, and it lands in the same conversation. On Dinghy Cloud there's nothing to set up. Self-hosted, you need a mail server, plus an inbound address for [replies by email](/docs/self-hosting#replies-by-email).
 
-So a message at 2 a.m. doesn't get lost. You answer over coffee, they get it by email. Set your hours in Settings > Business hours. Outside them, the chat tells visitors when you're back and asks for their email. Save the answers you give every day as saved replies, and type **/** to insert one.
+So a message at 2 a.m. doesn't get lost. You answer over coffee, they get it by email. Set your hours in Settings > Business hours. Outside them, the chat tells visitors when you're back and asks for their email. Save the answers you give every day as saved replies, and type **/** to insert one. These [canned responses](/templates/canned-responses) are a place to start.
+
+Before a holiday, change your hours and the away message so visitors know when you're back. You can copy one of these [holiday messages](/templates/holiday-messages).
 
 ## No bot pretending to be you
 

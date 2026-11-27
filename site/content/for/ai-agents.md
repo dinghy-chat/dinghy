@@ -64,7 +64,7 @@ Give the agent that answers chats a **Chats** connection. Give the coding agent 
 
 Dinghy charges nothing for AI. If you use a model provider, you pay them for your agent's tokens. Dinghy Cloud stays $9 a month per workspace for up to 5 people.
 
-Intercom's Fin charges $0.99 per outcome, on top of seats. At 500 outcomes a month that's $495, before the first seat. With Dinghy, 500 bot answers cost whatever your model provider charges. Full comparison in [Dinghy vs Intercom](/compare/intercom).
+Intercom's Fin charges $0.99 per outcome, on top of seats. At 500 outcomes a month that's $495, before the first seat. With Dinghy, 500 bot answers cost whatever your model provider charges. Full comparison in [Dinghy vs Intercom](/compare/intercom). [Chatbot vs live chat](/blog/chatbot-vs-live-chat) compares the per-resolution prices of Intercom, Zendesk and others.
 
 ## Self-host with your own model
 

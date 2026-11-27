@@ -54,7 +54,7 @@ A self-hosted Dinghy needs no third-party account and no API key, and sends no t
 
 Dinghy has no AI of its own and sends nothing to an AI service. If you connect your own bot through MCP or the API, it reads conversations with the access you gave it, so the messages go wherever that bot sends them. Run a self-hosted model and they stay on your machines. See [Live chat for AI agents](/for/ai-agents).
 
-Two parts are optional, and both go to services you choose. Email needs a mail server, for sign-in links, reply emails and transcripts. S3 storage is for images, files and backups. Leave both off and Dinghy still works, all on one server.
+Two parts are optional, and both go to services you choose. Email needs a mail server, for sign-in links, reply emails and [transcripts](/blog/live-chat-transcripts). S3 storage is for images, files and backups. Leave both off and Dinghy still works, all on one server.
 
 Phone alerts for your team use web push, which goes through the push service of the operator's browser, like Apple's or Google's. The standard encrypts the payload, so the push service can't read it.
 

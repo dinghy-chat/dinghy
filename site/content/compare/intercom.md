@@ -16,7 +16,7 @@ Intercom puts an AI agent at the center of its customer service software. Dinghy
 
 ## Which one fits
 
-Use Dinghy for website chat, a shared inbox and alerts, at one price for the team. Use Intercom for its AI agent, product tours, help center, email and phone support.
+Use Dinghy for website chat, a shared inbox and alerts, at one price for the team. Use Intercom for its AI agent, product tours, help center, email and phone support. If you're weighing Intercom against another help desk, [Intercom vs Zendesk](/compare/intercom-vs-zendesk) compares the two.
 
 ## Price for a small team
 
@@ -30,7 +30,7 @@ Use Dinghy for website chat, a shared inbox and alerts, at one price for the tea
 | Self-hosting | Free, open source | Not possible |
 | Free trial | None | 14 days |
 
-Intercom prices are from [Intercom’s pricing page](https://www.intercom.com/pricing). The list price is $29 a seat, new customers see $19, and startups can apply for a bigger discount. [All the prices side by side](/compare/).
+Intercom prices are from [Intercom’s pricing page](https://www.intercom.com/pricing). The list price is $29 a seat, new customers see $19, and startups can apply for a bigger discount. [Intercom pricing](/compare/intercom-pricing) adds up the seats, Fin outcomes and add-ons. [All the prices side by side](/compare/).
 
 For three people, Dinghy costs $50 to $80 less a month, depending on your Intercom price.
 

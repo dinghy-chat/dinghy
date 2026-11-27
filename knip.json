@@ -1,10 +1,13 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "ignoreBinaries": ["pg_dump", "ffmpeg", "maestro"],
+  "ignoreBinaries": ["pg_dump", "ffmpeg", "maestro", "uvx"],
   "ignoreDependencies": ["preact"],
   "workspaces": {
     ".": {
-      "entry": ["site/public/js/{main,lost,docs,page,analytics}.js", "tests/**/*.{test,spec}.ts"],
+      "entry": [
+        "site/public/js/{main,lost,docs,page,tools,analytics}.js",
+        "tests/**/*.{test,spec}.ts"
+      ],
       "project": ["site/**/*.{ts,js}", "tests/**/*.ts"]
     },
     "apps/server": {

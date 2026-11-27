@@ -16,7 +16,7 @@ Zendesk does tickets, email, phone and website chat. Live chat and messaging on 
 
 ## Which one fits
 
-Use Zendesk if you need tickets, email, phone, a help center, AI agents and detailed reports. Use Dinghy for website chat with one to five people.
+Use Zendesk if you need tickets, email, phone, a help center, AI agents and detailed reports. Use Dinghy for website chat with one to five people. If you're choosing between help desks, read [Intercom vs Zendesk](/compare/intercom-vs-zendesk) or [Zendesk vs Freshdesk](/compare/zendesk-vs-freshdesk).
 
 ## Price for a small team
 
@@ -29,7 +29,7 @@ Use Zendesk if you need tickets, email, phone, a help center, AI agents and deta
 | Self-hosting | Free, open source | Not possible |
 | Free trial | None | 14 days |
 
-Zendesk prices are from [Zendesk’s pricing page](https://www.zendesk.com/pricing/). The lower number is per agent billed yearly, the higher one billed monthly. The cheaper Support Team plan, $19 to $25 an agent, has the web widget, but the page only lists messaging and live chat from Suite Team. [All the prices side by side](/compare/).
+Zendesk prices are from [Zendesk’s pricing page](https://www.zendesk.com/pricing/). The lower number is per agent billed yearly, the higher one billed monthly. The cheaper Support Team plan, $19 to $25 an agent, has the web widget, but the page only lists messaging and live chat from Suite Team. [Zendesk pricing](/compare/zendesk-pricing) goes through every plan and the AI charges. [All the prices side by side](/compare/).
 
 ## What Zendesk does that Dinghy doesn't
 

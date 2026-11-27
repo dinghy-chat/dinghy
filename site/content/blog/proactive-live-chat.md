@@ -5,6 +5,7 @@ description: Show a chat message after someone spends 20 seconds on your pricing
 date: 2026-11-22
 order: 1
 card: A pricing-page prompt, from the first test to the reply
+image: proactive-live-chat
 ---
 
 # Proactive live chat on your pricing page
@@ -14,6 +15,8 @@ Want to offer help on your pricing page? Show a little card above the chat butto
 ## Set up the message
 
 Install the [live chat widget](/live-chat-widget) first and add your site to **Allowed sites** under **Settings > Install**. Then open **Campaigns** as a workspace owner or admin.
+
+![A visitor on the pricing page sees a small card above the chat button after 20 seconds and replies, and the inbox shows the campaign message followed by the reply.](/img/illustrations/proactive-live-chat-pricing-prompt.webp)
 
 1. Create a draft. Name it **Help on the pricing page**.
 2. Choose the page trigger. Enter `/pricing` for that exact path, or `/pricing*` if you also have pages below it. Set the wait to 20 seconds.
@@ -33,6 +36,8 @@ To stop the prompt, pause the campaign. You can change the text or timing and re
 ## When a page is the wrong trigger
 
 If your app knows a customer's export just finished, have your server report an event such as `export.finished`. An event campaign can send a message to the matching contact. If your code already picks the person and the exact message, use the outbound messages API for a single send.
+
+![There are three ways to start a message: a page trigger for anyone on a page, an event campaign when your server reports an event such as export.finished, and the outbound messages API for one send that your code chooses.](/img/illustrations/proactive-live-chat-three-triggers.webp)
 
 - [Campaign triggers, audiences and results](/docs/campaigns)
 - [Send one outbound message with the API or SDK](/docs/outbound-messages)
