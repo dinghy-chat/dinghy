@@ -1,7 +1,7 @@
 # One image for every role. `web`, `worker` and `all` choose the process, and `chat ...` runs a command.
 # Alpine, because pg_dump must match the Postgres major version, and Alpine packages it directly.
 
-FROM oven/bun:1.4.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a AS install
+FROM oven/bun:1.4.5-alpine@sha256:da816670775f4c2b4e990b6b1847cf5540dcdc721a42033dd331ce7a88ba6a3b AS install
 WORKDIR /repo
 COPY package.json bun.lock ./
 COPY apps/server/package.json apps/server/
@@ -36,7 +36,7 @@ RUN mkdir /geo \
      done; \
   ls /geo/dbip-country-lite.mmdb || echo "No DB-IP database: countries stay unknown."
 
-FROM oven/bun:1.4.4-alpine@sha256:4cf82f5686b196504fe119db3fcd9185b191f82ece82c40680e597228ec6070a AS production
+FROM oven/bun:1.4.5-alpine@sha256:da816670775f4c2b4e990b6b1847cf5540dcdc721a42033dd331ce7a88ba6a3b AS production
 WORKDIR /repo
 COPY package.json bun.lock ./
 COPY apps/server/package.json apps/server/
